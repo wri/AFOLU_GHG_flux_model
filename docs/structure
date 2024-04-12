@@ -1,0 +1,9 @@
+This doc describes the directory structure
+
+/docs: Include all project documentation here. This can be technical documentation, project specifications, and auto-generated API docs.
+/notebooks: Jupyter notebooks for exploratory data analysis and visualization. This helps in isolating experimental and testing work from production code.
+/scripts: Python scripts that can be run from the command line to perform tasks like data processing, model training, etc.
+/src: Source code for the project. This could include:
+/src/models: Model definitions and functions specifically related to the emissions models and other analytical models.
+/src/utils: Utility scripts and helper functions that are used project-wide.
+/environment: Environment files like requirements.txt or environment.yml for reproducing the project environment.
