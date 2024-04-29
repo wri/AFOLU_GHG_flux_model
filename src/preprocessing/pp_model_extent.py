@@ -14,11 +14,10 @@ import argparse
 from functools import partial
 import multiprocessing
 import os
-import sys
 
-import constants_and_names as cn
+from src.lookups import constants_and_names as cn
 import universal_util as uu
-from . import model_extent
+from src.preprocessing import model_extent
 
 
 def mp_model_extent(tile_id_list):
