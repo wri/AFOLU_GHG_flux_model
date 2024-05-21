@@ -5,6 +5,7 @@ import logging
 import time
 import subprocess
 
+# TODO switch over to engert data and run
 # TODO harmonize with utilities and variables
 # TODO harmonize with other scripts
 
