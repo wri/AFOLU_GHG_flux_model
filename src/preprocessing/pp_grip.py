@@ -1,3 +1,49 @@
+"""
+This script processes GRIP (Global Roads Inventory Project) roads by tiles using a pre-existing raster template from S3.
+It reads the raster tiles from S3, resamples them to a target resolution, creates a fishnet grid, reads corresponding
+roads shapefiles for each tile, assigns road lengths to the fishnet cells, converts the lengths to road density, and
+saves the results as raster files.
+
+The script uses Dask to parallelize the processing of multiple tiles.
+
+Functions:
+- get_raster_bounds: Reads and returns the bounds of a raster file.
+- resample_raster: Resamples a raster to a target resolution.
+- mask_raster: Masks raster data to highlight specific values.
+- create_fishnet_from_raster: Creates a fishnet grid from raster data.
+- reproject_gdf: Reprojects a GeoDataFrame to a specified EPSG code.
+- read_tiled_roads: Reads and reprojects roads shapefile for a given tile.
+- assign_road_segments_to_cells: Assigns road segments to fishnet cells and calculates lengths.
+- convert_length_to_density: Converts road lengths to road density.
+- fishnet_to_raster: Converts a fishnet GeoDataFrame to a raster and saves it.
+- process_tile: Processes a single tile (Dask delayed function).
+- process_all_tiles: Processes all tiles using Dask for parallelization.
+- main: Main function to orchestrate the processing based on provided arguments.
+
+Usage examples:
+- Process a specific tile (00N_110E):
+  python script.py --tile_id 00N_110E
+
+- Process all tiles:
+  python script.py
+
+Dependencies:
+- geopandas
+- pandas
+- shapely
+- numpy
+- rasterio
+- boto3
+- logging
+- os
+- fiona
+- dask
+- dask.distributed
+- dask.diagnostics
+
+Note: The script relies on the presence of AWS credentials for accessing S3 buckets.
+"""
+
 import geopandas as gpd
 import pandas as pd
 from shapely.geometry import box
@@ -29,7 +75,6 @@ os.makedirs(output_dir, exist_ok=True)
 
 logging.info("Directories and paths set up")
 
-
 def get_raster_bounds(raster_path):
     logging.info(f"Reading raster bounds from {raster_path}")
     with rasterio.open(raster_path) as src:
@@ -37,10 +82,8 @@ def get_raster_bounds(raster_path):
     logging.info(f"Bounds of the raster: {bounds}")
     return bounds
 
-
 def resample_raster(src, target_resolution_m):
     logging.info(f"Resampling raster to {target_resolution_m} meter resolution (1 km by 1 km)")
-
     # Calculate new width and height based on the target resolution in meters
     transform = src.transform
     target_resolution_deg = target_resolution_m / 111320  # Approximate conversion factor
@@ -62,13 +105,11 @@ def resample_raster(src, target_resolution_m):
 
     return data, profile
 
-
 def mask_raster(data, profile):
     logging.info("Masking raster in memory for values equal to 1")
     mask = data == 1
     profile.update(dtype=rasterio.uint8)
     return mask.astype(rasterio.uint8), profile
-
 
 def create_fishnet_from_raster(data, transform):
     logging.info("Creating fishnet from raster data in memory")
@@ -85,11 +126,9 @@ def create_fishnet_from_raster(data, transform):
     logging.info(f"Fishnet grid generated with {len(polygons)} cells")
     return fishnet_gdf
 
-
 def reproject_gdf(gdf, epsg):
     logging.info(f"Reprojecting GeoDataFrame to EPSG:{epsg}")
     return gdf.to_crs(epsg=epsg)
-
 
 def read_tiled_roads(tile_id, roads_tile_dir, epsg):
     logging.info(f"Reading tiled roads shapefile for tile ID: {tile_id}")
@@ -109,7 +148,6 @@ def read_tiled_roads(tile_id, roads_tile_dir, epsg):
         logging.error(f"Error reading roads shapefile: {e}")
         return gpd.GeoDataFrame(columns=['geometry'])
 
-
 def assign_road_segments_to_cells(fishnet_gdf, roads_gdf):
     logging.info("Assigning road segments to fishnet cells and calculating lengths")
     road_lengths = []
@@ -123,7 +161,6 @@ def assign_road_segments_to_cells(fishnet_gdf, roads_gdf):
     logging.info(f"Fishnet with road lengths: {fishnet_gdf.head()}")
     return fishnet_gdf
 
-
 def convert_length_to_density(fishnet_gdf, crs):
     logging.info("Converting length to density (km/km2)")
     if crs.axis_info[0].unit_name == 'metre':
@@ -133,7 +170,6 @@ def convert_length_to_density(fishnet_gdf, crs):
     else:
         raise ValueError("Unsupported CRS units")
     return fishnet_gdf
-
 
 def fishnet_to_raster(fishnet_gdf, profile, output_raster_path):
     logging.info(f"Converting fishnet to raster and saving to {output_raster_path}")
@@ -164,7 +200,6 @@ def fishnet_to_raster(fishnet_gdf, profile, output_raster_path):
         dst.write(rasterized, 1)
 
     logging.info("Fishnet converted to raster and saved")
-
 
 @dask.delayed
 def process_tile(tile_key):
@@ -213,7 +248,6 @@ def process_tile(tile_key):
     except Exception as e:
         logging.error(f"Error processing tile {tile_id}: {e}")
 
-
 def process_all_tiles():
     # Get the list of rasters from S3
     paginator = s3_client.get_paginator('list_objects_v2')
@@ -233,7 +267,6 @@ def process_all_tiles():
     with ProgressBar():
         dask.compute(*dask_tiles)
 
-
 def main(tile_id=None):
     # Initialize Dask client
     cluster = LocalCluster()
@@ -248,7 +281,6 @@ def main(tile_id=None):
     finally:
         # Close Dask client
         client.close()
-
 
 # Example usage
 if __name__ == "__main__":

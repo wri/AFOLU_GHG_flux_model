@@ -1,3 +1,35 @@
+"""
+This script processes GRIP (Global Roads Inventory Project) roads by tiles using a pre-existing tile index shapefile.
+It reads the tile index shapefile, identifies the regions each tile overlaps with, processes the corresponding
+roads shapefiles, clips the roads data to the tile boundaries, and saves the results as shapefiles for each tile.
+
+The script uses Dask to parallelize the processing of multiple tiles.
+
+Functions:
+- read_tiles_shapefile: Reads and returns the tile index shapefile.
+- process_tile: Processes a single tile by reading and clipping road data within the tile's bounds.
+- process_all_tiles: Processes all tiles using Dask for parallelization.
+- main: Main function to orchestrate the processing based on provided arguments.
+
+Usage examples:
+- Process a specific tile (00N_110E):
+  python script.py --tile_id 00N_110E
+
+- Process all tiles:
+  python script.py
+
+Dependencies:
+- geopandas
+- pandas
+- shapely
+- numpy
+- dask
+- dask.distributed
+- dask.diagnostics
+
+Note: The script assumes the presence of the required shapefiles and directories.
+"""
+
 import geopandas as gpd
 import os
 import logging
@@ -24,6 +56,11 @@ output_dir = r"C:\GIS\Data\Global\GRIP\roads_by_tile"
 os.makedirs(output_dir, exist_ok=True)
 
 def read_tiles_shapefile():
+    """
+    Reads the tiles shapefile from the local directory.
+    Returns:
+        GeoDataFrame: A GeoDataFrame containing the tiles.
+    """
     logging.info("Reading tiles shapefile from local directory")
     tiles_gdf = gpd.read_file(tiles_shapefile_path)
     logging.info(f"Columns in tiles shapefile: {tiles_gdf.columns}")
@@ -31,6 +68,12 @@ def read_tiles_shapefile():
 
 @dask.delayed
 def process_tile(tile):
+    """
+    Processes a single tile by reading and clipping road data within the tile's bounds.
+
+    Args:
+        tile (GeoSeries): The tile to process.
+    """
     tile_id = tile['tile_id']  # Assuming the tile ID is stored in a column named 'tile_id'
     output_path = os.path.join(output_dir, f"roads_{tile_id}.shp")
 
@@ -65,12 +108,23 @@ def process_tile(tile):
         logging.error(f"Error processing tile {tile_id}: {e}")
 
 def process_all_tiles(tiles_gdf):
-    # Use Dask to parallelize the processing of tiles
+    """
+    Processes all tiles using Dask for parallelization.
+
+    Args:
+        tiles_gdf (GeoDataFrame): GeoDataFrame containing all tiles.
+    """
     tasks = [process_tile(tile) for idx, tile in tiles_gdf.iterrows()]
     with ProgressBar():
         dask.compute(*tasks)
 
 def main(tile_id=None):
+    """
+    Main function to orchestrate the processing based on provided arguments.
+
+    Args:
+        tile_id (str, optional): ID of the tile to process. Defaults to None.
+    """
     tiles_gdf = read_tiles_shapefile()
     if tile_id:
         # Process a single tile
