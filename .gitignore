@@ -39,3 +39,4 @@ venv/
 /src/preprocessing/pp_grip_kernel_fish_ts_scaling.py
 /src/preprocessing/pp_grip_kernel_fish_ts.py
 /src/preprocessing/pp_test_tree
+/src/preprocessing/osm_preprocessing/pp_osm_pbf_bounds.py
