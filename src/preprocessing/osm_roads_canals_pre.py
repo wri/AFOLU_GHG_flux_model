@@ -2,7 +2,12 @@
 This script processes OSM (OpenStreetMap) data for roads and canals by tile. It reads a tile index shapefile,
 identifies the regions each tile overlaps with, and processes the corresponding OSM PBF files. The processed data
 is then saved as shapefiles for each tile. This script relies on a pre-indexed tile shapefile.
-I have not been able to get this process working with dask
+I have not been able to get this process working with dask. This is the authoritative version, previous versions are
+located in osm_processing folder
+
+TODO:
+-direct uploads to s3
+change temporary file saving out of projct
 
 The script can process:
 - Only roads
