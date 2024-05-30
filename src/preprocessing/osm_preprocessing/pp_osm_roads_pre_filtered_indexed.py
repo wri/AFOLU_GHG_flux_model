@@ -1,36 +1,3 @@
-"""
-This script processes OSM (OpenStreetMap) data for roads and canals by tile. It reads a tile index shapefile,
-identifies the regions each tile overlaps with, and processes the corresponding OSM PBF files. The processed data
-is then saved as shapefiles for each tile. This script relies on a pre-indexed tile shapefile.
-I have not been able to get this process working with dask
-
-The script can process:
-- Only roads
-- Only canals
-- Both roads and canals
-
-Command-line arguments can be used to specify:
-- The ID of the tile to process
-- Whether to process roads
-- Whether to process canals
-
-Usage examples:
-- Process both roads and canals for all tiles:
-  python script.py --process_roads --process_canals
-
-- Process only canals for a specific tile:
-  python script.py --tile_id 50N_110E --process_canals
-
-Functions:
-- read_tiles_shapefile: Reads the updated tile index shapefile with regions.
-- run_ogr2ogr_local: Runs ogr2ogr to extract data from OSM PBF files within specified bounds.
-- filter_linestrings: Filters only LineString geometries from a GeoDataFrame.
-- filter_only_linestrings: Filters out non-LineString geometries.
-- process_tile: Processes a single tile for roads and/or canals.
-- process_all_tiles: Processes all tiles for roads and/or canals.
-- main: Main function to orchestrate the processing based on provided arguments.
-"""
-
 import geopandas as gpd
 import os
 import logging
@@ -42,7 +9,6 @@ import argparse
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-# logging.getLogger().setLevel(logging.DEBUG)
 
 # Paths
 filtered_canals_path = r"C:\GIS\Data\Global\OSM\filtered_canals"
@@ -179,7 +145,7 @@ def process_tile(tile, filtered_canals_path, filtered_highways_path, process_roa
                         gdf = filter_only_linestrings(gdf)
 
                         if not gdf.empty:
-                            gdf = gdf[['geometry', 'highway']]
+                            gdf = gdf[["geometry", "highway"]]
                             roads_in_tile = gpd.clip(gdf, tile.geometry)
                             combined_roads.append(roads_in_tile)
                         else:
@@ -192,7 +158,7 @@ def process_tile(tile, filtered_canals_path, filtered_highways_path, process_roa
                         gdf = filter_only_linestrings(gdf)
 
                         if not gdf.empty:
-                            gdf = gdf[['geometry', 'waterway']]
+                            gdf = gdf[["geometry", "waterway"]]
                             canals_in_tile = gpd.clip(gdf, tile.geometry)
                             combined_canals.append(canals_in_tile)
                         else:
@@ -200,6 +166,7 @@ def process_tile(tile, filtered_canals_path, filtered_highways_path, process_roa
 
         if combined_roads:
             combined_roads_gdf = gpd.GeoDataFrame(pd.concat(combined_roads, ignore_index=True))
+            combined_roads_gdf = filter_only_linestrings(combined_roads_gdf)  # Filter again before saving
             combined_roads_gdf.to_file(roads_output_path)
             logging.info(f"Saved combined roads for tile {tile_id} to {roads_output_path}")
             combined_roads_gdf = None
@@ -207,6 +174,7 @@ def process_tile(tile, filtered_canals_path, filtered_highways_path, process_roa
 
         if combined_canals:
             combined_canals_gdf = gpd.GeoDataFrame(pd.concat(combined_canals, ignore_index=True))
+            combined_canals_gdf = filter_only_linestrings(combined_canals_gdf)  # Filter again before saving
             combined_canals_gdf.to_file(canals_output_path)
             logging.info(f"Saved combined canals for tile {tile_id} to {canals_output_path}")
             combined_canals_gdf = None
@@ -250,7 +218,4 @@ def main(tile_id=None, process_roads=True, process_canals=True):
         process_all_tiles(tiles_gdf, filtered_canals_path, filtered_highways_path, process_roads, process_canals)
 
 if __name__ == '__main__':
-    # Directly call main with the desired parameters to process tile 50N_110E canals only
-    # main(tile_id="50N_110E", process_roads=False, process_canals=True)
-    # Directly call full run
     main(process_roads=True, process_canals=True)

@@ -2,7 +2,7 @@
 This script processes GRIP (Global Roads Inventory Project) roads by tiles using a pre-existing raster template from S3.
 It reads the raster tiles from S3, resamples them to a target resolution, creates a fishnet grid, reads corresponding
 roads shapefiles for each tile, assigns road lengths to the fishnet cells, converts the lengths to road density, and
-saves the results as raster files.
+saves the results as raster files. This will have to be re-run with the updated organic soils extent
 
 The script uses Dask to parallelize the processing of multiple tiles.
 
