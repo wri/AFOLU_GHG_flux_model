@@ -29,6 +29,7 @@ import boto3
 import logging
 import time
 import subprocess
+from pp_get_tile_list import get_tile_ids_from_raster
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -37,33 +38,16 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 s3_client = boto3.client('s3')
 s3_bucket_name = 'gfw2-data'
 s3_tiles_prefix = 'climate/carbon_model/other_emissions_inputs/peatlands/processed/20230315/'
-s3_output_prefix = 'climate/AFOLU_flux_model/organic_soils/inputs/processed/dadap_density/'
+s3_output_prefix = 'climate/AFOLU_flux_model/organic_soils/inputs/processed/dadap_density/dev'
 
 # Local paths
 tiles_dir = r"C:\GIS\Temp\GFW_Global_Peatlands"
-output_dir = r"C:\GIS\Data\Global\Wetlands\Processed\dadap"
+output_dir = r"C:\GIS\Data\Global\Wetlands\Processed\dadap\dev"
 dadap_density_raw = r"C:\GIS\Data\Global\Wetlands\Raw\Tropics\canal_length_data\canal_length_data\canal_length_1km.tif"
-tiles_list = ["00N_090E", "00N_100E", "00N_110E", "10N_090E", "10N_100E", "10N_110E"]
+tile_index_path = r"C:\GIS\Data\Global\Wetlands\Raw\Global\gfw_peatlands\Global_Peatlands_Index\Global_Peatlands.shp"
+# tiles_list = ["00N_090E", "00N_100E", "00N_110E", "10N_090E", "10N_100E", "10N_110E"] #hardcoded for comparison
+tiles_list = get_tile_ids_from_raster(dadap_density_raw,tile_index_path)
 
-def delete_local_file(file_path):
-    """
-    Attempts to delete a local file with retries on failure.
-
-    Args:
-        file_path (str): Path to the file to delete.
-    """
-    max_attempts = 5
-    for attempt in range(max_attempts):
-        try:
-            os.remove(file_path)
-            logging.info(f"Deleted local file {file_path}")
-            break
-        except PermissionError as e:
-            if attempt < max_attempts - 1:
-                logging.warning(f"Failed to delete {file_path}, retrying... ({e})")
-                time.sleep(1)  # Wait a bit before retrying
-            else:
-                logging.error(f"Could not delete {file_path} after several attempts. ({e})")
 
 def handle_file_operations(tile_name):
     """
@@ -98,21 +82,41 @@ def handle_file_operations(tile_name):
         clipped_dadap = clipped_dadap.rio.reproject_match(tile_ds)
         clipped_dadap.rio.to_raster(local_output_path)
         logging.info(f"Processed and saved locally {local_output_path}")
+
+        # Upload to S3
+        try:
+            s3_client.upload_file(local_output_path, s3_bucket_name, s3_output_path)
+            logging.info(f"Uploaded {local_output_path} to s3://{s3_bucket_name}/{s3_output_path}")
+        except Exception as e:
+            logging.error(f"Failed to upload {local_output_path} to S3. Error: {e}")
     finally:
-        if os.path.exists(local_tile_path):
-            delete_local_file(local_tile_path)
+        if os.path.exists(local_output_path):
+            delete_local_file(local_output_path)
+
+os.makedirs(tiles_dir, exist_ok=True)
 
 # Ensure directories exist
-os.makedirs(tiles_dir, exist_ok=True)
+def delete_local_file(file_path):
+    """
+    Attempts to delete a local file with retries on failure.
+
+    Args:
+        file_path (str): Path to the file to delete.
+    """
+    max_attempts = 5
+    for attempt in range(max_attempts):
+        try:
+            os.remove(file_path)
+            logging.info(f"Deleted local file {file_path}")
+            break
+        except PermissionError as e:
+            if attempt < max_attempts - 1:
+                logging.warning(f"Failed to delete {file_path}, retrying... ({e})")
+                time.sleep(1)  # Wait a bit before retrying
+            else:
+                logging.error(f"Could not delete {file_path} after several attempts. ({e})")
 os.makedirs(output_dir, exist_ok=True)
 
 # Process each tile in the list
 for tile in tiles_list:
     handle_file_operations(tile)
-
-# After processing all tiles, upload the entire directory to S3
-local_directory = output_dir
-s3_output_location = f"s3://{s3_bucket_name}/{s3_output_prefix}"
-upload_command = ["aws", "s3", "cp", local_directory, s3_output_location, "--recursive"]
-subprocess.run(upload_command, check=True)
-logging.info(f"Uploaded all processed tiles from {local_directory} to {s3_output_location}")

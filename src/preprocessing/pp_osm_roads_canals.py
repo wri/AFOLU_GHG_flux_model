@@ -316,5 +316,5 @@ if __name__ == "__main__":
     # main(tile_id='00N_110E', feature_type='canals')
 
     # Process roads and canals separately
-    # main(feature_type='roads')
-    main(feature_type='canals')
+    main(feature_type='roads')
+    # main(feature_type='canals')
