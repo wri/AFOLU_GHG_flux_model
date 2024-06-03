@@ -1,8 +1,13 @@
 """
-This script processes OSM (OpenStreetMap) roads and canals by tiles using a pre-existing raster template from S3.
-It reads the raster tiles from S3, resamples them to a target resolution, creates a fishnet grid, reads corresponding
-roads or canals shapefiles for each tile, assigns road/canal lengths to the fishnet cells, converts the lengths to density,
-and saves the results as raster files. This will have to be re-run with the updated organic soils extent.
+This script processes OSM data specifically for roads and canals using tiled shapefiles for OSM and pre-existing raster template from S3.
+It performs the following steps:
+1. Reads raster tiles from S3.
+2. Resamples the raster to a target resolution.
+3. Creates a fishnet grid.
+4. Reads corresponding roads or canals shapefiles for each tile.
+5. Assigns road/canal lengths to the fishnet cells.
+6. Converts the lengths to density.
+7. Saves the results as raster files locally and uploads them to S3.
 
 The script uses Dask to parallelize the processing of multiple tiles.
 
@@ -12,36 +17,14 @@ Functions:
 - mask_raster: Masks raster data to highlight specific values.
 - create_fishnet_from_raster: Creates a fishnet grid from raster data.
 - reproject_gdf: Reprojects a GeoDataFrame to a specified EPSG code.
-- read_tiled_features: Reads and reprojects shapefile for a given tile.
-- assign_segments_to_cells: Assigns segments to fishnet cells and calculates lengths.
-- convert_length_to_density: Converts lengths to density.
+- read_tiled_features: Reads and reprojects shapefiles (roads or canals) for a given tile.
+- assign_segments_to_cells: Assigns features to fishnet cells and calculates lengths.
+- convert_length_to_density: Converts lengths of features to density (km/km^2).
 - fishnet_to_raster: Converts a fishnet GeoDataFrame to a raster and saves it.
 - process_tile: Processes a single tile (Dask delayed function).
 - process_all_tiles: Processes all tiles using Dask for parallelization.
-- main: Main function to orchestrate the processing based on provided arguments.
+- main: Main function to execute the processing based on provided arguments.
 
-Usage examples:
-- Process a specific tile (00N_110E):
-  python script.py --tile_id 00N_110E --feature_type roads
-
-- Process all tiles:
-  python script.py --feature_type roads
-
-Dependencies:
-- geopandas
-- pandas
-- shapely
-- numpy
-- rasterio
-- boto3
-- logging
-- os
-- fiona
-- dask
-- dask.distributed
-- dask.diagnostics
-
-Note: The script relies on the presence of AWS credentials for accessing S3 buckets.
 """
 
 import geopandas as gpd
@@ -58,6 +41,7 @@ import fiona
 import dask
 from dask.distributed import Client, LocalCluster
 from dask.diagnostics import ProgressBar
+import gc
 
 # Increase Dask communication timeouts
 os.environ["DASK_DISTRIBUTED__COMM__TIMEOUTS__CONNECT"] = "60s"
@@ -87,16 +71,34 @@ os.makedirs(output_dir_canals, exist_ok=True)
 
 logging.info("Directories and paths set up")
 
-
 def get_raster_bounds(raster_path):
+    """
+    Reads and returns the bounds of a raster file.
+
+    Parameters:
+    raster_path (str): Path to the raster file.
+
+    Returns:
+    bounds (rasterio.coords.BoundingBox): Bounds of the raster.
+    """
     logging.info(f"Reading raster bounds from {raster_path}")
     with rasterio.open(raster_path) as src:
         bounds = src.bounds
     logging.info(f"Bounds of the raster: {bounds}")
     return bounds
 
-
 def resample_raster(src, target_resolution_m):
+    """
+    Resamples a raster to a target resolution.
+
+    Parameters:
+    src (rasterio.io.DatasetReader): Source raster object.
+    target_resolution_m (float): Target resolution in meters.
+
+    Returns:
+    data (numpy.ndarray): Resampled raster data.
+    profile (dict): Updated raster profile.
+    """
     logging.info(f"Resampling raster to {target_resolution_m} meter resolution (1 km by 1 km)")
     target_resolution_deg = target_resolution_m / 111320  # Approximate conversion factor
 
@@ -116,15 +118,34 @@ def resample_raster(src, target_resolution_m):
 
     return data, profile
 
-
 def mask_raster(data, profile):
+    """
+    Masks raster data to highlight specific values.
+
+    Parameters:
+    data (numpy.ndarray): Raster data.
+    profile (dict): Raster profile.
+
+    Returns:
+    masked_data (numpy.ndarray): Masked raster data.
+    masked_profile (dict): Updated raster profile.
+    """
     logging.info("Masking raster in memory for values equal to 1")
     mask = data == 1
     profile.update(dtype=rasterio.uint8)
     return mask.astype(rasterio.uint8), profile
 
-
 def create_fishnet_from_raster(data, transform):
+    """
+    Creates a fishnet grid from raster data.
+
+    Parameters:
+    data (numpy.ndarray): Raster data.
+    transform (Affine): Affine transformation for the raster.
+
+    Returns:
+    fishnet_gdf (GeoDataFrame): Fishnet grid as a GeoDataFrame.
+    """
     logging.info("Creating fishnet from raster data in memory")
     rows, cols = data.shape
     polygons = []
@@ -139,13 +160,33 @@ def create_fishnet_from_raster(data, transform):
     logging.info(f"Fishnet grid generated with {len(polygons)} cells")
     return fishnet_gdf
 
-
 def reproject_gdf(gdf, epsg):
+    """
+    Reprojects a GeoDataFrame to a specified EPSG code.
+
+    Parameters:
+    gdf (GeoDataFrame): GeoDataFrame to reproject.
+    epsg (int): Target EPSG code.
+
+    Returns:
+    GeoDataFrame: Reprojected GeoDataFrame.
+    """
     logging.info(f"Reprojecting GeoDataFrame to EPSG:{epsg}")
     return gdf.to_crs(epsg=epsg)
 
-
 def read_tiled_features(tile_id, feature_tile_dir, epsg, feature_type):
+    """
+    Reads and reprojects shapefiles (roads or canals) for a given tile.
+
+    Parameters:
+    tile_id (str): Tile ID.
+    feature_tile_dir (str): Directory containing feature shapefiles.
+    epsg (int): Target EPSG code for reprojecting.
+    feature_type (str): Type of feature ('roads' or 'canals').
+
+    Returns:
+    GeoDataFrame: Reprojected features GeoDataFrame.
+    """
     logging.info(f"Reading tiled {feature_type} shapefile for tile ID: {tile_id}")
     try:
         tile_id = '_'.join(tile_id.split('_')[:2])  # e.g., '00N_110E'
@@ -162,8 +203,17 @@ def read_tiled_features(tile_id, feature_tile_dir, epsg, feature_type):
         logging.error(f"Error reading {feature_type} shapefile: {e}")
         return gpd.GeoDataFrame(columns=['geometry'])
 
-
 def assign_segments_to_cells(fishnet_gdf, features_gdf):
+    """
+    Assigns features to fishnet cells and calculates lengths.
+
+    Parameters:
+    fishnet_gdf (GeoDataFrame): Fishnet grid GeoDataFrame.
+    features_gdf (GeoDataFrame): Features GeoDataFrame.
+
+    Returns:
+    GeoDataFrame: Fishnet grid with calculated feature lengths.
+    """
     logging.info("Assigning features segments to fishnet cells and calculating lengths")
     feature_lengths = []
 
@@ -176,8 +226,17 @@ def assign_segments_to_cells(fishnet_gdf, features_gdf):
     logging.info(f"Fishnet with feature lengths: {fishnet_gdf.head()}")
     return fishnet_gdf
 
-
 def convert_length_to_density(fishnet_gdf, crs):
+    """
+    Converts lengths of features to density (km/km^2).
+
+    Parameters:
+    fishnet_gdf (GeoDataFrame): Fishnet grid with feature lengths.
+    crs (pyproj.CRS): Coordinate reference system of the GeoDataFrame.
+
+    Returns:
+    GeoDataFrame: Fishnet grid with feature densities.
+    """
     logging.info("Converting length to density (km/km2)")
     if crs.axis_info[0].unit_name == 'metre':
         fishnet_gdf['density'] = fishnet_gdf['length'] / (1 * 1)  # lengths are in meters, cell area in km2
@@ -187,8 +246,18 @@ def convert_length_to_density(fishnet_gdf, crs):
         raise ValueError("Unsupported CRS units")
     return fishnet_gdf
 
-
 def fishnet_to_raster(fishnet_gdf, profile, output_raster_path):
+    """
+    Converts a fishnet GeoDataFrame to a raster and saves it.
+
+    Parameters:
+    fishnet_gdf (GeoDataFrame): Fishnet grid with feature densities.
+    profile (dict): Raster profile.
+    output_raster_path (str): Path to save the output raster file.
+
+    Returns:
+    None
+    """
     logging.info(f"Converting fishnet to raster and saving to {output_raster_path}")
     profile.update(dtype=rasterio.float32, count=1, compress='lzw')
 
@@ -218,14 +287,32 @@ def fishnet_to_raster(fishnet_gdf, profile, output_raster_path):
 
     logging.info("Fishnet converted to raster and saved")
 
-
 def process_tile(tile_key, feature_type, feature_tile_dir, output_dir, s3_output_dir):
+    """
+    Processes a single tile.
+
+    Parameters:
+    tile_key (str): Key of the tile in the S3 bucket.
+    feature_type (str): Type of feature ('roads' or 'canals').
+    feature_tile_dir (str): Directory containing feature shapefiles.
+    output_dir (str): Local directory to save output raster files.
+    s3_output_dir (str): S3 directory to upload output raster files.
+
+    Returns:
+    None
+    """
     tile_id = '_'.join(os.path.basename(tile_key).split('_')[:2])
     local_output_path = os.path.join(output_dir, f"{feature_type}_density_{tile_id}.tif")
+    s3_output_path = f"{s3_output_dir}{feature_type}_density_{tile_id}.tif"
 
-    if os.path.exists(local_output_path):
-        logging.info(f"{local_output_path} already exists. Skipping processing.")
+    # Check if the file already exists on S3
+    s3_client = boto3.client('s3')
+    try:
+        s3_client.head_object(Bucket=s3_bucket_name, Key=s3_output_path)
+        logging.info(f"{s3_output_path} already exists on S3. Skipping processing.")
         return
+    except:
+        logging.info(f"{s3_output_path} does not exist on S3. Processing the tile.")
 
     logging.info(f"Starting processing of the tile {tile_id}")
 
@@ -256,19 +343,32 @@ def process_tile(tile_key, feature_type, feature_tile_dir, output_dir, s3_output
                 logging.info(f"Saved {local_output_path}")
 
                 # Upload the file to S3
-                s3_client = boto3.client('s3')
-                s3_output_path = f"{s3_output_dir}{feature_type}_density_{tile_id}.tif"
                 s3_client.upload_file(local_output_path, s3_bucket_name, s3_output_path)
                 logging.info(f"Uploaded {local_output_path} to s3://{s3_bucket_name}/{s3_output_path}")
 
                 # Optionally, remove the local file after upload
                 os.remove(local_output_path)
 
+                # Explicitly clear memory
+                del resampled_data, masked_data, fishnet_gdf, features_gdf, fishnet_with_lengths, fishnet_with_density
+                gc.collect()
+
     except Exception as e:
         logging.error(f"Error processing tile {tile_id}: {e}")
 
-
 def process_all_tiles(feature_type, feature_tile_dir, output_dir, s3_output_dir):
+    """
+    Processes all tiles using Dask for parallelization.
+
+    Parameters:
+    feature_type (str): Type of feature ('roads' or 'canals').
+    feature_tile_dir (str): Directory containing feature shapefiles.
+    output_dir (str): Local directory to save output raster files.
+    s3_output_dir (str): S3 directory to upload output raster files.
+
+    Returns:
+    None
+    """
     paginator = boto3.client('s3').get_paginator('list_objects_v2')
     page_iterator = paginator.paginate(Bucket=s3_bucket_name, Prefix=s3_tiles_prefix)
 
@@ -285,8 +385,17 @@ def process_all_tiles(feature_type, feature_tile_dir, output_dir, s3_output_dir)
     with ProgressBar():
         dask.compute(*dask_tiles)
 
-
 def main(tile_id=None, feature_type='roads'):
+    """
+    Main function to orchestrate the processing based on provided arguments.
+
+    Parameters:
+    tile_id (str, optional): Tile ID to process a specific tile. Defaults to None.
+    feature_type (str, optional): Type of feature ('roads' or 'canals'). Defaults to 'roads'.
+
+    Returns:
+    None
+    """
     cluster = LocalCluster()
     client = Client(cluster)
 

@@ -22,6 +22,7 @@ Functions:
 - delete_local_file: Attempts to delete a local file with retries on failure.
 - handle_file_operations: Manages the download, processing, and cleanup for a single tile.
 """
+
 import os
 import rioxarray
 import boto3
@@ -78,10 +79,18 @@ def handle_file_operations(tile_name):
     local_tile_path = os.path.join(tiles_dir, f"{tile_name}.tif")
     local_output_path = os.path.join(output_dir, f"engert_{tile_name}.tif")
     s3_tile_path = f"{s3_tiles_prefix}{tile_name}_peat_mask_processed.tif"
-    s3_output_path = f"{s3_output_prefix}engert_{tile_name}.tif"
+    s3_output_path = f"{s3_output_prefix}/engert_{tile_name}.tif"
+
+    # Check if the output file already exists on S3
+    try:
+        s3_client.head_object(Bucket=s3_bucket_name, Key=s3_output_path)
+        logging.info(f"Output file {s3_output_path} already exists on S3, skipping processing.")
+        return
+    except s3_client.exceptions.ClientError:
+        logging.info(f"Output file {s3_output_path} does not exist on S3, proceeding with processing.")
 
     if os.path.exists(local_output_path):
-        logging.info(f"Output file {local_output_path} already exists, skipping processing.")
+        logging.info(f"Output file {local_output_path} already exists locally, skipping processing.")
         return
 
     if not os.path.exists(local_tile_path):
@@ -102,15 +111,16 @@ def handle_file_operations(tile_name):
         clipped_engert.rio.to_raster(local_output_path)
         logging.info(f"Processed and saved locally {local_output_path}")
 
-        # Upload to S3
-        try:
-            s3_client.upload_file(local_output_path, s3_bucket_name, s3_output_path)
-            logging.info(f"Uploaded {local_output_path} to s3://{s3_bucket_name}/{s3_output_path}")
-        except Exception as e:
-            logging.error(f"Failed to upload {local_output_path} to S3. Error: {e}")
+    #     # Upload to S3
+    #     try:
+    #         s3_client.upload_file(local_output_path, s3_bucket_name, s3_output_path)
+    #         logging.info(f"Uploaded {local_output_path} to s3://{s3_bucket_name}/{s3_output_path}")
+    #     except Exception as e:
+    #         logging.error(f"Failed to upload {local_output_path} to S3. Error: {e}")
     finally:
-        if os.path.exists(local_output_path):
-            delete_local_file(local_output_path)
+        print("Complete")
+    #     if os.path.exists(local_output_path):
+    #         delete_local_file(local_output_path)
 
 
 # Ensure directories exist
