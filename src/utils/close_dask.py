@@ -1,3 +1,7 @@
+"""
+Standalone script for closing local dask clients
+"""
+
 from dask.distributed import Client
 
 # List of clients to shutdown

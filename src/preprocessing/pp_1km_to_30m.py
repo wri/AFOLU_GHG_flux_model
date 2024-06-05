@@ -3,7 +3,11 @@ import logging
 import boto3
 import rioxarray
 import multiprocessing
-
+"""
+This was used to post process grip and osm canals output back into 30 meter. 
+In the future, it should be integrated directly with those preprocessing scripts
+and also the s3 upload piece
+"""
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 

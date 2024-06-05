@@ -1,4 +1,8 @@
-from dask.distributed import Client
+"""
+another script for closing dask
+"""
+
+rom dask.distributed import Client
 import psutil
 
 def close_dask_clusters():

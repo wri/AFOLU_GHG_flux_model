@@ -1,7 +1,11 @@
 import geopandas as gpd
 import rioxarray
 from shapely.geometry import box
-
+"""
+A little different than list tiles... should update naming convention
+This script takes a raster input, calculates its bounds, and then lists the tile ids 
+that overlap with the raster. It is useful for processing data into hansen grid
+"""
 #todo... make sure tile has data in it
 
 def get_tile_ids_from_raster(raster_path, index_shapefile_path):

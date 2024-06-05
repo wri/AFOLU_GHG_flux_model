@@ -4,6 +4,10 @@ import geopandas as gpd
 from shapely.geometry import box
 import os
 
+"""
+this script accepts an s3 directory input and creates shapefile footprints of all 
+rasters within the directory
+"""
 #todo automatically upload to s3
 
 s3_bucket = "gfw2-data"

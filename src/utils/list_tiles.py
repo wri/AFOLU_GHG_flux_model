@@ -1,6 +1,9 @@
 import boto3
 import re
-
+"""
+simple script for listing all the tiles in a directory. I used this to create a list
+for the 10x10 degree peat tile aggregation notebook. Could be integrated directly 
+"""
 # AWS S3 setup
 s3_bucket = "gfw2-data"
 s3_prefix = "climate/carbon_model/other_emissions_inputs/peatlands/processed/20230315/"

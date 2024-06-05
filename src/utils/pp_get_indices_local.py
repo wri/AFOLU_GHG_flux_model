@@ -2,7 +2,10 @@ import os
 import rasterio
 import geopandas as gpd
 from shapely.geometry import box
-
+"""
+this script accepts a local directory input and creates shapefile footprints of all 
+rasters within the folder
+"""
 def get_raster_files_from_local(directory):
     raster_files = []
     for root, _, files in os.walk(directory):
