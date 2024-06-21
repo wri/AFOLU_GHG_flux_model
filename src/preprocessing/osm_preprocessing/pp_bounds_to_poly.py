@@ -89,9 +89,8 @@ def get_tile_bounds(global_index_shapefile, tile_id):
 # Main script to run the analysis
 if __name__ == "__main__":
     global_index_shapefile = "C:\GIS\Data\Global\Wetlands\Raw\Global\gfw_peatlands\Global_Peatlands_Index\Global_Peatlands.shp"
-    tile_id = "10N_010E"
-    # tile_id = "10N_010E"
-    chunk_size = 0.25  # Set the desired chunk size
+    tile_id = "00N_080W"
+    chunk_size = 2  # Set the desired chunk size
 
     # Get the bounds of the specified tile
     tile_bounds = get_tile_bounds(global_index_shapefile, tile_id)
@@ -100,6 +99,6 @@ if __name__ == "__main__":
 
     # Export the chunk bounds to a shapefile
     output_filename = f"C:/GIS/Data/Global/Wetlands/Raw/chunk_bounds/{tile_id}_chunks.shp"
-    # export_chunks_to_shapefile(chunk_params, output_filename)
+    export_chunks_to_shapefile(chunk_params, output_filename)
 
     print(f"Chunk bounds exported to {output_filename}")
