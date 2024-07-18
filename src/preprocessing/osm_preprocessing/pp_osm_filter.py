@@ -1,4 +1,8 @@
 """
+*** run get osm index first then this
+
+TODO: automate s3 uploads
+
 This script filters OSM (OpenStreetMap) data for highways and canals from regional PBF files using the osmium tool.
 The filtered data is then saved to separate directories for highways and canals.
 
@@ -20,14 +24,14 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Dictionary of PBF files
 pbf_files = {
-    "north-america-latest.osm.pbf": r"C:\GIS\Data\Global\OSM\OSM_roads_by_region\OSM_Roads\north-america-latest.osm.pbf",
-    "africa-latest.osm.pbf": r"C:\GIS\Data\Global\OSM\OSM_roads_by_region\OSM_Roads\africa-latest.osm.pbf",
-    "antarctica-latest.osm.pbf": r"C:\GIS\Data\Global\OSM\OSM_roads_by_region\OSM_Roads\antarctica-latest.osm.pbf",
-    "asia-latest.osm.pbf": r"C:\GIS\Data\Global\OSM\OSM_roads_by_region\OSM_Roads\asia-latest.osm.pbf",
-    "australia-oceania-latest.osm.pbf": r"C:\GIS\Data\Global\OSM\OSM_roads_by_region\OSM_Roads\australia-oceania-latest.osm.pbf",
-    "central-america-latest.osm.pbf": r"C:\GIS\Data\Global\OSM\OSM_roads_by_region\OSM_Roads\central-america-latest.osm.pbf",
-    "europe-latest.osm.pbf": r"C:\GIS\Data\Global\OSM\OSM_roads_by_region\OSM_Roads\europe-latest.osm.pbf",
-    "south-america-latest.osm.pbf": r"C:\GIS\Data\Global\OSM\osm_regions\south-america-latest.osm.pbf"
+    "north-america-latest.osm.pbf": r"C:\GIS\Data\Global\OSM\raw_by_region\north-america-latest.osm.pbf",
+    "africa-latest.osm.pbf": r"C:\GIS\Data\Global\OSM\raw_by_region\africa-latest.osm.pbf",
+    "antarctica-latest.osm.pbf": r"C:\GIS\Data\Global\OSM\raw_by_region\antarctica-latest.osm.pbf",
+    "asia-latest.osm.pbf": r"C:\GIS\Data\Global\OSM\raw_by_region\asia-latest.osm.pbf",
+    "australia-oceania-latest.osm.pbf": r"C:\GIS\Data\Global\OSM\raw_by_region\australia-oceania-latest.osm.pbf",
+    "central-america-latest.osm.pbf": r"C:\GIS\Data\Global\OSM\raw_by_region\central-america-latest.osm.pbf",
+    "europe-latest.osm.pbf": r"C:\GIS\Data\Global\OSM\raw_by_region\europe-latest.osm.pbf",
+    "south-america-latest.osm.pbf": r"C:\GIS\Data\Global\OSM\raw_by_region\south-america-latest.osm.pbf"
 }
 
 # Output directories
