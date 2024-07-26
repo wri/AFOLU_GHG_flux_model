@@ -1,13 +1,18 @@
 import os
 import logging
-import boto3
 import rasterio
-from rasterio.merge import merge as merge_arrays
-import dask
+import subprocess
 from dask.distributed import Client, LocalCluster
 from dask.diagnostics import ProgressBar
 import atexit
-import subprocess
+import dask
+import boto3  # Ensure boto3 is imported
+from pp_utilities import s3_file_exists, list_s3_files, compress_and_upload_directory_to_s3
+
+"""
+This script aggregates and merges tiles from S3, resamples them to 4km resolution,
+and merges all the tiles into a single global raster.
+"""
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -19,28 +24,6 @@ local_temp_dir = "/tmp/aggregated"
 # Global variables for Dask cluster and client
 cluster = None
 client = None
-
-def s3_file_exists(bucket, key):
-    s3 = boto3.client('s3')
-    try:
-        s3.head_object(Bucket=bucket, Key=key)
-        logging.info(f"File exists: s3://{bucket}/{key}")
-        return True
-    except:
-        logging.info(f"File does not exist: s3://{bucket}/{key}")
-        return False
-
-def list_s3_files(bucket, prefix):
-    s3 = boto3.client('s3')
-    keys = []
-    try:
-        paginator = s3.get_paginator('list_objects_v2')
-        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-            for obj in page.get('Contents', []):
-                keys.append(obj['Key'])
-    except Exception as e:
-        logging.error(f"Error listing files in s3://{bucket}/{prefix}: {e}")
-    return keys
 
 def aggregate_tile(tile_path, output_path):
     logging.info(f"Aggregating tile {tile_path} to {output_path}")
@@ -113,7 +96,7 @@ def process_and_aggregate(tile_id, input_prefix, temp_prefix, output_prefix):
     logging.info(f"Aggregating tile {tile_id}")
     aggregate_tile(local_input_path, local_temp_output_path)
     logging.info(f"Uploading aggregated tile {temp_output_file} to S3")
-    s3_client.upload_file(local_temp_output_path, s3_bucket, temp_output_file)
+    compress_and_upload_directory_to_s3(local_temp_dir, s3_bucket, temp_prefix)
 
     os.remove(local_input_path)
     os.remove(local_temp_output_path)
@@ -133,7 +116,6 @@ def main(input_prefix, temp_prefix, output_prefix, tile_ids=None):
         available_tile_ids = [os.path.basename(path).replace('.tif', '').replace('_soil', '') for path in available_tile_ids]
 
         if tile_ids:
-            # Ensure provided tile IDs have the correct format
             tile_ids_to_process = [tile_id for tile_id in tile_ids if tile_id in available_tile_ids]
         else:
             tile_ids_to_process = available_tile_ids
@@ -160,7 +142,7 @@ def main(input_prefix, temp_prefix, output_prefix, tile_ids=None):
             merge_global_tiles(aggregated_tiles, local_global_path)
             s3_global_output = os.path.join(output_prefix, 'global_4km.tif').replace('\\', '/')
             logging.info(f"Uploading global raster to S3: {s3_global_output}")
-            s3_client.upload_file(local_global_path, s3_bucket, s3_global_output)
+            compress_and_upload_directory_to_s3(local_temp_dir, s3_bucket, output_prefix)
             os.remove(local_global_path)
             logging.info(f"Uploaded global raster to s3://{s3_bucket}/{s3_global_output}")
     except Exception as e:

@@ -1,12 +1,5 @@
-import os
-import logging
-import geopandas as gpd
-from shapely.geometry import Polygon, box
-import pandas as pd
-
 """
-***run this one first then pp_osm_filter
-This script processes .poly files to create shapefiles, extracts bounding boxes, and overlays them with a tile index to 
+This script processes .poly files to create shapefiles, extracts bounding boxes, and overlays them with a tile index to
 determine intersections. The primary steps are:
 1. Parsing .poly files to create shapefiles.
 2. Extracting bounding boxes from these shapefiles.
@@ -32,6 +25,12 @@ Functions:
 Usage:
 Run the script directly to process .poly files and update the tile index with region intersections.
 """
+
+import os
+import logging
+import geopandas as gpd
+from shapely.geometry import Polygon, box
+import pandas as pd
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

@@ -1,3 +1,13 @@
+import os
+import geopandas as gpd
+import logging
+import dask
+from dask.distributed import Client, LocalCluster
+from dask.diagnostics import ProgressBar
+import pandas as pd
+
+from utilities import get_existing_s3_files, compress_and_upload_directory_to_s3
+
 """
 This script processes GRIP (Global Roads Inventory Project) roads by tiles using a pre-existing tile index shapefile.
 It reads the tile index shapefile, identifies the regions each tile overlaps with, processes the corresponding
@@ -29,14 +39,6 @@ Dependencies:
 
 Note: The script assumes the presence of the required shapefiles and directories.
 """
-
-import geopandas as gpd
-import os
-import logging
-import dask
-from dask.distributed import Client, LocalCluster
-from dask.diagnostics import ProgressBar
-import pandas as pd
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

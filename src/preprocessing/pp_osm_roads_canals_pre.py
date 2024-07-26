@@ -2,12 +2,6 @@
 This script processes OSM (OpenStreetMap) data for roads and canals by tile. It reads a tile index shapefile,
 identifies the regions each tile overlaps with, and processes the corresponding OSM PBF files. The processed data
 is then saved as shapefiles for each tile. This script relies on a pre-indexed tile shapefile.
-I have not been able to get this process working with dask. This is the authoritative version, previous versions are
-located in osm_processing folder
-
-TODO:
--direct uploads to s3
-change temporary file saving out of projct
 
 The script can process:
 - Only roads
@@ -43,11 +37,11 @@ import subprocess
 import shapely.geometry
 from datetime import datetime
 import pandas as pd
-import argparse
+
+from utilities import get_existing_s3_files, compress_and_upload_directory_to_s3
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-# logging.getLogger().setLevel(logging.DEBUG)
 
 # Paths
 filtered_canals_path = r"C:\GIS\Data\Global\OSM\filtered_canals"
