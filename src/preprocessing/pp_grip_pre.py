@@ -6,7 +6,7 @@ from dask.distributed import Client, LocalCluster
 from dask.diagnostics import ProgressBar
 import pandas as pd
 
-from utilities import get_existing_s3_files, compress_and_upload_directory_to_s3
+from pp_utilities import get_existing_s3_files, compress_and_upload_directory_to_s3
 
 """
 This script processes GRIP (Global Roads Inventory Project) roads by tiles using a pre-existing tile index shapefile.
