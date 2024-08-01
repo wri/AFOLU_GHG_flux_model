@@ -566,7 +566,10 @@ def compress_file(input_file, output_file, nodata_value=None):
 #     except Exception as e:
 #         logging.error(f"Error in hansenize function: {e}")
 
-def hansenize(input_path, output_dir, reference_raster_path, s3_bucket, s3_prefix, tile_id, dataset, run_mode='default', nodata_value=None):
+#COMMENTS FROM MEL:
+# We specify the data type in the carbon budget hansen function so I've included here as an input as well. I think there might be cases where we want to change the data type to be less memory intensive (i.e. int16-> int8 )
+# To minimize the number of argumentsI think it would be better to just provide input_path, output_raster_path, and reference_raster_path rather than stringing together multiple inputs in this function to get output_raster_pa
+def hansenize(input_path, output_dir, reference_raster_path, s3_bucket, s3_prefix, tile_id, dataset, datatype, run_mode='default', nodata_value=None):
     """
     Processes input shapefiles or rasters to produce a 30-meter resolution raster
     clipped into homogeneous 10x10 degree tiles.
@@ -582,23 +585,27 @@ def hansenize(input_path, output_dir, reference_raster_path, s3_bucket, s3_prefi
     run_mode (str): Mode to run the script ('default' or 'test').
     nodata_value (float, optional): NoData value for the output raster.
     """
+    # See comment above about making output_raster_path an input, that would get rid of this section
     os.makedirs(output_dir, exist_ok=True)
 
     output_raster_path = os.path.join(output_dir, f"{dataset}_{tile_id}.tif")
     compressed_output_path = os.path.join(output_dir, f"{dataset}_{tile_id}_compressed.tif")
+    # Question: Why have both if you are only uploading the compressed? We generally don't add "_compressed" to our output rasters (the final rasters are always compressed)
 
     try:
         with rasterio.open(reference_raster_path) as ref_ds:
             ref_bounds = ref_ds.bounds
-            ref_transform = ref_ds.transform
-            ref_crs = ref_ds.crs
-            ref_width = ref_ds.width
-            ref_height = ref_ds.height
+            # ref_transform = ref_ds.transform
+            # ref_crs = ref_ds.crs
+            # ref_width = ref_ds.width
+            # ref_height = ref_ds.height
+        #It looks like these aren't being used in the function so why make them objects?
 
+        # Do you prefer doing it this way? alternatively we could use '-overwrite' in the gdal warp command to reduce custom code (below)
         # Remove the existing output file if it exists
-        if os.path.exists(output_raster_path):
-            os.remove(output_raster_path)
-            logging.info(f"Deleted existing file: {output_raster_path}")
+        # if os.path.exists(output_raster_path):
+        #     os.remove(output_raster_path)
+        #     logging.info(f"Deleted existing file: {output_raster_path}")
 
         # Run gdalwarp to reproject and clip the input raster
         gdalwarp_cmd = [
@@ -608,9 +615,11 @@ def hansenize(input_path, output_dir, reference_raster_path, s3_bucket, s3_prefi
             '-tr', '0.00025', '0.00025',
             '-tap',
             '-r', 'near',
-            '-dstnodata', str(nodata_value) if nodata_value else 'None',
-            '-co', 'COMPRESS=LZW',
+            '-dstnodata', str(nodata_value) if nodata_value else 'None', #In our current hansen function, we set this to 0 to standardize no data values. Do you see a case for using a different no data avalue?
+            '-co', 'COMPRESS=DEFLATE',
             '-co', 'TILED=YES',
+            '-ot', datatype,
+            '-overwrite',
             input_path,
             output_raster_path
         ]
@@ -618,9 +627,10 @@ def hansenize(input_path, output_dir, reference_raster_path, s3_bucket, s3_prefi
         logging.info(f"Running gdalwarp command: {' '.join(gdalwarp_cmd)}")
         subprocess.run(gdalwarp_cmd, check=True)
 
+        # If the gdalwarp_cmd is already compressing the raster, is this redundant?
         # Compress the output raster
-        compress_file(output_raster_path, compressed_output_path)
-        logging.info(f"Compressed raster saved to {compressed_output_path}")
+        # compress_file(output_raster_path, compressed_output_path)
+        # logging.info(f"Compressed raster saved to {compressed_output_path}")
 
         # Upload to S3 if not in test mode
         if run_mode != 'test':
@@ -637,3 +647,57 @@ def hansenize(input_path, output_dir, reference_raster_path, s3_bucket, s3_prefi
 
     except Exception as e:
         logging.error(f"Error in hansenize function: {e}")
+
+
+#Below are the modified functions from the carbon budget repo used to "hansenize" data(just for reference, feel free to delete)
+# # Gets the bounding coordinates of a tile
+# def coords(tile_id: object) -> object:
+#     NS = tile_id.split("_")[0][-1:]
+#     EW = tile_id.split("_")[1][-1:]
+#
+#     if NS == 'S':
+#         ymax =-1*int(tile_id.split("_")[0][:2])
+#     else:
+#         ymax = int(str(tile_id.split("_")[0][:2]))
+#
+#     if EW == 'W':
+#         xmin = -1*int(str(tile_id.split("_")[1][:3]))
+#     else:
+#         xmin = int(str(tile_id.split("_")[1][:3]))
+#
+#
+#     ymin = str(int(ymax) - 10)
+#     xmax = str(int(xmin) + 10)
+#
+#     return xmin, ymin, xmax, ymax
+#
+# # Warps raster to Hansen tiles using multiple processors
+# def mp_warp_to_Hansen(tile_id, source_raster, out_pattern, dt):
+#     logging.info(f"Getting extent of {tile_id}")
+#     xmin, ymin, xmax, ymax = coords(tile_id)
+#
+#     out_tile = f'{tile_id}_{out_pattern}.tif'
+#
+#     gdalwarp_cmd = ['gdalwarp',
+#            '-t_srs', 'EPSG:4326',
+#            '-co', 'COMPRESS=DEFLATE',
+#            '-tr', '0.00025', '0.00025',
+#            '-tap',
+#            '-te', str(xmin), str(ymin), str(xmax), str(ymax),
+#            '-dstnodata', '0',
+#            '-ot', dt,
+#            '-overwrite', source_raster, out_tile]
+#     subprocess.run(gdalwarp_cmd, check=True)
+#
+#
+# def warp_to_Hansen(in_file, out_file, xmin, ymin, xmax, ymax, dt):
+#     gdalwarp_cmd = ['gdalwarp',
+#             '-t_srs', 'EPSG:4326',
+#             '-co', 'COMPRESS=DEFLATE',
+#             '-tr','0.00025', '0.00025',
+#             '-tap',
+#             '-te', str(xmin), str(ymin), str(xmax), str(ymax),
+#             '-dstnodata', '0',
+#             '-ot', dt,
+#             '-overwrite', in_file, out_file]
+#     subprocess.run(gdalwarp_cmd, check=True)
