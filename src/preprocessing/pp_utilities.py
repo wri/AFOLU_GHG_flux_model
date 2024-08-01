@@ -11,6 +11,7 @@ import subprocess
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 import gc
 import logging
+from rasterio.features import rasterize
 
 # Logging setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -556,15 +557,6 @@ def hansenize(input_path, output_dir, reference_raster_path, s3_bucket, s3_prefi
         logging.error(f"Error in hansenize function: {e}")
 
 
-# utils.py
-import geopandas as gpd
-import boto3
-import logging
-import os
-import subprocess
-import rasterio
-from rasterio.features import rasterize
-
 # AWS S3 setup with increased max connections
 config = boto3.session.Config(
     retries={
@@ -640,21 +632,3 @@ def rasterize_shapefile(gdf, tile_bounds, tile_transform, tile_width, tile_heigh
     )
     return raster
 
-def compress_file(input_file, output_file):
-    """
-    Compress a GeoTIFF file using LZW compression.
-
-    Parameters:
-    input_file (str): Path to the input GeoTIFF file.
-    output_file (str): Path to save the compressed GeoTIFF file.
-
-    Returns:
-    None
-    """
-    try:
-        subprocess.run(
-            ['gdal_translate', '-co', 'COMPRESS=LZW', '-co', 'TILED=YES', input_file, output_file],
-            check=True
-        )
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Error compressing file {input_file}: {e}")
