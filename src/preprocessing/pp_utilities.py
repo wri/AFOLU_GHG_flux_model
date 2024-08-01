@@ -38,8 +38,14 @@ def s3_file_exists(bucket, key):
         s3_client.head_object(Bucket=bucket, Key=key)
         logging.info(f"File exists: s3://{bucket}/{key}")
         return True
-    except:
+    except s3_client.exceptions.NoSuchKey:
         logging.info(f"File does not exist: s3://{bucket}/{key}")
+        return False
+    except (NoCredentialsError, PartialCredentialsError) as e:
+        logging.error(f"Credentials error: {e}")
+        return False
+    except Exception as e:
+        logging.error(f"Error checking file existence in S3: {e}")
         return False
 
 def list_s3_files(bucket, prefix):
@@ -94,21 +100,24 @@ def resample_raster(input_path, output_path, reference_path):
     Returns:
         None
     """
-    input_raster = rioxarray.open_rasterio(input_path, masked=True)
-    reference_raster = rioxarray.open_rasterio(reference_path, masked=True)
+    try:
+        input_raster = rioxarray.open_rasterio(input_path, masked=True)
+        reference_raster = rioxarray.open_rasterio(reference_path, masked=True)
 
-    log_raster_properties(input_raster, "Input Raster")
-    log_raster_properties(reference_raster, "Reference Raster")
+        log_raster_properties(input_raster, "Input Raster")
+        log_raster_properties(reference_raster, "Reference Raster")
 
-    clipped_resampled_raster = input_raster.rio.clip_box(*reference_raster.rio.bounds())
-    clipped_resampled_raster = clipped_resampled_raster.rio.reproject_match(reference_raster)
+        clipped_resampled_raster = input_raster.rio.clip_box(*reference_raster.rio.bounds())
+        clipped_resampled_raster = clipped_resampled_raster.rio.reproject_match(reference_raster)
 
-    clipped_resampled_raster.rio.to_raster(output_path)
+        clipped_resampled_raster.rio.to_raster(output_path)
 
-    if os.path.exists(output_path):
-        logging.info(f"Successfully saved resampled raster to {output_path}")
-    else:
-        logging.error(f"Failed to save resampled raster to {output_path}")
+        if os.path.exists(output_path):
+            logging.info(f"Successfully saved resampled raster to {output_path}")
+        else:
+            logging.error(f"Failed to save resampled raster to {output_path}")
+    except Exception as e:
+        logging.error(f"Error in resampling raster: {e}")
 
 def compress_and_upload_directory_to_s3(local_directory, s3_bucket, s3_prefix):
     """
@@ -141,7 +150,6 @@ def compress_and_upload_directory_to_s3(local_directory, s3_bucket, s3_prefix):
                     os.remove(compressed_file_path)
                 except (NoCredentialsError, PartialCredentialsError) as e:
                     logging.error(f"Credentials error: {e}")
-                    return
                 except Exception as e:
                     logging.error(f"Failed to upload {local_file_path} to s3://{s3_bucket}/{s3_key}: {e}")
 
@@ -157,12 +165,15 @@ def get_existing_s3_files(s3_bucket, s3_prefix):
         set: A set of S3 keys (paths) of the existing files.
     """
     existing_files = set()
-    paginator = s3_client.get_paginator('list_objects_v2')
-    pages = paginator.paginate(Bucket=s3_bucket, Prefix=s3_prefix)
-    for page in pages:
-        if 'Contents' in page:
-            for obj in page['Contents']:
-                existing_files.add(obj['Key'])
+    try:
+        paginator = s3_client.get_paginator('list_objects_v2')
+        pages = paginator.paginate(Bucket=s3_bucket, Prefix=s3_prefix)
+        for page in pages:
+            if 'Contents' in page:
+                for obj in page['Contents']:
+                    existing_files.add(obj['Key'])
+    except Exception as e:
+        logging.error(f"Error retrieving existing files from S3: {e}")
     return existing_files
 
 def compress_file(input_file, output_file, nodata_value=None):
@@ -254,10 +265,8 @@ def list_tile_ids(bucket, prefix):
             match = re.match(r"(\d{2}[NS]_\d{3}[EW])_peat_mask_processed\.tif", key.split('/')[-1])
             if match:
                 tile_ids.add(match.group(1))
-
     except Exception as e:
         logging.error(f"Error listing files in s3://{bucket}/{prefix}: {e}")
-
     return list(tile_ids)
 
 def get_raster_files_from_local(directory):
@@ -315,13 +324,14 @@ def get_raster_files_from_s3(s3_directory):
     """
     bucket, prefix = s3_directory.replace("s3://", "").split("/", 1)
     paginator = s3_client.get_paginator('list_objects_v2')
-    pages = paginator.paginate(Bucket=bucket, Prefix=prefix)
-
     raster_files = []
-    for page in pages:
-        for obj in page.get('Contents', []):
-            if obj['Key'].endswith('.tif'):
-                raster_files.append(f"s3://{bucket}/{obj['Key']}")
+    try:
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            for obj in page.get('Contents', []):
+                if obj['Key'].endswith('.tif'):
+                    raster_files.append(f"s3://{bucket}/{obj['Key']}")
+    except Exception as e:
+        logging.error(f"Error retrieving raster files from S3: {e}")
     return raster_files
 
 def create_tile_index_from_s3(s3_directories, output_dir):
@@ -361,22 +371,16 @@ def get_tile_ids_from_raster(raster_path, index_shapefile_path):
     Returns:
         list: List of tile IDs that intersect with the raster bounds.
     """
-    # Load the raster and get its bounds
-    raster = rioxarray.open_rasterio(raster_path)
-    raster_bounds = raster.rio.bounds()
-
-    # Create a bounding box from the raster bounds
-    raster_bbox = box(*raster_bounds)
-
-    # Load the global index shapefile
-    index_gdf = gpd.read_file(index_shapefile_path)
-
-    # Find the tiles that intersect with the raster bounding box
-    intersecting_tiles = index_gdf[index_gdf.geometry.intersects(raster_bbox)]
-
-    # Get the tile IDs from the intersecting tiles
-    tile_ids = intersecting_tiles["tile_id"].tolist()
-
+    try:
+        raster = rioxarray.open_rasterio(raster_path)
+        raster_bounds = raster.rio.bounds()
+        raster_bbox = box(*raster_bounds)
+        index_gdf = gpd.read_file(index_shapefile_path)
+        intersecting_tiles = index_gdf[index_gdf.geometry.intersects(raster_bbox)]
+        tile_ids = intersecting_tiles["tile_id"].tolist()
+    except Exception as e:
+        logging.error(f"Error getting tile IDs from raster: {e}")
+        tile_ids = []
     return tile_ids
 
 def get_chunk_bounds(minx, miny, maxx, maxy, chunk_size):
@@ -396,11 +400,9 @@ def get_chunk_bounds(minx, miny, maxx, maxy, chunk_size):
     chunks = []
     x_coords = list(range(int(minx), int(maxx), chunk_size))
     y_coords = list(range(int(miny), int(maxy), chunk_size))
-
     for x in x_coords:
         for y in y_coords:
             chunks.append(box(x, y, x + chunk_size, y + chunk_size))
-
     return chunks
 
 def export_chunks_to_shapefile(chunk_params, output_filename):
@@ -414,12 +416,14 @@ def export_chunks_to_shapefile(chunk_params, output_filename):
     Returns:
         None
     """
-    minx, miny, maxx, maxy, chunk_size = chunk_params
-    chunks = get_chunk_bounds(minx, miny, maxx, maxy, chunk_size)
-
-    gdf = gpd.GeoDataFrame(geometry=chunks, crs="EPSG:4326")
-    gdf.to_file(output_filename, driver='ESRI Shapefile')
-    logging.info(f"Chunk bounds exported to {output_filename}")
+    try:
+        minx, miny, maxx, maxy, chunk_size = chunk_params
+        chunks = get_chunk_bounds(minx, miny, maxx, maxy, chunk_size)
+        gdf = gpd.GeoDataFrame(geometry=chunks, crs="EPSG:4326")
+        gdf.to_file(output_filename, driver='ESRI Shapefile')
+        logging.info(f"Chunk bounds exported to {output_filename}")
+    except Exception as e:
+        logging.error(f"Error exporting chunks to shapefile: {e}")
 
 def get_tile_bounds(index_shapefile, tile_id):
     """
@@ -432,14 +436,16 @@ def get_tile_bounds(index_shapefile, tile_id):
     Returns:
         tuple: Bounding box of the tile (minx, miny, maxx, maxy).
     """
-    gdf = gpd.read_file(index_shapefile)
-    tile = gdf[gdf['tile_id'] == tile_id]
-
-    if tile.empty:
-        logging.error(f"Tile {tile_id} not found in index shapefile.")
-        return None
-
-    bounds = tile.total_bounds
+    try:
+        gdf = gpd.read_file(index_shapefile)
+        tile = gdf[gdf['tile_id'] == tile_id]
+        if tile.empty:
+            logging.error(f"Tile {tile_id} not found in index shapefile.")
+            return None
+        bounds = tile.total_bounds
+    except Exception as e:
+        logging.error(f"Error retrieving tile bounds for {tile_id}: {e}")
+        bounds = None
     return bounds
 
 def compress_and_upload_file_to_s3(local_file, s3_bucket, s3_key):
@@ -477,48 +483,35 @@ def delete_file_if_exists(file_path):
     Returns:
         None
     """
-    if os.path.exists(file_path):
-        os.remove(file_path)
-        logging.info(f"Deleted existing file: {file_path}")
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            logging.info(f"Deleted existing file: {file_path}")
+    except Exception as e:
+        logging.error(f"Error deleting file {file_path}: {e}")
 
-def hansenize(input_path, output_dir, reference_raster_path, s3_bucket, s3_prefix, tile_id, dataset, run_mode='default', nodata_value=None):
+def hansenize_reference_raster(input_path, output_raster_path, reference_raster_path, datatype, s3_bucket, s3_prefix, run_mode='default', nodata_value=0):
     """
     Process input shapefiles or rasters to produce a 30-meter resolution raster
     clipped into homogeneous 10x10 degree tiles.
 
     Args:
         input_path (str): Path to the input shapefile or raster.
-        output_dir (str): Directory to save the output files.
+        output_raster_path (str): Path to the output raster file.
         reference_raster_path (str): Path to the reference raster for alignment.
+        datatype (str): Data type for the output raster (e.g., 'Byte', 'Int16', etc.).
         s3_bucket (str): S3 bucket name for uploading results.
         s3_prefix (str): S3 prefix for saving results.
-        tile_id (str): ID of the tile being processed.
-        dataset (str): Dataset name (e.g., 'dadap' or 'engert').
-        run_mode (str): Mode to run the script ('default' or 'test').
-        nodata_value (float, optional): NoData value for the output raster.
+        run_mode (str): Mode to run the script ('default' or 'test'). Defaults to 'default'.
+        nodata_value (float, optional): NoData value for the output raster. Defaults to 0.
 
     Returns:
         None
     """
-    os.makedirs(output_dir, exist_ok=True)
-
-    output_raster_path = os.path.join(output_dir, f"{dataset}_{tile_id}.tif")
-    compressed_output_path = os.path.join(output_dir, f"{dataset}_{tile_id}_compressed.tif")
-
     try:
         with rasterio.open(reference_raster_path) as ref_ds:
             ref_bounds = ref_ds.bounds
-            ref_transform = ref_ds.transform
-            ref_crs = ref_ds.crs
-            ref_width = ref_ds.width
-            ref_height = ref_ds.height
 
-        # Remove the existing output file if it exists
-        if os.path.exists(output_raster_path):
-            os.remove(output_raster_path)
-            logging.info(f"Deleted existing file: {output_raster_path}")
-
-        # Run gdalwarp to reproject and clip the input raster
         gdalwarp_cmd = [
             'gdalwarp',
             '-t_srs', 'EPSG:4326',
@@ -526,9 +519,11 @@ def hansenize(input_path, output_dir, reference_raster_path, s3_bucket, s3_prefi
             '-tr', '0.00025', '0.00025',
             '-tap',
             '-r', 'near',
-            '-dstnodata', str(nodata_value) if nodata_value else 'None',
-            '-co', 'COMPRESS=LZW',
+            '-dstnodata', str(nodata_value),
+            '-co', 'COMPRESS=DEFLATE',
             '-co', 'TILED=YES',
+            '-ot', datatype,
+            '-overwrite',
             input_path,
             output_raster_path
         ]
@@ -536,20 +531,213 @@ def hansenize(input_path, output_dir, reference_raster_path, s3_bucket, s3_prefi
         logging.info(f"Running gdalwarp command: {' '.join(gdalwarp_cmd)}")
         subprocess.run(gdalwarp_cmd, check=True)
 
-        # Compress the output raster
-        compress_file(output_raster_path, compressed_output_path)
-        logging.info(f"Compressed raster saved to {compressed_output_path}")
+        if run_mode != 'test':
+            s3_key = os.path.join(s3_prefix, os.path.basename(output_raster_path)).replace("\\", "/")
+            logging.info(f"Uploading {output_raster_path} to s3://{s3_bucket}/{s3_key}")
+            s3_client.upload_file(output_raster_path, s3_bucket, s3_key)
+            logging.info(f"Uploaded {output_raster_path} to s3://{s3_bucket}/{s3_key}")
+
+            os.remove(output_raster_path)
+
+        gc.collect()
+    except Exception as e:
+        logging.error(f"Error in hansenize function: {e}")
+
+# def hansenize(
+#     input_path,
+#     output_raster_path,
+#     bounds,
+#     s3_bucket,
+#     s3_prefix,
+#     run_mode='default',
+#     nodata_value=0
+# ):
+#     """
+#     Processes input shapefiles or rasters to produce a 30-meter resolution raster
+#     clipped into homogeneous 10x10 degree tiles.
+#
+#     Parameters:
+#     input_path (str): Path to the input shapefile or raster.
+#     output_raster_path (str): Path to the output raster file.
+#     bounds (tuple): Bounding box (minx, miny, maxx, maxy) to clip the raster.
+#     s3_bucket (str): S3 bucket name for uploading results.
+#     s3_prefix (str): S3 prefix for saving results.
+#     run_mode (str): Mode to run the script ('default' or 'test'). Defaults to 'default'.
+#     nodata_value (float, optional): NoData value for the output raster. Defaults to 0.
+#     """
+#     try:
+#         minx, miny, maxx, maxy = bounds
+#
+#         # Run gdalwarp to reproject and clip the input raster without specifying data type
+#         gdalwarp_cmd = [
+#             'gdalwarp',
+#             '-t_srs', 'EPSG:4326',
+#             '-te', str(minx), str(miny), str(maxx), str(maxy),
+#             '-tr', '0.00025', '0.00025',
+#             '-tap',
+#             '-r', 'near',
+#             '-dstnodata', str(nodata_value),
+#             # '-co', 'COMPRESS=DEFLATE',
+#             '-co', 'COMPRESS=LZW',
+#             '-co', 'TILED=YES',
+#             '-overwrite',
+#             input_path,
+#             output_raster_path
+#         ]
+#
+#         logging.info(f"Running gdalwarp command: {' '.join(gdalwarp_cmd)}")
+#         subprocess.run(gdalwarp_cmd, check=True)
+#
+#         # Upload to S3 if not in test mode
+#         if run_mode != 'test':
+#             s3_key = os.path.join(s3_prefix, os.path.basename(output_raster_path)).replace("\\", "/")
+#             logging.info(f"Uploading {output_raster_path} to s3://{s3_bucket}/{s3_key}")
+#             s3_client.upload_file(output_raster_path, s3_bucket, s3_key)
+#             logging.info(f"Uploaded {output_raster_path} to s3://{s3_bucket}/{s3_key}")
+#
+#             # Delete local files if not in test mode
+#             os.remove(output_raster_path)
+#
+#         gc.collect()
+#
+#     except Exception as e:
+#         logging.error(f"Error in hansenize function: {e}")
+
+# def hansenize(
+#     input_path,
+#     output_raster_path,
+#     bounds,
+#     s3_bucket,
+#     s3_prefix,
+#     run_mode='default',
+#     nodata_value=None
+# ):
+#     """
+#     Processes input shapefiles or rasters to produce a 30-meter resolution raster
+#     clipped into homogeneous 10x10 degree tiles.
+#
+#     Some issues to note:
+#         Tried changing the data type to Uint16 or Uint8 and got strange results - couldn't get this working
+#         Also tried several no data settings but this is causing strange data stretching
+#         Currently, the exports work and the data values are correct but they show up with odd legend values in Pro
+#         Working to diagnose this problem
+#
+#     Parameters:
+#     input_path (str): Path to the input shapefile or raster.
+#     output_raster_path (str): Path to the output raster file.
+#     bounds (tuple): Bounding box (minx, miny, maxx, maxy) to clip the raster.
+#     s3_bucket (str): S3 bucket name for uploading results.
+#     s3_prefix (str): S3 prefix for saving results.
+#     run_mode (str): Mode to run the script ('default' or 'test'). Defaults to 'default'.
+#     nodata_value (float, optional): NoData value for the output raster. Defaults to None.
+#     """
+#     try:
+#         minx, miny, maxx, maxy = bounds
+#
+#         # Retrieve original data type if possible
+#         with rasterio.open(input_path) as src:
+#             original_dtype = src.profile['dtype']
+#             original_nodata = src.nodata
+#             if nodata_value is None:
+#                 nodata_value = original_nodata if original_nodata is not None else 0
+#
+#         # Run gdalwarp to reproject and clip the input raster without changing the data type
+#         gdalwarp_cmd = [
+#             'gdalwarp',
+#             '-t_srs', 'EPSG:4326',
+#             '-te', str(minx), str(miny), str(maxx), str(maxy),
+#             '-tr', '0.00025', '0.00025',
+#             '-tap',
+#             '-r', 'near',
+#             '-dstnodata', str(nodata_value),
+#             '-co', 'COMPRESS=DEFLATE',
+#             '-co', 'TILED=YES',
+#             '-overwrite',
+#             input_path,
+#             output_raster_path
+#         ]
+#
+#         logging.info(f"Running gdalwarp command: {' '.join(gdalwarp_cmd)}")
+#         subprocess.run(gdalwarp_cmd, check=True)
+#
+#         # Log data statistics
+#         with rasterio.open(output_raster_path) as output:
+#             data = output.read(1)
+#             logging.info(f"Processed raster stats - Min: {data.min()}, Max: {data.max()}, NoData: {output.nodata}")
+#
+#         # Upload to S3 if not in test mode
+#         if run_mode != 'test':
+#             s3_key = os.path.join(s3_prefix, os.path.basename(output_raster_path)).replace("\\", "/")
+#             logging.info(f"Uploading {output_raster_path} to s3://{s3_bucket}/{s3_key}")
+#             s3_client.upload_file(output_raster_path, s3_bucket, s3_key)
+#             logging.info(f"Uploaded {output_raster_path} to s3://{s3_bucket}/{s3_key}")
+#
+#             # Delete local files if not in test mode
+#             os.remove(output_raster_path)
+#
+#         gc.collect()
+#
+#     except Exception as e:
+#         logging.error(f"Error in hansenize function: {e}")
+
+def hansenize(
+    input_path,
+    output_raster_path,
+    bounds,
+    s3_bucket,
+    s3_prefix,
+    run_mode='default',
+    nodata_value=None
+):
+    """
+    Processes input shapefiles or rasters to produce a 30-meter resolution raster
+    clipped into homogeneous 10x10 degree tiles.
+
+    Parameters:
+    input_path (str): Path to the input shapefile or raster.
+    output_raster_path (str): Path to the output raster file.
+    bounds (tuple): Bounding box (minx, miny, maxx, maxy) to clip the raster.
+    s3_bucket (str): S3 bucket name for uploading results.
+    s3_prefix (str): S3 prefix for saving results.
+    run_mode (str): Mode to run the script ('default' or 'test'). Defaults to 'default'.
+    nodata_value (float, optional): NoData value for the output raster. Defaults to None.
+    """
+    try:
+        minx, miny, maxx, maxy = bounds
+
+        # Run gdalwarp to reproject and clip the input raster without changing the data type
+        gdalwarp_cmd = [
+            'gdalwarp',
+            '-t_srs', 'EPSG:4326',
+            '-te', str(minx), str(miny), str(maxx), str(maxy),
+            '-tr', '0.00025', '0.00025',
+            '-tap',
+            '-r', 'near',
+            '-dstnodata', str(nodata_value) if nodata_value is not None else '-inf',
+            '-co', 'COMPRESS=DEFLATE',
+            '-co', 'TILED=YES',
+            '-overwrite',
+            input_path,
+            output_raster_path
+        ]
+
+        logging.info(f"Running gdalwarp command: {' '.join(gdalwarp_cmd)}")
+        subprocess.run(gdalwarp_cmd, check=True)
+
+        # Log data statistics
+        with rasterio.open(output_raster_path) as output:
+            data = output.read(1)
+            logging.info(f"Processed raster stats - Min: {data.min()}, Max: {data.max()}, NoData: {output.nodata}")
 
         # Upload to S3 if not in test mode
         if run_mode != 'test':
-            s3_key = os.path.join(s3_prefix, os.path.basename(compressed_output_path)).replace("\\", "/")
-            logging.info(f"Uploading {compressed_output_path} to s3://{s3_bucket}/{s3_key}")
-            s3_client.upload_file(compressed_output_path, s3_bucket, s3_key)
-            logging.info(f"Uploaded {compressed_output_path} to s3://{s3_bucket}/{s3_key}")
+            s3_key = os.path.join(s3_prefix, os.path.basename(output_raster_path)).replace("\\", "/")
+            logging.info(f"Uploading {output_raster_path} to s3://{s3_bucket}/{s3_key}")
+            s3_client.upload_file(output_raster_path, s3_bucket, s3_key)
+            logging.info(f"Uploaded {output_raster_path} to s3://{s3_bucket}/{s3_key}")
 
             # Delete local files if not in test mode
             os.remove(output_raster_path)
-            os.remove(compressed_output_path)
 
         gc.collect()
 
@@ -557,78 +745,72 @@ def hansenize(input_path, output_dir, reference_raster_path, s3_bucket, s3_prefi
         logging.error(f"Error in hansenize function: {e}")
 
 
-# AWS S3 setup with increased max connections
-config = boto3.session.Config(
-    retries={
-        'max_attempts': 10,
-        'mode': 'standard'
-    },
-    max_pool_connections=50
-)
-s3_client = boto3.client('s3', config=config)
-
 def download_shapefile_from_s3(s3_prefix, local_dir, s3_bucket_name):
     """
     Download the shapefile and its associated files from S3 to a local directory.
 
-    Parameters:
-    s3_prefix (str): The S3 prefix (path without the file extension) for the shapefile.
-    local_dir (str): The local directory where the files will be saved.
-    s3_bucket_name (str): The name of the S3 bucket.
+    Args:
+        s3_prefix (str): The S3 prefix (path without the file extension) for the shapefile.
+        local_dir (str): The local directory where the files will be saved.
+        s3_bucket_name (str): The name of the S3 bucket.
 
     Returns:
-    None
+        None
     """
     extensions = ['.shp', '.shx', '.dbf', '.prj']
-    for ext in extensions:
-        s3_path = f"{s3_prefix}{ext}"
-        local_path = os.path.join(local_dir, os.path.basename(s3_prefix) + ext)
-        try:
+    try:
+        for ext in extensions:
+            s3_path = f"{s3_prefix}{ext}"
+            local_path = os.path.join(local_dir, os.path.basename(s3_prefix) + ext)
             s3_client.download_file(s3_bucket_name, s3_path, local_path)
-        except Exception as e:
-            logging.error(f"Error downloading {s3_path}: {e}")
+    except Exception as e:
+        logging.error(f"Error downloading shapefile from S3: {e}")
 
 def read_shapefile_from_s3(s3_prefix, local_dir, s3_bucket_name):
     """
     Read a shapefile from S3 into a GeoDataFrame.
 
-    Parameters:
-    s3_prefix (str): The S3 prefix (path without the file extension) for the shapefile.
-    local_dir (str): The local directory where the files will be saved.
-    s3_bucket_name (str): The name of the S3 bucket.
+    Args:
+        s3_prefix (str): The S3 prefix (path without the file extension) for the shapefile.
+        local_dir (str): The local directory where the files will be saved.
+        s3_bucket_name (str): The name of the S3 bucket.
 
     Returns:
-    gpd.GeoDataFrame: The loaded GeoDataFrame.
+        gpd.GeoDataFrame: The loaded GeoDataFrame.
     """
-    download_shapefile_from_s3(s3_prefix, local_dir, s3_bucket_name)
-    shapefile_path = os.path.join(local_dir, os.path.basename(s3_prefix) + '.shp')
-    gdf = gpd.read_file(shapefile_path)
+    try:
+        download_shapefile_from_s3(s3_prefix, local_dir, s3_bucket_name)
+        shapefile_path = os.path.join(local_dir, os.path.basename(s3_prefix) + '.shp')
+        gdf = gpd.read_file(shapefile_path)
+    except Exception as e:
+        logging.error(f"Error reading shapefile from S3: {e}")
+        gdf = gpd.GeoDataFrame()  # Return an empty GeoDataFrame in case of error
     return gdf
 
 def rasterize_shapefile(gdf, tile_bounds, tile_transform, tile_width, tile_height):
     """
     Rasterize a shapefile to create a raster where features are assigned a value of 1.
 
-    Parameters:
-    gdf (gpd.GeoDataFrame): The GeoDataFrame to rasterize.
-    tile_bounds (tuple): The bounding box of the tile.
-    tile_transform (affine.Affine): The affine transform for the tile.
-    tile_width (int): The width of the tile in pixels.
-    tile_height (int): The height of the tile in pixels.
+    Args:
+        gdf (gpd.GeoDataFrame): The GeoDataFrame to rasterize.
+        tile_bounds (tuple): The bounding box of the tile.
+        tile_transform (affine.Affine): The affine transform for the tile.
+        tile_width (int): The width of the tile in pixels.
+        tile_height (int): The height of the tile in pixels.
 
     Returns:
-    np.ndarray: The rasterized data.
+        np.ndarray: The rasterized data.
     """
-    shapes = [(geom, 1) for geom in gdf.geometry if isinstance(geom, Polygon)]
-    if not shapes:
-        logging.error("No valid geometries found for rasterization.")
-        return None
-    raster = rasterize(
-        shapes,
-        out_shape=(tile_height, tile_width),
-        transform=tile_transform,
-        fill=0,
-        dtype=rasterio.uint8
-    )
+    try:
+        shapes = [(geom, 1) for geom in gdf.geometry if geom is not None]
+        raster = rasterize(
+            shapes,
+            out_shape=(tile_height, tile_width),
+            transform=tile_transform,
+            fill=0,
+            dtype=rasterio.uint8
+        )
+    except Exception as e:
+        logging.error(f"Error rasterizing shapefile: {e}")
+        raster = None
     return raster
-
