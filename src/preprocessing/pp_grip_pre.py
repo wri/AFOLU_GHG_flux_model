@@ -6,7 +6,7 @@ from dask.distributed import Client, LocalCluster
 from dask.diagnostics import ProgressBar
 import pandas as pd
 
-from pp_utilities import get_existing_s3_files, compress_and_upload_directory_to_s3
+import pp_utilities as uu
 
 """
 This script processes GRIP (Global Roads Inventory Project) roads by tiles using a pre-existing tile index shapefile.
@@ -16,9 +16,11 @@ roads shapefiles, clips the roads data to the tile boundaries, and saves the res
 The script uses Dask to parallelize the processing of multiple tiles.
 
 Functions:
-- read_tiles_shapefile: Reads and returns the tile index shapefile.
+- read_tiles_shapefile: Reads and returns the tile index shapefile from S3.
+- download_regional_shapefiles: Downloads regional shapefiles from S3 to a local directory.
 - process_tile: Processes a single tile by reading and clipping road data within the tile's bounds.
 - process_all_tiles: Processes all tiles using Dask for parallelization.
+- upload_to_s3: Compresses and uploads processed tiles to S3.
 - main: Main function to orchestrate the processing based on provided arguments.
 
 Usage examples:
@@ -44,38 +46,52 @@ Note: The script assumes the presence of the required shapefiles and directories
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Paths
-regional_shapefiles = [
-    r"C:\GIS\Data\Global\GRIP\byRegion\GRIP4_Region1_vector_shp\GRIP4_region1.shp",
-    r"C:\GIS\Data\Global\GRIP\byRegion\GRIP4_Region2_vector_shp\GRIP4_region2.shp",
-    r"C:\GIS\Data\Global\GRIP\byRegion\GRIP4_Region3_vector_shp\GRIP4_region3.shp",
-    r"C:\GIS\Data\Global\GRIP\byRegion\GRIP4_Region4_vector_shp\GRIP4_region4.shp",
-    r"C:\GIS\Data\Global\GRIP\byRegion\GRIP4_Region5_vector_shp\GRIP4_region5.shp",
-    r"C:\GIS\Data\Global\GRIP\byRegion\GRIP4_Region6_vector_shp\GRIP4_region6.shp"
+index_shapefile_prefix = 'climate/AFOLU_flux_model/organic_soils/inputs/raw/index/Global_Peatlands'
+s3_regional_shapefiles = [
+    "climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/grip_roads/regional_shapefiles/GRIP4_Region1_vector_shp/GRIP4_region1.shp",
+    "climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/grip_roads/regional_shapefiles/GRIP4_Region2_vector_shp/GRIP4_region2.shp",
+    "climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/grip_roads/regional_shapefiles/GRIP4_Region3_vector_shp/GRIP4_region3.shp",
+    "climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/grip_roads/regional_shapefiles/GRIP4_Region4_vector_shp/GRIP4_region4.shp",
+    "climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/grip_roads/regional_shapefiles/GRIP4_Region5_vector_shp/GRIP4_region5.shp",
+    "climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/grip_roads/regional_shapefiles/GRIP4_Region6_vector_shp/GRIP4_region6.shp",
+    "climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/grip_roads/regional_shapefiles/GRIP4_Region7_vector_shp/GRIP4_region7.shp"
 ]
-tiles_shapefile_path = r"C:\GIS\Data\Global\Wetlands\Raw\Global\gfw_peatlands\Global_Peatlands_Index\Global_Peatlands.shp"
+local_temp_dir = "C:/GIS/Data/Global/Wetlands/Processed/30_m_temp"
 output_dir = r"C:\GIS\Data\Global\GRIP\roads_by_tile"
+s3_output_prefix = 'climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/grip_roads/roads_by_tile/'
 
 os.makedirs(output_dir, exist_ok=True)
 
 def read_tiles_shapefile():
-    """
-    Reads the tiles shapefile from the local directory.
-    Returns:
-        GeoDataFrame: A GeoDataFrame containing the tiles.
-    """
+    logging.info("Downloading tiles shapefile from S3 to local directory")
+    uu.read_shapefile_from_s3(index_shapefile_prefix, local_temp_dir, s3_bucket_name='gfw2-data')
+    shapefile_path = os.path.join(local_temp_dir, 'Global_Peatlands.shp')
     logging.info("Reading tiles shapefile from local directory")
-    tiles_gdf = gpd.read_file(tiles_shapefile_path)
+    tiles_gdf = gpd.read_file(shapefile_path)
     logging.info(f"Columns in tiles shapefile: {tiles_gdf.columns}")
     return tiles_gdf
 
-@dask.delayed
-def process_tile(tile):
-    """
-    Processes a single tile by reading and clipping road data within the tile's bounds.
+def download_regional_shapefiles():
+    downloaded_shapefiles = []
+    s3_bucket_name = 'gfw2-data'
+    for s3_path in s3_regional_shapefiles:
+        local_shapefile_path = os.path.join(local_temp_dir, os.path.basename(s3_path))
 
-    Args:
-        tile (GeoSeries): The tile to process.
-    """
+        # Check if the shapefile already exists locally
+        if all(os.path.exists(local_shapefile_path + ext) for ext in ['.shp', '.shx', '.dbf', '.prj']):
+            logging.info(f"Shapefile {local_shapefile_path} already exists locally. Skipping download.")
+            downloaded_shapefiles.append(local_shapefile_path + '.shp')
+            continue
+
+        logging.info(f"Downloading regional shapefile {s3_path}")
+        uu.read_shapefile_from_s3(s3_path, local_temp_dir, s3_bucket_name)
+        downloaded_shapefiles.append(local_shapefile_path + '.shp')
+        logging.info(f"Downloaded and saved regional shapefile to {local_shapefile_path + '.shp'}")
+
+    return downloaded_shapefiles
+
+@dask.delayed
+def process_tile(tile, regional_shapefiles):
     tile_id = tile['tile_id']  # Assuming the tile ID is stored in a column named 'tile_id'
     output_path = os.path.join(output_dir, f"roads_{tile_id}.shp")
 
@@ -110,44 +126,40 @@ def process_tile(tile):
         logging.error(f"Error processing tile {tile_id}: {e}")
 
 def process_all_tiles(tiles_gdf):
-    """
-    Processes all tiles using Dask for parallelization.
-
-    Args:
-        tiles_gdf (GeoDataFrame): GeoDataFrame containing all tiles.
-    """
-    tasks = [process_tile(tile) for idx, tile in tiles_gdf.iterrows()]
+    regional_shapefiles = download_regional_shapefiles()
+    tasks = [process_tile(tile, regional_shapefiles) for idx, tile in tiles_gdf.iterrows()]
     with ProgressBar():
         dask.compute(*tasks)
 
-def main(tile_id=None):
-    """
-    Main function to orchestrate the processing based on provided arguments.
+def upload_to_s3():
+    logging.info(f"Starting upload of processed tiles to S3: {s3_output_prefix}")
+    uu.compress_and_upload_directory_to_s3(output_dir, 'gfw2-data', s3_output_prefix)
+    logging.info(f"Finished uploading processed tiles to S3: {s3_output_prefix}")
 
-    Args:
-        tile_id (str, optional): ID of the tile to process. Defaults to None.
-    """
+def main(tile_id=None):
     tiles_gdf = read_tiles_shapefile()
     if tile_id:
-        # Process a single tile
         tile = tiles_gdf[tiles_gdf['tile_id'] == tile_id].iloc[0]
-        process_tile(tile).compute()
+        regional_shapefiles = download_regional_shapefiles()
+        process_tile(tile, regional_shapefiles).compute()
     else:
-        # Process all tiles
         process_all_tiles(tiles_gdf)
+    upload_to_s3()
 
 if __name__ == '__main__':
     # Initialize Dask client
     cluster = LocalCluster()
     client = Client(cluster)
+    logging.info("Dask client initialized")
 
     try:
         # Example usage
         # Replace 'test_tile_id' with the actual tile ID you want to test
-        # main(tile_id='00N_110E')
+        main(tile_id='00N_110E')
 
         # To process all tiles, comment out the above line and uncomment the line below
-        main()
+        # main()
     finally:
         # Close Dask client
         client.close()
+        logging.info("Dask client closed")
