@@ -7,6 +7,7 @@ from dask.diagnostics import ProgressBar
 import pandas as pd
 
 import pp_utilities as uu
+import constants_and_names as cn
 
 """
 This script processes GRIP (Global Roads Inventory Project) roads by tiles using a pre-existing tile index shapefile.
@@ -45,27 +46,12 @@ Note: The script assumes the presence of the required shapefiles and directories
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Paths
-index_shapefile_prefix = 'climate/AFOLU_flux_model/organic_soils/inputs/raw/index/Global_Peatlands'
-s3_regional_shapefiles = [
-    "climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/grip_roads/regional_shapefiles/GRIP4_Region1_vector_shp/GRIP4_region1.shp",
-    "climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/grip_roads/regional_shapefiles/GRIP4_Region2_vector_shp/GRIP4_region2.shp",
-    "climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/grip_roads/regional_shapefiles/GRIP4_Region3_vector_shp/GRIP4_region3.shp",
-    "climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/grip_roads/regional_shapefiles/GRIP4_Region4_vector_shp/GRIP4_region4.shp",
-    "climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/grip_roads/regional_shapefiles/GRIP4_Region5_vector_shp/GRIP4_region5.shp",
-    "climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/grip_roads/regional_shapefiles/GRIP4_Region6_vector_shp/GRIP4_region6.shp",
-    "climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/grip_roads/regional_shapefiles/GRIP4_Region7_vector_shp/GRIP4_region7.shp"
-]
-local_temp_dir = "C:/GIS/Data/Global/Wetlands/Processed/30_m_temp"
-output_dir = r"C:\GIS\Data\Global\GRIP\roads_by_tile"
-s3_output_prefix = 'climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/grip_roads/roads_by_tile/'
-
-os.makedirs(output_dir, exist_ok=True)
+os.makedirs(cn.output_dir, exist_ok=True)
 
 def read_tiles_shapefile():
     logging.info("Downloading tiles shapefile from S3 to local directory")
-    uu.read_shapefile_from_s3(index_shapefile_prefix, local_temp_dir, s3_bucket_name='gfw2-data')
-    shapefile_path = os.path.join(local_temp_dir, 'Global_Peatlands.shp')
+    uu.read_shapefile_from_s3(cn.index_shapefile_prefix, cn.local_temp_dir, cn.s3_bucket_name)
+    shapefile_path = os.path.join(cn.local_temp_dir, 'Global_Peatlands.shp')
     logging.info("Reading tiles shapefile from local directory")
     tiles_gdf = gpd.read_file(shapefile_path)
     logging.info(f"Columns in tiles shapefile: {tiles_gdf.columns}")
@@ -73,9 +59,8 @@ def read_tiles_shapefile():
 
 def download_regional_shapefiles():
     downloaded_shapefiles = []
-    s3_bucket_name = 'gfw2-data'
-    for s3_path in s3_regional_shapefiles:
-        local_shapefile_path = os.path.join(local_temp_dir, os.path.basename(s3_path))
+    for s3_path in cn.s3_regional_shapefiles:
+        local_shapefile_path = os.path.join(cn.local_temp_dir, os.path.splitext(os.path.basename(s3_path))[0])
 
         # Check if the shapefile already exists locally
         if all(os.path.exists(local_shapefile_path + ext) for ext in ['.shp', '.shx', '.dbf', '.prj']):
@@ -84,7 +69,7 @@ def download_regional_shapefiles():
             continue
 
         logging.info(f"Downloading regional shapefile {s3_path}")
-        uu.read_shapefile_from_s3(s3_path, local_temp_dir, s3_bucket_name)
+        uu.read_shapefile_from_s3(s3_path, cn.local_temp_dir, cn.s3_bucket_name)
         downloaded_shapefiles.append(local_shapefile_path + '.shp')
         logging.info(f"Downloaded and saved regional shapefile to {local_shapefile_path + '.shp'}")
 
@@ -93,7 +78,7 @@ def download_regional_shapefiles():
 @dask.delayed
 def process_tile(tile, regional_shapefiles):
     tile_id = tile['tile_id']  # Assuming the tile ID is stored in a column named 'tile_id'
-    output_path = os.path.join(output_dir, f"roads_{tile_id}.shp")
+    output_path = os.path.join(cn.output_dir, f"roads_{tile_id}.shp")
 
     if os.path.exists(output_path):
         logging.info(f"Output file {output_path} already exists. Skipping tile {tile_id}.")
@@ -132,9 +117,9 @@ def process_all_tiles(tiles_gdf):
         dask.compute(*tasks)
 
 def upload_to_s3():
-    logging.info(f"Starting upload of processed tiles to S3: {s3_output_prefix}")
-    uu.compress_and_upload_directory_to_s3(output_dir, 'gfw2-data', s3_output_prefix)
-    logging.info(f"Finished uploading processed tiles to S3: {s3_output_prefix}")
+    logging.info(f"Starting upload of processed tiles to S3: {cn.s3_output_prefix}")
+    uu.compress_and_upload_directory_to_s3(cn.output_dir, cn.s3_bucket_name, cn.s3_output_prefix)
+    logging.info(f"Finished uploading processed tiles to S3: {cn.s3_output_prefix}")
 
 def main(tile_id=None):
     tiles_gdf = read_tiles_shapefile()
