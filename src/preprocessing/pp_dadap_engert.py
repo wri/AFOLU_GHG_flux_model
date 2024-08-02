@@ -3,6 +3,7 @@ import logging
 import gc
 import boto3
 import pp_utilities as uu
+import constants_and_names as cn
 
 """
 This script processes raster tiles by resampling them to a specified resolution,
@@ -16,21 +17,6 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
 # AWS S3 setup
 s3_client = boto3.client('s3')
-s3_bucket_name = 'gfw2-data'
-s3_tiles_prefix = 'climate/carbon_model/other_emissions_inputs/peatlands/processed/20230315/'
-index_shapefile_prefix = 'climate/AFOLU_flux_model/organic_soils/inputs/raw/index/Global_Peatlands'
-
-# Local paths
-local_temp_dir = "C:/GIS/Data/Global/Wetlands/Processed/30_m_temp"
-os.makedirs(local_temp_dir, exist_ok=True)
-raw_rasters = {
-    'engert': 'climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/engert_roads/engert_asiapac_ghrdens_1km_resample_30m.tif',
-    'dadap': 'climate/AFOLU_flux_model/organic_soils/inputs/raw/canals/Dadap_SEA_Drainage/canal_length_data/canal_length_1km_resample_30m.tif'
-}
-output_prefixes = {
-    'engert': 'climate/AFOLU_flux_model/organic_soils/inputs/processed/engert_density/30m',
-    'dadap': 'climate/AFOLU_flux_model/organic_soils/inputs/processed/dadap_density/30m'
-}
 
 def process_tile(tile_key, dataset, tile_bounds, run_mode='default'):
     """
@@ -45,17 +31,17 @@ def process_tile(tile_key, dataset, tile_bounds, run_mode='default'):
     Returns:
     None
     """
-    output_dir = local_temp_dir
+    output_dir = cn.local_temp_dir
     os.makedirs(output_dir, exist_ok=True)
 
-    s3_output_dir = output_prefixes[dataset]
+    s3_output_dir = cn.output_prefixes[dataset]
     tile_id = '_'.join(os.path.basename(tile_key).split('_')[:2])
     local_output_path = os.path.join(output_dir, f"{dataset}_{tile_id}.tif")
     s3_output_path = f"{s3_output_dir}/{dataset}_{tile_id}.tif".replace("\\", "/")
 
     if run_mode != 'test':
         try:
-            s3_client.head_object(Bucket=s3_bucket_name, Key=s3_output_path)
+            s3_client.head_object(Bucket=cn.s3_bucket_name, Key=s3_output_path)
             logging.info(f"{s3_output_path} already exists on S3. Skipping processing.")
             return
         except s3_client.exceptions.ClientError as e:
@@ -66,7 +52,7 @@ def process_tile(tile_key, dataset, tile_bounds, run_mode='default'):
                 return
 
     logging.info(f"Starting processing of the tile {tile_id}")
-    raw_raster_path = f'/vsis3/{s3_bucket_name}/{raw_rasters[dataset]}'
+    raw_raster_path = f'/vsis3/{cn.s3_bucket_name}/{cn.raw_rasters[dataset]}'
     logging.info(f"Processing raw raster: {raw_raster_path}")
 
     try:
@@ -78,7 +64,7 @@ def process_tile(tile_key, dataset, tile_bounds, run_mode='default'):
             input_path=raw_raster_path,
             output_raster_path=local_output_path,
             bounds=tile_bounds,
-            s3_bucket=s3_bucket_name,
+            s3_bucket=cn.s3_bucket_name,
             s3_prefix=s3_output_dir,
             run_mode=run_mode
         )
@@ -100,16 +86,16 @@ def process_all_tiles(dataset, run_mode='default'):
     """
     try:
         # Ensure the index shapefile is downloaded and get the local path
-        index_shapefile_path = os.path.join(local_temp_dir, os.path.basename(index_shapefile_prefix) + '.shp')
-        uu.read_shapefile_from_s3(index_shapefile_prefix, local_temp_dir, s3_bucket_name)
+        index_shapefile_path = os.path.join(cn.local_temp_dir, os.path.basename(cn.index_shapefile_prefix) + '.shp')
+        uu.read_shapefile_from_s3(cn.index_shapefile_prefix, cn.local_temp_dir, cn.s3_bucket_name)
 
         # Retrieve the list of tile IDs
-        raw_raster_path = f'/vsis3/{s3_bucket_name}/{raw_rasters[dataset]}'
+        raw_raster_path = f'/vsis3/{cn.s3_bucket_name}/{cn.raw_rasters[dataset]}'
         tile_ids = uu.get_tile_ids_from_raster(raw_raster_path, index_shapefile_path)
         logging.info(f"Processing {len(tile_ids)} tiles for dataset {dataset}")
 
         for tile_id in tile_ids:
-            tile_key = f"{s3_tiles_prefix}{tile_id}_peat_mask_processed.tif"
+            tile_key = f"{cn.s3_tiles_prefix}{tile_id}{cn.peat_pattern}"
             tile_bounds = uu.get_tile_bounds(index_shapefile_path, tile_id)
             process_tile(tile_key, dataset, tile_bounds, run_mode)
     except Exception as e:
@@ -130,10 +116,10 @@ def main(tile_id=None, dataset='engert', run_mode='default'):
     try:
         if tile_id:
             # Manually specify the tile bounds if a specific tile is requested
-            index_shapefile_path = os.path.join(local_temp_dir, os.path.basename(index_shapefile_prefix) + '.shp')
-            uu.read_shapefile_from_s3(index_shapefile_prefix, local_temp_dir, s3_bucket_name)
+            index_shapefile_path = os.path.join(cn.local_temp_dir, os.path.basename(cn.index_shapefile_prefix) + '.shp')
+            uu.read_shapefile_from_s3(cn.index_shapefile_prefix, cn.local_temp_dir, cn.s3_bucket_name)
             tile_bounds = uu.get_tile_bounds(index_shapefile_path, tile_id)
-            tile_key = f"{s3_tiles_prefix}{tile_id}_peat_mask_processed.tif"
+            tile_key = f"{cn.s3_tiles_prefix}{tile_id}{cn.peat_pattern}"
             process_tile(tile_key, dataset, tile_bounds, run_mode)
         else:
             process_all_tiles(dataset, run_mode)
