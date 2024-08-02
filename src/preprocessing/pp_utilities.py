@@ -744,7 +744,6 @@ def hansenize(
     except Exception as e:
         logging.error(f"Error in hansenize function: {e}")
 
-
 def download_shapefile_from_s3(s3_prefix, local_dir, s3_bucket_name):
     """
     Download the shapefile and its associated files from S3 to a local directory.
@@ -814,3 +813,20 @@ def rasterize_shapefile(gdf, tile_bounds, tile_transform, tile_width, tile_heigh
         logging.error(f"Error rasterizing shapefile: {e}")
         raster = None
     return raster
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
