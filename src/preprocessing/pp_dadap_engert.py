@@ -2,14 +2,13 @@ import os
 import logging
 import gc
 import boto3
-from pp_utilities import compress_file, hansenize, get_tile_ids_from_raster, get_tile_bounds, read_shapefile_from_s3
+import pp_utilities as uu
 
 """
 This script processes raster tiles by resampling them to a specified resolution,
 clipping them to tile bounds, and uploading the processed tiles to S3.
 This script is not currently using dask but I plan to set up a version that uses dask.
-TODO: solve weird statistics problem 
-
+TODO: solve weird statistics problem
 """
 
 # Setup logging
@@ -75,15 +74,13 @@ def process_tile(tile_key, dataset, tile_bounds, run_mode='default'):
             logging.error(f"Tile bounds not found for {tile_id}")
             return
 
-        hansenize(
+        uu.hansenize(
             input_path=raw_raster_path,
             output_raster_path=local_output_path,
             bounds=tile_bounds,
-            # datatype='UInt16',  # Adjust datatype as needed
             s3_bucket=s3_bucket_name,
             s3_prefix=s3_output_dir,
-            run_mode=run_mode,
-            # nodata_value=0  # Standardize NoData value
+            run_mode=run_mode
         )
 
         logging.info("Processing completed")
@@ -104,16 +101,16 @@ def process_all_tiles(dataset, run_mode='default'):
     try:
         # Ensure the index shapefile is downloaded and get the local path
         index_shapefile_path = os.path.join(local_temp_dir, os.path.basename(index_shapefile_prefix) + '.shp')
-        read_shapefile_from_s3(index_shapefile_prefix, local_temp_dir, s3_bucket_name)
+        uu.read_shapefile_from_s3(index_shapefile_prefix, local_temp_dir, s3_bucket_name)
 
         # Retrieve the list of tile IDs
         raw_raster_path = f'/vsis3/{s3_bucket_name}/{raw_rasters[dataset]}'
-        tile_ids = get_tile_ids_from_raster(raw_raster_path, index_shapefile_path)
+        tile_ids = uu.get_tile_ids_from_raster(raw_raster_path, index_shapefile_path)
         logging.info(f"Processing {len(tile_ids)} tiles for dataset {dataset}")
 
         for tile_id in tile_ids:
             tile_key = f"{s3_tiles_prefix}{tile_id}_peat_mask_processed.tif"
-            tile_bounds = get_tile_bounds(index_shapefile_path, tile_id)  # Correctly pass the path
+            tile_bounds = uu.get_tile_bounds(index_shapefile_path, tile_id)
             process_tile(tile_key, dataset, tile_bounds, run_mode)
     except Exception as e:
         logging.error(f"Error processing all tiles: {e}")
@@ -134,8 +131,8 @@ def main(tile_id=None, dataset='engert', run_mode='default'):
         if tile_id:
             # Manually specify the tile bounds if a specific tile is requested
             index_shapefile_path = os.path.join(local_temp_dir, os.path.basename(index_shapefile_prefix) + '.shp')
-            read_shapefile_from_s3(index_shapefile_prefix, local_temp_dir, s3_bucket_name)
-            tile_bounds = get_tile_bounds(index_shapefile_path, tile_id)  # Correct usage here
+            uu.read_shapefile_from_s3(index_shapefile_prefix, local_temp_dir, s3_bucket_name)
+            tile_bounds = uu.get_tile_bounds(index_shapefile_path, tile_id)
             tile_key = f"{s3_tiles_prefix}{tile_id}_peat_mask_processed.tif"
             process_tile(tile_key, dataset, tile_bounds, run_mode)
         else:
