@@ -34,25 +34,25 @@ import geopandas as gpd
 import os
 import logging
 import subprocess
-import shapely.geometry
 from datetime import datetime
 import pandas as pd
 
-from utilities import get_existing_s3_files, compress_and_upload_directory_to_s3
+import pp_utilities as uu
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Paths
+# Paths TODO add logic to automatically create these paths and integrate with other osm preprocessing
 filtered_canals_path = r"C:\GIS\Data\Global\OSM\filtered_canals"
 filtered_highways_path = r"C:\GIS\Data\Global\OSM\filtered_highways"
 output_dir_roads = r"C:\GIS\Data\Global\OSM\roads_by_tile"
 output_dir_canals = r"C:\GIS\Data\Global\OSM\canals_by_tile"
+local_temp_dir = "C:/GIS/Data/Global/Wetlands/Processed/30_m_temp"
+s3_bucket_name = 'gfw2-data'
+index_shapefile_prefix = 'climate/AFOLU_flux_model/organic_soils/inputs/raw/index/Global_Peatlands'
+
 os.makedirs(output_dir_roads, exist_ok=True)
 os.makedirs(output_dir_canals, exist_ok=True)
-
-# Path to the updated tile index shapefile
-updated_tile_index_path = r"C:\GIS\Data\Global\Wetlands\Raw\Global\gfw_peatlands\Global_Peatlands_Index\Global_Peatlands_Indexed.shp"
 
 # Hardcoded bounds dictionary using filenames
 bounds_dict = {
@@ -72,8 +72,11 @@ def read_tiles_shapefile():
     Returns:
         GeoDataFrame: A GeoDataFrame containing the tiles.
     """
-    logging.info("Reading updated tiles shapefile with regions")
-    tiles_gdf = gpd.read_file(updated_tile_index_path)
+    logging.info("Downloading tiles shapefile from S3 to local directory")
+    uu.read_shapefile_from_s3(index_shapefile_prefix, local_temp_dir, s3_bucket_name)
+    shapefile_path = os.path.join(local_temp_dir, 'Global_Peatlands.shp')
+    logging.info("Reading tiles shapefile from local directory")
+    tiles_gdf = gpd.read_file(shapefile_path)
     logging.info(f"Columns in tiles shapefile: {tiles_gdf.columns}")
     return tiles_gdf
 
