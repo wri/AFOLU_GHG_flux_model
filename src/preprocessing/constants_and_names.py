@@ -4,6 +4,7 @@ import os
 s3_bucket_name = 'gfw2-data'
 s3_tiles_prefix = 'climate/carbon_model/other_emissions_inputs/peatlands/processed/20230315/'
 index_shapefile_prefix = 'climate/AFOLU_flux_model/organic_soils/inputs/raw/index/Global_Peatlands'
+peat_pattern = '_peat_mask_processed.tif'
 
 # Raw raster paths
 raw_rasters = {
@@ -28,15 +29,36 @@ s3_regional_shapefiles = [
     "climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/grip_roads/regional_shapefiles/GRIP4_Region7_vector_shp/GRIP4_region7.shp"
 ]
 
+# Feature directories for OSM and GRIP data
+feature_directories = {
+    'osm_roads': 's3://gfw2-data/climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/osm_roads/roads_by_tile/',
+    'osm_canals': 's3://gfw2-data/climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/osm_roads/canals_by_tile/',
+    'grip_roads': 's3://gfw2-data/climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/grip_roads/roads_by_tile/'
+}
+
+# Output directories for processed data
+output_directories = {
+    'osm_roads': {
+        'local': 'C:/GIS/Data/Global/OSM/osm_roads_density/',
+        's3': 'climate/AFOLU_flux_model/organic_soils/inputs/processed/osm_roads_density/'
+    },
+    'osm_canals': {
+        'local': 'C:/GIS/Data/Global/OSM/osm_canals_density/',
+        's3': 'climate/AFOLU_flux_model/organic_soils/inputs/processed/osm_canals_density/'
+    },
+    'grip_roads': {
+        'local': r'C:\GIS\Data\Global\Wetlands\Processed\grip_density',
+        's3': 'climate/AFOLU_flux_model/organic_soils/inputs/processed/grip_density/'
+    }
+}
+
 # Local paths
 local_temp_dir = "C:/GIS/Data/Global/Wetlands/Processed/30_m_temp"
 output_dir = r"C:\GIS\Data\Global\GRIP\roads_by_tile"
-
-os.makedirs(local_temp_dir, exist_ok=True)
-os.makedirs(output_dir, exist_ok=True)
-
-# S3 Output prefix
 s3_output_prefix = 'climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/grip_roads/roads_by_tile/'
 
-# Tile suffix pattern
-peat_pattern = "_peat_mask_processed.tif"
+# Ensure local directories exist
+os.makedirs(local_temp_dir, exist_ok=True)
+os.makedirs(output_dir, exist_ok=True)
+for key, paths in output_directories.items():
+    os.makedirs(paths['local'], exist_ok=True)

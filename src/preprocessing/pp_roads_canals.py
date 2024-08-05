@@ -18,6 +18,9 @@ from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 import rioxarray
 import warnings
 
+import pp_utilities as uu
+import constants_and_names as cn
+
 """
 This script processes OSM and GRIP data specifically for roads and canals using tiled shapefiles.
 It performs the following steps:
@@ -49,6 +52,10 @@ Functions:
 - process_all_tiles: Processes all tiles using Dask for parallelization.
 - main: Main function to execute the processing based on provided arguments.
 
+
+TODO: get this working with coiled
+Update compression 
+Stop uploading both functions to s3
 """
 
 # Setup logging
@@ -57,39 +64,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 # Suppress specific warnings
 warnings.filterwarnings('ignore', 'Geometry is in a geographic CRS. Results from', UserWarning)
 
-# AWS S3 setup
-s3_bucket_name = 'gfw2-data'
-s3_tiles_prefix = 'climate/carbon_model/other_emissions_inputs/peatlands/processed/20230315/'
-
-# Input directories
-feature_directories = {
-    'osm_roads': 's3://gfw2-data/climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/osm_roads/roads_by_tile/',
-    'osm_canals': 's3://gfw2-data/climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/osm_roads/canals_by_tile/',
-    'grip_roads': 's3://gfw2-data/climate/AFOLU_flux_model/organic_soils/inputs/raw/roads/grip_roads/roads_by_tile/'
-}
-
-# Output directories
-output_directories = {
-    'osm_roads': {
-        'local': 'C:/GIS/Data/Global/OSM/osm_roads_density/',
-        's3': 'climate/AFOLU_flux_model/organic_soils/inputs/processed/osm_roads_density/'
-    },
-    'osm_canals': {
-        'local': 'C:/GIS/Data/Global/OSM/osm_canals_density/',
-        's3': 'climate/AFOLU_flux_model/organic_soils/inputs/processed/osm_canals_density/'
-    },
-    'grip_roads': {
-        'local': r'C:\GIS\Data\Global\Wetlands\Processed\grip_density',
-        's3': 'climate/AFOLU_flux_model/organic_soils/inputs/processed/grip_density/'
-    }
-}
-
-local_temp_dir = r"C:\GIS\Data\Global\Wetlands\Processed\30_m_temp"
-
 # Ensure local output directories exist
-for key, paths in output_directories.items():
+for key, paths in cn.output_directories.items():
     os.makedirs(paths['local'], exist_ok=True)
-os.makedirs(local_temp_dir, exist_ok=True)
+os.makedirs(cn.local_temp_dir, exist_ok=True)
 
 logging.info("Directories and paths set up")
 
@@ -213,7 +191,7 @@ def read_tiled_features(tile_id, feature_type):
     Returns:
     GeoDataFrame: Reprojected features GeoDataFrame.
     """
-    feature_tile_dir = feature_directories[feature_type]
+    feature_tile_dir = cn.feature_directories[feature_type]
     logging.info(f"Reading tiled {feature_type} shapefile for tile ID: {tile_id}")
     try:
         tile_id = '_'.join(tile_id.split('_')[:2])
@@ -444,8 +422,8 @@ def process_tile(tile_key, feature_type, run_mode='default'):
     Returns:
     None
     """
-    output_dir = output_directories[feature_type]['local']
-    s3_output_dir = output_directories[feature_type]['s3']
+    output_dir = cn.output_directories[feature_type]['local']
+    s3_output_dir = cn.output_directories[feature_type]['s3']
     tile_id = '_'.join(os.path.basename(tile_key).split('_')[:2])
     local_output_path = os.path.join(output_dir, f"{feature_type}_density_{tile_id}.tif")
     s3_output_path = f"{s3_output_dir}{feature_type}_density_{tile_id}.tif"
@@ -454,7 +432,7 @@ def process_tile(tile_key, feature_type, run_mode='default'):
     s3_client = boto3.client('s3')
     if run_mode != 'test':
         try:
-            s3_client.head_object(Bucket=s3_bucket_name, Key=s3_output_path)
+            s3_client.head_object(Bucket=cn.s3_bucket_name, Key=s3_output_path)
             logging.info(f"{s3_output_path} already exists on S3. Skipping processing.")
             return
         except:
@@ -462,7 +440,7 @@ def process_tile(tile_key, feature_type, run_mode='default'):
 
     logging.info(f"Starting processing of the tile {tile_id}")
 
-    s3_input_path = f'/vsis3/{s3_bucket_name}/{tile_key}'
+    s3_input_path = f'/vsis3/{cn.s3_bucket_name}/{tile_key}'
 
     try:
         with rasterio.Env(AWS_SESSION=boto3.Session()):
@@ -522,21 +500,21 @@ def process_tile(tile_key, feature_type, run_mode='default'):
                 logging.info(f"Saved {local_output_path}")
 
                 # Step 8: Resample to 30 meters
-                reference_path = f'/vsis3/{s3_bucket_name}/{tile_key}'
-                local_30m_output_path = os.path.join(local_temp_dir, os.path.basename(local_output_path))
+                reference_path = f'/vsis3/{cn.s3_bucket_name}/{tile_key}'
+                local_30m_output_path = os.path.join(cn.local_temp_dir, os.path.basename(local_output_path))
                 resample_to_30m(local_output_path, local_30m_output_path, reference_path)
 
                 if run_mode == 'test':
                     logging.info(f"Test mode: Outputs saved locally at {local_output_path} and {local_30m_output_path}")
                 else:
-                    logging.info(f"Uploading {local_output_path} to s3://{s3_bucket_name}/{s3_output_path}")
-                    s3_client.upload_file(local_output_path, s3_bucket_name, s3_output_path)
+                    logging.info(f"Uploading {local_output_path} to s3://{cn.s3_bucket_name}/{s3_output_path}")
+                    s3_client.upload_file(local_output_path, cn.s3_bucket_name, s3_output_path)
 
-                    logging.info(f"Uploading {local_30m_output_path} to s3://{s3_bucket_name}/{s3_output_path}")
-                    s3_client.upload_file(local_30m_output_path, s3_bucket_name, s3_output_path)
+                    logging.info(f"Uploading {local_30m_output_path} to s3://{cn.s3_bucket_name}/{s3_output_path}")
+                    s3_client.upload_file(local_30m_output_path, cn.s3_bucket_name, s3_output_path)
 
                     logging.info(
-                        f"Uploaded {local_output_path} and {local_30m_output_path} to s3://{s3_bucket_name}/{s3_output_path}")
+                        f"Uploaded {local_output_path} and {local_30m_output_path} to s3://{cn.s3_bucket_name}/{s3_output_path}")
                     os.remove(local_output_path)
                     os.remove(local_30m_output_path)
 
@@ -558,14 +536,14 @@ def process_all_tiles(feature_type, run_mode='default'):
     None
     """
     paginator = boto3.client('s3').get_paginator('list_objects_v2')
-    page_iterator = paginator.paginate(Bucket=s3_bucket_name, Prefix=s3_tiles_prefix)
+    page_iterator = paginator.paginate(Bucket=cn.s3_bucket_name, Prefix=cn.s3_tiles_prefix)
     tile_keys = []
 
     for page in page_iterator:
         if 'Contents' in page:
             for obj in page['Contents']:
                 tile_key = obj['Key']
-                if tile_key.endswith('_peat_mask_processed.tif'):
+                if tile_key.endswith(cn.peat_pattern):
                     tile_keys.append(tile_key)
 
     dask_tiles = [dask.delayed(process_tile)(tile_key, feature_type, run_mode) for tile_key in tile_keys]
@@ -590,14 +568,14 @@ def main(tile_id=None, feature_type='osm_roads', run_mode='default'):
 
     try:
         if tile_id:
-            tile_key = f"{s3_tiles_prefix}{tile_id}_peat_mask_processed.tif"
+            tile_key = f"{cn.s3_tiles_prefix}{tile_id}{cn.peat_pattern}"
             process_tile(tile_key, feature_type, run_mode)
         else:
             process_all_tiles(feature_type, run_mode)
 
         if run_mode != 'test':
-            compress_and_upload_directory_to_s3(output_directories[feature_type]['local'], s3_bucket_name,
-                                                output_directories[feature_type]['s3'])
+            compress_and_upload_directory_to_s3(cn.output_directories[feature_type]['local'], cn.s3_bucket_name,
+                                                cn.output_directories[feature_type]['s3'])
     finally:
         client.close()
 
@@ -605,7 +583,7 @@ def main(tile_id=None, feature_type='osm_roads', run_mode='default'):
 # Example usage
 if __name__ == "__main__":
     # Replace '00N_110E' with the tile ID you want to test
-    main(tile_id='00N_110E', feature_type='osm_roads', run_mode='test')
+    # main(tile_id='00N_110E', feature_type='osm_roads', run_mode='test')
     main(tile_id='00N_110E', feature_type='grip_roads', run_mode='test')
 
     # Process roads and canals separately
