@@ -31,10 +31,10 @@ def process_tile(tile_key, dataset, tile_bounds, run_mode='default'):
     Returns:
     None
     """
-    output_dir = cn.local_temp_dir
+    output_dir = cn.datasets[dataset]['local_processed']
     os.makedirs(output_dir, exist_ok=True)
 
-    s3_output_dir = cn.output_prefixes[dataset]
+    s3_output_dir = cn.datasets[dataset]['s3_processed']
     tile_id = '_'.join(os.path.basename(tile_key).split('_')[:2])
     local_output_path = os.path.join(output_dir, f"{dataset}_{tile_id}.tif")
     s3_output_path = f"{s3_output_dir}/{dataset}_{tile_id}.tif".replace("\\", "/")
@@ -52,7 +52,7 @@ def process_tile(tile_key, dataset, tile_bounds, run_mode='default'):
                 return
 
     logging.info(f"Starting processing of the tile {tile_id}")
-    raw_raster_path = f'/vsis3/{cn.s3_bucket_name}/{cn.raw_rasters[dataset]}'
+    raw_raster_path = f'/vsis3/{cn.s3_bucket_name}/{cn.datasets[dataset]["s3_raw"]}'
     logging.info(f"Processing raw raster: {raw_raster_path}")
 
     try:
@@ -90,12 +90,12 @@ def process_all_tiles(dataset, run_mode='default'):
         uu.read_shapefile_from_s3(cn.index_shapefile_prefix, cn.local_temp_dir, cn.s3_bucket_name)
 
         # Retrieve the list of tile IDs
-        raw_raster_path = f'/vsis3/{cn.s3_bucket_name}/{cn.raw_rasters[dataset]}'
+        raw_raster_path = f'/vsis3/{cn.s3_bucket_name}/{cn.datasets[dataset]["s3_raw"]}'
         tile_ids = uu.get_tile_ids_from_raster(raw_raster_path, index_shapefile_path)
         logging.info(f"Processing {len(tile_ids)} tiles for dataset {dataset}")
 
         for tile_id in tile_ids:
-            tile_key = f"{cn.s3_tiles_prefix}{tile_id}{cn.peat_pattern}"
+            tile_key = f"{cn.peat_tiles_prefix}{tile_id}{cn.peat_pattern}"
             tile_bounds = uu.get_tile_bounds(index_shapefile_path, tile_id)
             process_tile(tile_key, dataset, tile_bounds, run_mode)
     except Exception as e:
@@ -119,7 +119,7 @@ def main(tile_id=None, dataset='engert', run_mode='default'):
             index_shapefile_path = os.path.join(cn.local_temp_dir, os.path.basename(cn.index_shapefile_prefix) + '.shp')
             uu.read_shapefile_from_s3(cn.index_shapefile_prefix, cn.local_temp_dir, cn.s3_bucket_name)
             tile_bounds = uu.get_tile_bounds(index_shapefile_path, tile_id)
-            tile_key = f"{cn.s3_tiles_prefix}{tile_id}{cn.peat_pattern}"
+            tile_key = f"{cn.peat_tiles_prefix}{tile_id}{cn.peat_pattern}"
             process_tile(tile_key, dataset, tile_bounds, run_mode)
         else:
             process_all_tiles(dataset, run_mode)
@@ -130,9 +130,9 @@ def main(tile_id=None, dataset='engert', run_mode='default'):
 # Example usage
 if __name__ == "__main__":
     # Replace '00N_110E' with the tile ID you want to test
-    # main(tile_id='00N_110E', dataset='engert', run_mode='test')
-    # main(tile_id='00N_110E', dataset='dadap', run_mode='test')
+    main(tile_id='00N_110E', dataset='engert', run_mode='test')
+    main(tile_id='00N_110E', dataset='dadap', run_mode='test')
 
     # Process datasets separately
-    main(dataset='engert', run_mode='default')
-    main(dataset='dadap', run_mode='default')
+    # main(dataset='engert', run_mode='default')
+    # main(dataset='dadap', run_mode='default')
