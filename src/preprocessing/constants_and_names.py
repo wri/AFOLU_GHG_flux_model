@@ -15,7 +15,8 @@ raw_dir = 'inputs/raw'
 today_date = datetime.today().strftime('%Y%m%d')
 
 # Peat tiles paths
-peat_tiles_prefix = f'{project_dir}/{processed_dir}/peatlands/processed/{today_date}/'
+# peat_tiles_prefix = f'{project_dir}/{processed_dir}/peatlands/processed/{today_date}/' #to be used when we have OGH
+peat_tiles_prefix = 'climate/carbon_model/other_emissions_inputs/peatlands/processed/20230315/'
 index_shapefile_prefix = f'{project_dir}/{raw_dir}/index/Global_Peatlands'
 peat_pattern = '_peat_mask_processed.tif'
 
