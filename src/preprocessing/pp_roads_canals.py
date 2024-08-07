@@ -22,9 +22,36 @@ import pp_utilities as uu
 import constants_and_names as cn
 
 """
-Something is currently going wrong with the processing. All steps are working except for actually calculating 
-the length from shapefile. This is a new problem since refactoring to constants and names, 
-so it likely has to do with a path problem. Currently troubleshooting
+This script processes OSM and GRIP data specifically for roads and canals using tiled shapefiles.
+It performs the following steps:
+1. Reads raster tiles from S3.
+2. Resamples the raster to a target resolution.
+3. Creates a fishnet grid.
+4. Reads corresponding roads or canals shapefiles for each tile.
+5. Assigns road/canal lengths to the fishnet cells.
+6. Converts the lengths to density.
+7. Saves the results as raster files locally and uploads them to S3.
+
+The script uses Dask to parallelize the processing of multiple tiles.
+
+Functions:
+- get_raster_bounds: Reads and returns the bounds of a raster file.
+- resample_raster: Resamples a raster to a target resolution.
+- mask_raster: Masks raster data to highlight specific values.
+- create_fishnet_from_raster: Creates a fishnet grid from raster data.
+- reproject_gdf: Reprojects a GeoDataFrame to a specified EPSG code.
+- read_tiled_features: Reads and reprojects shapefiles (roads or canals) for a given tile.
+- assign_segments_to_cells: Assigns features to fishnet cells and calculates lengths.
+- convert_length_to_density: Converts lengths of features to density (km/km^2).
+- fishnet_to_raster: Converts a fishnet GeoDataFrame to a raster and saves it.
+- resample_to_30m: Resamples a raster to 30 meters resolution.
+- compress_file: Compresses a file using GDAL.
+- get_existing_s3_files: Gets a list of existing files in an S3 bucket.
+- compress_and_upload_directory_to_s3: Compresses and uploads a directory to S3.
+- upload_final_output_to_s3: Uploads the final output file to S3 and deletes the local file.
+- process_tile: Processes a single tile.
+- process_all_tiles: Processes all tiles using Dask for parallelization.
+- main: Main function to execute the processing based on provided arguments.
 """
 
 # Setup logging
@@ -133,7 +160,6 @@ def read_tiled_features(tile_id, feature_type):
     except Exception as e:
         logging.error(f"Unexpected error occurred while reading {feature_type} for tile {tile_id}: {e}")
         return gpd.GeoDataFrame(columns=['geometry'])
-
 
 def assign_segments_to_cells(fishnet_gdf, features_gdf):
     logging.info("Assigning features segments to fishnet cells and calculating lengths")
@@ -256,6 +282,31 @@ def compress_and_upload_directory_to_s3(local_directory, s3_bucket, s3_prefix):
                 except Exception as e:
                     logging.error(f"Failed to upload {local_file_path} to s3://{s3_bucket}/{s3_key}: {e}")
 
+def upload_final_output_to_s3(local_output_path, s3_output_path):
+    """
+    Uploads the final output file to S3 and deletes the local file.
+
+    Parameters:
+    local_output_path (str): Path to the local output file.
+    s3_output_path (str): Path to the S3 destination.
+
+    Returns:
+    None
+    """
+    s3_client = boto3.client('s3')
+    try:
+        logging.info(f"Uploading {local_output_path} to s3://{cn.s3_bucket_name}/{s3_output_path}")
+        s3_client.upload_file(local_output_path, cn.s3_bucket_name, s3_output_path)
+
+        logging.info(f"Successfully uploaded {local_output_path} to s3://{cn.s3_bucket_name}/{s3_output_path}")
+        os.remove(local_output_path)
+        logging.info(f"Deleted local file: {local_output_path}")
+
+    except (NoCredentialsError, PartialCredentialsError) as e:
+        logging.error(f"Credentials error: {e}")
+    except Exception as e:
+        logging.error(f"Failed to upload {local_output_path} to s3://{cn.s3_bucket_name}/{s3_output_path}: {e}")
+
 def process_tile(tile_key, feature_type, run_mode='default'):
     output_dir = cn.datasets[feature_type.split('_')[0]][feature_type.split('_')[1]]['local_processed']
     s3_output_dir = cn.datasets[feature_type.split('_')[0]][feature_type.split('_')[1]]['s3_processed']
@@ -328,22 +379,13 @@ def process_tile(tile_key, feature_type, run_mode='default'):
                 if run_mode == 'test':
                     logging.info(f"Test mode: Outputs saved locally at {local_output_path} and {local_30m_output_path}")
                 else:
-                    logging.info(f"Uploading {local_output_path} to s3://{cn.s3_bucket_name}/{s3_output_path}")
-                    s3_client.upload_file(local_output_path, cn.s3_bucket_name, s3_output_path)
-
-                    logging.info(f"Uploading {local_30m_output_path} to s3://{cn.s3_bucket_name}/{s3_output_path}")
-                    s3_client.upload_file(local_30m_output_path, cn.s3_bucket_name, s3_output_path)
-
-                    logging.info(
-                        f"Uploaded {local_output_path} and {local_30m_output_path} to s3://{cn.s3_bucket_name}/{s3_output_path}")
-                    os.remove(local_output_path)
-                    os.remove(local_30m_output_path)
+                    upload_final_output_to_s3(local_output_path, s3_output_path)
+                    upload_final_output_to_s3(local_30m_output_path, s3_output_path.replace('.tif', '_30m.tif'))
 
                 del resampled_data, masked_data, fishnet_gdf, features_gdf, fishnet_with_lengths, fishnet_with_density
                 gc.collect()
     except Exception as e:
         logging.error(f"Error processing tile {tile_id}: {e}")
-
 
 def process_all_tiles(feature_type, run_mode='default'):
     paginator = boto3.client('s3').get_paginator('list_objects_v2')
@@ -372,15 +414,8 @@ def main(tile_id=None, feature_type='osm_roads', run_mode='default'):
         else:
             process_all_tiles(feature_type, run_mode)
 
-        if run_mode != 'test':
-            compress_and_upload_directory_to_s3(
-                cn.datasets[feature_type.split('_')[0]][feature_type.split('_')[1]]['local_processed'],
-                cn.s3_bucket_name,
-                cn.datasets[feature_type.split('_')[0]][feature_type.split('_')[1]]['s3_processed']
-            )
     finally:
         client.close()
-
 if __name__ == "__main__":
     # main(tile_id='00N_110E', feature_type='grip_roads', run_mode='test')
     main(tile_id='00N_110E', feature_type='osm_canals', run_mode='default')
