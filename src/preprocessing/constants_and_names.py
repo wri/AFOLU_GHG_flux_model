@@ -5,8 +5,8 @@ from botocore.exceptions import ClientError
 
 # S3 bucket and prefixes
 s3_bucket_name = 'gfw2-data'
-# local_root = 'C:/GIS/Data/Global'
-local_root = 'mnt/c/GIS/Data/Global'
+local_root = 'C:/GIS/Data/Global'
+# local_root = 'mnt/c/GIS/Data/Global'
 local_temp_dir = f"{local_root}/tmp"
 project_dir = 'climate/AFOLU_flux_model/organic_soils'
 processed_dir = 'inputs/processed'

@@ -47,7 +47,6 @@ Functions:
 - resample_to_30m: Resamples a raster to 30 meters resolution.
 - compress_file: Compresses a file using GDAL.
 - get_existing_s3_files: Gets a list of existing files in an S3 bucket.
-- compress_and_upload_directory_to_s3: Compresses and uploads a directory to S3.
 - upload_final_output_to_s3: Uploads the final output file to S3 and deletes the local file.
 - process_tile: Processes a single tile.
 - process_all_tiles: Processes all tiles using Dask for parallelization.
@@ -178,7 +177,8 @@ def convert_length_to_density(fishnet_gdf, crs):
     logging.info("Converting length to density (km/km2)")
     if crs.axis_info[0].unit_name == 'metre':
         fishnet_gdf['length_km'] = fishnet_gdf['length'] / 1000
-        fishnet_gdf['density'] = fishnet_gdf['length_km']
+        # Scale the density to fit within uint16 range
+        fishnet_gdf['density'] = (fishnet_gdf['length_km'] * 100).astype(np.uint16)
     else:
         raise ValueError("Unsupported CRS units")
     logging.info(f"Density values: {fishnet_gdf[['length', 'density']]}")
@@ -186,7 +186,7 @@ def convert_length_to_density(fishnet_gdf, crs):
 
 def fishnet_to_raster(fishnet_gdf, profile, output_raster_path):
     logging.info(f"Converting fishnet to raster and saving to {output_raster_path}")
-    profile.update(dtype=rasterio.float32, count=1, compress='lzw')
+    profile.update(dtype=rasterio.uint16, count=1, compress='lzw')
 
     transform = profile['transform']
     out_shape = (profile['height'], profile['width'])
@@ -202,7 +202,7 @@ def fishnet_to_raster(fishnet_gdf, profile, output_raster_path):
         transform=transform,
         fill=0,
         all_touched=True,
-        dtype=rasterio.float32
+        dtype=rasterio.uint16
     )
 
     if np.all(rasterized == 0) or np.all(np.isnan(rasterized)):
@@ -251,36 +251,6 @@ def get_existing_s3_files(s3_bucket, s3_prefix):
                 existing_files.add(obj['Key'])
 
     return existing_files
-
-def compress_and_upload_directory_to_s3(local_directory, s3_bucket, s3_prefix):
-    s3_client = boto3.client('s3')
-    existing_files = get_existing_s3_files(s3_bucket, s3_prefix)
-
-    for root, dirs, files in os.walk(local_directory):
-        for file in files:
-            local_file_path = os.path.join(root, file)
-            compressed_file_path = os.path.join(root, f"compressed_{file}")
-            s3_file_path = os.path.relpath(local_file_path, local_directory)
-            s3_key = os.path.join(s3_prefix, s3_file_path).replace("\\", "/")
-
-            if s3_key in existing_files:
-                logging.info(f"File {s3_key} already exists in S3. Skipping upload.")
-            else:
-                try:
-                    logging.info(f"Compressing {local_file_path}")
-                    compress_file(local_file_path, compressed_file_path)
-
-                    logging.info(f"Uploading {compressed_file_path} to s3://{s3_bucket}/{s3_key}")
-                    s3_client.upload_file(compressed_file_path, s3_bucket, s3_key)
-
-                    logging.info(f"Successfully uploaded {compressed_file_path} to s3://{s3_bucket}/{s3_key}")
-
-                    os.remove(compressed_file_path)
-                except (NoCredentialsError, PartialCredentialsError) as e:
-                    logging.error(f"Credentials error: {e}")
-                    return
-                except Exception as e:
-                    logging.error(f"Failed to upload {local_file_path} to s3://{s3_bucket}/{s3_key}: {e}")
 
 def upload_final_output_to_s3(local_output_path, s3_output_path):
     """
