@@ -5,7 +5,8 @@ from botocore.exceptions import ClientError
 
 # S3 bucket and prefixes
 s3_bucket_name = 'gfw2-data'
-local_root = 'C:/GIS/Data/Global'
+# local_root = 'C:/GIS/Data/Global'
+local_root = 'mnt/c/GIS/Data/Global'
 local_temp_dir = f"{local_root}/tmp"
 project_dir = 'climate/AFOLU_flux_model/organic_soils'
 processed_dir = 'inputs/processed'
@@ -30,6 +31,14 @@ grip_regional_shapefiles = [
     f"{project_dir}/{raw_dir}/roads/grip_roads/regional_shapefiles/GRIP4_Region6_vector_shp/GRIP4_region6.shp",
     f"{project_dir}/{raw_dir}/roads/grip_roads/regional_shapefiles/GRIP4_Region7_vector_shp/GRIP4_region7.shp"
 ]
+
+osm_pbf_files = {
+    'raw': f'{project_dir}/{raw_dir}/', #need to transfer the data and update this
+    'filtered': {
+        'roads': f'{project_dir}/{raw_dir}/roads/osm_roads/osm_filtered/filtered_roads/',
+        'canals': f'{project_dir}/{raw_dir}/roads/osm_roads/osm_filtered/filtered_canals/'
+    }
+}
 
 # Datasets
 datasets = {
@@ -121,3 +130,12 @@ def check_s3_path_exists(s3_client, bucket, path):
 #
 #             local_processed_exists = os.path.exists(feature_paths['local_processed'])
 #             print(f"  Local Processed: {feature_paths['local_processed']} - {'Exists' if local_processed_exists else 'Does not exist'}")
+
+# new paths for osm pre to be used after utilities refactoring
+# filtered_canals_path = cn.osm_pbf_files['filtered']['canals'] #this path was formerly local and now needs to be read from s3
+# filtered_highways_path = cn.osm_pbf_files['filtered']['roads'] #this path was formerly local and now needs to be read from s3
+# output_dir_roads = cn.datasets['osm']['roads']['s3_raw'] #this path was formerly local and now needs to be uploaded to s3
+# output_dir_canals = cn.datasets['osm']['roads']['s3_raw']#this path was formerly local and now needs to be uploaded to s3
+# local_temp_dir = cn.local_temp_dir
+# s3_bucket_name = cn.s3_bucket_name
+# index_shapefile_prefix = cn.index_shapefile_prefix

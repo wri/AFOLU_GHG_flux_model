@@ -12,6 +12,7 @@ from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 import gc
 import logging
 from rasterio.features import rasterize
+import coiled
 
 # Logging setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -472,6 +473,13 @@ def compress_and_upload_file_to_s3(local_file, s3_bucket, s3_key):
         os.remove(compressed_file)
     except subprocess.CalledProcessError as e:
         logging.error(f"Error compressing file {local_file}: {e}")
+def upload_file_to_s3(local_file_path, bucket_name, s3_file_path):
+    s3 = boto3.client('s3')
+    try:
+        s3.upload_file(local_file_path, bucket_name, s3_file_path)
+        logging.info(f"Successfully uploaded {local_file_path} to s3://{bucket_name}/{s3_file_path}")
+    except Exception as e:
+        logging.error(f"Error uploading file to S3: {e}")
 
 def delete_file_if_exists(file_path):
     """
@@ -815,7 +823,19 @@ def rasterize_shapefile(gdf, tile_bounds, tile_transform, tile_width, tile_heigh
     return raster
 
 
-
+def setup_coiled_cluster():
+    coiled_cluster = coiled.Cluster(
+        n_workers=1,
+        use_best_zone=True,
+        compute_purchase_option="spot_with_fallback",
+        idle_timeout="15 minutes",
+        region="us-east-1",
+        name="test_coiled_connection",
+        account='wri-forest-research',
+        worker_memory="8GiB"
+    )
+    coiled_client = coiled_cluster.get_client()
+    return coiled_client, coiled_cluster
 
 
 

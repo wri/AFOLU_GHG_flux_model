@@ -1,4 +1,4 @@
-name: dask_notebook_yaml_copy
+name: dask_notebook_yaml
 channels:
   - conda-forge
   - defaults
