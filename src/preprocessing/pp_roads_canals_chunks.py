@@ -383,6 +383,7 @@ def save_and_upload_small_raster_set(bounds, chunk_length_pixels, tile_id, bound
 
     logging.info(f"Completed processing for chunk {bounds_str}.")
 
+
 def process_chunk(bounds, feature_type, tile_id):
     output_dir = cn.datasets[feature_type.split('_')[0]][feature_type.split('_')[1]]['local_processed']
     bounds_str = boundstr(bounds)
@@ -395,13 +396,38 @@ def process_chunk(bounds, feature_type, tile_id):
         input_s3_path = f'/vsis3/{cn.s3_bucket_name}/{cn.peat_tiles_prefix}{tile_id}{cn.peat_pattern}'
         with rasterio.Env(AWS_SESSION=boto3.Session()):
             with rasterio.open(input_s3_path) as src:
+                # Define the window based on the chunk bounds
                 window = rasterio.windows.from_bounds(*bounds, transform=src.transform)
-                data = src.read(window=window, resampling=Resampling.nearest)
-                transform = src.window_transform(window)
-                profile = src.profile
-                profile.update(transform=transform, height=window.height, width=window.width)
 
-                masked_data, masked_profile = mask_raster(data[0], profile)
+                # Read the data within the specified window
+                data = src.read(window=window, resampling=Resampling.nearest)
+
+                # Early no-data check
+                if np.all(data == src.nodata):
+                    logging.info(f"No data found in the raster for chunk {bounds_str}. Skipping processing.")
+                    return
+
+                # Extract the correct transform and profile for the windowed data
+                window_transform = src.window_transform(window)
+                profile = src.profile.copy()  # Make sure to copy the profile to avoid modifying the original
+                profile.update(transform=window_transform, height=window.height, width=window.width)
+
+                target_resolution = 1000  # Resolution in meters
+
+                # Calculate the resampled dimensions based on the target resolution
+                resampled_width = int((bounds[2] - bounds[0]) / (target_resolution / 111320))
+                resampled_height = int((bounds[3] - bounds[1]) / (target_resolution / 111320))
+
+                resampled_profile = profile.copy()  # Copy the profile again for resampling
+                resampled_profile.update(width=resampled_width, height=resampled_height)
+
+                resampled_data = src.read(
+                    out_shape=(src.count, resampled_height, resampled_width),
+                    resampling=Resampling.nearest,
+                    window=window
+                )
+
+                masked_data, masked_profile = mask_raster(resampled_data[0], resampled_profile)
 
                 # Skip processing if the masked data is empty
                 if np.all(masked_data == 0):
@@ -437,6 +463,12 @@ def process_chunk(bounds, feature_type, tile_id):
 
     except Exception as e:
         logging.error(f"Error processing chunk {bounds_str} for tile {tile_id}: {e}")
+
+
+
+    except Exception as e:
+        logging.error(f"Error processing chunk {bounds_str} for tile {tile_id}: {e}")
+
 
 def process_tile(tile_key, feature_type, run_mode='default'):
     tile_id = '_'.join(os.path.basename(tile_key).split('_')[:2])
