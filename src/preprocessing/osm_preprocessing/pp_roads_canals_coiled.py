@@ -1,22 +1,22 @@
-import geopandas as gpd
-import pandas as pd
-from shapely.geometry import box
-import numpy as np
-import rasterio
-from rasterio.enums import Resampling
-from rasterio.features import rasterize
-import boto3
-import logging
 import os
-import fiona
+import geopandas as gpd
+import logging
 import dask
 from dask.distributed import Client, LocalCluster
 from dask.diagnostics import ProgressBar
+import pandas as pd
+import argparse
+import sys
+import boto3
 import gc
 import subprocess
-from botocore.exceptions import NoCredentialsError, PartialCredentialsError
+import rasterio
+from rasterio.enums import Resampling
+from rasterio.features import rasterize
+from shapely.geometry import box
 import rioxarray
 import warnings
+from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 
 import pp_utilities as uu
 import constants_and_names as cn
@@ -51,6 +51,28 @@ Functions:
 - process_tile: Processes a single tile.
 - process_all_tiles: Processes all tiles using Dask for parallelization.
 - main: Main function to execute the processing based on provided arguments.
+
+Usage examples:
+- Process a specific tile (00N_110E):
+  python script.py --tile_id 00N_110E --feature_type osm_roads --client local --run_mode default
+
+- Process all tiles:
+  python script.py --feature_type osm_roads --client local --run_mode default
+
+Dependencies:
+- geopandas
+- pandas
+- shapely
+- numpy
+- rasterio
+- rioxarray
+- boto3
+- fiona
+- dask
+- dask.distributed
+- dask.diagnostics
+- subprocess
+- botocore
 """
 
 # Setup logging
@@ -372,9 +394,15 @@ def process_all_tiles(feature_type, run_mode='default'):
     with ProgressBar():
         dask.compute(*dask_tiles)
 
-def main(tile_id=None, feature_type='osm_roads', run_mode='default'):
-    cluster = LocalCluster()
-    client = Client(cluster)
+def main(tile_id=None, feature_type='osm_roads', run_mode='default', client_type='local'):
+    # Initialize Dask client based on the argument
+    if client_type == 'coiled':
+        client, cluster = uu.setup_coiled_cluster()
+    else:
+        cluster = LocalCluster()
+        client = Client(cluster)
+
+    logging.info(f"Dask client initialized with {client_type} cluster")
 
     try:
         if tile_id:
@@ -385,9 +413,26 @@ def main(tile_id=None, feature_type='osm_roads', run_mode='default'):
 
     finally:
         client.close()
+        logging.info("Dask client closed")
+        if client_type == 'coiled':
+            cluster.close()
+            logging.info("Coiled cluster closed")
+
 if __name__ == "__main__":
-    # main(tile_id='00N_110E', feature_type='grip_roads', run_mode='test')
-    main(tile_id='00N_110E', feature_type='osm_canals', run_mode='default')
-    # main(feature_type='osm_roads', run_mode='default')
-    # main(feature_type='osm_canals', run_mode='default')
-    # main(feature_type='grip_roads', run_mode='default')
+    parser = argparse.ArgumentParser(description='Process OSM and GRIP data by tiles.')
+    parser.add_argument('--tile_id', type=str, help='Tile ID to process')
+    parser.add_argument('--feature_type', type=str, choices=['osm_roads', 'osm_canals', 'grip_roads'], default='osm_roads', help='Type of feature to process')
+    parser.add_argument('--client', type=str, choices=['local', 'coiled'], default='local', help='Dask client type to use (local or coiled)')
+    parser.add_argument('--run_mode', type=str, choices=['default', 'test'], default='default', help='Run mode for processing (default or test)')
+    args = parser.parse_args()
+
+    if not any(sys.argv[1:]):  # Check if there are no command-line arguments
+        # Direct execution examples for PyCharm
+        # Example usage for processing a specific tile with the local Dask client
+        main(tile_id='00N_110E', feature_type='osm_roads', run_mode='default', client_type='local')
+
+        # Example usage for processing all tiles with the local Dask client
+        # main(feature_type='osm_roads', run_mode='default', client_type='local')
+
+    else:
+        main(tile_id=args.tile_id, feature_type=args.feature_type, run_mode=args.run_mode, client_type=args.client)

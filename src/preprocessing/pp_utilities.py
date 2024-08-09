@@ -406,25 +406,49 @@ def get_chunk_bounds(minx, miny, maxx, maxy, chunk_size):
             chunks.append(box(x, y, x + chunk_size, y + chunk_size))
     return chunks
 
+# def export_chunks_to_shapefile(chunk_params, output_filename):
+#     """
+#     Export chunk bounds to a shapefile.
+#
+#     Args:
+#         chunk_params (tuple): Tuple containing minx, miny, maxx, maxy, and chunk_size.
+#         output_filename (str): Path to the output shapefile.
+#
+#     Returns:
+#         None
+#     """
+#     try:
+#         minx, miny, maxx, maxy, chunk_size = chunk_params
+#         chunks = get_chunk_bounds(minx, miny, maxx, maxy, chunk_size)
+#         gdf = gpd.GeoDataFrame(geometry=chunks, crs="EPSG:4326")
+#         gdf.to_file(output_filename, driver='ESRI Shapefile')
+#         logging.info(f"Chunk bounds exported to {output_filename}")
+#     except Exception as e:
+#         logging.error(f"Error exporting chunks to shapefile: {e}")
+
 def export_chunks_to_shapefile(chunk_params, output_filename):
-    """
-    Export chunk bounds to a shapefile.
-
-    Args:
-        chunk_params (tuple): Tuple containing minx, miny, maxx, maxy, and chunk_size.
-        output_filename (str): Path to the output shapefile.
-
-    Returns:
-        None
-    """
     try:
-        minx, miny, maxx, maxy, chunk_size = chunk_params
-        chunks = get_chunk_bounds(minx, miny, maxx, maxy, chunk_size)
-        gdf = gpd.GeoDataFrame(geometry=chunks, crs="EPSG:4326")
-        gdf.to_file(output_filename, driver='ESRI Shapefile')
-        logging.info(f"Chunk bounds exported to {output_filename}")
+        x_min, y_min, x_max, y_max, chunk_size = chunk_params
+
+        x_range = int((x_max - x_min) / chunk_size)
+        y_range = int((y_max - y_min) / chunk_size)
+
+        polygons = []
+        for i in range(x_range):
+            for j in range(y_range):
+                x_start = x_min + i * chunk_size
+                y_start = y_min + j * chunk_size
+                x_end = x_start + chunk_size
+                y_end = y_start + chunk_size
+                polygons.append(Polygon([(x_start, y_start), (x_end, y_start), (x_end, y_end), (x_start, y_end)]))
+
+        gdf = gpd.GeoDataFrame({'geometry': polygons})
+        gdf.to_file(output_filename)
+
+        print(f"Chunk bounds exported to {output_filename}")
+
     except Exception as e:
-        logging.error(f"Error exporting chunks to shapefile: {e}")
+        print(f"Error exporting chunks to shapefile: {e}")
 
 def get_tile_bounds(index_shapefile, tile_id):
     """
@@ -832,7 +856,7 @@ def setup_coiled_cluster():
         region="us-east-1",
         name="test_coiled_connection",
         account='wri-forest-research',
-        worker_memory="8GiB"
+        worker_memory="64GiB"
     )
     coiled_client = coiled_cluster.get_client()
     return coiled_client, coiled_cluster
