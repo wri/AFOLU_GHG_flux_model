@@ -34,7 +34,7 @@ It performs the following steps:
 6. Converts the lengths to density.
 7. Saves the results as raster files locally and uploads them to S3.
 
-The script uses Dask to parallelize the processing of multiple tiles.
+The script uses Dask to parallelize the processing of multiple tiles and chunks.
 
 Functions:
 - get_raster_bounds: Reads and returns the bounds of a raster file.
@@ -50,6 +50,7 @@ Functions:
 - compress_file: Compresses a file using GDAL.
 - get_existing_s3_files: Gets a list of existing files in an S3 bucket.
 - upload_final_output_to_s3: Uploads the final output file to S3 and deletes the local file.
+- process_chunk: Processes a single chunk.
 - process_tile: Processes a single tile.
 - process_all_tiles: Processes all tiles using Dask for parallelization.
 - main: Main function to execute the processing based on provided arguments.
@@ -69,16 +70,20 @@ for dataset_key, dataset_info in cn.datasets.items():
 os.makedirs(cn.local_temp_dir, exist_ok=True)
 logging.info("Directories and paths set up")
 
+
 def timestr():
     return time.strftime("%Y%m%d_%H_%M_%S")
+
 
 def boundstr(bounds):
     bounds_str = "_".join([str(round(x)) for x in bounds])
     return bounds_str
 
+
 def calc_chunk_length_pixels(bounds):
     chunk_length_pixels = int((bounds[3] - bounds[1]) * (40000 / 10))
     return chunk_length_pixels
+
 
 def get_10x10_tile_bounds(tile_id):
     if "S" in tile_id:
@@ -96,6 +101,7 @@ def get_10x10_tile_bounds(tile_id):
         min_x = (int(tile_id[4:7]))
 
     return min_x, min_y, max_x, max_y  # W, S, E, N
+
 
 def get_chunk_bounds(chunk_params):
     min_x = chunk_params[0]
@@ -122,6 +128,7 @@ def get_chunk_bounds(chunk_params):
 
     return chunks
 
+
 def xy_to_tile_id(top_left_x, top_left_y):
     lat_ceil = math.ceil(top_left_y / 10.0) * 10
     lng_floor = math.floor(top_left_x / 10.0) * 10
@@ -131,12 +138,14 @@ def xy_to_tile_id(top_left_x, top_left_y):
 
     return f"{lat}_{lng}"
 
+
 def get_raster_bounds(raster_path):
     logging.info(f"Reading raster bounds from {raster_path}")
     with rasterio.open(raster_path) as src:
         bounds = src.bounds
     logging.info(f"Bounds of the raster: {bounds}")
     return bounds
+
 
 def resample_raster(src, target_resolution_m):
     logging.info(f"Resampling raster to {target_resolution_m} meter resolution (1 km by 1 km)")
@@ -158,11 +167,13 @@ def resample_raster(src, target_resolution_m):
 
     return data, profile
 
+
 def mask_raster(data, profile):
     logging.info("Masking raster in memory for values equal to 1")
     mask = data == 1
     profile.update(dtype=rasterio.uint8)
     return mask.astype(rasterio.uint8), profile
+
 
 def create_fishnet_from_raster(data, transform):
     logging.info("Creating fishnet from raster data in memory")
@@ -180,9 +191,11 @@ def create_fishnet_from_raster(data, transform):
     logging.info(f"Fishnet grid generated with {len(polygons)} cells")
     return fishnet_gdf
 
+
 def reproject_gdf(gdf, epsg):
     logging.info(f"Reprojecting GeoDataFrame to EPSG:{epsg}")
     return gdf.to_crs(epsg=epsg)
+
 
 def read_tiled_features(tile_id, feature_type):
     """
@@ -225,6 +238,7 @@ def read_tiled_features(tile_id, feature_type):
         logging.error(f"Unexpected error occurred while reading {feature_type} for tile {tile_id}: {e}")
         return gpd.GeoDataFrame(columns=['geometry'])
 
+
 def assign_segments_to_cells(fishnet_gdf, features_gdf):
     logging.info("Assigning features segments to fishnet cells and calculating lengths")
     feature_lengths = []
@@ -238,6 +252,7 @@ def assign_segments_to_cells(fishnet_gdf, features_gdf):
     logging.info(f"Fishnet with feature lengths: {fishnet_gdf.head()}")
     return fishnet_gdf
 
+
 def convert_length_to_density(fishnet_gdf, crs):
     logging.info("Converting length to density (km/km2)")
     if crs.axis_info[0].unit_name == 'metre':
@@ -248,8 +263,8 @@ def convert_length_to_density(fishnet_gdf, crs):
     logging.info(f"Density values: {fishnet_gdf[['length', 'density']]}")
     return fishnet_gdf
 
-def fishnet_to_raster(fishnet_gdf, profile, output_raster_path):
 
+def fishnet_to_raster(fishnet_gdf, profile, output_raster_path):
     if fishnet_gdf.empty:
         logging.info(f"No valid geometries found for {output_raster_path}. Skipping rasterization.")
         return
@@ -285,6 +300,7 @@ def fishnet_to_raster(fishnet_gdf, profile, output_raster_path):
 
     logging.info("Fishnet converted to raster and saved")
 
+
 def resample_to_30m(input_path, output_path, reference_path):
     input_raster = rioxarray.open_rasterio(input_path, masked=True)
     reference_raster = rioxarray.open_rasterio(reference_path, masked=True)
@@ -300,6 +316,7 @@ def resample_to_30m(input_path, output_path, reference_path):
     else:
         logging.error(f"Failed to save resampled raster to {output_path}")
 
+
 def compress_file(input_file, output_file):
     try:
         subprocess.run(
@@ -308,6 +325,7 @@ def compress_file(input_file, output_file):
         )
     except subprocess.CalledProcessError as e:
         logging.error(f"Error compressing file {input_file}: {e}")
+
 
 def get_existing_s3_files(s3_bucket, s3_prefix):
     s3_client = boto3.client('s3')
@@ -322,6 +340,7 @@ def get_existing_s3_files(s3_bucket, s3_prefix):
                 existing_files.add(obj['Key'])
 
     return existing_files
+
 
 def upload_final_output_to_s3(local_output_path, s3_output_path):
     """
@@ -348,6 +367,7 @@ def upload_final_output_to_s3(local_output_path, s3_output_path):
     except Exception as e:
         logging.error(f"Failed to upload {local_output_path} to s3://{cn.s3_bucket_name}/{s3_output_path}: {e}")
 
+
 def save_and_upload_small_raster_set(bounds, chunk_length_pixels, tile_id, bounds_str, output_dict):
     s3_client = boto3.client("s3")
     transform = rasterio.transform.from_bounds(*bounds, width=chunk_length_pixels, height=chunk_length_pixels)
@@ -365,8 +385,10 @@ def save_and_upload_small_raster_set(bounds, chunk_length_pixels, tile_id, bound
 
             file_name = f"{file_info}__{key}.tif"
 
-            with rasterio.open(f"/tmp/{file_name}", 'w', driver='GTiff', width=chunk_length_pixels, height=chunk_length_pixels, count=1,
-                               dtype=data_type, crs='EPSG:4326', transform=transform, compress='lzw', blockxsize=400, blockysize=400) as dst:
+            with rasterio.open(f"/tmp/{file_name}", 'w', driver='GTiff', width=chunk_length_pixels,
+                               height=chunk_length_pixels, count=1,
+                               dtype=data_type, crs='EPSG:4326', transform=transform, compress='lzw', blockxsize=400,
+                               blockysize=400) as dst:
                 dst.write(data_array, 1)
 
             s3_path = f"{cn.datasets['osm']['canals']['s3_processed']}/{data_meaning}/{year_out}/{chunk_length_pixels}_pixels/{time.strftime('%Y%m%d')}"
@@ -384,6 +406,7 @@ def save_and_upload_small_raster_set(bounds, chunk_length_pixels, tile_id, bound
     logging.info(f"Completed processing for chunk {bounds_str}.")
 
 
+@dask.delayed
 def process_chunk(bounds, feature_type, tile_id):
     output_dir = cn.datasets[feature_type.split('_')[0]][feature_type.split('_')[1]]['local_processed']
     bounds_str = boundstr(bounds)
@@ -465,19 +488,16 @@ def process_chunk(bounds, feature_type, tile_id):
         logging.error(f"Error processing chunk {bounds_str} for tile {tile_id}: {e}")
 
 
-
-    except Exception as e:
-        logging.error(f"Error processing chunk {bounds_str} for tile {tile_id}: {e}")
-
-
 def process_tile(tile_key, feature_type, run_mode='default'):
     tile_id = '_'.join(os.path.basename(tile_key).split('_')[:2])
     tile_bounds = get_10x10_tile_bounds(tile_id)
-    chunk_size = 1  # 2x2 degree chunks
+    chunk_size = 1  # 1x1 degree chunks
 
     chunks = get_chunk_bounds([*tile_bounds, chunk_size])
-    for bounds in chunks:
-        process_chunk(bounds, feature_type, tile_id)
+    chunk_tasks = [process_chunk(bounds, feature_type, tile_id) for bounds in chunks]
+
+    return chunk_tasks
+
 
 def process_all_tiles(feature_type, run_mode='default'):
     paginator = boto3.client('s3').get_paginator('list_objects_v2')
@@ -491,9 +511,13 @@ def process_all_tiles(feature_type, run_mode='default'):
                 if tile_key.endswith(cn.peat_pattern):
                     tile_keys.append(tile_key)
 
-    dask_tiles = [dask.delayed(process_tile)(tile_key, feature_type, run_mode) for tile_key in tile_keys]
+    all_tasks = []
+    for tile_key in tile_keys:
+        all_tasks.extend(process_tile(tile_key, feature_type, run_mode))
+
     with ProgressBar():
-        dask.compute(*dask_tiles)
+        dask.compute(*all_tasks)
+
 
 def main(tile_id=None, feature_type='osm_roads', run_mode='default', client_type='local'):
     # Initialize Dask client
@@ -508,7 +532,9 @@ def main(tile_id=None, feature_type='osm_roads', run_mode='default', client_type
     try:
         if tile_id:
             tile_key = f"{cn.peat_tiles_prefix}{tile_id}{cn.peat_pattern}"
-            process_tile(tile_key, feature_type, run_mode)
+            tasks = process_tile(tile_key, feature_type, run_mode)
+            with ProgressBar():
+                dask.compute(*tasks)
         else:
             process_all_tiles(feature_type, run_mode)
     finally:
@@ -518,16 +544,21 @@ def main(tile_id=None, feature_type='osm_roads', run_mode='default', client_type
             cluster.close()
             logging.info("Coiled cluster closed")
 
+
 if __name__ == "__main__":
     import argparse
     import sys
 
     # Parse command-line arguments
-    parser = argparse.ArgumentParser(description='Process OSM and GRIP data for roads and canals using tiled shapefiles.')
+    parser = argparse.ArgumentParser(
+        description='Process OSM and GRIP data for roads and canals using tiled shapefiles.')
     parser.add_argument('--tile_id', type=str, help='Tile ID to process')
-    parser.add_argument('--feature_type', type=str, choices=['osm_roads', 'osm_canals', 'grip_roads'], default='osm_roads', help='Type of feature to process')
-    parser.add_argument('--run_mode', type=str, choices=['default', 'test'], default='default', help='Run mode (default or test)')
-    parser.add_argument('--client', type=str, choices=['local', 'coiled'], default='local', help='Dask client type to use (local or coiled)')
+    parser.add_argument('--feature_type', type=str, choices=['osm_roads', 'osm_canals', 'grip_roads'],
+                        default='osm_roads', help='Type of feature to process')
+    parser.add_argument('--run_mode', type=str, choices=['default', 'test'], default='default',
+                        help='Run mode (default or test)')
+    parser.add_argument('--client', type=str, choices=['local', 'coiled'], default='local',
+                        help='Dask client type to use (local or coiled)')
     args = parser.parse_args()
 
     if not any(sys.argv[1:]):  # Check if there are no command-line arguments
