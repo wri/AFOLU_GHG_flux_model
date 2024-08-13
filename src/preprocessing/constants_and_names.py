@@ -19,6 +19,7 @@ today_date = datetime.today().strftime('%Y%m%d')
 # Peat tiles paths
 # peat_tiles_prefix = f'{project_dir}/{processed_dir}/peatlands/processed/{today_date}/' #to be used when we have OGH
 peat_tiles_prefix = 'climate/carbon_model/other_emissions_inputs/peatlands/processed/20230315/'
+peat_tiles_prefix_1km = 'climate/AFOLU_flux_model/organic_soils/inputs/processed/peat_mask/1km/'
 index_shapefile_prefix = f'{project_dir}/{raw_dir}/index/Global_Peatlands'
 peat_pattern = '_peat_mask_processed.tif'
 
@@ -47,13 +48,13 @@ datasets = {
         'roads': {
             's3_raw': f'{project_dir}/{raw_dir}/roads/osm_roads/roads_by_tile/',
             's3_processed_base': f'{project_dir}/{processed_dir}/osm_roads_density/',
-            's3_processed': f'{project_dir}/{processed_dir}/osm_roads_density/{today_date}/',
-            'local_processed': f'{local_temp_dir}/osm_roads_density/{today_date}/'
+            's3_processed': f'{project_dir}/{processed_dir}/osm_roads_density/{today_date}',
+            'local_processed': f'{local_temp_dir}/osm_roads_density/{today_date}'
         },
         'canals': {
             's3_raw': f'{project_dir}/{raw_dir}/roads/osm_roads/canals_by_tile/',
             's3_processed_base': f'{project_dir}/{processed_dir}/osm_canals_density/',
-            's3_processed': f'{project_dir}/{processed_dir}/osm_canals_density/{today_date}/',
+            's3_processed': f'{project_dir}/{processed_dir}/osm_canals_density/{today_date}',
             'local_processed': f'{local_temp_dir}/osm_canals_density/{today_date}/'
         }
     },
@@ -61,8 +62,8 @@ datasets = {
         'roads': {
             's3_raw': f'{project_dir}/{raw_dir}/roads/grip_roads/roads_by_tile/',
             's3_processed_base': f'{project_dir}/{processed_dir}/grip_density/',
-            's3_processed': f'{project_dir}/{processed_dir}/grip_density/{today_date}/',
-            'local_processed': f'{local_temp_dir}/grip_density/{today_date}/'
+            's3_processed': f'{project_dir}/{processed_dir}/grip_density/{today_date}',
+            'local_processed': f'{local_temp_dir}/grip_density/{today_date}'
         }
     },
     'engert': {
