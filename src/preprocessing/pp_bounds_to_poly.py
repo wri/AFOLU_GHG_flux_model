@@ -84,7 +84,7 @@ def get_tile_bounds(global_index_shapefile, tile_id):
 if __name__ == "__main__":
     global_index_shapefile = "C:/GIS/Data/Global/Wetlands/Raw/Global/gfw_peatlands/Global_Peatlands_Index/Global_Peatlands.shp"
     tile_id = "00N_110E"
-    chunk_size = 0.25  # Set the desired chunk size
+    chunk_size = 0.5  # Set the desired chunk size
 
     # Get the bounds of the specified tile
     tile_bounds = get_tile_bounds(global_index_shapefile, tile_id)
