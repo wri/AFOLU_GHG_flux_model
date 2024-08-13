@@ -849,14 +849,14 @@ def rasterize_shapefile(gdf, tile_bounds, tile_transform, tile_width, tile_heigh
 
 def setup_coiled_cluster():
     coiled_cluster = coiled.Cluster(
-        n_workers=1,
+        n_workers=10,
         use_best_zone=True,
         compute_purchase_option="spot_with_fallback",
         idle_timeout="15 minutes",
         region="us-east-1",
         name="test_coiled_connection",
         account='wri-forest-research',
-        worker_memory="64GiB"
+        worker_memory="32GiB"
     )
     coiled_client = coiled_cluster.get_client()
     return coiled_client, coiled_cluster
