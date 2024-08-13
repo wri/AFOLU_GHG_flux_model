@@ -1,63 +1,26 @@
-import geopandas as gpd
+import dask_geopandas as dgpd
 import pandas as pd
-from shapely.geometry import box
+import xarray as xr
+import rioxarray as rxr
 import numpy as np
-import rasterio
-from rasterio.enums import Resampling  # Ensure this is imported for resampling
-from rasterio.features import rasterize
+from shapely.geometry import box  # Import box to create rectangular polygons
 import boto3
+import geopandas as gpd
 import logging
 import os
-import fiona
 import dask
 from dask.distributed import Client, LocalCluster
 from dask.diagnostics import ProgressBar
 import gc
 import subprocess
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError
-import rioxarray as rxr
 import warnings
 import time
 import math
+from rasterio.enums import Resampling  # Import Resampling for use with rioxarray
 
 import pp_utilities as uu
 import constants_and_names as cn
-
-
-import pp_utilities as uu
-import constants_and_names as cn
-
-"""
-This script processes OSM and GRIP data specifically for roads and canals using tiled shapefiles.
-It performs the following steps:
-1. Reads raster tiles from S3.
-2. Resamples the raster to a target resolution.
-3. Creates a fishnet grid.
-4. Reads corresponding roads or canals shapefiles for each tile.
-5. Assigns road/canal lengths to the fishnet cells.
-6. Converts the lengths to density.
-7. Saves the results as raster files locally and uploads them to S3.
-
-The script uses Dask to parallelize the processing of multiple tiles and chunks.
-
-Functions:
-- get_raster_bounds: Reads and returns the bounds of a raster file.
-- mask_raster: Masks raster data to highlight specific values.
-- create_fishnet_from_raster: Creates a fishnet grid from raster data.
-- reproject_gdf: Reprojects a GeoDataFrame to a specified EPSG code.
-- read_tiled_features: Reads and reprojects shapefiles (roads or canals) for a given tile.
-- assign_segments_to_cells: Assigns features to fishnet cells and calculates lengths.
-- convert_length_to_density: Converts lengths of features to density (km/km^2).
-- fishnet_to_raster: Converts a fishnet GeoDataFrame to a raster and saves it.
-- resample_to_30m: Resamples a raster to 30 meters resolution.
-- compress_file: Compresses a file using GDAL.
-- get_existing_s3_files: Gets a list of existing files in an S3 bucket.
-- upload_final_output_to_s3: Uploads the final output file to S3 and deletes the local file.
-- process_chunk: Processes a single chunk.
-- process_tile: Processes a single tile.
-- process_all_tiles: Processes all tiles using Dask for parallelization.
-- main: Main function to execute the processing based on provided arguments.
-"""
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -169,27 +132,26 @@ def create_fishnet_from_raster(data, transform):
                 x1, y1 = transform * (col + 1, row + 1)
                 polygons.append(box(x, y, x1, y1))
 
+    # Create the GeoDataFrame
     fishnet_gdf = gpd.GeoDataFrame({'geometry': polygons}, crs="EPSG:4326")
+
+    # Convert the GeoDataFrame to a Dask GeoDataFrame with multiple partitions
+    fishnet_dgdf = dgpd.from_geopandas(fishnet_gdf, npartitions=10)
+
     logging.info(f"Fishnet grid generated with {len(polygons)} cells")
-    return fishnet_gdf
+    return fishnet_dgdf
 
 
 def reproject_gdf(gdf, epsg):
+    if gdf.crs is None:
+        raise ValueError("GeoDataFrame does not have a CRS. Please set a CRS before reprojecting.")
+
     logging.info(f"Reprojecting GeoDataFrame to EPSG:{epsg}")
     return gdf.to_crs(epsg=epsg)
 
 
+
 def read_tiled_features(tile_id, feature_type):
-    """
-    Reads and reprojects shapefiles (roads or canals) for a given tile.
-
-    Parameters:
-    tile_id (str): Tile ID.
-    feature_type (str): Type of feature ('osm_roads', 'osm_canals', or 'grip_roads').
-
-    Returns:
-    GeoDataFrame: Reprojected features GeoDataFrame.
-    """
     try:
         # Extract relevant directories
         feature_key = feature_type.split('_')
@@ -204,53 +166,71 @@ def read_tiled_features(tile_id, feature_type):
 
         # Attempt to read the shapefile using GDAL virtual file system
         features_gdf = gpd.read_file(full_s3_path)
-        if not features_gdf.empty:
-            logging.info(f"Read {len(features_gdf)} {feature_type} features for tile {tile_id}")
+        if not features_gdf.empty and 'geometry' in features_gdf:
             features_gdf = reproject_gdf(features_gdf, 3395)  # Reproject to EPSG:3395
+            features_gdf = dgpd.from_geopandas(features_gdf, npartitions=10)
             return features_gdf
         else:
             logging.warning(f"No data found in shapefile for tile {tile_id} at {full_s3_path}")
-            return gpd.GeoDataFrame(columns=['geometry'])
-
-    except fiona.errors.DriverError as e:
-        logging.error(f"Error reading {feature_type} shapefile: {e}")
-        return gpd.GeoDataFrame(columns=['geometry'])
+            return dgpd.GeoDataFrame(columns=['geometry'])
 
     except Exception as e:
-        logging.error(f"Unexpected error occurred while reading {feature_type} for tile {tile_id}: {e}")
-        return gpd.GeoDataFrame(columns=['geometry'])
+        logging.error(f"Error reading {feature_type} shapefile for tile {tile_id}: {e}")
+        return dgpd.GeoDataFrame(columns=['geometry'])
 
 
 def assign_segments_to_cells(fishnet_gdf, features_gdf):
-    logging.info("Assigning features segments to fishnet cells and calculating lengths")
-    feature_lengths = []
+    logging.info("Assigning feature segments to fishnet cells and calculating lengths")
 
-    for idx, cell in fishnet_gdf.iterrows():
-        features_in_cell = gpd.clip(features_gdf, cell.geometry)
-        total_length = features_in_cell.geometry.length.sum()
-        feature_lengths.append(total_length)
+    # Compute Dask GeoDataFrames to in-memory GeoDataFrames
+    fishnet_gdf = fishnet_gdf.compute()
+    features_gdf = features_gdf.compute()
 
-    fishnet_gdf['length'] = feature_lengths
-    logging.info(f"Fishnet with feature lengths: {fishnet_gdf.head()}")
-    return fishnet_gdf
+    if fishnet_gdf.empty or 'geometry' not in fishnet_gdf:
+        logging.warning("Fishnet GeoDataFrame is empty or lacks a geometry column. Skipping segment assignment.")
+        return dgpd.from_geopandas(gpd.GeoDataFrame(columns=['geometry']), npartitions=10)
+
+    if features_gdf.empty or 'geometry' not in features_gdf:
+        logging.warning("Features GeoDataFrame is empty or lacks a geometry column. Skipping segment assignment.")
+        return dgpd.from_geopandas(gpd.GeoDataFrame(columns=['geometry']), npartitions=10)
+
+    # Perform clipping
+    clipped = gpd.clip(features_gdf, fishnet_gdf)
+    if clipped.empty or 'geometry' not in clipped:
+        logging.warning("Clipping resulted in an empty GeoDataFrame or lacks a geometry column. Skipping further processing.")
+        return dgpd.from_geopandas(gpd.GeoDataFrame(columns=['geometry']), npartitions=10)
+
+    clipped['length'] = clipped.geometry.length
+
+    fishnet_with_lengths = clipped.dissolve(by='geometry', aggfunc='sum')
+    logging.info(f"Fishnet with feature lengths: {fishnet_with_lengths.head()}")
+    return dgpd.from_geopandas(fishnet_with_lengths, npartitions=10)
 
 
 def convert_length_to_density(fishnet_gdf, crs):
-    logging.info("Converting length to density (km/km2)")
-    if crs.axis_info[0].unit_name == 'metre':
-        fishnet_gdf['length_km'] = fishnet_gdf['length'] / 1000
-        fishnet_gdf['density'] = fishnet_gdf['length_km']  # Keeping density as float
-    else:
-        raise ValueError("Unsupported CRS units")
-    logging.info(f"Density values: {fishnet_gdf[['length', 'density']]}")
+    """
+    Convert the length of features within each cell of the fishnet to density.
+    The density is typically calculated as length per unit area.
+
+    :param fishnet_gdf: GeoDataFrame containing the fishnet with length information.
+    :param crs: The coordinate reference system (CRS) of the fishnet.
+    :return: GeoDataFrame with an additional column 'density'.
+    """
+    if fishnet_gdf is None or fishnet_gdf.empty:
+        logging.warning("Fishnet GeoDataFrame is None or empty. Skipping density conversion.")
+        return dgpd.from_geopandas(gpd.GeoDataFrame(columns=['geometry']), npartitions=10)
+
+    # Reproject fishnet to a projected CRS if necessary for accurate area calculation
+    if fishnet_gdf.crs.is_geographic:
+        fishnet_gdf = fishnet_gdf.to_crs(crs)
+
+    # Calculate density as length per unit area
+    fishnet_gdf['density'] = fishnet_gdf['length'] / 1000
+
     return fishnet_gdf
 
 
 def fishnet_to_raster(fishnet_gdf, profile, output_raster_path):
-    if fishnet_gdf.empty:
-        logging.info(f"No valid geometries found for {output_raster_path}. Skipping rasterization.")
-        return
-
     logging.info(f"Converting fishnet to raster and saving to {output_raster_path}")
     logging.info('Updating profile...')
 
@@ -265,7 +245,7 @@ def fishnet_to_raster(fishnet_gdf, profile, output_raster_path):
     logging.info('Rasterizing fishnet...')
 
     rasterized = rasterize(
-        [(geom, value) for geom, value in zip(fishnet_gdf.geometry, fishnet_gdf['density'])],
+        [(geom, value) for geom, value in zip(fishnet_gdf.geometry.compute(), fishnet_gdf['density'].compute())],
         out_shape=out_shape,
         transform=transform,
         fill=0,
@@ -282,7 +262,6 @@ def fishnet_to_raster(fishnet_gdf, profile, output_raster_path):
 
     logging.info("Fishnet converted to raster and saved")
 
-
 @dask.delayed
 def process_chunk(bounds, feature_type, tile_id):
     output_dir = cn.datasets[feature_type.split('_')[0]][feature_type.split('_')[1]]['local_processed']
@@ -295,21 +274,17 @@ def process_chunk(bounds, feature_type, tile_id):
     try:
         input_s3_path = f'/vsis3/{cn.s3_bucket_name}/{cn.peat_tiles_prefix}{tile_id}{cn.peat_pattern}'
         with rxr.open_rasterio(input_s3_path) as src:
-            # Define the window based on the chunk bounds
             chunk_raster = src.rio.clip_box(*bounds)
 
-            # Early no-data check
             if chunk_raster.isnull().all():
                 logging.info(f"No data found in the raster for chunk {bounds_str}. Skipping processing.")
                 return
 
-            # Resample the chunk to the target resolution
             resampled_raster = chunk_raster.rio.reproject(
                 dst_crs='EPSG:4326',
-                resampling=Resampling.nearest  # Use Resampling from rasterio
+                resampling=Resampling.nearest
             )
 
-            # Creating a profile for saving
             profile = {
                 "driver": "GTiff",
                 "dtype": str(resampled_raster.dtype),
@@ -324,23 +299,39 @@ def process_chunk(bounds, feature_type, tile_id):
 
             masked_data, masked_profile = mask_raster(resampled_raster.values[0], profile)
 
-            # Skip processing if the masked data is empty
             if np.all(masked_data == 0):
                 logging.info(f"No data found in the masked raster for chunk {bounds_str}. Skipping processing.")
                 return
 
-            fishnet_gdf = create_fishnet_from_raster(masked_data, masked_profile['transform'])
+            # Load and reproject the features
+            features_gdf = read_tiled_features(tile_id, feature_type)
+            features_gdf = reproject_gdf(features_gdf, 3395)
 
-            # Skip processing if fishnet is empty
-            if fishnet_gdf.empty:
-                logging.info(f"Skipping chunk {bounds_str} for tile {tile_id} due to empty fishnet.")
+            # Convert features_gdf to a GeoPandas GeoDataFrame to use sindex
+            features_gdf = features_gdf.compute()
+
+            # Ensure the chunk geometry is in the same CRS as the features
+            chunk_geom = box(*bounds)
+            chunk_geom = gpd.GeoSeries([chunk_geom], crs=features_gdf.crs)
+
+            # Use spatial index for efficient intersection
+            if not features_gdf.sindex:
+                logging.warning(f"Spatial index is not available for features_gdf in chunk {bounds_str}.")
+
+            possible_matches_index = list(features_gdf.sindex.intersection(chunk_geom.geometry[0].bounds))
+            possible_matches = features_gdf.iloc[possible_matches_index]
+
+            precise_matches = possible_matches[possible_matches.intersects(chunk_geom.geometry[0])]
+
+            # Check if there are any features in the chunk bounds
+            if precise_matches.empty:
+                logging.info(f"No features found within chunk bounds {bounds_str}. Skipping processing.")
                 return
 
-            fishnet_gdf = reproject_gdf(fishnet_gdf, 3395)
+            # Proceed with fishnet creation and further processing only if features exist
+            fishnet_gdf = create_fishnet_from_raster(masked_data, masked_profile['transform'])
 
-            features_gdf = read_tiled_features(tile_id, feature_type)
-
-            fishnet_with_lengths = assign_segments_to_cells(fishnet_gdf, features_gdf)
+            fishnet_with_lengths = assign_segments_to_cells(fishnet_gdf, precise_matches)
 
             fishnet_with_density = convert_length_to_density(fishnet_with_lengths, fishnet_gdf.crs)
 
@@ -357,13 +348,15 @@ def process_chunk(bounds, feature_type, tile_id):
             gc.collect()
 
     except Exception as e:
-        logging.error(f"Error processing chunk {bounds_str} for tile {tile_id}: {e}")
+        logging.error(f"Error processing chunk {bounds_str} for tile {tile_id}: {e}", exc_info=True)
+
+
 
 
 def process_tile(tile_key, feature_type, run_mode='default'):
     tile_id = '_'.join(os.path.basename(tile_key).split('_')[:2])
     tile_bounds = get_10x10_tile_bounds(tile_id)
-    chunk_size = 1  # 1x1 degree chunks
+    chunk_size = 0.5  # 1x1 degree chunks
 
     chunks = get_chunk_bounds([*tile_bounds, chunk_size])
     chunk_tasks = [process_chunk(bounds, feature_type, tile_id) for bounds in chunks]
@@ -392,7 +385,6 @@ def process_all_tiles(feature_type, run_mode='default'):
 
 
 def main(tile_id=None, feature_type='osm_roads', run_mode='default', client_type='local'):
-    # Initialize Dask client
     if client_type == 'coiled':
         client, cluster = uu.setup_coiled_cluster()
     else:
@@ -421,7 +413,6 @@ if __name__ == "__main__":
     import argparse
     import sys
 
-    # Parse command-line arguments
     parser = argparse.ArgumentParser(
         description='Process OSM and GRIP data for roads and canals using tiled shapefiles.')
     parser.add_argument('--tile_id', type=str, help='Tile ID to process')
@@ -433,13 +424,11 @@ if __name__ == "__main__":
                         help='Dask client type to use (local or coiled)')
     args = parser.parse_args()
 
-    if not any(sys.argv[1:]):  # Check if there are no command-line arguments
-        # Direct execution examples for PyCharm
-        # Example usage for processing a specific tile with the local Dask client
-        tile_id = '00N_110E'  # Replace with your desired tile ID
-        feature_type = 'osm_canals'  # Replace with your desired feature type
-        run_mode = 'default'  # Replace with your desired run mode
-        client_type = 'local'  # Replace with 'coiled' if you want to use the Coiled cluster
+    if not any(sys.argv[1:]):
+        tile_id = '00N_110E'
+        feature_type = 'osm_canals'
+        run_mode = 'default'
+        client_type = 'local'
 
         main(tile_id=tile_id, feature_type=feature_type, run_mode=run_mode, client_type=client_type)
     else:
