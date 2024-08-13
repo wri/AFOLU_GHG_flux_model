@@ -20,6 +20,7 @@ import time
 import math
 
 import constants_and_names as cn
+import pp_utilities as uu
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -132,7 +133,7 @@ def read_tiled_features(tile_id, feature_type):
         s3_file_path = os.path.join(feature_tile_dir, f"{feature_key[1]}_{tile_id}.shp")
         full_s3_path = f"/vsis3/{cn.s3_bucket_name}/{s3_file_path}"
 
-        logging.info(f"Constructed S3 file path: {full_s3_path}")
+        logging.info(f"Reading tiled shapefile: {full_s3_path}")
 
         # Attempt to read the shapefile using GDAL virtual file system
         features_gdf = gpd.read_file(full_s3_path)
@@ -191,13 +192,17 @@ def assign_segments_to_cells(fishnet_gdf, features_gdf):
 #     return fishnet_gdf
 
 def convert_length_to_density(fishnet_gdf, crs):
-    if fishnet_gdf is None or len(fishnet_gdf) == 0:
+    if fishnet_gdf is None or fishnet_gdf.empty:
         logging.warning("Fishnet GeoDataFrame is None or empty. Skipping density conversion.")
-        return gpd.GeoDataFrame(columns=['geometry'])
+        return gpd.GeoDataFrame(columns=['geometry', 'density'], crs=crs)
+
+    # Ensure the 'length' column exists before proceeding
+    if 'length' not in fishnet_gdf.columns:
+        logging.warning("Fishnet GeoDataFrame does not have a 'length' column. Skipping density conversion.")
+        return gpd.GeoDataFrame(columns=['geometry', 'density'], crs=crs)
 
     # Reproject fishnet to a projected CRS if necessary for accurate area calculation
-    if fishnet_gdf.crs.is_geographic:
-        fishnet_gdf = fishnet_gdf.to_crs(crs)
+    fishnet_gdf = ensure_crs(fishnet_gdf, crs)
 
     # Calculate density as length per unit area
     fishnet_gdf['density'] = fishnet_gdf['length'] / 1000
@@ -241,6 +246,8 @@ def fishnet_to_raster(fishnet_gdf, profile, output_raster_path):
 def upload_final_output_to_s3(local_output_path, s3_output_path):
     s3_client = boto3.client('s3')
     try:
+        # Ensure no double slashes in the S3 path
+        s3_output_path = s3_output_path.replace('//', '/')
         logging.info(f"Uploading {local_output_path} to s3://{cn.s3_bucket_name}/{s3_output_path}")
         s3_client.upload_file(local_output_path, cn.s3_bucket_name, s3_output_path)
         logging.info(f"Successfully uploaded {local_output_path} to s3://{cn.s3_bucket_name}/{s3_output_path}")
@@ -251,10 +258,11 @@ def upload_final_output_to_s3(local_output_path, s3_output_path):
     except Exception as e:
         logging.error(f"Failed to upload {local_output_path} to s3://{cn.s3_bucket_name}/{s3_output_path}: {e}")
 
+
 @dask.delayed
 def process_chunk(bounds, feature_type, tile_id):
     output_dir = cn.datasets[feature_type.split('_')[0]][feature_type.split('_')[1]]['local_processed']
-    bounds_str = "_".join([str(round(x, 4)) for x in bounds])  # Ensure chunk bounds are used in the name
+    bounds_str = "_".join([str(round(x, 2)) for x in bounds])
     local_output_path = os.path.join(output_dir, f"{tile_id}_{bounds_str}_{feature_type}_density.tif")
     s3_output_path = f"{cn.datasets[feature_type.split('_')[0]][feature_type.split('_')[1]]['s3_processed']}/{tile_id}_{bounds_str}_{feature_type}_density.tif"
 
@@ -264,29 +272,16 @@ def process_chunk(bounds, feature_type, tile_id):
         input_s3_path = f'/vsis3/{cn.s3_bucket_name}/{cn.peat_tiles_prefix_1km}{tile_id}{cn.peat_pattern}'
         with rasterio.Env(AWS_SESSION=boto3.Session()):
             with rasterio.open(input_s3_path) as src:
-                # Define the window based on the chunk bounds
-                window = rasterio.windows.from_bounds(*bounds, transform=src.transform)
-                window_transform = src.window_transform(window)
-
-                # Read the data within the specified window
                 chunk_raster = src.read(
-                    window=window
+                    window=rasterio.windows.from_bounds(*bounds, transform=src.transform)
                 )
 
                 if np.all(chunk_raster == src.nodata):
                     logging.info(f"No data found in the raster for chunk {bounds_str}. Skipping processing.")
                     return
 
-                # Update profile to match chunk bounds and dimensions
-                masked_profile = src.profile.copy()
-                masked_profile.update(
-                    transform=window_transform,
-                    width=window.width,
-                    height=window.height
-                )
-
                 # Mask raster
-                masked_data, masked_profile = mask_raster(chunk_raster[0], masked_profile)
+                masked_data, masked_profile = mask_raster(chunk_raster[0], src.profile)
 
                 if np.all(masked_data == 0):
                     logging.info(f"No data found in the masked raster for chunk {bounds_str}. Skipping processing.")
@@ -295,11 +290,19 @@ def process_chunk(bounds, feature_type, tile_id):
                 # Create fishnet and process features
                 fishnet_gdf = create_fishnet_from_raster(masked_data, masked_profile['transform'])
 
+                if fishnet_gdf.empty:
+                    logging.info(f"Fishnet is empty for chunk {bounds_str}. Skipping processing.")
+                    return
+
                 features_gdf = read_tiled_features(tile_id, feature_type)
 
                 fishnet_with_lengths = assign_segments_to_cells(fishnet_gdf, features_gdf)
 
                 fishnet_with_density = convert_length_to_density(fishnet_with_lengths, fishnet_gdf.crs)
+
+                if fishnet_with_density.empty or 'density' not in fishnet_with_density.columns:
+                    logging.info(f"Skipping export of {local_output_path} as 'density' column is missing.")
+                    return
 
                 fishnet_to_raster(fishnet_with_density, masked_profile, local_output_path)
 
@@ -310,6 +313,9 @@ def process_chunk(bounds, feature_type, tile_id):
 
     except Exception as e:
         logging.error(f"Error processing chunk {bounds_str} for tile {tile_id}: {e}", exc_info=True)
+
+
+
 
 
 def process_tile(tile_key, feature_type, chunk_bounds=None, run_mode='default'):
@@ -348,7 +354,7 @@ def process_all_tiles(feature_type, run_mode='default'):
 
 def main(tile_id=None, feature_type='osm_roads', chunk_bounds=None, run_mode='default', client_type='local'):
     if client_type == 'coiled':
-        client, cluster = setup_coiled_cluster()
+        client, cluster = uu.setup_coiled_cluster()
     else:
         cluster = LocalCluster()
         client = Client(cluster)
