@@ -136,23 +136,33 @@ def reproject_gdf(gdf, epsg):
 def assign_segments_to_cells(fishnet_gdf, features_gdf):
     logging.info("Assigning feature segments to fishnet cells and calculating lengths")
 
-    # Ensure both GeoDataFrames have the same CRS before clipping
-    fishnet_gdf = ensure_crs(fishnet_gdf, 3395)  # Reproject to EPSG:3395
-    features_gdf = ensure_crs(features_gdf, 3395)  # Reproject to EPSG:3395
+    # Reproject the GeoDataFrames to the same CRS (e.g., EPSG:3395)
+    logging.info(f"Reprojecting GeoDataFrame from {features_gdf.crs} to 3395")
+    features_gdf = reproject_gdf(features_gdf, 3395)
+    fishnet_gdf = reproject_gdf(fishnet_gdf, 3395)
 
-    # Convert fishnet_gdf and features_gdf to regular GeoDataFrames
-    fishnet_gdf = fishnet_gdf.compute() if isinstance(fishnet_gdf, dgpd.GeoDataFrame) else fishnet_gdf
-    features_gdf = features_gdf.compute() if isinstance(features_gdf, dgpd.GeoDataFrame) else features_gdf
+    # Validate geometries and fix any invalid ones
+    logging.info("Validating geometries in features_gdf and fixing invalid ones...")
+    features_gdf['geometry'] = features_gdf['geometry'].apply(lambda geom: geom.buffer(0) if not geom.is_valid else geom)
+
+    # Convert to regular GeoDataFrames if they are Dask GeoDataFrames
+    if isinstance(fishnet_gdf, dgpd.GeoDataFrame):
+        fishnet_gdf = fishnet_gdf.compute()
+    if isinstance(features_gdf, dgpd.GeoDataFrame):
+        features_gdf = features_gdf.compute()
 
     # Perform clipping
     logging.info("Performing clipping...")
-    clipped = gpd.clip(features_gdf, fishnet_gdf)
-    logging.info(f"Clipped GeoDataFrame type: {type(clipped)}")
+    try:
+        clipped = gpd.clip(features_gdf, fishnet_gdf)
+    except Exception as e:
+        logging.error(f"Error during clipping: {e}")
+        return None
 
     # Check if the clipped GeoDataFrame is empty or lacks geometry
-    if len(clipped.index) == 0 or 'geometry' not in clipped.columns:
+    if clipped.empty or 'geometry' not in clipped.columns:
         logging.warning("Clipping resulted in an empty GeoDataFrame or lacks a geometry column. Skipping further processing.")
-        return gpd.GeoDataFrame(columns=['geometry'])
+        return None
 
     # Calculate lengths of features within each fishnet cell
     logging.info("Calculating lengths of clipped features")
