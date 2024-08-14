@@ -1,5 +1,6 @@
 import dask_geopandas as dgpd
 import geopandas as gpd
+import pandas as pd
 import xarray as xr
 import rioxarray as rxr
 import numpy as np
@@ -11,15 +12,17 @@ import os
 import dask
 from dask.distributed import Client, LocalCluster
 import gc
-from rasterio.transform import from_origin
+import subprocess
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 import warnings
+import time
+import math
 
 import constants_and_names as cn
 import pp_utilities as uu
 
 # Setup logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
 # Suppress specific warnings
 warnings.filterwarnings('ignore', 'Geometry is in a geographic CRS. Results from', UserWarning)
@@ -31,6 +34,7 @@ for dataset_key, dataset_info in cn.datasets.items():
             os.makedirs(sub_dataset['local_processed'], exist_ok=True)
 os.makedirs(cn.local_temp_dir, exist_ok=True)
 logging.info("Directories and paths set up")
+
 
 def get_10x10_tile_bounds(tile_id):
     """Calculate the bounds for a 10x10 degree tile."""
@@ -50,6 +54,7 @@ def get_10x10_tile_bounds(tile_id):
 
     return min_x, min_y, max_x, max_y  # W, S, E, N
 
+
 def ensure_crs(gdf, target_crs):
     if gdf.crs is None:
         logging.warning(f"GeoDataFrame CRS is None, setting it to {target_crs}")
@@ -58,6 +63,7 @@ def ensure_crs(gdf, target_crs):
         logging.info(f"Reprojecting GeoDataFrame from {gdf.crs} to {target_crs}")
         gdf = gdf.to_crs(target_crs)
     return gdf
+
 
 def get_chunk_bounds(chunk_params):
     min_x = chunk_params[0]
@@ -84,10 +90,12 @@ def get_chunk_bounds(chunk_params):
 
     return chunks
 
+
 def mask_raster(data, profile):
     logging.info("Masking raster in memory for values equal to 1")
     mask = data == 1
     return mask.astype(np.uint8)
+
 
 def create_fishnet_from_raster(data, transform):
     logging.info("Creating fishnet from raster data in memory")
@@ -106,6 +114,7 @@ def create_fishnet_from_raster(data, transform):
     logging.info(f"Fishnet grid generated with {len(polygons)} cells")
     return fishnet_gdf
 
+
 def read_tiled_features(tile_id, feature_type):
     try:
         # Extract relevant directories
@@ -119,12 +128,13 @@ def read_tiled_features(tile_id, feature_type):
 
         logging.info(f"Reading tiled shapefile: {full_s3_path}")
 
-        features_gdf = dgpd.read_file(full_s3_path, npartitions=1)  # Set npartitions
+        features_gdf = dgpd.read_file(full_s3_path, npartitions=1)
         return features_gdf
 
     except Exception as e:
         logging.error(f"Error reading {feature_type} shapefile for tile {tile_id}: {e}")
         return dgpd.from_geopandas(gpd.GeoDataFrame(columns=['geometry']), npartitions=1)
+
 
 def reproject_gdf(gdf, epsg):
     if gdf.crs is None:
@@ -132,6 +142,7 @@ def reproject_gdf(gdf, epsg):
 
     logging.info(f"Reprojecting GeoDataFrame to EPSG:{epsg}")
     return gdf.to_crs(epsg=epsg)
+
 
 def assign_segments_to_cells(fishnet_gdf, features_gdf):
     logging.info("Assigning feature segments to fishnet cells and calculating lengths")
@@ -141,9 +152,12 @@ def assign_segments_to_cells(fishnet_gdf, features_gdf):
     features_gdf = reproject_gdf(features_gdf, 3395)
     fishnet_gdf = reproject_gdf(fishnet_gdf, 3395)
 
-    # Validate geometries and fix any invalid ones
+    # Validate geometries and fix any invalid ones, specifying meta
     logging.info("Validating geometries in features_gdf and fixing invalid ones...")
-    features_gdf['geometry'] = features_gdf['geometry'].apply(lambda geom: geom.buffer(0) if not geom.is_valid else geom)
+    features_gdf['geometry'] = features_gdf.geometry.apply(
+        lambda geom: geom.buffer(0) if not geom.is_valid else geom,
+        meta=('geometry', 'geometry')
+    )
 
     # Convert to regular GeoDataFrames if they are Dask GeoDataFrames
     if isinstance(fishnet_gdf, dgpd.GeoDataFrame):
@@ -161,7 +175,8 @@ def assign_segments_to_cells(fishnet_gdf, features_gdf):
 
     # Check if the clipped GeoDataFrame is empty or lacks geometry
     if clipped.empty or 'geometry' not in clipped.columns:
-        logging.warning("Clipping resulted in an empty GeoDataFrame or lacks a geometry column. Skipping further processing.")
+        logging.warning(
+            "Clipping resulted in an empty GeoDataFrame or lacks a geometry column. Skipping further processing.")
         return None
 
     # Calculate lengths of features within each fishnet cell
@@ -176,57 +191,54 @@ def assign_segments_to_cells(fishnet_gdf, features_gdf):
 
     return fishnet_with_lengths
 
-from rasterio.transform import from_origin
-
-from rasterio.transform import Affine
 
 def fishnet_to_raster(fishnet_gdf, chunk_raster, output_raster_path):
     logging.info(f"Converting fishnet to raster and saving to {output_raster_path}")
 
-    # Reproject fishnet back to EPSG:4326 for alignment with the raster
-    fishnet_gdf = fishnet_gdf.to_crs("EPSG:4326")
+    # Reproject fishnet back to EPSG:4326 to match input raster's CRS
+    fishnet_gdf = reproject_gdf(fishnet_gdf, 4326)
 
-    # Use the affine transformation and shape from the input raster
-    transform = chunk_raster.rio.transform()
-    out_shape = chunk_raster.shape[1:]  # Get the shape excluding the band dimension
+    # No need to call compute() if the data is already in memory (Pandas GeoDataFrame/GeoSeries)
+    if isinstance(fishnet_gdf, dgpd.GeoDataFrame):
+        geometries = fishnet_gdf.geometry.compute()
+        values = fishnet_gdf['length'].compute()
+    else:
+        geometries = fishnet_gdf.geometry
+        values = fishnet_gdf['length']
 
-    # Convert the GeoDataFrame to a format suitable for rasterization
+    # Rasterize fishnet
     rasterized = rasterize(
-        [(geom, value) for geom, value in zip(fishnet_gdf.geometry, fishnet_gdf['length'])],
-        out_shape=out_shape,  # Use the shape from the input raster
-        transform=transform,  # Use the affine transformation from the input raster
+        [(geom, value) for geom, value in zip(geometries, values)],
+        out_shape=chunk_raster.shape[1:],  # Use 2D shape
+        transform=chunk_raster.rio.transform(),
         fill=0,
         all_touched=True,
         dtype=np.float32
     )
 
-    # Divide the raster by 1000 to convert length to density
-    rasterized /= 1000.0
-
     if np.all(rasterized == 0) or np.all(np.isnan(rasterized)):
         logging.info(f"Skipping export of {output_raster_path} as all values are 0 or nodata")
         return
 
-    # Convert the rasterized array to an xarray DataArray and set attributes
+    # Convert rasterized array to an xarray DataArray and set attributes
     xr_rasterized = xr.DataArray(
         rasterized,
         dims=("y", "x"),
-        coords={"y": chunk_raster.y, "x": chunk_raster.x},  # Use the coordinates from the input raster
+        coords={"y": chunk_raster.y, "x": chunk_raster.x},
     )
-    xr_rasterized = xr_rasterized.rio.write_crs("EPSG:4326", inplace=True)
-    xr_rasterized = xr_rasterized.rio.write_transform(transform, inplace=True)
+    xr_rasterized = xr_rasterized / 1000.0  # Convert length to density by dividing by 1000
+    xr_rasterized = xr_rasterized.rio.write_crs(chunk_raster.rio.crs, inplace=True)
+    xr_rasterized = xr_rasterized.rio.write_transform(chunk_raster.rio.transform(), inplace=True)
 
-    # Save the rasterized DataArray to a GeoTIFF file
+    # Save raster to GeoTIFF
     xr_rasterized.rio.to_raster(output_raster_path, compress='lzw')
 
     logging.info("Fishnet converted to raster and saved")
 
 
-
 def upload_final_output_to_s3(local_output_path, s3_output_path):
     s3_client = boto3.client('s3')
     try:
-        # Ensure no double slashes in the S3 path
         s3_output_path = s3_output_path.replace('//', '/')
         logging.info(f"Uploading {local_output_path} to s3://{cn.s3_bucket_name}/{s3_output_path}")
         s3_client.upload_file(local_output_path, cn.s3_bucket_name, s3_output_path)
@@ -237,6 +249,7 @@ def upload_final_output_to_s3(local_output_path, s3_output_path):
         logging.error(f"Credentials error: {e}")
     except Exception as e:
         logging.error(f"Failed to upload {local_output_path} to s3://{cn.s3_bucket_name}/{s3_output_path}: {e}")
+
 
 @dask.delayed
 def process_chunk(bounds, feature_type, tile_id):
@@ -278,11 +291,10 @@ def process_chunk(bounds, feature_type, tile_id):
 
         fishnet_with_lengths = assign_segments_to_cells(fishnet_gdf, features_gdf)
 
-        if len(fishnet_with_lengths.columns) == 0 or 'length' not in fishnet_with_lengths.columns:
-            logging.info(f"Skipping export of {local_output_path} as 'length' column is missing.")
+        if fishnet_with_lengths is None or fishnet_with_lengths.empty:
+            logging.info(f"Skipping export of {local_output_path} as no valid lengths were calculated.")
             return
 
-        # Save the fishnet to a raster using rioxarray
         fishnet_to_raster(fishnet_with_lengths, chunk_raster, local_output_path)
 
         upload_final_output_to_s3(local_output_path, s3_output_path)
@@ -292,6 +304,7 @@ def process_chunk(bounds, feature_type, tile_id):
 
     except Exception as e:
         logging.error(f"Error processing chunk {bounds_str} for tile {tile_id}: {e}", exc_info=True)
+
 
 def process_tile(tile_key, feature_type, chunk_bounds=None, run_mode='default'):
     tile_id = '_'.join(os.path.basename(tile_key).split('_')[:2])
@@ -306,6 +319,7 @@ def process_tile(tile_key, feature_type, chunk_bounds=None, run_mode='default'):
     chunk_tasks = [process_chunk(bounds, feature_type, tile_id) for bounds in chunks]
 
     return chunk_tasks
+
 
 def process_all_tiles(feature_type, run_mode='default'):
     paginator = boto3.client('s3').get_paginator('list_objects_v2')
@@ -324,6 +338,7 @@ def process_all_tiles(feature_type, run_mode='default'):
         all_tasks.extend(process_tile(tile_key, feature_type, run_mode=run_mode))
 
     dask.compute(*all_tasks)
+
 
 def main(tile_id=None, feature_type='osm_roads', chunk_bounds=None, run_mode='default', client_type='local'):
     if client_type == 'coiled':
@@ -348,6 +363,7 @@ def main(tile_id=None, feature_type='osm_roads', chunk_bounds=None, run_mode='de
             cluster.close()
             logging.info("Coiled cluster closed")
 
+
 if __name__ == "__main__":
     import argparse
     import sys
@@ -370,11 +386,9 @@ if __name__ == "__main__":
         chunk_bounds = tuple(map(float, args.chunk_bounds.split(',')))
 
     if not any(sys.argv[1:]):
-        # Default values for running directly from PyCharm or an IDE without command-line arguments
         tile_id = '00N_110E'
         feature_type = 'osm_canals'
-        # chunk_bounds = (112, -4, 114, -2)  # this chunk has data
-        chunk_bounds = None  # this chunk has data
+        chunk_bounds = (112, -4, 114, -2)
         run_mode = 'test'
         client_type = 'local'
 
