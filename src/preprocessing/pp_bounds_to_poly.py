@@ -3,7 +3,6 @@ from shapely.geometry import Polygon
 import numpy as np
 from pp_utilities import get_tile_bounds  # Ensure this is correctly imported
 
-
 def get_chunk_bounds(minx, miny, maxx, maxy, chunk_size):
     """
     Divide a bounding box into smaller chunks of the specified size.
@@ -24,11 +23,11 @@ def get_chunk_bounds(minx, miny, maxx, maxy, chunk_size):
     for x in x_coords:
         for y in y_coords:
             chunk_polygon = Polygon(
-                [(x, y), (x + chunk_size, y), (x + chunk_size, y + chunk_size), (x, y + chunk_size)])
+                [(x, y), (x + chunk_size, y), (x + chunk_size, y + chunk_size), (x, y + chunk_size)]
+            )
             chunk_bounds = (x, y, x + chunk_size, y + chunk_size)
             chunks.append((chunk_polygon, chunk_bounds))
     return chunks
-
 
 def export_chunks_to_shapefile(chunk_params, output_filename):
     """
@@ -53,13 +52,15 @@ def export_chunks_to_shapefile(chunk_params, output_filename):
                 'chunk_size': chunk_size
             })
 
+        # Define WGS 1984 projection
+        crs = "EPSG:4326"
+
         # Create GeoDataFrame with geometry and attributes
-        gdf = gpd.GeoDataFrame(chunk_data, geometry=[chunk[0] for chunk in chunks])
+        gdf = gpd.GeoDataFrame(chunk_data, geometry=[chunk[0] for chunk in chunks], crs=crs)
         gdf.to_file(output_filename)
         print(f"Chunk bounds exported to {output_filename}")
     except Exception as e:
         print(f"Error exporting chunks to shapefile: {e}")
-
 
 def get_tile_bounds(global_index_shapefile, tile_id):
     """
@@ -79,12 +80,11 @@ def get_tile_bounds(global_index_shapefile, tile_id):
     bounds = tile.total_bounds
     return bounds
 
-
 # Main script to run the analysis
 if __name__ == "__main__":
     global_index_shapefile = "C:/GIS/Data/Global/Wetlands/Raw/Global/gfw_peatlands/Global_Peatlands_Index/Global_Peatlands.shp"
     tile_id = "00N_110E"
-    chunk_size = 0.5  # Set the desired chunk size
+    chunk_size = 2  # Set the desired chunk size
 
     # Get the bounds of the specified tile
     tile_bounds = get_tile_bounds(global_index_shapefile, tile_id)
