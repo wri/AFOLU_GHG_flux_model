@@ -151,16 +151,16 @@ def assign_segments_to_cells(fishnet_gdf, features_gdf):
     logging.info("Assigning feature segments to fishnet cells and calculating lengths")
 
     # Reproject the GeoDataFrames to the same CRS (e.g., EPSG:3395)
-    logging.info(f"Reprojecting GeoDataFrame from {features_gdf.crs} to 3395")
     features_gdf = reproject_gdf(features_gdf, 3395)
     fishnet_gdf = reproject_gdf(fishnet_gdf, 3395)
 
     # Validate geometries and fix any invalid ones, specifying meta
-    logging.info("Validating geometries in features_gdf and fixing invalid ones...")
-    features_gdf['geometry'] = features_gdf.geometry.apply(
-        lambda geom: geom.buffer(0) if not geom.is_valid else geom,
-        meta=('geometry', 'geometry')
-    )
+    # need to test this separately and see how it does because it takes a really long time
+    # logging.info("Validating geometries in features_gdf and fixing invalid ones...")
+    # features_gdf['geometry'] = features_gdf.geometry.apply(
+    #     lambda geom: geom.buffer(0) if not geom.is_valid else geom,
+    #     meta=('geometry', 'geometry')
+    # )
 
     # Convert to regular GeoDataFrames if they are Dask GeoDataFrames
     if isinstance(fishnet_gdf, dgpd.GeoDataFrame):
@@ -233,10 +233,29 @@ def fishnet_to_raster(fishnet_gdf, chunk_raster, output_raster_path):
     xr_rasterized = xr_rasterized.rio.write_crs(chunk_raster.rio.crs, inplace=True)
     xr_rasterized = xr_rasterized.rio.write_transform(chunk_raster.rio.transform(), inplace=True)
 
-    # Save raster to GeoTIFF
-    xr_rasterized.rio.to_raster(clean_path(output_raster_path), compress='lzw')
+    # Save the raster temporarily before resampling
+    temp_raster_path = output_raster_path.replace(".tif", "_temp.tif")
+    xr_rasterized.rio.to_raster(temp_raster_path, compress='lzw')
 
-    logging.info("Fishnet converted to raster and saved")
+    # Use gdalwarp to resample the raster to exact 0.01 x 0.01 degree resolution
+    gdalwarp_cmd = [
+        'gdalwarp',
+        '-tr', '0.01', '0.01',  # Target resolution
+        '-r', 'near',  # Resampling method
+        '-tap',  # Ensure alignment with 0.01 grid
+        '-co', 'COMPRESS=LZW',
+        '-co', 'TILED=YES',
+        temp_raster_path,  # Input file
+        output_raster_path  # Output file
+    ]
+
+    logging.info(f"Running gdalwarp to ensure exact resolution: {' '.join(gdalwarp_cmd)}")
+    subprocess.run(gdalwarp_cmd, check=True)
+
+    # Clean up the temporary raster file
+    os.remove(temp_raster_path)
+
+    logging.info("Fishnet converted to raster and saved with exact resolution")
 
 
 def upload_final_output_to_s3(local_output_path, s3_output_path):
@@ -404,7 +423,7 @@ if __name__ == "__main__":
     if not any(sys.argv[1:]):
         tile_id = '00N_110E'
         # tile_id = None
-        feature_type = 'osm_roads'
+        feature_type = 'osm_canals'
         chunk_bounds = (112, -4, 114, -2)
         # chunk_bounds = None
         run_mode = 'default'
