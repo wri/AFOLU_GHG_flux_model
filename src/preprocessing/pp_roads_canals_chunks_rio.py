@@ -1,3 +1,10 @@
+import os
+import logging
+import subprocess
+import rasterio
+import boto3
+import pp_utilities as uu
+import constants_and_names as cn
 import dask_geopandas as dgpd
 import geopandas as gpd
 import pandas as pd
@@ -6,20 +13,11 @@ import rioxarray as rxr
 import numpy as np
 from rasterio.features import rasterize
 from shapely.geometry import box
-import boto3
-import logging
-import os
 import dask
 from dask.distributed import Client, LocalCluster
 import gc
-import subprocess
-from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 import warnings
 import time
-import math
-
-import constants_and_names as cn
-import pp_utilities as uu
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -34,6 +32,11 @@ for dataset_key, dataset_info in cn.datasets.items():
             os.makedirs(sub_dataset['local_processed'], exist_ok=True)
 os.makedirs(cn.local_temp_dir, exist_ok=True)
 logging.info("Directories and paths set up")
+
+
+def clean_path(path):
+    """Clean up any double slashes in the path except for the protocol (e.g., s3://)."""
+    return path.replace('//', '/').replace(':/', '://')
 
 
 def get_10x10_tile_bounds(tile_id):
@@ -124,7 +127,7 @@ def read_tiled_features(tile_id, feature_type):
         # Construct the S3 path for the shapefile
         tile_id = '_'.join(tile_id.split('_')[:2])
         s3_file_path = os.path.join(feature_tile_dir, f"{feature_key[1]}_{tile_id}.shp")
-        full_s3_path = f"/vsis3/{cn.s3_bucket_name}/{s3_file_path}"
+        full_s3_path = clean_path(f"/vsis3/{cn.s3_bucket_name}/{s3_file_path}")
 
         logging.info(f"Reading tiled shapefile: {full_s3_path}")
 
@@ -231,7 +234,7 @@ def fishnet_to_raster(fishnet_gdf, chunk_raster, output_raster_path):
     xr_rasterized = xr_rasterized.rio.write_transform(chunk_raster.rio.transform(), inplace=True)
 
     # Save raster to GeoTIFF
-    xr_rasterized.rio.to_raster(output_raster_path, compress='lzw')
+    xr_rasterized.rio.to_raster(clean_path(output_raster_path), compress='lzw')
 
     logging.info("Fishnet converted to raster and saved")
 
@@ -239,7 +242,7 @@ def fishnet_to_raster(fishnet_gdf, chunk_raster, output_raster_path):
 def upload_final_output_to_s3(local_output_path, s3_output_path):
     s3_client = boto3.client('s3')
     try:
-        s3_output_path = s3_output_path.replace('//', '/')
+        s3_output_path = clean_path(s3_output_path)
         logging.info(f"Uploading {local_output_path} to s3://{cn.s3_bucket_name}/{s3_output_path}")
         s3_client.upload_file(local_output_path, cn.s3_bucket_name, s3_output_path)
         logging.info(f"Successfully uploaded {local_output_path} to s3://{cn.s3_bucket_name}/{s3_output_path}")
@@ -255,13 +258,26 @@ def upload_final_output_to_s3(local_output_path, s3_output_path):
 def process_chunk(bounds, feature_type, tile_id):
     output_dir = cn.datasets[feature_type.split('_')[0]][feature_type.split('_')[1]]['local_processed']
     bounds_str = "_".join([str(round(x, 2)) for x in bounds])
-    local_output_path = os.path.join(output_dir, f"{tile_id}_{bounds_str}_{feature_type}_density.tif")
-    s3_output_path = f"{cn.datasets[feature_type.split('_')[0]][feature_type.split('_')[1]]['s3_processed']}/{tile_id}_{bounds_str}_{feature_type}_density.tif"
+    local_output_path = clean_path(os.path.join(output_dir, f"{tile_id}_{bounds_str}_{feature_type}_density.tif"))
+    s3_output_path = clean_path(f"{cn.datasets[feature_type.split('_')[0]][feature_type.split('_')[1]]['s3_processed']}/{tile_id}_{bounds_str}_{feature_type}_density.tif")
 
     logging.info(f"Starting processing of the chunk {bounds_str} for tile {tile_id}")
 
+    # Check if the file already exists on S3 before proceeding
     try:
-        input_s3_path = f'/vsis3/{cn.s3_bucket_name}/{cn.peat_tiles_prefix_1km}{tile_id}{cn.peat_pattern}'
+        s3_client = boto3.client('s3')
+        s3_client.head_object(Bucket=cn.s3_bucket_name, Key=s3_output_path)
+        logging.info(f"Output file {s3_output_path} already exists on S3. Skipping processing.")
+        return
+    except s3_client.exceptions.ClientError as e:
+        if e.response['Error']['Code'] == '404':
+            logging.info(f"Output file {s3_output_path} does not exist on S3. Proceeding with processing.")
+        else:
+            logging.error(f"Error checking existence of {s3_output_path} on S3: {e}")
+            return
+
+    try:
+        input_s3_path = clean_path(f'/vsis3/{cn.s3_bucket_name}/{cn.peat_tiles_prefix_1km}{tile_id}{cn.peat_pattern}')
 
         # Open the raster using rioxarray
         chunk_raster = rxr.open_rasterio(input_s3_path, masked=True)
@@ -351,7 +367,7 @@ def main(tile_id=None, feature_type='osm_roads', chunk_bounds=None, run_mode='de
 
     try:
         if tile_id:
-            tile_key = f"{cn.peat_tiles_prefix}{tile_id}{cn.peat_pattern}"
+            tile_key = clean_path(f"{cn.peat_tiles_prefix}{tile_id}{cn.peat_pattern}")
             tasks = process_tile(tile_key, feature_type, chunk_bounds, run_mode)
             dask.compute(*tasks)
         else:
@@ -387,9 +403,11 @@ if __name__ == "__main__":
 
     if not any(sys.argv[1:]):
         tile_id = '00N_110E'
-        feature_type = 'osm_canals'
+        # tile_id = None
+        feature_type = 'osm_roads'
         chunk_bounds = (112, -4, 114, -2)
-        run_mode = 'test'
+        # chunk_bounds = None
+        run_mode = 'default'
         client_type = 'local'
 
         main(tile_id=tile_id, feature_type=feature_type, chunk_bounds=chunk_bounds, run_mode=run_mode,
