@@ -361,8 +361,9 @@ if __name__ == "__main__":
 
     if not any(sys.argv[1:]):
         # Default values for running directly from PyCharm or an IDE without command-line arguments
-        tile_id = '00N_110E'
-        feature_type = 'osm_canals'
+        # tile_id = '00N_110E'
+        tile_id = None
+        feature_type = 'osm_roads'
         # chunk_bounds = (112, -4, 114, -2)  # this chunk has data
         chunk_bounds = None  # this chunk has data
         run_mode = 'test'
