@@ -326,7 +326,7 @@ def main(tile_id=None, feature_type='osm_roads', chunk_bounds=None, run_mode='de
 
     try:
         if tile_id:
-            tile_key = f"{cn.peat_tiles_prefix}{tile_id}{cn.peat_pattern}"
+            tile_key = f"{cn.peat_tiles_prefix_1km}{tile_id}{cn.peat_pattern}"
             tasks = process_tile(tile_key, feature_type, chunk_bounds, run_mode)
             dask.compute(*tasks)
         else:
