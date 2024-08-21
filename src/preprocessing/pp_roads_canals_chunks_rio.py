@@ -286,7 +286,7 @@ def process_chunk(bounds, feature_type, tile_id):
 def process_tile(tile_key, feature_type, chunk_bounds=None, run_mode='default'):
     tile_id = '_'.join(os.path.basename(tile_key).split('_')[:2])
     tile_bounds = get_10x10_tile_bounds(tile_id)
-    chunk_size = 2  # 1x1 degree chunks
+    chunk_size = 1  # 1x1 degree chunks
 
     chunks = get_chunk_bounds([*tile_bounds, chunk_size])
 
@@ -299,7 +299,7 @@ def process_tile(tile_key, feature_type, chunk_bounds=None, run_mode='default'):
 
 def process_all_tiles(feature_type, run_mode='default'):
     paginator = boto3.client('s3').get_paginator('list_objects_v2')
-    page_iterator = paginator.paginate(Bucket=cn.s3_bucket_name, Prefix=cn.peat_tiles_prefix)
+    page_iterator = paginator.paginate(Bucket=cn.s3_bucket_name, Prefix=cn.peat_tiles_prefix_1km)
     tile_keys = []
 
     for page in page_iterator:
@@ -361,11 +361,11 @@ if __name__ == "__main__":
 
     if not any(sys.argv[1:]):
         # Default values for running directly from PyCharm or an IDE without command-line arguments
-        # tile_id = '00N_110E'
-        tile_id = None
+        tile_id = '00N_110E'
+        # tile_id = None
         feature_type = 'osm_roads'
-        # chunk_bounds = (112, -4, 114, -2)  # this chunk has data
-        chunk_bounds = None  # this chunk has data
+        chunk_bounds = (112, -4, 114, -2)  # this chunk has data
+        # chunk_bounds = None  # this chunk has data
         run_mode = 'test'
         client_type = 'local'
 
