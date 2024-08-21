@@ -185,13 +185,16 @@ def fishnet_to_raster(fishnet_gdf, chunk_raster, output_raster_path):
         [(geom, value) for geom, value in zip(fishnet_gdf.geometry, fishnet_gdf['length'])],
         out_shape=out_shape,  # Use the shape from the input raster
         transform=transform,  # Use the affine transformation from the input raster
-        fill=0,
+        fill=0,  # Set no data value to 0
         all_touched=True,
         dtype=np.float32
     )
 
     # Divide the raster by 1000 to convert length to density
     rasterized /= 1000.0
+
+    # Replace any infinite or NaN values with 0 (no data)
+    rasterized = np.where(np.isfinite(rasterized), rasterized, 0)
 
     if np.all(rasterized == 0) or np.all(np.isnan(rasterized)):
         logging.info(f"Skipping export of {output_raster_path} as all values are 0 or nodata")
@@ -205,11 +208,13 @@ def fishnet_to_raster(fishnet_gdf, chunk_raster, output_raster_path):
     )
     xr_rasterized = xr_rasterized.rio.write_crs("EPSG:4326", inplace=True)
     xr_rasterized = xr_rasterized.rio.write_transform(transform, inplace=True)
+    xr_rasterized.rio.set_nodata(0, inplace=True)  # Explicitly set no data value to 0
 
     # Save the rasterized DataArray to a GeoTIFF file
     xr_rasterized.rio.to_raster(output_raster_path, compress='lzw')
 
     logging.info("Fishnet converted to raster and saved")
+
 
 
 
@@ -286,7 +291,7 @@ def process_chunk(bounds, feature_type, tile_id):
 def process_tile(tile_key, feature_type, chunk_bounds=None, run_mode='default'):
     tile_id = '_'.join(os.path.basename(tile_key).split('_')[:2])
     tile_bounds = get_10x10_tile_bounds(tile_id)
-    chunk_size = 1  # 1x1 degree chunks
+    chunk_size = 2  # 1x1 degree chunks
 
     chunks = get_chunk_bounds([*tile_bounds, chunk_size])
 
@@ -362,10 +367,9 @@ if __name__ == "__main__":
     if not any(sys.argv[1:]):
         # Default values for running directly from PyCharm or an IDE without command-line arguments
         tile_id = '00N_110E'
-        # tile_id = None
-        feature_type = 'osm_roads'
-        chunk_bounds = (112, -4, 114, -2)  # this chunk has data
-        # chunk_bounds = None  # this chunk has data
+        feature_type = 'osm_canals'
+        # chunk_bounds = (112, -4, 114, -2)  # this chunk has data
+        chunk_bounds = None  # this chunk has data
         run_mode = 'test'
         client_type = 'local'
 
