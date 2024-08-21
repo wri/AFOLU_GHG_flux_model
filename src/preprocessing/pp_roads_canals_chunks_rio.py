@@ -193,9 +193,6 @@ def fishnet_to_raster(fishnet_gdf, chunk_raster, output_raster_path):
     # Divide the raster by 1000 to convert length to density
     rasterized /= 1000.0
 
-    # Replace any infinite or NaN values with 0 (no data)
-    rasterized = np.where(np.isfinite(rasterized), rasterized, 0)
-
     if np.all(rasterized == 0) or np.all(np.isnan(rasterized)):
         logging.info(f"Skipping export of {output_raster_path} as all values are 0 or nodata")
         return
@@ -214,7 +211,6 @@ def fishnet_to_raster(fishnet_gdf, chunk_raster, output_raster_path):
     xr_rasterized.rio.to_raster(output_raster_path, compress='lzw')
 
     logging.info("Fishnet converted to raster and saved")
-
 
 
 
@@ -368,8 +364,8 @@ if __name__ == "__main__":
         # Default values for running directly from PyCharm or an IDE without command-line arguments
         tile_id = '00N_110E'
         feature_type = 'osm_canals'
-        # chunk_bounds = (112, -4, 114, -2)  # this chunk has data
-        chunk_bounds = None  # this chunk has data
+        chunk_bounds = (112, -4, 114, -2)  # this chunk has data
+        # chunk_bounds = None  # this chunk has data
         run_mode = 'test'
         client_type = 'local'
 
