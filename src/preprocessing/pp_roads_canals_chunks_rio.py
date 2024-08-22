@@ -1,3 +1,12 @@
+import coiled
+import logging
+
+# Set up general logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Set up specific logging for Coiled
+logging.getLogger("coiled").setLevel(logging.INFO)
+
 import dask_geopandas as dgpd
 import geopandas as gpd
 import xarray as xr
@@ -6,7 +15,6 @@ import numpy as np
 from rasterio.features import rasterize
 from shapely.geometry import box
 import boto3
-import logging
 import os
 import dask
 from dask.distributed import Client, LocalCluster
@@ -17,9 +25,6 @@ import warnings
 
 import constants_and_names as cn
 import pp_utilities as uu
-
-# Setup logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Suppress specific warnings
 warnings.filterwarnings('ignore', 'Geometry is in a geographic CRS. Results from', UserWarning)
@@ -166,10 +171,6 @@ def assign_segments_to_cells(fishnet_gdf, features_gdf):
 
     return fishnet_with_lengths
 
-from rasterio.transform import from_origin
-
-from rasterio.transform import Affine
-
 def fishnet_to_raster(fishnet_gdf, chunk_raster, output_raster_path):
     logging.info(f"Converting fishnet to raster and saving to {output_raster_path}")
 
@@ -211,8 +212,6 @@ def fishnet_to_raster(fishnet_gdf, chunk_raster, output_raster_path):
     xr_rasterized.rio.to_raster(output_raster_path, compress='lzw')
 
     logging.info("Fishnet converted to raster and saved")
-
-
 
 def upload_final_output_to_s3(local_output_path, s3_output_path):
     s3_client = boto3.client('s3')
@@ -319,11 +318,11 @@ def process_all_tiles(feature_type, run_mode='default'):
 def main(tile_id=None, feature_type='osm_roads', chunk_bounds=None, run_mode='default', client_type='local'):
     if client_type == 'coiled':
         client, cluster = uu.setup_coiled_cluster()
+        logging.info(f"Coiled cluster initialized: {cluster.name}")
     else:
         cluster = LocalCluster()
         client = Client(cluster)
-
-    logging.info(f"Dask client initialized with {client_type} cluster")
+        logging.info(f"Dask client initialized with {client_type} cluster")
 
     try:
         if tile_id:
@@ -374,3 +373,11 @@ if __name__ == "__main__":
     else:
         main(tile_id=args.tile_id, feature_type=args.feature_type, chunk_bounds=chunk_bounds, run_mode=args.run_mode,
              client_type=args.client)
+
+"""
+coiled test in WSL for chunk with data:
+
+python pp_roads_canals_chunks_rio.py --tile_id 00N_110E --feature_type osm_canals --run_mode default --client coiled --chunk_bounds "112, -4, 114,
+-2"
+
+"""
