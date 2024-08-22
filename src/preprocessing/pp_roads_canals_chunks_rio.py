@@ -19,11 +19,59 @@ import warnings
 import constants_and_names as cn
 import pp_utilities as uu
 
+
+"""
+Script for Processing OSM and GRIP Data for Roads and Canals Using Tiled Shapefiles with Dask and Coiled
+
+This script processes spatial data from OpenStreetMap (OSM) and the Global Roads Inventory Project (GRIP) by 
+transforming vector data (roads, canals) into raster data on a global scale. The script is designed to handle 
+large datasets by breaking down the processing into smaller chunks (tiles) and utilizing parallel computing 
+through Dask and Coiled clusters.
+
+Key Features:
+- **Tiling and Chunking**: The script processes data in 10x10 degree tiles, which can be further divided into 
+  smaller chunks for parallel processing.
+- **Dask and Coiled Integration**: The script supports running on either a local Dask client or a Coiled cluster, 
+  enabling scalable processing for large datasets.
+- **Rasterization and Fishnet Creation**: Vector features are clipped, assigned to fishnet grids, and rasterized 
+  to produce density maps.
+- **Automatic Directory Management**: Ensures that required local directories for output are created and managed 
+  automatically.
+- **Error Handling and Logging**: Comprehensive logging and error handling throughout the script allow for 
+  detailed monitoring and troubleshooting during execution.
+- **S3 Integration**: Processed raster files are uploaded to an S3 bucket, with the option to delete local 
+  copies after successful upload.
+
+Typical Workflow:
+1. The script starts by initializing the processing environment, including setting up a Dask client (local or Coiled).
+2. It calculates the bounds for each tile, breaks them into smaller chunks, and processes each chunk independently.
+3. For each chunk:
+   - A raster is read and clipped to the chunk's bounds.
+   - Features are read, reprojected, and clipped to the same area.
+   - The fishnet grid is created, and features are assigned to cells, where their lengths are calculated.
+   - The fishnet is rasterized, saved to a GeoTIFF, and uploaded to S3.
+4. The script can either process all tiles for a given feature type or focus on a specific tile and chunk, 
+   depending on the user's input parameters.
+
+How to Run:
+- The script can be executed via command line with various options, such as specifying a tile ID, feature type, 
+  chunk bounds, and client type (local or Coiled).
+- Example command:
+  `python pp_roads_canals_chunks_rio.py --tile_id 00N_110E --feature_type osm_canals --run_mode default --client coiled --chunk_bounds "112, -4, 114, -2"`
+
+This script is designed to be flexible and efficient, allowing users to process massive spatial datasets with 
+high granularity and leverage cloud computing resources for scalability.
+
+Note:
+Ensure that AWS credentials are configured correctly for S3 access, and that the required datasets are available 
+in the specified S3 bucket.
+
+"""
+
 # Set up general logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Set up specific logging for Coiled
-# logging.getLogger("coiled").setLevel(logging.INFO)
+# Set up specific logging for Coiled and Dask
 logging.getLogger("dask").setLevel(logging.INFO)
 
 # Suppress specific warnings
@@ -37,9 +85,16 @@ for dataset_key, dataset_info in cn.datasets.items():
 os.makedirs(cn.local_temp_dir, exist_ok=True)
 logging.info("Directories and paths set up")
 
-
 def get_10x10_tile_bounds(tile_id):
-    """Calculate the bounds for a 10x10 degree tile."""
+    """
+    Calculate the bounds for a 10x10 degree tile based on its tile ID.
+
+    Args:
+        tile_id (str): The ID of the tile (e.g., '00N_110E').
+
+    Returns:
+        tuple: The bounds of the tile in the format (min_x, min_y, max_x, max_y).
+    """
     logging.debug(f"Calculating bounds for tile {tile_id}")
 
     if "S" in tile_id:
@@ -59,8 +114,17 @@ def get_10x10_tile_bounds(tile_id):
     logging.debug(f"Bounds for tile {tile_id}: min_x={min_x}, min_y={min_y}, max_x={max_x}, max_y={max_y}")
     return min_x, min_y, max_x, max_y  # W, S, E, N
 
-
 def ensure_crs(gdf, target_crs):
+    """
+    Ensure that the GeoDataFrame has the correct CRS, and reproject if necessary.
+
+    Args:
+        gdf (GeoDataFrame): The GeoDataFrame to check.
+        target_crs (int or str): The target CRS to ensure.
+
+    Returns:
+        GeoDataFrame: The GeoDataFrame with the correct CRS.
+    """
     logging.debug(f"Ensuring CRS is {target_crs}")
     if gdf.crs is None:
         logging.warning(f"GeoDataFrame CRS is None, setting it to {target_crs}")
@@ -70,8 +134,16 @@ def ensure_crs(gdf, target_crs):
         gdf = gdf.to_crs(target_crs)
     return gdf
 
-
 def get_chunk_bounds(chunk_params):
+    """
+    Generate the bounds for each chunk within a tile.
+
+    Args:
+        chunk_params (list): A list containing [min_x, min_y, max_x, max_y, chunk_size].
+
+    Returns:
+        list: A list of chunk bounds in the format [min_x, min_y, max_x, max_y].
+    """
     min_x = chunk_params[0]
     min_y = chunk_params[1]
     max_x = chunk_params[2]
@@ -94,14 +166,32 @@ def get_chunk_bounds(chunk_params):
 
     return chunks
 
-
 def mask_raster(data, profile):
+    """
+    Mask a raster dataset in memory for values equal to 1.
+
+    Args:
+        data (numpy.ndarray): The raster data to mask.
+        profile (dict): The raster profile containing metadata.
+
+    Returns:
+        numpy.ndarray: The masked raster data as a binary array.
+    """
     logging.info("Masking raster in memory for values equal to 1")
     mask = data == 1
     return mask.astype(np.uint8)
 
-
 def create_fishnet_from_raster(data, transform):
+    """
+    Create a fishnet grid from raster data in memory.
+
+    Args:
+        data (numpy.ndarray): The raster data to create the fishnet from.
+        transform (Affine): The affine transformation of the raster data.
+
+    Returns:
+        Dask GeoDataFrame: The fishnet grid as a Dask GeoDataFrame.
+    """
     logging.info("Creating fishnet from raster data in memory")
     rows, cols = data.shape
     polygons = []
@@ -117,8 +207,17 @@ def create_fishnet_from_raster(data, transform):
     logging.info(f"Fishnet grid generated with {len(polygons)} cells")
     return fishnet_gdf
 
-
 def read_tiled_features(tile_id, feature_type):
+    """
+    Read the tiled features for a specific tile ID and feature type.
+
+    Args:
+        tile_id (str): The ID of the tile (e.g., '00N_110E').
+        feature_type (str): The type of feature to read (e.g., 'osm_roads').
+
+    Returns:
+        Dask GeoDataFrame: The features as a Dask GeoDataFrame.
+    """
     try:
         logging.info(f"Reading tiled features for tile {tile_id} and feature type {feature_type}")
         feature_key = feature_type.split('_')
@@ -137,16 +236,34 @@ def read_tiled_features(tile_id, feature_type):
         logging.error(f"Error reading {feature_type} shapefile for tile {tile_id}: {e}")
         return dgpd.from_geopandas(gpd.GeoDataFrame(columns=['geometry']), npartitions=1)
 
-
 def reproject_gdf(gdf, epsg):
+    """
+    Reproject a GeoDataFrame to the specified EPSG code.
+
+    Args:
+        gdf (GeoDataFrame): The GeoDataFrame to reproject.
+        epsg (int): The target EPSG code.
+
+    Returns:
+        GeoDataFrame: The reprojected GeoDataFrame.
+    """
     if gdf.crs is None:
         raise ValueError("GeoDataFrame does not have a CRS. Please set a CRS before reprojecting.")
 
     logging.info(f"Reprojecting GeoDataFrame to EPSG:{epsg}")
     return gdf.to_crs(epsg=epsg)
 
-
 def assign_segments_to_cells(fishnet_gdf, features_gdf):
+    """
+    Assign feature segments to fishnet cells and calculate their lengths.
+
+    Args:
+        fishnet_gdf (GeoDataFrame): The fishnet grid as a GeoDataFrame.
+        features_gdf (GeoDataFrame): The features as a GeoDataFrame.
+
+    Returns:
+        GeoDataFrame: The fishnet grid with feature lengths assigned to each cell.
+    """
     logging.info("Assigning feature segments to fishnet cells and calculating lengths")
 
     fishnet_gdf = ensure_crs(fishnet_gdf, 3395)
@@ -174,8 +291,18 @@ def assign_segments_to_cells(fishnet_gdf, features_gdf):
 
     return fishnet_with_lengths
 
-
 def fishnet_to_raster(fishnet_gdf, chunk_raster, output_raster_path):
+    """
+    Convert a fishnet grid to a raster and save it to a file.
+
+    Args:
+        fishnet_gdf (GeoDataFrame): The fishnet grid as a GeoDataFrame.
+        chunk_raster (xarray.DataArray): The input raster data.
+        output_raster_path (str): The path to save the output raster file.
+
+    Returns:
+        None
+    """
     logging.info(f"Converting fishnet to raster and saving to {output_raster_path}")
 
     fishnet_gdf = fishnet_gdf.to_crs("EPSG:4326")
@@ -214,8 +341,17 @@ def fishnet_to_raster(fishnet_gdf, chunk_raster, output_raster_path):
 
     logging.info("Fishnet converted to raster and saved")
 
-
 def upload_final_output_to_s3(local_output_path, s3_output_path):
+    """
+    Upload the final output file to S3 and delete the local copy.
+
+    Args:
+        local_output_path (str): The path to the local file.
+        s3_output_path (str): The S3 path where the file should be uploaded.
+
+    Returns:
+        None
+    """
     s3_client = boto3.client('s3')
     try:
         s3_output_path = s3_output_path.replace('//', '/')
@@ -229,9 +365,19 @@ def upload_final_output_to_s3(local_output_path, s3_output_path):
     except Exception as e:
         logging.error(f"Failed to upload {local_output_path} to s3://{cn.s3_bucket_name}/{s3_output_path}: {e}")
 
-
 @dask.delayed
 def process_chunk(bounds, feature_type, tile_id):
+    """
+    Process a single chunk of a tile.
+
+    Args:
+        bounds (list): The bounds of the chunk in the format [min_x, min_y, max_x, max_y].
+        feature_type (str): The type of feature being processed (e.g., 'osm_roads').
+        tile_id (str): The ID of the tile.
+
+    Returns:
+        None
+    """
     output_dir = cn.datasets[feature_type.split('_')[0]][feature_type.split('_')[1]]['local_processed']
     bounds_str = "_".join([str(round(x, 2)) for x in bounds])
     local_output_path = os.path.join(output_dir, f"{tile_id}_{bounds_str}_{feature_type}_density.tif")
@@ -298,9 +444,19 @@ def process_chunk(bounds, feature_type, tile_id):
     except Exception as e:
         logging.error(f"Error processing chunk {bounds_str} for tile {tile_id}: {e}", exc_info=True)
 
-
-
 def process_tile(tile_key, feature_type, chunk_bounds=None, run_mode='default'):
+    """
+    Process an entire tile, either in chunks or as a whole.
+
+    Args:
+        tile_key (str): The S3 key of the tile.
+        feature_type (str): The type of feature being processed (e.g., 'osm_roads').
+        chunk_bounds (list, optional): Specific bounds for processing a single chunk.
+        run_mode (str, optional): The mode of operation (e.g., 'default', 'test').
+
+    Returns:
+        list: A list of Dask delayed tasks for processing the tile.
+    """
     logging.info(f"Processing tile {tile_key} with feature type {feature_type}")
     tile_id = '_'.join(os.path.basename(tile_key).split('_')[:2])
     tile_bounds = get_10x10_tile_bounds(tile_id)
@@ -316,8 +472,17 @@ def process_tile(tile_key, feature_type, chunk_bounds=None, run_mode='default'):
     logging.info(f"Generated {len(chunk_tasks)} chunk tasks")
     return chunk_tasks
 
-
 def process_all_tiles(feature_type, run_mode='default'):
+    """
+    Process all tiles for a given feature type.
+
+    Args:
+        feature_type (str): The type of feature being processed (e.g., 'osm_roads').
+        run_mode (str, optional): The mode of operation (e.g., 'default', 'test').
+
+    Returns:
+        None
+    """
     logging.info(f"Processing all tiles for feature type {feature_type}")
     paginator = boto3.client('s3').get_paginator('list_objects_v2')
     page_iterator = paginator.paginate(Bucket=cn.s3_bucket_name, Prefix=cn.peat_tiles_prefix_1km)
@@ -337,8 +502,20 @@ def process_all_tiles(feature_type, run_mode='default'):
     logging.info(f"Computing {len(all_tasks)} tasks")
     dask.compute(*all_tasks)
 
-
 def main(tile_id=None, feature_type='osm_roads', chunk_bounds=None, run_mode='default', client_type='local'):
+    """
+    Main function for processing tiles or chunks of tiles using Dask.
+
+    Args:
+        tile_id (str, optional): The ID of a specific tile to process.
+        feature_type (str, optional): The type of feature being processed (e.g., 'osm_roads').
+        chunk_bounds (list, optional): Specific bounds for processing a single chunk.
+        run_mode (str, optional): The mode of operation (e.g., 'default', 'test').
+        client_type (str, optional): The type of Dask client to use ('local' or 'coiled').
+
+    Returns:
+        None
+    """
     logging.info("Initializing main processing function")
     if client_type == 'coiled':
         client, cluster = uu.setup_coiled_cluster()
@@ -363,7 +540,6 @@ def main(tile_id=None, feature_type='osm_roads', chunk_bounds=None, run_mode='de
         if client_type == 'coiled':
             cluster.close()
             logging.info("Coiled cluster closed")
-
 
 if __name__ == "__main__":
     import argparse
@@ -405,4 +581,3 @@ coiled test in WSL for chunk with data:
 
 python pp_roads_canals_chunks_rio.py --tile_id 00N_110E --feature_type osm_canals --run_mode default --client coiled --chunk_bounds "112, -4, 114, -2"
 """
-
