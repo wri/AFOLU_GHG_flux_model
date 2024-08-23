@@ -128,7 +128,11 @@ def stage_duration(start_time_str, end_time_str, stage):
 
 # Lazily opens tile within provided bounds (i.e. one chunk) and returns as a numpy array
 # If it can't open the uri for the chunk (tile does not exist), it returns nothing.
-# Originally, I had it return an array of the NoData value if the chunk didn't exist but that seems inefficient.
+# Originally, I had it return an array of the NoData value if the chunk didn't exist but that
+# doesn't work because the dummy NoData chunk it downloads needs to have the same datatype as
+# chunks with actual data so that the Numba functions receive input data with consistent datatypes.
+# For example, a dataset that's float32 can't have NoData chunks that are uint8 because
+# the Numba functions won't be able to handle that (since they're so particular about datatypes).
 def get_tile_dataset_rio(uri, bounds):
 
     # If the uri exists, the relevant window is opened and returned and returned as an array.
@@ -213,13 +217,13 @@ def check_chunk_for_data(required_layers, bounds_str, tile_id, any_or_all, is_fi
             # Can't use np.all because it doesn't work in chunks that are mostly water; says nodata in chunk even if there is land
             # So, instead compare np.min and np.max.
             min = np.min(list(required_layers.values())[i])
-            max = np.max(list(required_layers.values())[i])
+            # max = np.max(list(required_layers.values())[i])
 
             # Breaks the loop if there is data in the chunk.
             # Don't need to keep checking chunk for data because the condition has been met
             # (at least one chunk has data).
             # The one print statement regardless of whether the model is full-scale or not.
-            if min != max:  # if min and max are different, there must be data in the chunk
+            if min != None:  # if min exists, there must be data in the chunk
                 logger.info(f"flm: Data in chunk {bounds_str}. Proceeding: {timestr()}")
                 print(f"flm: Data in chunk {bounds_str}. Proceeding: {timestr()}")
                 return True
@@ -678,7 +682,7 @@ def get_dtype_from_s3(file_path):
 
 
 # Categorizes tiles by their data type and makes a separate list for each datatype.
-# Needs to be expanded if additional datatypes are being used
+# Needs to be expanded if additional datatypes are being used.
 # From https://chatgpt.com/share/e/9a7bf947-1c32-4898-ba6b-3b932a5220c1
 def categorize_files_by_dtype(first_tiles):
 
@@ -704,3 +708,38 @@ def categorize_files_by_dtype(first_tiles):
                 raise ValueError(f"Unexpected data type {dtype} for file {file_path}")
 
     return uint8_list, int16_list, int32_list, float32_list
+
+# Fills any missing chunks (layers) with NoData (0s) of the correct datatype.
+# The 0s must be the correct datatype so that the numba function receives consistent datatypes for each input dataset.
+# Needs to be expanded if additional datatypes are being used.
+def fill_missing_input_layers_with_no_data(layers, uint8_list, int16_list, int32_list, float32_list,
+                                           bounds_str, tile_id, is_final, logger):
+
+   # Fills missing layers with arrays of the appropriate data type and size
+    for key, array in layers.items():
+        if array is None:
+
+            # Determines the appropriate dtype based on the categorized lists
+            if key in uint8_list:
+                dtype = np.uint8
+            elif key in int16_list:
+                dtype = np.int16
+            elif key in int32_list:
+                dtype = np.int32
+            elif key in float32_list:
+                dtype = np.float32
+            else:
+                raise ValueError(f"Key {key} for chunk {bounds_str} in {tile_id} not found in any data type lists: {timestr()}")
+
+            # Finds an existing array to use as a template for size
+            existing_array = next((arr for arr in layers.values() if arr is not None), None)
+            if existing_array is not None:
+                # Creates an array of zeros with the same shape and the determined dtype
+                layers[key] = np.zeros(existing_array.shape, dtype=dtype)
+                # print(f"Filled missing layer '{key}' with an array of zeros (dtype={dtype}).")
+                lu.print_and_log(f"Created {key} for chunk {bounds_str} in {tile_id}: {timestr()}", is_final, logger)
+            else:
+                # Handles the case where no data exists at all
+                raise ValueError(f"No data available to determine the size for the missing layer {key} for chunk {bounds_str} in {tile_id}: {timestr()}")
+
+    return layers
