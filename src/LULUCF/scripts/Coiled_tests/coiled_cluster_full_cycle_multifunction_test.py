@@ -7,19 +7,19 @@ import coiled
 import dask
 from dask.distributed import Client
 import dask.array as da
-from create_cluster import create_cluster
-from run_test_operation import run_test_operation
-from terminate_cluster import terminate_cluster
+from create_cluster_test import create_cluster_test
+from run_operation_test import run_operation_test
+from terminate_cluster_test import terminate_cluster_test
 
 def main(n_workers, worker_memory):
     # Step 1: Create the cluster
-    cluster = create_cluster(n_workers, worker_memory)
+    cluster = create_cluster_test(n_workers, worker_memory)
 
     # Step 2: Run a test operation
-    result = run_test_operation(cluster.name)
+    result = run_operation_test(cluster.name)
 
     # Step 3: Delete the cluster
-    terminate_cluster(cluster.name)
+    terminate_cluster_test(cluster.name)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create a Coiled cluster with specified parameters.")

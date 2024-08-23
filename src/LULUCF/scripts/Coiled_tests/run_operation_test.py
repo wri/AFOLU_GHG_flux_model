@@ -1,8 +1,12 @@
+"""
+With assistance from https://chatgpt.com/share/e/e91c2e03-8c71-44f9-9872-61d25c51bc87
+"""
+
 import coiled
 from dask.distributed import Client
 import dask.array as da
 
-def run_test_operation(cluster_name):
+def run_operation_test(cluster_name):
     # Connect to the existing cluster using the cluster's name to get the scheduler address
     cluster = coiled.Cluster(name=cluster_name)
     client = Client(cluster)
@@ -21,6 +25,6 @@ if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1:
         cluster_name = sys.argv[1]
-        run_test_operation(cluster_name)
+        run_operation_test(cluster_name)
     else:
         print("Please provide the cluster name as an argument.")

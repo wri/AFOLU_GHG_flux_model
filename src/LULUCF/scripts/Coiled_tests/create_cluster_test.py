@@ -1,7 +1,11 @@
+"""
+With assistance from https://chatgpt.com/share/e/e91c2e03-8c71-44f9-9872-61d25c51bc87
+"""
+
 import coiled
 import argparse
 
-def create_cluster(n_workers, worker_memory):
+def create_cluster_test(n_workers, worker_memory):
 
     # Convert worker_memory from an integer to the required format (e.g., 8 to "8GiB")
     worker_memory_str = f"{worker_memory}GiB"
@@ -28,4 +32,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Create the cluster with command line arguments
-    create_cluster(args.n_workers, args.worker_memory)
+    create_cluster_test(args.n_workers, args.worker_memory)

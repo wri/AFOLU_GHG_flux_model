@@ -1,6 +1,10 @@
+"""
+With assistance from https://chatgpt.com/share/e/e91c2e03-8c71-44f9-9872-61d25c51bc87
+"""
+
 import coiled
 
-def terminate_cluster(cluster_name):
+def terminate_cluster_test(cluster_name):
     # Connect to the existing cluster using the cluster's name
     cluster = coiled.Cluster(name=cluster_name)
 
@@ -15,6 +19,6 @@ if __name__ == "__main__":
 
     if len(sys.argv) > 1:
         cluster_name = sys.argv[1]
-        terminate_cluster(cluster_name)
+        terminate_cluster_test(cluster_name)
     else:
         print("Please provide the cluster name as an argument.")
