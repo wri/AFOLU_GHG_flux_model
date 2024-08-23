@@ -3,9 +3,6 @@ import logging
 import boto3
 import geopandas as gpd
 import rasterio
-import numpy as np
-from rasterio.merge import merge
-from rasterio.mask import mask
 from shapely.geometry import box
 import pp_hansenize_gdal as hz  # Importing GDAL-based hansenize script
 import constants_and_names as cn
@@ -17,7 +14,7 @@ This script is not currently using Dask but a version using Dask may be implemen
 """
 
 # Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # AWS S3 setup
 s3_client = boto3.client('s3')
@@ -36,10 +33,12 @@ def get_raster_files_from_s3(s3_directory):
     paginator = s3_client.get_paginator('list_objects_v2')
     raster_files = []
     try:
+        logging.info(f"Fetching raster files from S3 directory: {s3_directory}")
         for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
             for obj in page.get('Contents', []):
                 if obj['Key'].endswith('.tif'):
                     raster_files.append(f"s3://{bucket}/{obj['Key']}")
+        logging.info(f"Found {len(raster_files)} raster files in S3 directory: {s3_directory}")
     except Exception as e:
         logging.error(f"Error retrieving raster files from S3: {e}")
     return raster_files
@@ -59,7 +58,7 @@ def create_index_from_s3(s3_prefix, local_output_dir, dataset_name='descals'):
     index_path = os.path.join(local_output_dir, f"{dataset_name}_tile_index.shp")
 
     if os.path.exists(index_path):
-        logging.info(f"Descals tile index already exists at {index_path}. Loading...")
+        logging.info(f"{dataset_name} tile index already exists at {index_path}. Loading...")
         return index_path
 
     logging.info(f"Creating index for {dataset_name} dataset from {s3_prefix}")
@@ -110,10 +109,11 @@ def read_shapefile_from_s3(s3_prefix, local_dir):
         for ext in extensions:
             s3_path = f"{s3_prefix}{ext}"
             local_path = os.path.join(local_dir, os.path.basename(s3_prefix) + ext)
+            logging.info(f"Downloading {s3_path} to {local_path}")
             s3_client.download_file(cn.s3_bucket_name, s3_path, local_path)
         shapefile_path = os.path.join(local_dir, os.path.basename(s3_prefix) + '.shp')
         gdf = gpd.read_file(shapefile_path)
-        logging.info(f"Shapefile {shapefile_path} successfully loaded")
+        logging.info(f"Shapefile {shapefile_path} successfully loaded with {len(gdf)} features")
     except Exception as e:
         logging.error(f"Error reading shapefile from S3: {e}")
         gdf = gpd.GeoDataFrame()  # Return an empty GeoDataFrame in case of error
@@ -131,6 +131,7 @@ def get_tile_bounds(index_shapefile, tile_id):
         tuple: Bounding box of the tile (minx, miny, maxx, maxy).
     """
     try:
+        logging.info(f"Reading tile bounds for tile {tile_id} from {index_shapefile}")
         gdf = gpd.read_file(index_shapefile)
         tile = gdf[gdf['tile_id'] == tile_id]
         if tile.empty:
@@ -145,7 +146,7 @@ def get_tile_bounds(index_shapefile, tile_id):
 
 import tempfile
 
-def process_tile(tile_id, dataset, tile_bounds, descals_gdf, run_mode='default'):
+def process_tile(tile_id, dataset, tile_bounds, descals_gdf, run_mode='default', dtype='Int16'):
     """
     Processes a single tile: merges descals tiles, clips to bounds, and uploads to S3.
 
@@ -155,14 +156,15 @@ def process_tile(tile_id, dataset, tile_bounds, descals_gdf, run_mode='default')
     tile_bounds (tuple): Bounding box coordinates for the tile.
     descals_gdf (GeoDataFrame): GeoDataFrame of descals tiles.
     run_mode (str): The mode to run the script ('default' or 'test').
+    dtype (str): Data type for the output raster (default is 'Int16').
 
     Returns:
     None
     """
-    output_dir = cn.datasets[dataset]['local_processed']
+    output_dir = cn.datasets['descals'][dataset]['local_processed']
     os.makedirs(output_dir, exist_ok=True)
 
-    s3_output_dir = cn.datasets[dataset]['s3_processed']
+    s3_output_dir = cn.datasets['descals'][dataset]['s3_processed']
     local_output_path = os.path.join(output_dir, f"{dataset}_{tile_id}.tif")
     s3_output_path = f"{s3_output_dir}/{dataset}_{tile_id}.tif".replace("\\", "/")
 
@@ -201,14 +203,16 @@ def process_tile(tile_id, dataset, tile_bounds, descals_gdf, run_mode='default')
             for s3_path in descals_tile_paths:
                 local_path = os.path.join(tmpdirname, os.path.basename(s3_path))
                 bucket, key = s3_path.replace("s3://", "").split("/", 1)
+                logging.info(f"Downloading {s3_path} to {local_path}")
                 s3_client.download_file(bucket, key, local_path)
                 local_tile_paths.append(local_path)
 
             # Use the GDAL version of hansenize to merge and clip descals tiles
             logging.info(f"Merging and clipping descals tiles for tile {tile_id} using GDAL")
-            hz.hansenize_gdal(local_tile_paths, local_output_path, tile_bounds, nodata_value=0, dtype='Byte')
+            hz.hansenize_gdal(local_tile_paths, local_output_path, tile_bounds, nodata_value=0, dtype=dtype)
 
-            # Replace the erroneous value of 3 with 0
+        # For descals_extent, replace erroneous value 3 with 0, but not for descals_year
+        if dataset == 'extent':
             logging.info(f"Replacing erroneous value 3 with 0 in {local_output_path}")
             with rasterio.open(local_output_path, 'r+') as dst:
                 data = dst.read(1)
@@ -219,18 +223,19 @@ def process_tile(tile_id, dataset, tile_bounds, descals_gdf, run_mode='default')
     except Exception as e:
         logging.error(f"Error processing tile {tile_id}: {e}")
     finally:
-        if os.path.exists(local_output_path):
-            logging.info("Success")
-            # os.remove(local_output_path)  # Clean up the output raster after processing
-            # logging.info(f"Intermediate output raster {local_output_path} removed")
+        if os.path.exists(local_output_path) and run_mode != 'test':
+            logging.info(f"Uploading {local_output_path} to S3: {s3_output_path}")
+            s3_client.upload_file(local_output_path, cn.s3_bucket_name, s3_output_path)
+            logging.info(f"Intermediate output raster {local_output_path} removed")
+            os.remove(local_output_path)
 
-def main(tile_id=None, dataset='descals', run_mode='default'):
+def main(tile_id=None, dataset='descals_extent', run_mode='default'):
     """
     Main function to orchestrate the processing based on provided arguments.
 
     Parameters:
     tile_id (str, optional): Tile ID to process a specific tile. Defaults to None.
-    dataset (str, optional): The dataset type (default: 'descals').
+    dataset (str, optional): The dataset type (default: 'descals_extent' or 'descals_year').
     run_mode (str, optional): The mode to run the script ('default' or 'test'). Defaults to 'default'.
 
     Returns:
@@ -246,11 +251,15 @@ def main(tile_id=None, dataset='descals', run_mode='default'):
             read_shapefile_from_s3(cn.index_shapefile_prefix, cn.local_temp_dir)
 
         # Ensure the descals tile index is available
-        descals_index_path = create_index_from_s3(cn.datasets[dataset]['s3_raw'], cn.local_temp_dir)
+        logging.info(f"Creating or loading descals tile index for dataset {dataset}")
+        descals_index_path = create_index_from_s3(cn.datasets['descals'][dataset]['s3_raw'], cn.local_temp_dir, dataset)
+        logging.info(f"Loading descals tile index from {descals_index_path}")
         descals_gdf = gpd.read_file(descals_index_path)
+        logging.info(f"Loaded descals index with {len(descals_gdf)} tiles")
 
         # Load peatlands index
         peatlands_gdf = gpd.read_file(peatlands_index_path)
+        logging.info(f"Loaded peatlands index with {len(peatlands_gdf)} tiles")
 
         # If a specific tile ID is provided, filter peatlands_gdf to only include that tile
         if tile_id:
@@ -263,7 +272,7 @@ def main(tile_id=None, dataset='descals', run_mode='default'):
         for _, peatland_tile in peatlands_gdf.iterrows():
             peatland_tile_id = peatland_tile['tile_id']
             tile_bounds = peatland_tile.geometry.bounds
-            logging.info(f"Checking intersection for peatland tile {peatland_tile_id}")
+            logging.info(f"Checking intersection for peatland tile {peatland_tile_id} with bounds {tile_bounds}")
             process_tile(peatland_tile_id, dataset, tile_bounds, descals_gdf, run_mode)
 
     except Exception as e:
@@ -273,8 +282,10 @@ def main(tile_id=None, dataset='descals', run_mode='default'):
 
 # Example usage
 if __name__ == "__main__":
-    # Replace '00N_110E' with the tile ID you want to test
-    main(tile_id='00N_110E', run_mode='test')
+    # Process both descals_extent and descals_year datasets
+    main(tile_id=None, dataset='descals_extent', run_mode='default')
+    main(tile_id=None, dataset='descals_year', run_mode='default')
 
-    # Process the entire descals dataset
-    # main(run_mode='default')
+    # Uncomment to process all tiles
+    # main(dataset='descals_extent', run_mode='default')
+    # main(dataset='descals_year', run_mode='default')
