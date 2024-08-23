@@ -77,8 +77,24 @@ datasets = {
         's3_processed_base': f'{project_dir}/{processed_dir}/dadap_density/30m/',
         's3_processed': f'{project_dir}/{processed_dir}/dadap_density/30m/{today_date}/',
         'local_processed': f'{local_temp_dir}/dadap_density/{today_date}/'
+    },
+    'descals': {
+        'descals_extent': {
+            's3_raw': f'{project_dir}/{raw_dir}/plantations/plantation_extent/',
+            's3_processed_base': f'{project_dir}/{processed_dir}/descals_plantation/extent',
+            's3_processed': f'{project_dir}/{processed_dir}/descals_plantation/extent/{today_date}',
+            'local_processed': f'{local_temp_dir}/descals_plantation/extent/{today_date}'
+        },
+        'descals_year': {
+            's3_raw': f'{project_dir}/{raw_dir}/plantations/plantation_year/',
+            's3_processed_base': f'{project_dir}/{processed_dir}/descals_plantation/year',
+            's3_processed': f'{project_dir}/{processed_dir}/descals_plantation/year/{today_date}',
+            'local_processed': f'{local_temp_dir}/descals_plantation/year/{today_date}'
+        }
     }
 }
+
+
 
 # Function to check if an S3 path exists
 def check_s3_path_exists(s3_client, bucket, path):
@@ -91,53 +107,3 @@ def check_s3_path_exists(s3_client, bucket, path):
         else:
             print(f"ClientError {e.response['Error']['Code']}: {path} - {e.response['Message']}")
         return False
-
-# # Initialize S3 client
-# s3_client = boto3.client('s3')
-#
-# # QA check for paths
-# print("\n--- Paths for QA ---\n")
-# print(f"Local Temp Dir: {local_temp_dir}")
-# print(f"Peat Tiles Prefix: {peat_tiles_prefix}")
-# print(f"Index Shapefile Prefix: {index_shapefile_prefix}")
-# print(f"Peat Pattern: {peat_pattern}\n")
-#
-# print("Regional Shapefiles:")
-# for path in grip_regional_shapefiles:
-#     exists = check_s3_path_exists(s3_client, s3_bucket_name, path) if path.startswith(project_dir) else os.path.exists(path)
-#     print(f"{path}: {'Exists' if exists else 'Does not exist'}")
-#
-# print("\nDatasets:")
-# for dataset, features in datasets.items():
-#     if 's3_raw' in features:
-#         # Single-level dataset like 'engert' or 'dadap'
-#         print(f"{dataset}:")
-#         raw_exists = check_s3_path_exists(s3_client, s3_bucket_name, features['s3_raw']) if features['s3_raw'].startswith(project_dir) else os.path.exists(features['s3_raw'])
-#         print(f"  S3 Raw: {features['s3_raw']} - {'Exists' if raw_exists else 'Does not exist'}")
-#
-#         base_processed_exists = check_s3_path_exists(s3_client, s3_bucket_name, features['s3_processed_base']) if features['s3_processed_base'].startswith(project_dir) else os.path.exists(features['s3_processed_base'])
-#         print(f"  S3 Processed Base: {features['s3_processed_base']} - {'Exists' if base_processed_exists else 'Does not exist'}")
-#
-#         local_processed_exists = os.path.exists(features['local_processed'])
-#         print(f"  Local Processed: {features['local_processed']} - {'Exists' if local_processed_exists else 'Does not exist'}")
-#     else:
-#         # Multi-level datasets like 'osm' or 'grip'
-#         for feature, feature_paths in features.items():
-#             print(f"{dataset} - {feature}:")
-#             raw_exists = check_s3_path_exists(s3_client, s3_bucket_name, feature_paths['s3_raw']) if feature_paths['s3_raw'].startswith(project_dir) else os.path.exists(feature_paths['s3_raw'])
-#             print(f"  S3 Raw: {feature_paths['s3_raw']} - {'Exists' if raw_exists else 'Does not exist'}")
-#
-#             base_processed_exists = check_s3_path_exists(s3_client, s3_bucket_name, feature_paths['s3_processed_base']) if feature_paths['s3_processed_base'].startswith(project_dir) else os.path.exists(feature_paths['s3_processed_base'])
-#             print(f"  S3 Processed Base: {feature_paths['s3_processed_base']} - {'Exists' if base_processed_exists else 'Does not exist'}")
-#
-#             local_processed_exists = os.path.exists(feature_paths['local_processed'])
-#             print(f"  Local Processed: {feature_paths['local_processed']} - {'Exists' if local_processed_exists else 'Does not exist'}")
-
-# new paths for osm pre to be used after utilities refactoring
-# filtered_canals_path = cn.osm_pbf_files['filtered']['canals'] #this path was formerly local and now needs to be read from s3
-# filtered_highways_path = cn.osm_pbf_files['filtered']['roads'] #this path was formerly local and now needs to be read from s3
-# output_dir_roads = cn.datasets['osm']['roads']['s3_raw'] #this path was formerly local and now needs to be uploaded to s3
-# output_dir_canals = cn.datasets['osm']['roads']['s3_raw']#this path was formerly local and now needs to be uploaded to s3
-# local_temp_dir = cn.local_temp_dir
-# s3_bucket_name = cn.s3_bucket_name
-# index_shapefile_prefix = cn.index_shapefile_prefix
