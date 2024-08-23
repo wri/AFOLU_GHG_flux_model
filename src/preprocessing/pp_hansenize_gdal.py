@@ -7,7 +7,7 @@ import subprocess
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
 
-def clip_raster_to_tile(input_path, output_path, bounds, nodata_value=None, dtype='Byte'):
+def clip_raster_to_tile(input_path, output_path, bounds, nodata_value=None, dtype=None):
     """
     Clips a raster to specified bounds using GDAL's gdalwarp command.
 
@@ -24,13 +24,17 @@ def clip_raster_to_tile(input_path, output_path, bounds, nodata_value=None, dtyp
             'gdalwarp',
             '-te', str(minx), str(miny), str(maxx), str(maxy),
             '-dstnodata', str(nodata_value) if nodata_value is not None else '0',
-            '-ot', dtype,  # Set the output data type
             '-co', 'COMPRESS=DEFLATE',
             '-co', 'TILED=YES',
             '-overwrite',
             input_path,
             output_path
         ]
+
+        if dtype:
+            gdalwarp_cmd.insert(-4, '-ot')
+            gdalwarp_cmd.insert(-4, dtype)  # Add the data type flag
+
         logging.info(f"Clipping raster with command: {' '.join(gdalwarp_cmd)}")
         subprocess.run(gdalwarp_cmd, check=True)
         logging.info(f"Raster clipped successfully: {output_path}")
@@ -40,7 +44,7 @@ def clip_raster_to_tile(input_path, output_path, bounds, nodata_value=None, dtyp
         logging.error(f"Unexpected error during raster clipping: {e}")
 
 
-def merge_and_clip_rasters_gdal(raster_paths, output_path, bounds, nodata_value=None, dtype='Byte'):
+def merge_and_clip_rasters_gdal(raster_paths, output_path, bounds, nodata_value=None, dtype=None):
     """
     Merges multiple rasters and clips to specified bounds using GDAL.
 
@@ -59,11 +63,14 @@ def merge_and_clip_rasters_gdal(raster_paths, output_path, bounds, nodata_value=
             '-te', str(minx), str(miny), str(maxx), str(maxy),
             '-tr', '0.00025', '0.00025',  # Set the output resolution explicitly
             '-dstnodata', str(nodata_value) if nodata_value is not None else '0',
-            '-ot', dtype,  # Set the output data type
             '-co', 'COMPRESS=DEFLATE',
             '-co', 'TILED=YES',
             '-overwrite'
         ] + raster_paths + [temp_merged_path]
+
+        if dtype:
+            gdal_merge_cmd.insert(-4, '-ot')
+            gdal_merge_cmd.insert(-4, dtype)  # Add the data type flag
 
         logging.info(f"Merging and clipping rasters with command: {' '.join(gdal_merge_cmd)}")
         subprocess.run(gdal_merge_cmd, check=True)
@@ -80,7 +87,7 @@ def merge_and_clip_rasters_gdal(raster_paths, output_path, bounds, nodata_value=
             os.remove(temp_merged_path)
 
 
-def hansenize_gdal(input_paths, output_path, bounds, nodata_value=None, dtype='Byte'):
+def hansenize_gdal(input_paths, output_path, bounds, nodata_value=None, dtype=None):
     """
     Main function for processing using GDAL.
 
