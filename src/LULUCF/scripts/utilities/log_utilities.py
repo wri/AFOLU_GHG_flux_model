@@ -19,6 +19,8 @@ def compile_and_upload_log(client, cluster, logs, stage,
     log_name = f"{cn.combined_log}_{stage}_{time.strftime('%Y%m%d_%H_%M_%S')}.txt"
     local_log = f"{cn.local_log_path}{log_name}"
 
+    print(f"Preparing consolidated log {log_name}")
+
     # Converts the start time of the stage run from string to datetime so it can be compared to the log entries' times
     start_time = datetime.strptime(start_time_str, "%Y%m%d_%H_%M_%S")
 
@@ -83,6 +85,8 @@ def compile_and_upload_log(client, cluster, logs, stage,
 
     s3_client = boto3.client("s3")  # Needs to be in the same function as the upload_file call
     s3_client.upload_file(local_log, "gfw2-data", Key=f"{cn.s3_log_path}{log_name}")
+
+    print(f"Log uploaded to {cn.s3_log_path}{log_name}")
 
 
 # Determines whether statement should be printed to the console as well as logged

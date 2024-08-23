@@ -628,3 +628,79 @@ def calculate_chunk_stats(all_stats, stage):
         min_max_stats.to_excel(writer, sheet_name='min_max_for_layers', index=False)
 
     print(sorted_stats.head())  # Show first few rows of the stats DataFrame for inspection
+
+
+# Gets the name of the first file in a dictionary of dataset names and folders in s3.
+# Returns dictionary of dataset names with the full path of the first file in the s3 folder
+# From https://chatgpt.com/share/e/9a7bf947-1c32-4898-ba6b-3b932a5220c1
+def first_file_name_in_s3_folder(download_dict):
+
+    # Must be in the function that is using s3_client when Dask is involved
+    s3_client = boto3.client('s3')
+
+    # Initializes the dictionary to hold the first file paths
+    first_tiles = {}
+
+    # Iterates over the download_dict items
+    for key, folder_path in download_dict.items():
+        # Splits the path to get the directory part
+        dir_path = os.path.dirname(folder_path)
+
+        # Drops the s3://gfw2-data/ prefix and adds "/" to the end
+        dir_path = dir_path[len(cn.full_bucket_prefix)+1:] + "/"
+
+        # Lists metadata for everything in the bucket
+        response = s3_client.list_objects_v2(Bucket=cn.short_bucket_prefix, Prefix=dir_path, Delimiter='/')
+
+        # Checks if the folder contains any files
+        if 'Contents' in response and len(response['Contents']) > 0:
+            # Uses the first file in the folder (index 0 instead of 1)
+            first_tiles[key] = cn.full_bucket_prefix + "/" + response['Contents'][1]['Key']
+        else:
+            first_tiles[key] = None  # In case no files are found
+
+    return first_tiles
+
+
+# Gets the datatype of a raster in s3
+# From https://chatgpt.com/share/e/9a7bf947-1c32-4898-ba6b-3b932a5220c1
+def get_dtype_from_s3(file_path):
+
+    # Construct the /vsis3/ path
+    vsis3_path = f'/vsis3/{file_path[len("s3://"):]}'
+
+    dataset = gdal.Open(vsis3_path)
+    if dataset:
+        band = dataset.GetRasterBand(1)
+        return gdal.GetDataTypeName(band.DataType)
+    else:
+        raise ValueError(f"Could not open file {vsis3_path}")
+
+
+# Categorizes tiles by their data type and makes a separate list for each datatype.
+# Needs to be expanded if additional datatypes are being used
+# From https://chatgpt.com/share/e/9a7bf947-1c32-4898-ba6b-3b932a5220c1
+def categorize_files_by_dtype(first_tiles):
+
+    # Output datatype lists
+    uint8_list = []
+    int16_list = []
+    int32_list = []
+    float32_list = []
+
+    for key, file_path in first_tiles.items():
+        if file_path:
+            dtype = get_dtype_from_s3(file_path)
+
+            if dtype == "Byte":
+                uint8_list.append(key)
+            elif dtype == "Int16":
+                int16_list.append(key)
+            elif dtype == "Int32":
+                int32_list.append(key)
+            elif dtype == "Float32":
+                float32_list.append(key)
+            else:
+                raise ValueError(f"Unexpected data type {dtype} for file {file_path}")
+
+    return uint8_list, int16_list, int32_list, float32_list

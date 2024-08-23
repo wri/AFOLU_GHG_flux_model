@@ -2,13 +2,15 @@ import boto3
 
 # General paths and constants
 
+s3 = boto3.resource('s3')
+short_bucket_prefix = "gfw2-data"
+full_bucket_prefix = "s3://" + short_bucket_prefix
+s3_client = boto3.client("s3")
+
+
 LC_uri = 's3://gfw2-data/landcover'
 
 s3_out_dir = 'climate/AFOLU_flux_model/LULUCF/outputs'
-
-s3 = boto3.resource('s3')
-my_bucket = s3.Bucket('gfw2-data')
-s3_client = boto3.client("s3")
 
 tile_id_pattern = r"[0-9]{2}[A-Z][_][0-9]{3}[A-Z]"  # Pattern for tile_ids in regex form
 

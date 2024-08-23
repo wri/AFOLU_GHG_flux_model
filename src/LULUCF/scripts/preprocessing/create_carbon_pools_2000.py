@@ -7,6 +7,7 @@ import argparse
 import concurrent.futures
 import coiled
 import dask
+import os
 import numpy as np
 
 from dask.distributed import Client
@@ -164,8 +165,6 @@ def create_and_upload_starting_C_densities(bounds, is_final, mangrove_C_ratio_ar
 
     ### Part 1: downloads chunks and checks for data
 
-    mang_no_data_val = 255  # NoData value in mangrove AGB raster. For checking input chunks.
-
     # Dictionary of downloaded layers
     layers = {}
 
@@ -189,10 +188,6 @@ def create_and_upload_starting_C_densities(bounds, is_final, mangrove_C_ratio_ar
     futures = uu.prepare_to_download_chunk(bounds, download_dict, is_final, logger)
 
     lu.print_and_log(f"Waiting for requests for data in chunk {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger)
-    # message = f"Waiting for requests for data in chunk {bounds_str} in {tile_id}: {uu.timestr()}"
-    # if not is_final:
-    #     print(message)
-    # logger.info(message)
 
     # Waits for requests to come back with data from S3
     for future in concurrent.futures.as_completed(futures):
@@ -210,6 +205,7 @@ def create_and_upload_starting_C_densities(bounds, is_final, mangrove_C_ratio_ar
     if not data_in_chunk:
         return f"Skipped chunk {bounds_str} because of a lack of data: {uu.timestr()}"
 
+
     ### Part 2: Calculates min, mean, and max for each layer
     stats = []
 
@@ -217,23 +213,35 @@ def create_and_upload_starting_C_densities(bounds, is_final, mangrove_C_ratio_ar
     for key, array in layers.items():
         stats.append(uu.calculate_stats(array, key, bounds_str, tile_id, 'input_layer'))
 
+
     ### Part 3: Creates a separate dictionary for each chunk datatype so that they can be passed to Numba as separate arguments.
-    ### Numba functions can accept (and return) dictionaries of arrays as long as each dictionary only has arrays of one data type (e.g., uint8, float32)
+    ### Numba functions can accept (and return) dictionaries of arrays as long as each dictionary only has arrays of one data type (e.g., uint8, float32).
+    ### In order to make sure the numba function is working with a complete set of inputs,
+    ### any input chunks that are missing are filled in with 0s (NoData).
+    ### That has to be done with the
     ### Note: need to add new code if inputs with other data types are added
 
     # Creates the typed dictionaries for layers that had data in the chunk
     typed_dict_uint8, typed_dict_int16, typed_dict_int32, typed_dict_float32 = nu.create_typed_dicts(layers)
 
+    # print(typed_dict_uint8)
     # print(typed_dict_int16)
     # print(typed_dict_int32)
     # print(typed_dict_float32)
 
-    # Complete lists of inputs that should exist for the model step, by data type.
-    # Needs to be done manually at this point.
-    uint8_list = []
-    int16_list = ["agb_2000", "elevation", "climate_domain", "continent_ecozone"]
-    int32_list = ["precipitation"]
-    float32_list = ["mangrove_agb_2000", "r_s_ratio"]
+    # Gets the first tile in each input folder in order to determine the datatype of the input dataset.
+    # Needs to check the first tile in each folder because, if the input raster doesn't exist for this chunk,
+    # we can't assign a datatype for that input for this chunk.
+    # So instead it gets the datatype of the input from a raster that has to exist (the first one in s3).
+    first_tiles = uu.first_file_name_in_s3_folder(download_dict)
+
+    # Categorizes the files by their data types so that any missing inputs can be filled in
+    uint8_list, int16_list, int32_list, float32_list = uu.categorize_files_by_dtype(first_tiles)
+
+    print("uint8_list:", uint8_list)
+    print("int16_list:", int16_list)
+    print("int32_list:", int32_list)
+    print("float32_list:", float32_list)
 
     # Iterates through the complete lists of inputs (by data type) and, if an input doesn't exist, it is created as an array of 0s,
     # then added to the typed dictionary.
@@ -244,64 +252,74 @@ def create_and_upload_starting_C_densities(bounds, is_final, mangrove_C_ratio_ar
                                           chunk_length_pixels, bounds_str, tile_id, is_final, logger)
     typed_dict_int32 = uu.complete_inputs(int32_list, typed_dict_int32, 'int32',
                                           chunk_length_pixels, bounds_str, tile_id, is_final, logger)
-    typed_dict_float32 = uu. complete_inputs(float32_list, typed_dict_float32, 'float32',
+    typed_dict_float32 = uu.complete_inputs(float32_list, typed_dict_float32, 'float32',
                                              chunk_length_pixels, bounds_str, tile_id, is_final, logger)
 
-    ### Part 4: Creates starting carbon pool densities
+    print(typed_dict_uint8)
+    print(typed_dict_int16)
+    print(typed_dict_int32)
+    print(typed_dict_float32)
 
-    lu.print_and_log(f"Creating starting C densities for {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger)
+    os.quit()
 
-    # Create AGC, BGC, deadwood C and litter C
-    out_dict_float32 = create_starting_C_densities(
-        typed_dict_uint8, typed_dict_int16, typed_dict_int32, typed_dict_float32, mangrove_C_ratio_array
-    )
 
-    # Fresh non-Numba-constrained dictionary that stores all numpy arrays.
-    # The dictionaries by datatype that are returned from the numba function have limitations on them,
-    # e.g., they can't be combined with other datatypes. This prevents the addition of attributes needed for uploading to s3.
-    # So the trick here is to copy the numba-exported arrays into normal Python arrays to which we can do anything in Python.
-    out_dict_all_dtypes = {}
-
-    # Transfers the dictionaries of numpy arrays for each data type to a new, Pythonic array
-    for key, value in out_dict_float32.items():
-        out_dict_all_dtypes[key] = value
-
-    # Clear memory of unneeded arrays (output(s) from the numba function)
-    del out_dict_float32
-
-    ### Part 5:  Calculates stats for output chunks
-
-    # Calculate stats for the output layers from create_starting_C_densities
-    for key, array in out_dict_all_dtypes.items():
-        stats.append(uu.calculate_stats(array, key, bounds_str, tile_id, 'output_layer'))
-
-    ### Part 6: Saves numpy arrays as rasters and upload to s3
-
-    out_no_data_val = 0  # NoData value for output raster (optional)
-
-    # Adds metadata used for uploading outputs to s3 to the dictionary
-    for key, value in out_dict_all_dtypes.items():
-        data_type = value.dtype.name
-        out_pattern = key[:-5]  # Drops the year (2000) from the end of the string
-
-        # Dictionary with metadata for each array
-        out_dict_all_dtypes[key] = [value, data_type, out_pattern, cn.first_year]
-
-    uu.save_and_upload_small_raster_set(bounds, chunk_length_pixels, tile_id, bounds_str, out_dict_all_dtypes,
-                                        is_final, logger, out_no_data_val)
-
-    # Clear memory of unneeded arrays
-    del out_dict_all_dtypes
-
-    success_message = f"Success for {bounds_str}: {uu.timestr()}"
-    return success_message, stats  # Return both the success message and the statistics
+    # ### Part 4: Creates starting carbon pool densities
+    #
+    # lu.print_and_log(f"Creating starting C densities for {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger)
+    #
+    # # Create AGC, BGC, deadwood C and litter C
+    # out_dict_float32 = create_starting_C_densities(
+    #     typed_dict_uint8, typed_dict_int16, typed_dict_int32, typed_dict_float32, mangrove_C_ratio_array
+    # )
+    #
+    # # Fresh non-Numba-constrained dictionary that stores all numpy arrays.
+    # # The dictionaries by datatype that are returned from the numba function have limitations on them,
+    # # e.g., they can't be combined with other datatypes. This prevents the addition of attributes needed for uploading to s3.
+    # # So the trick here is to copy the numba-exported arrays into normal Python arrays to which we can do anything in Python.
+    # out_dict_all_dtypes = {}
+    #
+    # # Transfers the dictionaries of numpy arrays for each data type to a new, Pythonic array
+    # for key, value in out_dict_float32.items():
+    #     out_dict_all_dtypes[key] = value
+    #
+    # # Clear memory of unneeded arrays (output(s) from the numba function)
+    # del out_dict_float32
+    #
+    #
+    # ### Part 5:  Calculates stats for output chunks
+    #
+    # # Calculate stats for the output layers from create_starting_C_densities
+    # for key, array in out_dict_all_dtypes.items():
+    #     stats.append(uu.calculate_stats(array, key, bounds_str, tile_id, 'output_layer'))
+    #
+    #
+    # ### Part 6: Saves numpy arrays as rasters and upload to s3
+    #
+    # out_no_data_val = 0  # NoData value for output raster (optional)
+    #
+    # # Adds metadata used for uploading outputs to s3 to the dictionary
+    # for key, value in out_dict_all_dtypes.items():
+    #     data_type = value.dtype.name
+    #     out_pattern = key[:-5]  # Drops the year (2000) from the end of the string
+    #
+    #     # Dictionary with metadata for each array
+    #     out_dict_all_dtypes[key] = [value, data_type, out_pattern, cn.first_year]
+    #
+    # uu.save_and_upload_small_raster_set(bounds, chunk_length_pixels, tile_id, bounds_str, out_dict_all_dtypes,
+    #                                     is_final, logger, out_no_data_val)
+    #
+    # # Clear memory of unneeded arrays
+    # del out_dict_all_dtypes
+    #
+    # success_message = f"Success for {bounds_str}: {uu.timestr()}"
+    # return success_message, stats  # Return both the success message and the statistics
 
 def main(cluster_name, bounding_box, chunk_size, local=False, no_stats=False, no_log=False):
 
     # Runs locally without Dask or in a Coiled cluster using Dask
     if local:
         print("Running locally without Dask/Coiled.")
-    else:
+    else:   #TODO Make it so that this doesn't create a cluster if it doesn't exist. This will create a cluster.
         # Connects to the existing Coiled cluster
         cluster = coiled.Cluster(name=cluster_name)
         client = Client(cluster)
@@ -363,9 +381,10 @@ def main(cluster_name, bounding_box, chunk_size, local=False, no_stats=False, no
     for message in return_messages:
         print(message)
 
-    if not no_stats and not local:
-        # Get the logs for all workers
-        # Wait to run this until all entries have been added to the Coiled log--
+    # Only consolidates the worker logs and uploads to s3 if not deactivated
+    if not no_log:
+        # Gets the logs for all workers
+        #TODO Wait to run this until all entries have been added to the Coiled log--
         # running this right after the model finishes means that final log entries haven't made it into Coiled yet.
         logs = cluster.get_logs()
         log_note = "Global carbon pool 2000 run"
