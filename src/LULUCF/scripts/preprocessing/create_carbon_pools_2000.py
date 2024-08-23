@@ -1,6 +1,6 @@
 """
 Run from src/LULUCF/
-python -m scripts.preprocessing.create_carbon_pools_2000 -cn AFOLU_flux_model_scripts -cp "[116, -3, 116.25, -2.75, 0.25]"
+python -m scripts.preprocessing.create_carbon_pools_2000 -cn AFOLU_flux_model_scripts -bb 116 -3 116.25 -2.75 -cs 0.25 --no_stats
 """
 
 import argparse
@@ -188,10 +188,11 @@ def create_and_upload_starting_C_densities(bounds, is_final, mangrove_C_ratio_ar
 
     futures = uu.prepare_to_download_chunk(bounds, download_dict, is_final, logger)
 
-    message = f"Waiting for requests for data in chunk {bounds_str} in {tile_id}: {uu.timestr()}"
-    if not is_final:
-        print(message)
-    logger.info(message)
+    lu.print_and_log(f"Waiting for requests for data in chunk {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger)
+    # message = f"Waiting for requests for data in chunk {bounds_str} in {tile_id}: {uu.timestr()}"
+    # if not is_final:
+    #     print(message)
+    # logger.info(message)
 
     # Waits for requests to come back with data from S3
     for future in concurrent.futures.as_completed(futures):
@@ -295,26 +296,29 @@ def create_and_upload_starting_C_densities(bounds, is_final, mangrove_C_ratio_ar
     success_message = f"Success for {bounds_str}: {uu.timestr()}"
     return success_message, stats  # Return both the success message and the statistics
 
-def main(cluster_name, chunk_params):
+def main(cluster_name, bounding_box, chunk_size, local=False, no_stats=False, no_log=False):
 
-    # Connects to the existing Coiled cluster
-    cluster = coiled.Cluster(name=cluster_name)
-    client = Client(cluster)
-
-    # Starting time for stage
-    start_time = uu.timestr()
-    print(f"Stage started at: {start_time}")
+    # Runs locally without Dask or in a Coiled cluster using Dask
+    if local:
+        print("Running locally without Dask/Coiled.")
+    else:
+        # Connects to the existing Coiled cluster
+        cluster = coiled.Cluster(name=cluster_name)
+        client = Client(cluster)
 
     # Model stage being running
     stage = 'carbon_pool_2000'
+
+    # Starting time for stage
+    start_time = uu.timestr()
+    print(f"Stage {stage} started at: {start_time}")
 
     # Creates numpy array of ratios of BGC, deadwood C, and litter C relative to AGC. Relevant columns must be specified.
     mangrove_C_ratio_array = uu.convert_lookup_table_to_array(cn.rate_ratio_spreadsheet, cn.mangrove_rate_ratio_tab,
                                                            ['gainEcoCon', 'BGC_AGC', 'deadwood_AGC', 'litter_AGC'])
 
-
     # Makes list of chunks to analyze
-    chunks = uu.get_chunk_bounds(chunk_params)
+    chunks = uu.get_chunk_bounds(bounding_box, chunk_size)
     print("Processing", len(chunks), "chunks")
     # print(chunks)
 
@@ -346,29 +350,45 @@ def main(cluster_name, chunk_params):
 
     # Prepares chunk stats spreadsheet: min, mean, max for all input and output chunks,
     # and min and max values across all chunks for all inputs and outputs
-    uu.calculate_chunk_stats(all_stats, stage)
+    # only if not suppressed by the --no_stats flag
+    if not no_stats:
+        uu.calculate_chunk_stats(all_stats, stage)
 
     # Ending time for stage
     end_time = uu.timestr()
-    print(f"Stage ended at: {end_time}")
+    print(f"Stage {stage} ended at: {end_time}")
+    uu.stage_duration(start_time, end_time, stage)
 
     # Prints the returned messages
     for message in return_messages:
         print(message)
 
-    # Closes the Dask client
-    client.close()
+    if not no_stats and not local:
+        # Get the logs for all workers
+        # Wait to run this until all entries have been added to the Coiled log--
+        # running this right after the model finishes means that final log entries haven't made it into Coiled yet.
+        logs = cluster.get_logs()
+        log_note = "Global carbon pool 2000 run"
+
+        lu.compile_and_upload_log(client, cluster, logs, stage, len(chunks), chunk_size, start_time, end_time, log_note)
+
+    if not local:
+        # Closes the Dask client if not running locally
+        client.close()
 
 
 if __name__ == "__main__":
-    # TODO Add flag for local (Daskless) run
-    # TODO Add flag to not create stats spreadsheet
     parser = argparse.ArgumentParser(description="Create carbon pools in 2000.")
     parser.add_argument('-cn', '--cluster_name', help='Coiled cluster name')
-    parser.add_argument('-cp', '--chunk_params', nargs=5, type=float, help='W, S, E, N, chunk size (degrees)')  #TODO Make chunk size its own input
+    parser.add_argument('-bb', '--bounding_box', nargs=4, type=float, help='W, S, E, N (degrees)')
+    parser.add_argument('-cs', '--chunk_size', type=float, help='Chunk size (degrees)')
+
+    parser.add_argument('--local', action='store_true', help='Run locally without Dask/Coiled')
+    parser.add_argument('--no_stats', action='store_true', help='Do not create the chunk stats spreadsheet')
+    parser.add_argument('--no_log', action='store_true', help='Do not create the combined log')
 
     args = parser.parse_args()
 
     # Create the cluster with command line arguments
-    main(args.cluster_name, args.chunk_params)
+    main(args.cluster_name, args.bounding_box, args.chunk_size, args.local, args.no_stats, args.no_log)
 

@@ -80,12 +80,11 @@ def get_10x10_tile_bounds(tile_id):
 
 
 # Returns list of all chunk boundaries within a bounding box for chunks of a given size
-def get_chunk_bounds(chunk_params):
-    min_x = chunk_params[0]
-    min_y = chunk_params[1]
-    max_x = chunk_params[2]
-    max_y = chunk_params[3]
-    chunk_size = chunk_params[4]
+def get_chunk_bounds(bounding_box, chunk_size):
+    min_x = bounding_box[0]
+    min_y = bounding_box[1]
+    max_x = bounding_box[2]
+    max_y = bounding_box[3]
 
     x, y = (min_x, min_y)
     chunks = []
@@ -116,6 +115,15 @@ def xy_to_tile_id(top_left_x, top_left_y):
     lat: str = f"{str(lat_ceil).zfill(2)}N" if (lat_ceil >= 0) else f"{str(-lat_ceil).zfill(2)}S"
 
     return f"{lat}_{lng}"
+
+
+# Calculates the elapsed time for a stage
+def stage_duration(start_time_str, end_time_str, stage):
+
+    start_time = datetime.strptime(start_time_str, "%Y%m%d_%H_%M_%S")
+    end_time = datetime.strptime(end_time_str, "%Y%m%d_%H_%M_%S")
+
+    print(f"Elapsed time for {stage}: {end_time - start_time}")
 
 
 # Lazily opens tile within provided bounds (i.e. one chunk) and returns as a numpy array

@@ -13,17 +13,20 @@ from . import universal_utilities as uu
 
 # Log compilation and uploading
 # From https://chatgpt.com/share/e/4fe1e9c8-05a0-4e9d-8eee-64168891b5e2
-def compile_and_upload_log(logs, stage, chunk_count, chunk_size_deg, start_time_str, end_time_str, log_note):
-    log_name = f"logs/{cn.combined_log}_{stage}_{time.strftime('%Y%m%d_%H_%M_%S')}.txt"
+def compile_and_upload_log(client, cluster, logs, stage,
+                           chunk_count, chunk_size_deg, start_time_str, end_time_str, log_note):
+
+    log_name = f"{cn.combined_log}_{stage}_{time.strftime('%Y%m%d_%H_%M_%S')}.txt"
+    local_log = f"{cn.local_log_path}{log_name}"
 
     # Converts the start time of the stage run from string to datetime so it can be compared to the log entries' times
     start_time = datetime.strptime(start_time_str, "%Y%m%d_%H_%M_%S")
 
     # Retrieves the number of workers
-    n_workers = len(coiled_client.scheduler_info()['workers'])  # Get the number of connected workers
+    n_workers = len(client.scheduler_info()['workers'])  # Get the number of connected workers
 
     # Retrieves scheduler info for other cluster properties
-    scheduler_info = coiled_cluster.scheduler_info  # Access scheduler info directly as a dictionary
+    scheduler_info = cluster.scheduler_info  # Access scheduler info directly as a dictionary
 
     # Gets memory per worker.
     # Can't get it to report the worker instance type
@@ -72,20 +75,18 @@ def compile_and_upload_log(logs, stage, chunk_count, chunk_size_deg, start_time_
     end_time = f"Stage ended at: {end_time_str}"
 
     # Combine the header and filtered logs into a single string
-    combined_filtered_logs = "\n".join(header_lines) + "\n".join(filtered_logs) + "\n".join(end_time)
+    combined_filtered_logs = "\n".join(header_lines) + "\n".join(filtered_logs) + "\n" + end_time
 
     # Save the filtered logs to a text file
-    with open(log_name, "w") as file:
+    with open(local_log, "w") as file:
         file.write(combined_filtered_logs)
 
     s3_client = boto3.client("s3")  # Needs to be in the same function as the upload_file call
-    s3_client.upload_file(log_name, "gfw2-data", Key=f"{cn.log_path}{log_name}")
+    s3_client.upload_file(local_log, "gfw2-data", Key=f"{cn.s3_log_path}{log_name}")
 
 
 # Determines whether statement should be printed to the console as well as logged
 def print_and_log(text, is_final, logger):
-
-    print("In the logging function")
 
     logger.info(f"flm: {text}")
     if not is_final:

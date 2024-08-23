@@ -80,7 +80,8 @@ tree_threshold = 5   # Height minimum for trees (meters)
 
 # File name paths and patterns
 
-log_path = "climate/AFOLU_flux_model/LULUCF/model_logs/"
+local_log_path = "logs/"
+s3_log_path = "climate/AFOLU_flux_model/LULUCF/model_logs/"
 combined_log = "AFOLU_model_log"
 
 agb_2000_path = "s3://gfw2-data/climate/WHRC_biomass/WHRC_V4/Processed/"
