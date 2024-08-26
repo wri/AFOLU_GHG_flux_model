@@ -476,8 +476,8 @@ def calculate_and_upload_LULUCF_fluxes(bounds, is_final):
         cn.planted_forest_type_layer: f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/plantation_type/SDPTv2/20230911/{tile_id}_plantation_type_oilpalm_woodfiber_other.tif",  # Originally from gfw-data-lake, so it's in 400x400 windows
         cn.planted_forest_tree_crop_layer: f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/plantation_simpleType__planted_forest_tree_crop/SDPTv2/20230911/{tile_id}.tif",  # Originally from gfw-data-lake, so it's in 400x400 windows
         "peat": f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/peatlands/processed/20230315/{tile_id}_peat_mask_processed.tif",
-        "ecozone": f"s3://gfw2-data/fao_ecozones/v2000/raster/epsg-4326/10/40000/class/gdal-geotiff/{tile_id}.tif",   # Originally from gfw-data-lake, so it's in 400x400 windows
-        "iso": f"s3://gfw2-data/gadm_administrative_boundaries/v3.6/raster/epsg-4326/10/40000/adm0/gdal-geotiff/{tile_id}.tif",  # Originally from gfw-data-lake, so it's in 400x400 windows
+        # "ecozone": f"s3://gfw2-data/fao_ecozones/v2000/raster/epsg-4326/10/40000/class/gdal-geotiff/{tile_id}.tif",   # Originally from gfw-data-lake, so it's in 400x400 windows
+        # "iso": f"s3://gfw2-data/gadm_administrative_boundaries/v3.6/raster/epsg-4326/10/40000/adm0/gdal-geotiff/{tile_id}.tif",  # Originally from gfw-data-lake, so it's in 400x400 windows
         "ifl_primary": f"s3://gfw2-data/climate/carbon_model/ifl_primary_merged/processed/20200724/{tile_id}_ifl_2000_primary_2001_merged.tif"
     }
 
@@ -541,6 +541,9 @@ def calculate_and_upload_LULUCF_fluxes(bounds, is_final):
     ### Missing chunks are filled in here instead of using the typed dicts below just because numpy arrays are easier to work with.
     ### And missing chunks are not filled in earlier (e.g., when downloading chunks)
     ### so that chunk stats are calculated only for the chunks that do exist which is useful for QC.
+
+    lu.print_and_log(f"Assigning inputs for chunk {bounds_str} in {tile_id} to datatype and filling in missing data: {uu.timestr()}",
+                     is_final, logger)
 
     # Gets the first tile in each input folder in order to determine the datatype of the input dataset.
     # Needs to check the first tile in each folder because, if the input raster doesn't exist for this chunk,
@@ -623,11 +626,11 @@ def calculate_and_upload_LULUCF_fluxes(bounds, is_final):
     # Adds metadata used for uploading outputs to s3 to the dictionary
     for key, value in out_dict_all_dtypes.items():
         data_type = value.dtype.name
-        # out_pattern = key[:-5]  # Drops the year (2000) from the end of the string
-        out_pattern = key
+        out_pattern = key[:-10] # Drops the date range from the end of the string
+        year_range = key[-9:]  # Extracts the year range XXXX_YYYY from the file name
 
         # Dictionary with metadata for each array
-        out_dict_all_dtypes[key] = [value, data_type, out_pattern, cn.first_year]
+        out_dict_all_dtypes[key] = [value, data_type, out_pattern, year_range]
 
     uu.save_and_upload_small_raster_set(bounds, chunk_length_pixels, tile_id, bounds_str, out_dict_all_dtypes,
                                         is_final, logger, out_no_data_val)
