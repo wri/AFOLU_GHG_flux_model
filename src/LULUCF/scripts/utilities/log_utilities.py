@@ -13,13 +13,23 @@ from . import universal_utilities as uu
 
 # Log compilation and uploading
 # From https://chatgpt.com/share/e/4fe1e9c8-05a0-4e9d-8eee-64168891b5e2
-def compile_and_upload_log(client, cluster, logs, stage,
+# Gets the logs for all workers
+#TODO Wait to run this until all entries have been added to the Coiled log--
+# running this right after the model finishes means that final log entries haven't made it into Coiled yet.
+def compile_and_upload_log(no_log, client, cluster, stage,
                            chunk_count, chunk_size_deg, start_time_str, end_time_str, log_note):
+
+    # Only consolidates the worker logs and uploads to s3 if not deactivated
+    if no_log:
+        return
 
     log_name = f"{cn.combined_log}_{stage}_{time.strftime('%Y%m%d_%H_%M_%S')}.txt"
     local_log = f"{cn.local_log_path}{log_name}"
 
     print(f"Preparing consolidated log {log_name}")
+
+    # Recovers legs from Coiled
+    logs = cluster.get_logs()
 
     # Converts the start time of the stage run from string to datetime so it can be compared to the log entries' times
     start_time = datetime.strptime(start_time_str, "%Y%m%d_%H_%M_%S")

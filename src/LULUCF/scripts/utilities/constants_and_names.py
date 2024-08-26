@@ -1,38 +1,46 @@
 import boto3
 
-# General paths and constants
+########
+### Constants
+########
 
+### Model version
+model_version = 0.1
+
+### s3 buckets
 s3 = boto3.resource('s3')
 short_bucket_prefix = "gfw2-data"
 full_bucket_prefix = "s3://" + short_bucket_prefix
 s3_client = boto3.client("s3")
 
+### Pattern for tile_ids in regex form
+tile_id_pattern = r"[0-9]{2}[A-Z][_][0-9]{3}[A-Z]"
 
-LC_uri = 's3://gfw2-data/landcover'
-
-s3_out_dir = 'climate/AFOLU_flux_model/LULUCF/outputs'
-
-tile_id_pattern = r"[0-9]{2}[A-Z][_][0-9]{3}[A-Z]"  # Pattern for tile_ids in regex form
+### IPCC codes
+forest_IPCC = 1
+cropland_IPCC = 2
+settlement_IPCC = 3
+wetland_IPCC = 4
+grassland_IPCC = 5
+otherland_IPCC = 6
 
 IPCC_class_max_val = 6  # Maximum value of IPCC class codes
 
-# IPCC codes
-forest = 1
-cropland = 2
-settlement = 3
-wetland = 4
-grassland = 5
-otherland = 6
-
+### Model years
 first_year = 2000  # First year of model
 last_year = 2020   # Last year of model
 
-full_raster_dims = 40000    # Size of a 10x10 deg raster in pixels
-
 interval_years = 5   # Number of years in interval. #TODO: calculate programmatically in numba function rather than coded here-- for greater flexibility.
+
+full_raster_dims = 40000    # Size of a 10x10 deg raster in pixels
 
 # Threshold for height loss to be counted as tree loss (meters)
 sig_height_loss_threshold = 5
+
+# Height minimum for trees (meters)
+tree_threshold = 5
+
+### Carbon constants
 
 biomass_to_carbon_non_mangrove = 0.47   # Conversion of biomass to carbon for non-mangrove forests
 biomass_to_carbon_mangrove = 0.45   # Conversion of biomass to carbon for mangroves (IPCC wetlands supplement table 4.2)
@@ -62,13 +70,8 @@ tropical_high_elev_litter_c_ratio = 0.01
 non_tropical_deadwood_c_ratio = 0.08
 non_tropical_litter_c_ratio = 0.04
 
-mang_no_data_val = 255   # NoData value in mangrove AGB raster
 
-
-model_version = 0.1
-
-
-# GLCLU codes
+### GLCLU codes
 cropland = 244
 builtup = 250
 
@@ -77,10 +80,14 @@ tree_dry_max_height_code = 48
 tree_wet_min_height_code = 127
 tree_wet_max_height_code = 148
 
-tree_threshold = 5   # Height minimum for trees (meters)
 
+########
+### File name paths and patterns
+########
 
-# File name paths and patterns
+LC_uri = 's3://gfw2-data/climate/landcover'
+
+s3_out_dir = 'climate/AFOLU_flux_model/LULUCF/outputs'
 
 local_log_path = "logs/"
 s3_log_path = "climate/AFOLU_flux_model/LULUCF/model_logs/"
@@ -88,6 +95,20 @@ combined_log = "AFOLU_model_log"
 
 agb_2000_path = "s3://gfw2-data/climate/WHRC_biomass/WHRC_V4/Processed/"
 agb_2000_pattern = "t_aboveground_biomass_ha_2000"
+
+carbon_pool_2000_date = "20240821"
+
+agc_2000_path = f"s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs/AGC_density_MgC_ha/2000/40000_pixels/{carbon_pool_2000_date}/"
+agc_2000_pattern = "AGC_density_MgC_ha_2000"
+
+bgc_2000_path = f"s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs/BGC_density_MgC_ha/2000/40000_pixels/{carbon_pool_2000_date}/"
+bgc_2000_pattern = "BGC_density_MgC_ha_2000"
+
+deadwood_c_2000_path = f"s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs/deadwood_C_density_MgC_ha/2000/40000_pixels/{carbon_pool_2000_date}/"
+deadwood_c_2000_pattern = "deadwood_C_density_MgC_ha_2000"
+
+litter_c_2000_path = f"s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs/litter_C_density_MgC_ha/2000/40000_pixels/{carbon_pool_2000_date}/"
+litter_c_2000_pattern = "litter_C_density_MgC_ha_2000"
 
 mangrove_agb_2000_path = "s3://gfw2-data/climate/carbon_model/mangrove_biomass/processed/standard/20190220/"
 mangrove_agb_2000_pattern = "mangrove_agb_t_ha_2000"

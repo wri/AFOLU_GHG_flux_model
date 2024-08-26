@@ -1,4 +1,5 @@
 import os
+import coiled
 import dask
 import boto3
 import time
@@ -14,6 +15,7 @@ import re
 import requests
 import concurrent.futures
 from dask.distributed import print
+from dask.distributed import Client
 from datetime import datetime
 from io import BytesIO
 from osgeo import gdal
@@ -34,6 +36,22 @@ def timestr():
 
     # Format the time as a string
     return eastern_time.strftime("%Y%m%d_%H_%M_%S")
+
+
+# Connects to a Coiled cluster of a specified name if the local flag isn't on
+def connect_to_Coiled_cluster(cluster_name, run_local):
+
+    # Runs locally without Dask or in a Coiled cluster using Dask
+    if run_local:
+        print("Running locally without Dask/Coiled.")
+        return None, None
+    else:   #TODO Make it so that this doesn't create a cluster if it doesn't exist. This will create a cluster.
+        # Connects to the existing Coiled cluster
+        cluster = coiled.Cluster(name=cluster_name)
+        client = Client(cluster)
+
+        return cluster, client
+
 
 
 # Chunk bounds as a string
@@ -494,8 +512,6 @@ def merge_small_tiles_gdal(s3_name_dict):
 
     min_x, min_y, max_x, max_y = get_10x10_tile_bounds(tile_id)
 
-    output_extent = [min_x, min_y, max_x, max_y]  # Specify the extent in the order [xmin, ymin, xmax, ymax]
-
     # Dynamically sets the datatype for the merged raster based on the input rasters (courtesy of https://chatgpt.com/share/e/a91c4c98-b2b1-4680-a4a7-453f1a878052)
     # Determines the data type of the first raster
     first_raster_path = tile_paths[0]
@@ -517,8 +533,7 @@ def merge_small_tiles_gdal(s3_name_dict):
         '-o', merged_file,
         '-of', 'GTiff',
         '-co', 'COMPRESS=DEFLATE',
-        '-co', 'TILED=YES',
-        # If not included, the size of the merged small rasters can be many times their sum. Answer at https://gis.stackexchange.com/a/258215
+        '-co', 'TILED=YES', # If not included, the size of the merged small rasters can be many times their sum. Answer at https://gis.stackexchange.com/a/258215
         '-co', 'BLOCKXSIZE=400',  # Internal tiling
         '-co', 'BLOCKYSIZE=400',  # Internal tiling
         '-ul_lr', str(min_x), str(max_y), str(max_x), str(min_y),
@@ -635,7 +650,12 @@ def calculate_chunk_stats(all_stats, stage):
 
 
 # Gets the name of the first file in a dictionary of dataset names and folders in s3.
-# Returns dictionary of dataset names with the full path of the first file in the s3 folder
+# Returns dictionary of dataset names with the full path of the first file in the s3 folder.
+# Note that this doesn't work perfectly for burned_area where all years are in the same folder;
+# it assigns the first time of the folder (a 2000 tile) to all the burned area years.
+# However, that's currently okay because this first tile retrieval function is just used to assign each
+# input to a datatype, and all the burned area years have the same datatype, so this doesn't actually
+# mis-assign any of the burned area years to the wrong datatype.
 # From https://chatgpt.com/share/e/9a7bf947-1c32-4898-ba6b-3b932a5220c1
 def first_file_name_in_s3_folder(download_dict):
 
@@ -666,17 +686,22 @@ def first_file_name_in_s3_folder(download_dict):
     return first_tiles
 
 
-# Gets the datatype of a raster in s3
-# From https://chatgpt.com/share/e/9a7bf947-1c32-4898-ba6b-3b932a5220c1
+# Gets the datatype of a raster in s3.
+# This seems much faster than the rasterio version that ChatGPT suggested later in the chat.
+# From https://chatgpt.com/share/e/a48c768d-0331-43da-9fc6-ef8a84af586c
 def get_dtype_from_s3(file_path):
 
-    # Construct the /vsis3/ path
+    # Constructs the /vsis3/ path
     vsis3_path = f'/vsis3/{file_path[len("s3://"):]}'
+    # print(f"Attempting to open: {vsis3_path}")
 
     dataset = gdal.Open(vsis3_path)
     if dataset:
+        # print(f"Opened file: {vsis3_path}")
         band = dataset.GetRasterBand(1)
-        return gdal.GetDataTypeName(band.DataType)
+        data_type = gdal.GetDataTypeName(band.DataType)
+        # print(f"Data type: {data_type}")
+        return data_type
     else:
         raise ValueError(f"Could not open file {vsis3_path}")
 
@@ -708,6 +733,7 @@ def categorize_files_by_dtype(first_tiles):
                 raise ValueError(f"Unexpected data type {dtype} for file {file_path}")
 
     return uint8_list, int16_list, int32_list, float32_list
+
 
 # Fills any missing chunks (layers) with NoData (0s) of the correct datatype.
 # The 0s must be the correct datatype so that the numba function receives consistent datatypes for each input dataset.

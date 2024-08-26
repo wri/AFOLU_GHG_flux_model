@@ -165,9 +165,7 @@ def create_and_upload_starting_C_densities(bounds, is_final, mangrove_C_ratio_ar
 
     ### Part 1: downloads chunks and checks for data
 
-    # Dictionary of downloaded layers
-    layers = {}
-
+    # Dictionary of data to download
     download_dict = {
 
         cn.agb_2000: f"{cn.agb_2000_path}{tile_id}_{cn.agb_2000_pattern}.tif",
@@ -189,6 +187,9 @@ def create_and_upload_starting_C_densities(bounds, is_final, mangrove_C_ratio_ar
 
     lu.print_and_log(f"Waiting for requests for data in chunk {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger)
 
+    # Dictionary that stores the downloaded data
+    layers = {}
+
     # Waits for requests to come back with data from S3
     for future in concurrent.futures.as_completed(futures):
         layer = futures[future]
@@ -200,6 +201,7 @@ def create_and_upload_starting_C_densities(bounds, is_final, mangrove_C_ratio_ar
                       'mangrove_agb_2000': layers['mangrove_agb_2000']}
 
     # Checks chunk for data. Skips the chunk if it has no data in it.
+    # Only one of the checked layers must exist for this chunk.
     data_in_chunk = uu.check_chunk_for_data(checked_layers, bounds_str, tile_id, "any", is_final, logger)
 
     if not data_in_chunk:
@@ -218,9 +220,9 @@ def create_and_upload_starting_C_densities(bounds, is_final, mangrove_C_ratio_ar
 
 
     ### Part 3: Fills in any missing input data chunks so the Numba function has a full dataset to work with.
-    ### Missing chunks are filled in here instead of using the typed dicts just because this is simpler.
-    ### And missing chunks are not filled in earlier so that chunk stats are calculated only for the chunks that do exist
-    ### which is useful for QC.
+    ### Missing chunks are filled in here instead of using the typed dicts below just because numpy arrays are easier to work with.
+    ### And missing chunks are not filled in earlier (e.g., when downloading chunks)
+    ### so that chunk stats are calculated only for the chunks that do exist which is useful for QC.
 
     # Gets the first tile in each input folder in order to determine the datatype of the input dataset.
     # Needs to check the first tile in each folder because, if the input raster doesn't exist for this chunk,
@@ -229,6 +231,7 @@ def create_and_upload_starting_C_densities(bounds, is_final, mangrove_C_ratio_ar
     first_tiles = uu.first_file_name_in_s3_folder(download_dict)
 
     # Categorizes the files by their data types so that any missing inputs can be filled in
+    # with 0s of the correct datatype
     uint8_list, int16_list, int32_list, float32_list = uu.categorize_files_by_dtype(first_tiles)
 
     # print("uint8_list:", uint8_list)
@@ -252,7 +255,7 @@ def create_and_upload_starting_C_densities(bounds, is_final, mangrove_C_ratio_ar
     # print("float32_typed_list:", typed_dict_float32)
 
 
-    ### Part 4: Creates starting carbon pool densities
+    ### Part 5: Creates starting carbon pool densities
 
     lu.print_and_log(f"Creating starting C densities for {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger)
 
@@ -275,7 +278,7 @@ def create_and_upload_starting_C_densities(bounds, is_final, mangrove_C_ratio_ar
     del out_dict_float32
 
 
-    ### Part 5: Calculates min, mean, and max for each output chunk.
+    ### Part 6: Calculates min, mean, and max for each output chunk.
     ### Useful for QC-- to see if there are any egregiously incorrect or unexpected values.
 
     # Calculate stats for the output layers from create_starting_C_densities
@@ -283,7 +286,7 @@ def create_and_upload_starting_C_densities(bounds, is_final, mangrove_C_ratio_ar
         stats.append(uu.calculate_stats(array, key, bounds_str, tile_id, 'output_layer'))
 
 
-    ### Part 6: Saves numpy arrays as rasters and uploads to s3
+    ### Part 7: Saves numpy arrays as rasters and uploads to s3
 
     out_no_data_val = 0  # NoData value for output raster (optional)
 
@@ -304,15 +307,10 @@ def create_and_upload_starting_C_densities(bounds, is_final, mangrove_C_ratio_ar
     success_message = f"Success for {bounds_str}: {uu.timestr()}"
     return success_message, stats  # Return both the success message and the statistics
 
-def main(cluster_name, bounding_box, chunk_size, local=False, no_stats=False, no_log=False):
+def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False, no_log=False):
 
-    # Runs locally without Dask or in a Coiled cluster using Dask
-    if local:
-        print("Running locally without Dask/Coiled.")
-    else:   #TODO Make it so that this doesn't create a cluster if it doesn't exist. This will create a cluster.
-        # Connects to the existing Coiled cluster
-        cluster = coiled.Cluster(name=cluster_name)
-        client = Client(cluster)
+    # Connects to Coiled cluster if not running locally
+    cluster, client = uu.connect_to_Coiled_cluster(cluster_name, run_local)
 
     # Model stage being running
     stage = 'carbon_pool_2000'
@@ -371,17 +369,12 @@ def main(cluster_name, bounding_box, chunk_size, local=False, no_stats=False, no
     for message in return_messages:
         print(message)
 
-    # Only consolidates the worker logs and uploads to s3 if not deactivated
-    if not no_log:
-        # Gets the logs for all workers
-        #TODO Wait to run this until all entries have been added to the Coiled log--
-        # running this right after the model finishes means that final log entries haven't made it into Coiled yet.
-        logs = cluster.get_logs()
-        log_note = "Global carbon pool 2000 run"
+    # Creates combined log if not deactivated
+    log_note = "Global carbon pool 2000 run"
+    lu.compile_and_upload_log(no_log, client, cluster, stage,
+                              len(chunks), chunk_size, start_time, end_time, log_note)
 
-        lu.compile_and_upload_log(client, cluster, logs, stage, len(chunks), chunk_size, start_time, end_time, log_note)
-
-    if not local:
+    if not run_local:
         # Closes the Dask client if not running locally
         client.close()
 
@@ -392,12 +385,12 @@ if __name__ == "__main__":
     parser.add_argument('-bb', '--bounding_box', nargs=4, type=float, help='W, S, E, N (degrees)')
     parser.add_argument('-cs', '--chunk_size', type=float, help='Chunk size (degrees)')
 
-    parser.add_argument('--local', action='store_true', help='Run locally without Dask/Coiled')
+    parser.add_argument('--run_local', action='store_true', help='Run locally without Dask/Coiled')
     parser.add_argument('--no_stats', action='store_true', help='Do not create the chunk stats spreadsheet')
     parser.add_argument('--no_log', action='store_true', help='Do not create the combined log')
 
     args = parser.parse_args()
 
     # Create the cluster with command line arguments
-    main(args.cluster_name, args.bounding_box, args.chunk_size, args.local, args.no_stats, args.no_log)
+    main(args.cluster_name, args.bounding_box, args.chunk_size, args.run_local, args.no_stats, args.no_log)
 
