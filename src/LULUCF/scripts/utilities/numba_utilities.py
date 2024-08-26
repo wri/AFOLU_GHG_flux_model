@@ -3,6 +3,9 @@ from numba import jit
 from numba.typed import Dict
 from numba.core import types
 
+# Project imports
+from . import constants_and_names as cn
+
 
 # Adds latest decision tree branch to the state node
 @jit(nopython=True)
@@ -10,9 +13,10 @@ def accrete_node(combo, new):
     combo = combo*10 + new
     return combo
 
-### Creates a separate dictionary for each chunk datatype so that they can be passed to Numba as separate arguments.
-### Numba functions can accept (and return) dictionaries of arrays as long as each dictionary only has arrays of one data type (e.g., uint8, float32)
-### Note: need to add new code if inputs with other data types are added
+
+# Creates a separate dictionary for each chunk datatype so that they can be passed to Numba as separate arguments.
+# Numba functions can accept (and return) dictionaries of arrays as long as each dictionary only has arrays of one data type (e.g., uint8, float32)
+# Note: need to add new code if inputs with other data types are added
 def create_typed_dicts(layers):
     # Initializes empty dictionaries for each type
     uint8_dict_layers = {}
@@ -80,3 +84,12 @@ def create_typed_dicts(layers):
         typed_dict_float32[key] = array
 
     return typed_dict_uint8, typed_dict_int16, typed_dict_int32, typed_dict_float32
+
+
+@jit(nopython=True)
+def calc_removals(agc_rf, r_s_ratio_cell):
+
+    agc_flux_out = (agc_rf * cn.interval_years) * -1
+    bgc_flux_out= float(agc_flux_out) * r_s_ratio_cell
+
+    return agc_flux_out, bgc_flux_out

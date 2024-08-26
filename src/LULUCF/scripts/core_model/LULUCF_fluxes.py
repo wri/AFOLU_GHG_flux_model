@@ -23,6 +23,7 @@ from ..utilities import numba_utilities as nu
 # Operates pixel by pixel, so uses numba (Python compiled to C++).
 @jit(nopython=True)
 def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
+
     # Separate dictionaries for output numpy arrays of each datatype, named by output data type).
     # This is because a dictionary in a Numba function cannot have arrays with multiple data types, so each dictionary has to store only one data type,
     # just like inputs to the function.
@@ -111,16 +112,14 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                 burned_area_t_2 = burned_area_t_2_block[row, col]
                 burned_area_t_1 = burned_area_t_1_block[row, col]
                 burned_area_t = burned_area_t_block[row, col]
-                burned_area_last = max([burned_area_t_4, burned_area_t_3, burned_area_t_2, burned_area_t_1,
-                                        burned_area_t])  # Most recent year with burned area during the interval
+                burned_area_last = max([burned_area_t_4, burned_area_t_3, burned_area_t_2, burned_area_t_1, burned_area_t])  # Most recent year with burned area during the interval
 
                 forest_dist_t_4 = forest_dist_t_4_block[row, col]
                 forest_dist_t_3 = forest_dist_t_3_block[row, col]
                 forest_dist_t_2 = forest_dist_t_2_block[row, col]
                 forest_dist_t_1 = forest_dist_t_1_block[row, col]
                 forest_dist_t = forest_dist_t_block[row, col]
-                forest_dist_last = max([forest_dist_t_4, forest_dist_t_3, forest_dist_t_2, forest_dist_t_1,
-                                        forest_dist_t])  # Most recent year with forest disturbance during the interval
+                forest_dist_last = max([forest_dist_t_4, forest_dist_t_3, forest_dist_t_2, forest_dist_t_1, forest_dist_t])  # Most recent year with forest disturbance during the interval
 
                 agc_dens_curr = agc_dens_curr_block[row, col]
                 bgc_dens_curr = bgc_dens_curr_block[row, col]
@@ -146,55 +145,45 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                 node = 0
 
                 ### Tree gain
-                if (not tree_prev) and (
-                tree_curr):  # Non-tree converted to tree (1)    ##TODO: Include mangrove exception.
+                if (not tree_prev) and (tree_curr):  # Non-tree converted to tree (1)    ##TODO: Include mangrove exception.
                     node = nu.accrete_node(node, 1)
                     if planted_forest_type == 0:  # New non-SDPT trees (11)
                         node = nu.accrete_node(node, 1)
                         if not tall_veg_curr:  # New trees outside forests (111)
-                            node = nu.accrete_node(node, 1)
-                            state_out[row, col] = node
+                            state_out[row, col] = nu.accrete_node(node, 1)
                             agc_rf = 2.8
-                            agc_flux_out_block[row, col] = (agc_rf * cn.interval_years) * -1
+                            agc_flux_out_block[row, col], bgc_flux_out_block[row, col] = nu.calc_removals(agc_rf, r_s_ratio_cell)
                             agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
-                            bgc_flux_out_block[row, col] = float(agc_flux_out_block[row, col]) * r_s_ratio_cell
                             bgc_dens_curr_block[row, col] = bgc_dens_curr - bgc_flux_out_block[row, col]
                         else:  # New terrestrial natural forest (112)
-                            node = nu.accrete_node(node, 2)
-                            state_out[row, col] = node
+                            state_out[row, col] = nu.accrete_node(node, 2)
                             agc_rf = 5.6
-                            agc_flux_out_block[row, col] = (agc_rf * cn.interval_years) * -1
+                            agc_flux_out_block[row, col], bgc_flux_out_block[row, col] = nu.calc_removals(agc_rf, r_s_ratio_cell)
                             agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
-                            bgc_flux_out_block[row, col] = float(agc_flux_out_block[row, col]) * r_s_ratio_cell
                             bgc_dens_curr_block[row, col] = bgc_dens_curr - bgc_flux_out_block[row, col]
                     else:  # New SDPT trees (12)
-                        node = nu.accrete_node(node, 2)
-                        state_out[row, col] = node
+                        state_out[row, col] = nu.accrete_node(node, 2)
                         agc_rf = 10
-                        agc_flux_out_block[row, col] = (agc_rf * cn.interval_years) * -1
+                        agc_flux_out_block[row, col], bgc_flux_out_block[row, col] = nu.calc_removals(agc_rf, r_s_ratio_cell)
                         agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
-                        bgc_flux_out_block[row, col] = float(agc_flux_out_block[row, col]) * r_s_ratio_cell
                         bgc_dens_curr_block[row, col] = bgc_dens_curr - bgc_flux_out_block[row, col]
 
-                        ### Tree loss
-                elif (tree_prev) and (
-                not tree_curr):  # Tree converted to non-tree (2)    ##TODO: Include forest disturbance condition.  ##TODO: Include mangrove exception.
+                ### Tree loss
+                elif (tree_prev) and (not tree_curr):  # Tree converted to non-tree (2)    ##TODO: Include forest disturbance condition.  ##TODO: Include mangrove exception.
                     node = 2
                     if planted_forest_type == 0:  # Full loss of non-SDPT trees (21)
                         node = nu.accrete_node(node, 1)
                         if not tall_veg_prev:  # Full loss of trees outside forests (211)
                             node = nu.accrete_node(node, 1)
                             if burned_area_last == 0:  # Full loss of trees outside forests without fire (2111)
-                                node = nu.accrete_node(node, 1)
-                                state_out[row, col] = node
+                                state_out[row, col] = nu.accrete_node(node, 1)
                                 agc_ef = 0.8
                                 agc_flux_out_block[row, col] = (agc_dens_curr * agc_ef)
                                 agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
                                 bgc_flux_out_block[row, col] = float(agc_flux_out_block[row, col]) * r_s_ratio_cell
                                 bgc_dens_curr_block[row, col] = bgc_dens_curr - bgc_flux_out_block[row, col]
                             else:  # Full loss of trees outside forests with fire (2112)
-                                node = nu.accrete_node(node, 2)
-                                state_out[row, col] = node
+                                state_out[row, col] = nu.accrete_node(node, 2)
                                 agc_ef = 0.6
                                 agc_flux_out_block[row, col] = (agc_dens_curr * agc_ef)
                                 agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
@@ -205,16 +194,14 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                             if LC_curr == cn.cropland:  # Full loss of natural forest converted to cropland (2121)
                                 node = nu.accrete_node(node, 1)
                                 if burned_area_last == 0:  # Full loss of natural forest converted to cropland, not burned (21211)
-                                    node = nu.accrete_node(node, 1)
-                                    state_out[row, col] = node
+                                    state_out[row, col] = nu.accrete_node(node, 1)
                                     agc_ef = 0.3
                                     agc_flux_out_block[row, col] = (agc_dens_curr * agc_ef)
                                     agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
                                     bgc_flux_out_block[row, col] = float(agc_flux_out_block[row, col]) * r_s_ratio_cell
                                     bgc_dens_curr_block[row, col] = bgc_dens_curr - bgc_flux_out_block[row, col]
                                 else:  # Full loss of natural forest converted to cropland, burned (21212)
-                                    node = nu.accrete_node(node, 2)
-                                    state_out[row, col] = node
+                                    state_out[row, col] = nu.accrete_node(node, 2)
                                     agc_ef = 0.3
                                     agc_flux_out_block[row, col] = (agc_dens_curr * agc_ef)
                                     agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
@@ -223,16 +210,14 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                             elif short_med_veg_curr:  # Full loss of natural forest converted to short or medium vegetation (2122)
                                 node = nu.accrete_node(node, 2)
                                 if burned_area_last == 0:  # Full loss of natural forest converted to short or medium vegetation, not burned (21221)
-                                    node = nu.accrete_node(node, 1)
-                                    state_out[row, col] = node
+                                    state_out[row, col] = nu.accrete_node(node, 1)
                                     agc_ef = 0.9
                                     agc_flux_out_block[row, col] = (agc_dens_curr * agc_ef)
                                     agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
                                     bgc_flux_out_block[row, col] = float(agc_flux_out_block[row, col]) * r_s_ratio_cell
                                     bgc_dens_curr_block[row, col] = bgc_dens_curr - bgc_flux_out_block[row, col]
                                 else:  # Full loss of natural forest converted to short or medium vegetation, burned (21222)
-                                    node = nu.accrete_node(node, 2)
-                                    state_out[row, col] = node
+                                    state_out[row, col] = nu.accrete_node(node, 2)
                                     agc_ef = 0.3
                                     agc_flux_out_block[row, col] = (agc_dens_curr * agc_ef)
                                     agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
@@ -241,16 +226,14 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                             elif LC_curr == cn.builtup:  # Full loss of natural forest converted to builtup (2123)
                                 node = nu.accrete_node(node, 3)
                                 if burned_area_last == 0:  # Full loss of natural forest converted to builtup, not burned (21231)
-                                    node = nu.accrete_node(node, 1)
-                                    state_out[row, col] = node
+                                    state_out[row, col] = nu.accrete_node(node, 1)
                                     agc_ef = 0.3
                                     agc_flux_out_block[row, col] = (agc_dens_curr * agc_ef)
                                     agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
                                     bgc_flux_out_block[row, col] = float(agc_flux_out_block[row, col]) * r_s_ratio_cell
                                     bgc_dens_curr_block[row, col] = bgc_dens_curr - bgc_flux_out_block[row, col]
                                 else:  # Full loss of natural forest converted to builtup, burned (21232)
-                                    node = nu.accrete_node(node, 2)
-                                    state_out[row, col] = node
+                                    state_out[row, col] = nu.accrete_node(node, 2)
                                     agc_ef = 0.3
                                     agc_flux_out_block[row, col] = (agc_dens_curr * agc_ef)
                                     agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
@@ -259,16 +242,14 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                             else:  # Full loss of natural forest converted to anything else (2124)
                                 node = nu.accrete_node(node, 4)
                                 if burned_area_last == 0:  # Full loss of natural forest converted to anything else, not burned (21241)
-                                    node = nu.accrete_node(node, 1)
-                                    state_out[row, col] = node
+                                    state_out[row, col] = nu.accrete_node(node, 1)
                                     agc_ef = 0.3
                                     agc_flux_out_block[row, col] = (agc_dens_curr * agc_ef)
                                     agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
                                     bgc_flux_out_block[row, col] = float(agc_flux_out_block[row, col]) * r_s_ratio_cell
                                     bgc_dens_curr_block[row, col] = bgc_dens_curr - bgc_flux_out_block[row, col]
                                 else:  # Full loss of natural forest converted to anything else, burned (21242)
-                                    node = nu.accrete_node(node, 2)
-                                    state_out[row, col] = node
+                                    state_out[row, col] = nu.accrete_node(node, 2)
                                     agc_ef = 0.3
                                     agc_flux_out_block[row, col] = (agc_dens_curr * agc_ef)
                                     agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
@@ -279,16 +260,14 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                         if LC_curr == cn.cropland:  # Full loss of SDPT converted to cropland (221)
                             node = nu.accrete_node(node, 1)
                             if burned_area_last == 0:  # Full loss of SDPT converted to cropland, not burned (2211)
-                                node = nu.accrete_node(node, 1)
-                                state_out[row, col] = node
+                                state_out[row, col] = nu.accrete_node(node, 1)
                                 agc_ef = 0.3
                                 agc_flux_out_block[row, col] = (agc_dens_curr * agc_ef)
                                 agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
                                 bgc_flux_out_block[row, col] = float(agc_flux_out_block[row, col]) * r_s_ratio_cell
                                 bgc_dens_curr_block[row, col] = bgc_dens_curr - bgc_flux_out_block[row, col]
                             else:  # Full loss of SPDPT converted to cropland, burned (2212)
-                                node = nu.accrete_node(node, 2)
-                                state_out[row, col] = node
+                                state_out[row, col] = nu.accrete_node(node, 2)
                                 agc_ef = 0.3
                                 agc_flux_out_block[row, col] = (agc_dens_curr * agc_ef)
                                 agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
@@ -297,16 +276,14 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                         elif short_med_veg_curr:  # Full loss of SDPT converted to short or medium vegetation (222)
                             node = nu.accrete_node(node, 2)
                             if burned_area_last == 0:  # Full loss of SDPT converted to short or medium vegetation, not burned (2221)
-                                node = nu.accrete_node(node, 1)
-                                state_out[row, col] = node
+                                state_out[row, col] = nu.accrete_node(node, 1)
                                 agc_ef = 0.3
                                 agc_flux_out_block[row, col] = (agc_dens_curr * agc_ef)
                                 agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
                                 bgc_flux_out_block[row, col] = float(agc_flux_out_block[row, col]) * r_s_ratio_cell
                                 bgc_dens_curr_block[row, col] = bgc_dens_curr - bgc_flux_out_block[row, col]
                             else:  # Full loss of SDPT converted to short or medium vegetation, burned (2222)
-                                node = nu.accrete_node(node, 2)
-                                state_out[row, col] = node
+                                state_out[row, col] = nu.accrete_node(node, 2)
                                 agc_ef = 0.3
                                 agc_flux_out_block[row, col] = (agc_dens_curr * agc_ef)
                                 agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
@@ -317,16 +294,14 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                             if planted_forest_tree_crop == 1:  # Full loss of SDPT planted forest to builtup (2231)
                                 node = nu.accrete_node(node, 1)
                                 if burned_area_last == 0:  # Full loss of SDPT planted forest converted to builtup, not burned (22311)
-                                    node = nu.accrete_node(node, 1)
-                                    state_out[row, col] = node
+                                    state_out[row, col] = nu.accrete_node(node, 1)
                                     agc_ef = 0.3
                                     agc_flux_out_block[row, col] = (agc_dens_curr * agc_ef)
                                     agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
                                     bgc_flux_out_block[row, col] = float(agc_flux_out_block[row, col]) * r_s_ratio_cell
                                     bgc_dens_curr_block[row, col] = bgc_dens_curr - bgc_flux_out_block[row, col]
                                 else:  # Full loss of SDPT planted forest converted to builtup, burned (22312)
-                                    node = nu.accrete_node(node, 2)
-                                    state_out[row, col] = node
+                                    state_out[row, col] = nu.accrete_node(node, 2)
                                     agc_ef = 0.3
                                     agc_flux_out_block[row, col] = (agc_dens_curr * agc_ef)
                                     agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
@@ -335,16 +310,14 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                             else:  # Full loss of SDPT tree crop to builtup (2232)
                                 node = nu.accrete_node(node, 2)
                                 if burned_area_last == 0:  # Full loss of SDPT tree crop converted to builtup, not burned (22321)
-                                    node = nu.accrete_node(node, 1)
-                                    state_out[row, col] = node
+                                    state_out[row, col] = nu.accrete_node(node, 1)
                                     agc_ef = 0.3
                                     agc_flux_out_block[row, col] = (agc_dens_curr * agc_ef)
                                     agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
                                     bgc_flux_out_block[row, col] = float(agc_flux_out_block[row, col]) * r_s_ratio_cell
                                     bgc_dens_curr_block[row, col] = bgc_dens_curr - bgc_flux_out_block[row, col]
                                 else:  # Full loss of SDPT tree crop converted to builtup, burned (22322)
-                                    node = nu.accrete_node(node, 2)
-                                    state_out[row, col] = node
+                                    state_out[row, col] = nu.accrete_node(node, 2)
                                     agc_ef = 0.3
                                     agc_flux_out_block[row, col] = (agc_dens_curr * agc_ef)
                                     agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
@@ -353,23 +326,21 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                         else:  # Full loss of SDPT converted to anything else (224)
                             node = nu.accrete_node(node, 4)
                             if burned_area_last == 0:  # Full loss of SDPT converted to builtup, not burned (2241)
-                                node = nu.accrete_node(node, 1)
-                                state_out[row, col] = node
+                                state_out[row, col] = nu.accrete_node(node, 1)
                                 agc_ef = 0.3
                                 agc_flux_out_block[row, col] = (agc_dens_curr * agc_ef)
                                 agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
                                 bgc_flux_out_block[row, col] = float(agc_flux_out_block[row, col]) * r_s_ratio_cell
                                 bgc_dens_curr_block[row, col] = bgc_dens_curr - bgc_flux_out_block[row, col]
                             else:  # Full loss of SDPT converted to builtup, burned (2242)
-                                node = nu.accrete_node(node, 2)
-                                state_out[row, col] = node
+                                state_out[row, col] = nu.accrete_node(node, 2)
                                 agc_ef = 0.3
                                 agc_flux_out_block[row, col] = (agc_dens_curr * agc_ef)
                                 agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
                                 bgc_flux_out_block[row, col] = float(agc_flux_out_block[row, col]) * r_s_ratio_cell
                                 bgc_dens_curr_block[row, col] = bgc_dens_curr - bgc_flux_out_block[row, col]
 
-                                ### Trees remaining trees
+                ### Trees remaining trees
                 elif (tree_prev) and (tree_curr):  # Trees remaining trees (3)    ##TODO: Include mangrove exception.
                     node = nu.accrete_node(node, 3)
                     if forest_dist_last == 0:  # Trees without stand-replacing disturbances in the last interval (31)
@@ -379,31 +350,28 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                             if not tall_veg_curr:  # Trees outside forests without stand-replacing disturbance in the last interval (3111)
                                 node = nu.accrete_node(node, 1)
                                 if not sig_height_loss_prev_curr:  # Stable trees outside forests (31111)
-                                    node = nu.accrete_node(node, 1)
-                                    state_out[row, col] = node
-                                    agc_flux_out_block[row, col] = 5.54
-                                    agc_dens_curr_block[row, col] = 13.59
-                                    bgc_flux_out_block[row, col] = 2.83
-                                    bgc_dens_curr_block[row, col] = 7.34
+                                    state_out[row, col] = nu.accrete_node(node, 1)
+                                    agc_rf = 2.8
+                                    agc_flux_out_block[row, col] = (agc_rf * cn.interval_years) * -1
+                                    agc_dens_curr_block[row, col] = agc_dens_curr - agc_flux_out_block[row, col]
+                                    bgc_flux_out_block[row, col] = float(agc_flux_out_block[row, col]) * r_s_ratio_cell
+                                    bgc_dens_curr_block[row, col] = bgc_dens_curr - bgc_flux_out_block[row, col]
                                 else:  # Partially disturbed trees outside forests (31112)
                                     node = nu.accrete_node(node, 2)
                                     if burned_area_last == 0:  # Partially disturbed trees outside forests without fire (311121)
-                                        node = nu.accrete_node(node, 1)
-                                        state_out[row, col] = node
+                                        state_out[row, col] = nu.accrete_node(node, 1)
                                         agc_flux_out_block[row, col] = 5.54
                                         agc_dens_curr_block[row, col] = 13.59
                                         bgc_flux_out_block[row, col] = 2.83
                                         bgc_dens_curr_block[row, col] = 7.34
                                     else:
-                                        node = nu.accrete_node(node, 2)
-                                        state_out[row, col] = node
+                                        state_out[row, col] = nu.accrete_node(node, 2)
                                         agc_flux_out_block[row, col] = 5.54
                                         agc_dens_curr_block[row, col] = 13.59
                                         bgc_flux_out_block[row, col] = 2.83
                                         bgc_dens_curr_block[row, col] = 7.34
                             else:  # Natural forest without stand-replacing disturbance in the last interval (3112)
-                                node = nu.accrete_node(node, 2)
-                                state_out[row, col] = node
+                                state_out[row, col] = nu.accrete_node(node, 2)
                                 agc_flux_out_block[row, col] = 5.54
                                 agc_dens_curr_block[row, col] = 13.59
                                 bgc_flux_out_block[row, col] = 2.83
@@ -542,7 +510,7 @@ def calculate_and_upload_LULUCF_fluxes(bounds, is_final):
     ### And missing chunks are not filled in earlier (e.g., when downloading chunks)
     ### so that chunk stats are calculated only for the chunks that do exist which is useful for QC.
 
-    lu.print_and_log(f"Assigning inputs for chunk {bounds_str} in {tile_id} to datatype and filling in missing data: {uu.timestr()}",
+    lu.print_and_log(f"Assigning datatypes for inputs for chunk {bounds_str} in {tile_id} to datatype and filling in missing data: {uu.timestr()}",
                      is_final, logger)
 
     # Gets the first tile in each input folder in order to determine the datatype of the input dataset.
