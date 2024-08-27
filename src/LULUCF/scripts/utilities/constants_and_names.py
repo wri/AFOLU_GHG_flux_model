@@ -1,3 +1,4 @@
+import math
 import boto3
 
 ########
@@ -30,18 +31,15 @@ IPCC_class_max_val = 6  # Maximum value of IPCC class codes
 first_year = 2000  # First year of model
 last_year = 2020   # Last year of model
 
-interval_years = 5   # Number of years in interval. #TODO: calculate programmatically in numba function rather than coded here-- for greater flexibility.
+# Number of years in interval.
+interval_years = 5    #TODO: calculate programmatically in numba function rather than coded here-- for greater flexibility.
 
-full_raster_dims = 40000    # Size of a 10x10 deg raster in pixels
-
-# Threshold for height loss to be counted as tree loss (meters)
-sig_height_loss_threshold = 5
-
-# Height minimum for trees (meters)
-tree_threshold = 5
+# Number of years of removals in a tree cover gain pixel
+NF_F_gain_year = math.ceil(interval_years/2)
 
 ### Carbon constants
 
+# Biomass to carbon ratios
 biomass_to_carbon_non_mangrove = 0.47   # Conversion of biomass to carbon for non-mangrove forests
 biomass_to_carbon_mangrove = 0.45   # Conversion of biomass to carbon for mangroves (IPCC wetlands supplement table 4.2)
 
@@ -70,6 +68,12 @@ tropical_high_elev_litter_c_ratio = 0.01
 non_tropical_deadwood_c_ratio = 0.08
 non_tropical_litter_c_ratio = 0.04
 
+# Removal factors for deadwood and litter carbon
+deadwood_c_NT_T_rf = 0
+litter_c_NT_T_rf = 0
+deadwood_c_T_T_rf = 0
+litter_c_T_T_rf = 0
+
 
 ### GLCLU codes
 cropland = 244
@@ -81,11 +85,22 @@ tree_wet_min_height_code = 127
 tree_wet_max_height_code = 148
 
 
+### Miscellaneous
+
+full_raster_dims = 40000    # Size of a 10x10 deg raster in pixels
+
+# Threshold for height loss to be counted as tree loss (meters)
+sig_height_loss_threshold = 5
+
+# Height minimum for trees (meters)
+tree_threshold = 5
+
+
 ########
 ### File name paths and patterns
 ########
 
-LC_uri = 's3://gfw2-data/climate/landcover'
+LC_uri = f'{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/landcover'
 
 s3_out_dir = 'climate/AFOLU_flux_model/LULUCF/outputs'
 
