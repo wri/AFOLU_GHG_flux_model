@@ -1,20 +1,23 @@
 -bb -180 -60 180 80 -cs 2   # entire world (12600 chunks) (60x 32GB r6i.2xlarge workers= 22 minutes; around 90 Coiled credits and $4 dollars of AWS costs)
 -bb 110 -10 140 20 -cs 2    # 30x30 deg (20N_110E, mangroves), 225 chunks (50x 32GB r6i.2xlarge workers=XYZ minutes)
 -bb -10 40 20 70 -cs 2      # 30x30 deg (70N_010W, no mangroves), 225 chunks (50x 32GB r6i.2xlarge workers=XYZ minutes)
--bb 10 40 20 50 -cs 2       # 10x10 deg (50N_010E), 25 chunks
+-bb 10 40 20 50 -cs 1       # 10x10 deg (50N_010E), 100 chunks
 -bb 10 46 14 50 -cs 2       # 4x4 deg (50N_010E), 4 chunks
 -bb 10 48 12 50 -cs 2       # 2x2 deg (50N_010E), 1 chunk
 -bb 10 48 12 50 -cs 1       # 2x2 deg (50N_010E), 4 chunks
 -bb 10 49 11 50 -cs 1       # 1x1 deg (50N_010E), 1 chunk
 
-
--bb 150 0 160 10 -cs 1              # 10x10 deg (10N_150E), 100 chunks
--bb 10 40 20 50 -cs 10              # 10x10 deg (50N_010E), 1 chunk
--bb 10 46 14 50 -cs 2]              # 4x4 deg, 4 chunks
--bb 110 -10 114 -6 -cs 2            # 4x4 deg, 4 chunks
--bb 10 48 12 50 -cs 1               # 2x2 deg, 4 chunks
--bb 10 49 11 50 -cs 1               # 1x1 deg, 1 chunk
--bb 10 49 11 50 -cs 0.5             # 1x1 deg, 4 chunks
+-bb 10 25 25 50 -cs 1               # 15x15 deg (50N_010E), 225 chunks
+-bb 110 -10 120 -0 -cs 1            # 10x10 deg (00N_110E), 100 chunks
+-bb 10 40 20 50 -cs 1               # 10x10 deg (50N_010E), 100 chunks
+-bb 10 41 19 50 -cs 1               # 9x9 deg (50N_010E), 81 chunks
+-bb 10 43 17 50 -cs 1               # 7x7 deg (50N_010E), 49 chunks
+-bb 110 -10 115 -5 -cs 1            # 5x5 deg (00N_110E), 25 chunks
+-bb 110 -10 114 -6 -cs 1            # 4x4 deg (00N_110E), 16 chunks
+-bb 10 48 12 50 -cs 1               # 2x2 deg (50N_010E), 4 chunks
+-bb 10 46 14 50 -cs 2               # 4x4 deg (50N_010E), 4 chunks
+-bb 10 49 11 50 -cs 1               # 1x1 deg (50N_010E), 1 chunk
+-bb 10 49 11 50 -cs 0.5             # 1x1  (50N_010E), 4 chunks
 -bb 10 49.5 10.5 50 -cs 0.25        # 0.5x0.5 deg, 4 chunks
 -bb 10 42 11 43 -cs 0.5             # 1x1 deg, 4 chunks (some GLCLU code=254 for ocean and some land, so data should be output)
 -bb 10 49.75 10.25 50 -cs 0.25      # 0.25x0.25 deg, 1 chunk (has data, no fire)

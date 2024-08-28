@@ -100,7 +100,7 @@ tree_threshold = 5
 ### File name paths and patterns
 ########
 
-LC_uri = f'{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/landcover'
+LC_uri = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/landcover"
 
 s3_out_dir = 'climate/AFOLU_flux_model/LULUCF/outputs'
 
@@ -108,39 +108,39 @@ local_log_path = "logs/"
 s3_log_path = "climate/AFOLU_flux_model/LULUCF/model_logs/"
 combined_log = "AFOLU_model_log"
 
-agb_2000_path = "s3://gfw2-data/climate/WHRC_biomass/WHRC_V4/Processed/"
+agb_2000_path = f"{full_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/Processed/"
 agb_2000_pattern = "t_aboveground_biomass_ha_2000"
 
 carbon_pool_2000_date = "20240821"
 
-agc_2000_path = f"s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs/AGC_density_MgC_ha/2000/40000_pixels/{carbon_pool_2000_date}/"
+agc_2000_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs/AGC_density_MgC_ha/2000/40000_pixels/{carbon_pool_2000_date}/"
 agc_2000_pattern = "AGC_density_MgC_ha_2000"
 
-bgc_2000_path = f"s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs/BGC_density_MgC_ha/2000/40000_pixels/{carbon_pool_2000_date}/"
+bgc_2000_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs/BGC_density_MgC_ha/2000/40000_pixels/{carbon_pool_2000_date}/"
 bgc_2000_pattern = "BGC_density_MgC_ha_2000"
 
-deadwood_c_2000_path = f"s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs/deadwood_C_density_MgC_ha/2000/40000_pixels/{carbon_pool_2000_date}/"
+deadwood_c_2000_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs/deadwood_C_density_MgC_ha/2000/40000_pixels/{carbon_pool_2000_date}/"
 deadwood_c_2000_pattern = "deadwood_C_density_MgC_ha_2000"
 
-litter_c_2000_path = f"s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs/litter_C_density_MgC_ha/2000/40000_pixels/{carbon_pool_2000_date}/"
+litter_c_2000_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs/litter_C_density_MgC_ha/2000/40000_pixels/{carbon_pool_2000_date}/"
 litter_c_2000_pattern = "litter_C_density_MgC_ha_2000"
 
-mangrove_agb_2000_path = "s3://gfw2-data/climate/carbon_model/mangrove_biomass/processed/standard/20190220/"
+mangrove_agb_2000_path = f"{full_bucket_prefix}/climate/carbon_model/mangrove_biomass/processed/standard/20190220/"
 mangrove_agb_2000_pattern = "mangrove_agb_t_ha_2000"
 
-elevation_path = "s3://gfw2-data/climate/carbon_model/inputs_for_carbon_pools/processed/elevation/20190418/"
+elevation_path = f"{full_bucket_prefix}/climate/carbon_model/inputs_for_carbon_pools/processed/elevation/20190418/"
 elevation_pattern = "elevation"
 
-climate_domain_path = "s3://gfw2-data/climate/carbon_model/inputs_for_carbon_pools/processed/fao_ecozones_bor_tem_tro/20190418/"
+climate_domain_path = f"{full_bucket_prefix}/climate/carbon_model/inputs_for_carbon_pools/processed/fao_ecozones_bor_tem_tro/20190418/"
 climate_domain_pattern = "fao_ecozones_bor_tem_tro_processed"
 
-precipitation_path = "s3://gfw2-data/climate/carbon_model/inputs_for_carbon_pools/processed/precip/20190418/"
+precipitation_path = f"{full_bucket_prefix}/climate/carbon_model/inputs_for_carbon_pools/processed/precip/20190418/"
 precipitation_pattern = "precip_mm_annual"
 
-r_s_ratio_path = "s3://gfw2-data/climate/carbon_model/BGB_AGB_ratio/processed/20230216/"
+r_s_ratio_path = f"{full_bucket_prefix}/climate/carbon_model/BGB_AGB_ratio/processed/20230216/"
 r_s_ratio_pattern = "BGB_AGB_ratio"
 
-continent_ecozone_path = "s3://gfw2-data/climate/carbon_model/fao_ecozones/ecozone_continent/20190116/processed/"
+continent_ecozone_path = f"{full_bucket_prefix}/climate/carbon_model/fao_ecozones/ecozone_continent/20190116/processed/"
 continent_ecozone_pattern = "fao_ecozones_continents_processed"
 
 
@@ -165,6 +165,9 @@ litter_c_flux_pattern = "litter_C_flux_MgC_ha"
 land_cover = "land_cover"
 vegetation_height = "vegetation_height"
 
+
+### Carbon pools
+
 agb_2000 = "agb_2000"
 mangrove_agb_2000 = "mangrove_agb_2000"
 agc_2000 = "agc_2000"
@@ -174,6 +177,9 @@ litter_c_2000 = "litter_c_2000"
 soil_c_2000 = "soil_c_2000"
 
 r_s_ratio = "r_s_ratio"
+
+
+### Other inputs
 
 burned_area = "burned_area"
 forest_disturbance = "forest_disturbance"

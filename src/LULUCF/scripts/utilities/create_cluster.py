@@ -6,10 +6,12 @@ python -m scripts.utilities.create_cluster -n 1 -m 8
 import coiled
 import argparse
 
-def create_cluster(n_workers, worker_memory):
+def create_cluster(n_workers, worker_memory, worker_cpu):
 
     # Convert worker_memory from an integer to the required format (e.g., 8 to "8GiB")
     worker_memory_str = f"{worker_memory}GiB"
+
+    nthreads = int(worker_memory)/(8-1)
 
     cluster = coiled.Cluster(
         n_workers=n_workers,
@@ -19,7 +21,12 @@ def create_cluster(n_workers, worker_memory):
         region="us-east-1",
         name="AFOLU_flux_model_scripts",
         account='wri-forest-research',
-        worker_memory=worker_memory_str
+        # worker_cpu=worker_cpu
+        worker_memory=worker_memory_str,
+        worker_options={
+            "nthreads": 10,  # Set the number of threads per worker to 1
+            "memory_limit": worker_memory_str,  # Ensure the memory limit is set
+        }
     )
     print(f"Cluster created with name: {cluster.name}")
     print(f"Number of workers: {n_workers}; Worker memory: {worker_memory_str}")
@@ -29,8 +36,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create a Coiled cluster with specified parameters.")
     parser.add_argument('-n', '--n_workers', type=int, default=1, help='Number of workers for the cluster')
     parser.add_argument('-m', '--worker_memory', type=str, default='8', help='Memory per worker (e.g., 8GiB)')
+    parser.add_argument('-c', '--worker_cpu', type=str, default='4', help='Number of CPUs per worker')
 
     args = parser.parse_args()
 
     # Create the cluster with command line arguments
-    create_cluster(args.n_workers, args.worker_memory)
+    create_cluster(args.n_workers, args.worker_memory, args.worker_cpu)

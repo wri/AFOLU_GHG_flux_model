@@ -42,30 +42,16 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
 
     r_s_ratio_block = in_dict_float32[cn.r_s_ratio].astype('float32')
 
+    # Stores the burned area blocks for the entire model duration
+    burned_area_blocks_total = []
+
+    # Stores the forest disturbance blocks for the entire model duration
+    forest_dist_blocks_total = []
+
     # Iterates through years
     for year in end_years:
 
-        # print(year)
-
-        # List of all the uint8 input data that may not exist but is necessary for the decision tree
-        uint8_annual_list = [
-            f"{cn.land_cover}_{year - cn.interval_years}",
-            f"{cn.land_cover}_{year}",
-            f"{cn.vegetation_height}_{year - cn.interval_years}",
-            f"{cn.vegetation_height}_{year}",
-            cn.planted_forest_type_layer,
-            cn.planted_forest_tree_crop_layer,
-            f"{cn.burned_area}_{year - 4}",
-            f"{cn.burned_area}_{year - 3}",
-            f"{cn.burned_area}_{year - 2}",
-            f"{cn.burned_area}_{year - 1}",
-            f"{cn.burned_area}_{year}",
-            f"{cn.forest_disturbance}_{year - 4}",
-            f"{cn.forest_disturbance}_{year - 3}",
-            f"{cn.forest_disturbance}_{year - 2}",
-            f"{cn.forest_disturbance}_{year - 1}",
-            f"{cn.forest_disturbance}_{year}"
-        ]
+        # print(f"Now at {year}:")
 
         # Writes the dictionary entries to a chunk for use in the decision tree
         LC_prev_block = in_dict_uint8[f"{cn.land_cover}_{year - cn.interval_years}"]
@@ -75,17 +61,18 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
         planted_forest_type_block = in_dict_uint8[cn.planted_forest_type_layer]
         planted_forest_tree_crop_block = in_dict_uint8[cn.planted_forest_tree_crop_layer]
 
-        burned_area_t_4_block = in_dict_uint8[f"{cn.burned_area}_{year - 4}"]
-        burned_area_t_3_block = in_dict_uint8[f"{cn.burned_area}_{year - 3}"]
-        burned_area_t_2_block = in_dict_uint8[f"{cn.burned_area}_{year - 2}"]
-        burned_area_t_1_block = in_dict_uint8[f"{cn.burned_area}_{year - 1}"]
-        burned_area_t_block = in_dict_uint8[f"{cn.burned_area}_{year}"]
+        # Creates a list of all the burned area arrays from 2001 to the end of the interval
+        for year_offset in range(year-4, year+1):
+            year_key = f"{cn.burned_area}_{year_offset}"
+            # print(year_key)
+            burned_area_blocks_total.append(in_dict_uint8[year_key])
 
-        forest_dist_t_4_block = in_dict_uint8[f"{cn.forest_disturbance}_{year - 4}"]
-        forest_dist_t_3_block = in_dict_uint8[f"{cn.forest_disturbance}_{year - 3}"]
-        forest_dist_t_2_block = in_dict_uint8[f"{cn.forest_disturbance}_{year - 2}"]
-        forest_dist_t_1_block = in_dict_uint8[f"{cn.forest_disturbance}_{year - 1}"]
-        forest_dist_t_block = in_dict_uint8[f"{cn.forest_disturbance}_{year}"]
+        # Creates a list of all the forest disturbance arrays from 2001 to the end of the interval
+        for year_offset in range(year-4, year+1):
+            year_key = f"{cn.forest_disturbance}_{year_offset}"
+            # print(year_key)
+            forest_dist_blocks_total.append(in_dict_uint8[year_key])
+
 
         # Numpy arrays for outputs that don't depend on previous interval's values
         state_out = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('uint32')
@@ -98,6 +85,8 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
         for row in range(LC_curr_block.shape[0]):
             for col in range(LC_curr_block.shape[1]):
 
+                ### Defining pixel values
+
                 LC_prev = LC_prev_block[row, col]
                 LC_curr = LC_curr_block[row, col]
                 veg_h_prev = veg_h_prev_block[row, col]
@@ -105,31 +94,71 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                 planted_forest_type = planted_forest_type_block[row, col]
                 planted_forest_tree_crop = planted_forest_tree_crop_block[row, col]
 
-                # Note: Stacking the burned area rasters using ndstack outside the pixel iteration did not work with numba.
-                # So just reading each burned area raster separately.
-                burned_area_t_4 = burned_area_t_4_block[row, col]
-                burned_area_t_3 = burned_area_t_3_block[row, col]
-                burned_area_t_2 = burned_area_t_2_block[row, col]
-                burned_area_t_1 = burned_area_t_1_block[row, col]
-                burned_area_t = burned_area_t_block[row, col]
-                burned_area_last = max([burned_area_t_4, burned_area_t_3, burned_area_t_2, burned_area_t_1, burned_area_t])  # Most recent year with burned area during the interval
+                r_s_ratio_cell = r_s_ratio_block[row, col]
 
-                forest_dist_t_4 = forest_dist_t_4_block[row, col]
-                forest_dist_t_3 = forest_dist_t_3_block[row, col]
-                forest_dist_t_2 = forest_dist_t_2_block[row, col]
-                forest_dist_t_1 = forest_dist_t_1_block[row, col]
-                forest_dist_t = forest_dist_t_block[row, col]
-                forest_dist_last = max([forest_dist_t_4, forest_dist_t_3, forest_dist_t_2, forest_dist_t_1, forest_dist_t])  # Most recent year with forest disturbance during the interval
+                # Note: Stacking the burned area rasters using ndstack, stack, or flatten outside the pixel iteration did not work with numba.
+                # So just reading each raster from the list of rasters separately.
+                burned_area_t_4 = burned_area_blocks_total[-5][row, col]
+                burned_area_t_3 = burned_area_blocks_total[-4][row, col]
+                burned_area_t_2 = burned_area_blocks_total[-3][row, col]
+                burned_area_t_1 = burned_area_blocks_total[-2][row, col]
+                burned_area_t = burned_area_blocks_total[-1][row, col]
+                # Most recent year with burned area during the interval
+                burned_area_last = max([burned_area_t_4, burned_area_t_3, burned_area_t_2, burned_area_t_1, burned_area_t])
 
+                # Note: Stacking the forest disturbance rasters using ndstack, stack, or flatten outside the pixel iteration did not work with numba.
+                # So just reading each raster from the list of rasters separately.
+                forest_dist_t_4 = forest_dist_blocks_total[-5][row, col]
+                forest_dist_t_3 = forest_dist_blocks_total[-4][row, col]
+                forest_dist_t_2 = forest_dist_blocks_total[-3][row, col]
+                forest_dist_t_1 = forest_dist_blocks_total[-2][row, col]
+                forest_dist_t = forest_dist_blocks_total[-1][row, col]
+                # Most recent year with forest disturbance during the interval
+                forest_dist_last = max([forest_dist_t_4, forest_dist_t_3, forest_dist_t_2, forest_dist_t_1, forest_dist_t])
+
+                # Records the first year of burned area in the pixel, to indicate whether fire was reported at all
+                # in the record
+                first_burn_in_record = 0
+
+                # Records the first year of forest disturbance in the pixel, to indicate whether disturbance was reported at all
+                # in the record
+                first_forest_dist_in_record = 0
+
+                # Loops over burned area pixels since 2001 to see if there was a fire.
+                # Stops once a fire is detected because all that matters here is that there was a fire at some point.
+                for burned_area_year in burned_area_blocks_total:
+                    # Update the maximum value for this pixel
+                    if burned_area_year[row, col] > 0:
+                        first_burn_in_record = burned_area_year[row, col]
+                        break
+
+                # if first_burn_in_record > 0:
+                #     print("fire", row, col, first_burn_in_record)
+
+                # Loops over forest disturbance pixels since 2001 to see if there was a disturbance.
+                # Stops once a disturbance is detected because all that matters here is that there was a disturbance at some point.
+                for forest_dist_year in forest_dist_blocks_total:
+                    # Update the maximum value for this pixel
+                    if forest_dist_year[row, col] > 0:
+                        first_forest_dist_in_record = forest_dist_year[row, col]
+                        break
+
+                # if first_forest_dist_in_record > 0:
+                #     print("disturbance", row, col, first_forest_dist_in_record)
+
+                # Input carbon densities for the pools
                 agc_dens_in = agc_dens_block[row, col]
                 bgc_dens_in = bgc_dens_block[row, col]
                 deadwood_c_dens_in = deadwood_c_dens_block[row, col]
                 litter_c_dens_in = litter_c_dens_block[row, col]
                 soil_c_dens = soil_c_dens_block[row, col]
 
+                # Makes a list of carbon densities to save space in the decision tree below.
+                # This list is input to flux calulation functions as one argument, rather than a separate argument
+                # for each pool
                 c_dens_in = [agc_dens_in, bgc_dens_in, deadwood_c_dens_in, litter_c_dens_in]
 
-                r_s_ratio_cell = r_s_ratio_block[row, col]
+                ### Defining specific classes
 
                 tree_prev = (veg_h_prev >= cn.tree_threshold)
                 tree_curr = (veg_h_curr >= cn.tree_threshold)
@@ -295,21 +324,23 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                                 if not sig_height_loss_prev_curr:  # Stable trees outside forests (31111)
                                     state_out[row, col] = nu.accrete_node(node, 1)
                                     agc_rf = 2.8
-                                    c_flux_out, c_dens_out = nu.calc_T_T(agc_rf, r_s_ratio_cell, c_dens_in)
+                                    c_flux_out, c_dens_out = nu.calc_T_T_undisturbed(agc_rf, r_s_ratio_cell, c_dens_in)
                                 else:  # Partially disturbed trees outside forests (31112)
                                     node = nu.accrete_node(node, 2)
                                     if burned_area_last == 0:  # Partially disturbed trees outside forests without fire (311121)
                                         state_out[row, col] = nu.accrete_node(node, 1)
-                                        agc_rf = 0.9
-                                        c_flux_out, c_dens_out = nu.calc_T_T(agc_rf, r_s_ratio_cell, c_dens_in)
-                                    else:
+                                        agc_rf = 1.3
+                                        agc_ef = 0.9
+                                        c_flux_out, c_dens_out = nu.calc_T_T_non_stand_disturbs(agc_rf, agc_ef, r_s_ratio_cell, c_dens_in)
+                                    else:  # Partially disturbed trees outside forests with fire (311122)
                                         state_out[row, col] = nu.accrete_node(node, 2)
                                         agc_rf = 0.75
-                                        c_flux_out, c_dens_out = nu.calc_T_T(agc_rf, r_s_ratio_cell, c_dens_in)
+                                        agc_ef = 0.33
+                                        c_flux_out, c_dens_out = nu.calc_T_T_non_stand_disturbs(agc_rf, agc_ef, r_s_ratio_cell, c_dens_in)
                             else:  # Natural forest without stand-replacing disturbance in the last interval (3112)
                                 state_out[row, col] = nu.accrete_node(node, 2)
                                 agc_rf = 2.1
-                                c_flux_out, c_dens_out = nu.calc_T_T(agc_rf, r_s_ratio_cell, c_dens_in)
+                                c_flux_out, c_dens_out = nu.calc_T_T_undisturbed(agc_rf, r_s_ratio_cell, c_dens_in)
 
                                 # if not sig_height_loss_prev_curr:    # Stable natural forest (31121)
 
@@ -364,7 +395,7 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
 
 
 # Downloads inputs, prepares data, calculates LULUCF stocks and fluxes, and uploads outputs to s3
-def calculate_and_upload_LULUCF_fluxes(bounds, is_final):
+def calculate_and_upload_LULUCF_fluxes(bounds, is_final, no_upload):
 
     logger = lu.setup_logging()
 
@@ -549,19 +580,22 @@ def calculate_and_upload_LULUCF_fluxes(bounds, is_final):
 
     ### Part 7: Saves numpy arrays as rasters and uploads to s3
 
-    out_no_data_val = 0  # NoData value for output raster (optional)
+    # Only saves and uploads to s3 if enabled
+    if not no_upload:
 
-    # Adds metadata used for uploading outputs to s3 to the dictionary
-    for key, value in out_dict_all_dtypes.items():
-        data_type = value.dtype.name
-        out_pattern = key[:-10] # Drops the date range from the end of the string
-        year_range = key[-9:]  # Extracts the year range XXXX_YYYY from the file name
+        out_no_data_val = 0  # NoData value for output raster (optional)
 
-        # Dictionary with metadata for each array
-        out_dict_all_dtypes[key] = [value, data_type, out_pattern, year_range]
+        # Adds metadata used for uploading outputs to s3 to the dictionary
+        for key, value in out_dict_all_dtypes.items():
+            data_type = value.dtype.name
+            out_pattern = key[:-10] # Drops the date range from the end of the string
+            year_range = key[-9:]  # Extracts the year range XXXX_YYYY from the file name
 
-    uu.save_and_upload_small_raster_set(bounds, chunk_length_pixels, tile_id, bounds_str, out_dict_all_dtypes,
-                                        is_final, logger, out_no_data_val)
+            # Dictionary with metadata for each array
+            out_dict_all_dtypes[key] = [value, data_type, out_pattern, year_range]
+
+        uu.save_and_upload_small_raster_set(bounds, chunk_length_pixels, tile_id, bounds_str, out_dict_all_dtypes,
+                                            is_final, logger, out_no_data_val)
 
     # Clear memory of unneeded arrays
     del out_dict_all_dtypes
@@ -570,7 +604,7 @@ def calculate_and_upload_LULUCF_fluxes(bounds, is_final):
     return success_message, stats  # Return both the success message and the statistics
 
 
-def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False, no_log=False):
+def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False, no_log=False, no_upload=False):
 
     # Connects to Coiled cluster if not running locally
     cluster, client = uu.connect_to_Coiled_cluster(cluster_name, run_local)
@@ -599,7 +633,7 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
     return_messages = []
 
     # Creates list of tasks to run (1 task = 1 chunk)
-    delayed_results = [dask.delayed(calculate_and_upload_LULUCF_fluxes)(chunk, is_final) for chunk in chunks]
+    delayed_results = [dask.delayed(calculate_and_upload_LULUCF_fluxes)(chunk, is_final, no_upload) for chunk in chunks]
 
     # Runs analysis and gathers results
     results = dask.compute(*delayed_results)
@@ -647,8 +681,9 @@ if __name__ == "__main__":
     parser.add_argument('--run_local', action='store_true', help='Run locally without Dask/Coiled')
     parser.add_argument('--no_stats', action='store_true', help='Do not create the chunk stats spreadsheet')
     parser.add_argument('--no_log', action='store_true', help='Do not create the combined log')
+    parser.add_argument('--no_upload', action='store_true', help='Do not save and upload outputs to s3')
 
     args = parser.parse_args()
 
     # Create the cluster with command line arguments
-    main(args.cluster_name, args.bounding_box, args.chunk_size, args.run_local, args.no_stats, args.no_log)
+    main(args.cluster_name, args.bounding_box, args.chunk_size, args.run_local, args.no_stats, args.no_log, args.no_upload)
