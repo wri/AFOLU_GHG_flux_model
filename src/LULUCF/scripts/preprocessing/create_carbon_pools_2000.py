@@ -1,6 +1,7 @@
 """
 Run from src/LULUCF/
 python -m scripts.preprocessing.create_carbon_pools_2000 -cn AFOLU_flux_model_scripts -bb 116 -3 116.25 -2.75 -cs 0.25 --no_stats
+-bb -180 -60 180 80 -cs 2   # entire world (12600 chunks) (60x 32GB r6i.2xlarge workers= 22 minutes; around 90 Coiled credits and $4 dollars of AWS costs)
 """
 
 import argparse

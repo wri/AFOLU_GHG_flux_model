@@ -1,4 +1,4 @@
--bb -180 -60 180 80 -cs 2   # entire world (12600 chunks) (60x 32GB r6i.2xlarge workers= 22 minutes; around 90 Coiled credits and $4 dollars of AWS costs)
+-bb -180 -60 180 80 -cs 1   # entire world
 -bb 110 -10 140 20 -cs 2    # 30x30 deg (20N_110E, mangroves), 225 chunks (50x 32GB r6i.2xlarge workers=XYZ minutes)
 -bb -10 40 20 70 -cs 2      # 30x30 deg (70N_010W, no mangroves), 225 chunks (50x 32GB r6i.2xlarge workers=XYZ minutes)
 -bb 10 40 20 50 -cs 1       # 10x10 deg (50N_010E), 100 chunks

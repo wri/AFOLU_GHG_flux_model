@@ -14,6 +14,7 @@ import subprocess
 import re
 import requests
 import concurrent.futures
+from botocore.config import Config
 from dask.distributed import print
 from dask.distributed import Client
 from datetime import datetime
@@ -165,9 +166,10 @@ def get_tile_dataset_rio(uri, bounds):
         return data
 
     # If the uri does not exist, no array is returned
-    except:
+    except Exception as e:
 
-        return
+        print(f"Error accessing the dataset: {e}")
+        return None
 
 
 # Prepares list of chunks to download.
@@ -291,7 +293,14 @@ def check_chunk_for_data(required_layers, bounds_str, tile_id, any_or_all, is_fi
 def save_and_upload_small_raster_set(bounds, chunk_length_pixels, tile_id,
                                      bounds_str, output_dict, is_final, logger, no_data_val=None):
 
-    s3_client = boto3.client("s3")  # Needs to be in the same function as the upload_file call
+    # Configures S3 client with increased retries; retries can max out for global analyses
+    s3_config = Config(
+        retries={
+            'max_attempts': 10,  # Increases the number of retry attempts
+            'mode': 'standard'
+        }
+    )
+    s3_client = boto3.client("s3", config=s3_config)  # Uses the configured client with more retries
 
     transform = rasterio.transform.from_bounds(*bounds, width=chunk_length_pixels, height=chunk_length_pixels)
 

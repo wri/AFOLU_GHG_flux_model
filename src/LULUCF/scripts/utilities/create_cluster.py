@@ -11,8 +11,6 @@ def create_cluster(n_workers, worker_memory, worker_cpu):
     # Convert worker_memory from an integer to the required format (e.g., 8 to "8GiB")
     worker_memory_str = f"{worker_memory}GiB"
 
-    nthreads = int(worker_memory)/(8-1)
-
     cluster = coiled.Cluster(
         n_workers=n_workers,
         use_best_zone=True,
@@ -20,16 +18,13 @@ def create_cluster(n_workers, worker_memory, worker_cpu):
         idle_timeout="15 minutes",
         region="us-east-1",
         name="AFOLU_flux_model_scripts",
-        account='wri-forest-research',
-        # worker_cpu=worker_cpu
-        worker_memory=worker_memory_str,
-        worker_options={
-            "nthreads": 10,  # Set the number of threads per worker to 1
-            "memory_limit": worker_memory_str,  # Ensure the memory limit is set
-        }
+        workspace='wri-forest-research',
+        # mount_bucket="s3://gfw2-data",
+        worker_memory = worker_memory_str,
+        worker_cpu = worker_cpu
     )
     print(f"Cluster created with name: {cluster.name}")
-    print(f"Number of workers: {n_workers}; Worker memory: {worker_memory_str}")
+    print(f"Number of workers: {n_workers}; Worker memory: {worker_memory_str}; cpus per worker: {worker_cpu}")
     return cluster
 
 if __name__ == "__main__":

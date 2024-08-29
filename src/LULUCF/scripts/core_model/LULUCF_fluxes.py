@@ -1,6 +1,16 @@
 """
 Run from src/LULUCF/
 python -m scripts.core_model.LULUCF_fluxes -cn AFOLU_flux_model_scripts -bb 116 -3 116.25 -2.75 -cs 0.25
+
+python -m scripts.utilities.create_cluster -n 100 -m 64 -c 8
+python -m scripts.core_model.LULUCF_fluxes -cn AFOLU_flux_model_scripts -bb -180 -60 180 80 -cs 1
+1 hour of running, 750 Coiled credits, $27 AWS costs, 10,614 tasks out of 50,400.
+Each worker tended to use 28-36 GB memory.
+boto3.exceptions.S3UploadFailedError: Failed to upload /tmp/30N_090E__99_25_100_26__litter_C_density_MgC_ha_2010_2015.tif
+to gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs/litter_C_density_MgC_ha/2010_2015/4000_pixels/20240829/30N_090E__99_25_100_26__litter_C_density_MgC_ha_2010_2015.tif:
+An error occurred (RequestTimeout) when calling the UploadPart operation (reached max retries: 4):
+Your socket connection to the server was not read from or written to within the timeout period. Idle connections will be closed.
+
 """
 
 import argparse
@@ -670,6 +680,7 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
     if not run_local:
         # Closes the Dask client if not running locally
         client.close()
+
 
 
 if __name__ == "__main__":
