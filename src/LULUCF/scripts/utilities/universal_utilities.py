@@ -4,6 +4,7 @@ import dask
 import boto3
 import time
 import math
+import random
 import numpy as np
 import pandas as pd
 import pytz
@@ -306,6 +307,9 @@ def save_and_upload_small_raster_set(bounds, chunk_length_pixels, tile_id,
 
     file_info = f'{tile_id}__{bounds_str}'
 
+    if is_final:
+        lu.print_and_log(f"Saving and uploading outputs for {bounds_str} in {tile_id}: {timestr()}", is_final, logger)
+
     # For every output file, saves from array to local raster, then to s3.
     # Can't save directly to s3, unfortunately, so need to save locally first.
     for key, value in output_dict.items():
@@ -320,7 +324,9 @@ def save_and_upload_small_raster_set(bounds, chunk_length_pixels, tile_id,
         else:
             file_name = f"{file_info}__{key}__{timestr()}.tif"
 
-        lu.print_and_log(f"Saving {bounds_str} in {tile_id} for {year_out}: {timestr()}", is_final, logger)
+        # Only prints if not a final run
+        if not is_final:
+            lu.print_and_log(f"Saving {bounds_str} in {tile_id} for {year_out}: {timestr()}", is_final, logger)
 
         # Includes NoData value in output raster
         if no_data_val is not None:
@@ -340,7 +346,9 @@ def save_and_upload_small_raster_set(bounds, chunk_length_pixels, tile_id,
 
         s3_path = f"{cn.s3_out_dir}/{data_meaning}/{year_out}/{chunk_length_pixels}_pixels/{time.strftime('%Y%m%d')}"
 
-        lu.print_and_log(f"Uploading {bounds_str} in {tile_id} for {year_out} to {s3_path}: {timestr()}", is_final, logger)
+        # Only prints if not a final run
+        if not is_final:
+            lu.print_and_log(f"Uploading {bounds_str} in {tile_id} for {year_out} to {s3_path}: {timestr()}", is_final, logger)
 
         s3_client.upload_file(f"/tmp/{file_name}", "gfw2-data", Key=f"{s3_path}/{file_name}")
 
@@ -642,6 +650,12 @@ def calculate_stats(array, name, bounds_str, tile_id, in_out):
 def calculate_chunk_stats(all_stats, stage):
     # Convert accumulated statistics to a DataFrame
     df_all_stats = pd.DataFrame(all_stats)
+
+    # Convert problematic non-numeric values to NaN
+    df_all_stats['min_value'] = pd.to_numeric(df_all_stats['min_value'], errors='coerce')
+    df_all_stats['max_value'] = pd.to_numeric(df_all_stats['max_value'], errors='coerce')
+
+    # Sort the DataFrame by 'in_out' and 'layer_name'
     sorted_stats = df_all_stats.sort_values(by=['in_out', 'layer_name']).reset_index(drop=True)
 
     # Calculate the min and max values for each layer_name
@@ -670,8 +684,15 @@ def calculate_chunk_stats(all_stats, stage):
 # From https://chatgpt.com/share/e/9a7bf947-1c32-4898-ba6b-3b932a5220c1
 def first_file_name_in_s3_folder(download_dict):
 
-    # Must be in the function that is using s3_client when Dask is involved
-    s3_client = boto3.client('s3')
+
+    # Configures S3 client with increased retries; retries can max out for global analyses
+    s3_config = Config(
+        retries={
+            'max_attempts': 10,  # Increases the number of retry attempts
+            'mode': 'standard'
+        }
+    )
+    s3_client = boto3.client("s3", config=s3_config)  # Uses the configured client with more retries
 
     # Initializes the dictionary to hold the first file paths
     first_tiles = {}
@@ -683,6 +704,9 @@ def first_file_name_in_s3_folder(download_dict):
 
         # Drops the s3://gfw2-data/ prefix and adds "/" to the end
         dir_path = dir_path[len(cn.full_bucket_prefix)+1:] + "/"
+
+        # Introduces small, random delay before hitting s3 to reduce to being overloaded
+        time.sleep(random.uniform(1, 2))
 
         # Lists metadata for everything in the bucket
         response = s3_client.list_objects_v2(Bucket=cn.short_bucket_prefix, Prefix=dir_path, Delimiter='/')

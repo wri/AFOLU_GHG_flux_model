@@ -464,7 +464,9 @@ def calculate_and_upload_LULUCF_fluxes(bounds, is_final, no_upload):
     futures = uu.prepare_to_download_chunk(bounds, download_dict, is_final, logger)
     # print(futures)
 
-    lu.print_and_log(f"Waiting for requests for data in chunk {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger)
+    # Only prints if not a final run
+    if not is_final:
+        lu.print_and_log(f"Waiting for requests for data in chunk {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger)
 
     # Dictionary that stores the downloaded data
     layers = {}
@@ -508,7 +510,9 @@ def calculate_and_upload_LULUCF_fluxes(bounds, is_final, no_upload):
     ### And missing chunks are not filled in earlier (e.g., when downloading chunks)
     ### so that chunk stats are calculated only for the chunks that do exist which is useful for QC.
 
-    lu.print_and_log(f"Assigning datatypes for inputs for chunk {bounds_str} in {tile_id} to datatype: {uu.timestr()}", is_final, logger)
+    # Only prints if not a final run
+    if not is_final:
+        lu.print_and_log(f"Assigning datatypes for inputs for chunk {bounds_str} in {tile_id} to datatype: {uu.timestr()}", is_final, logger)
 
     # Gets the first tile in each input folder in order to determine the datatype of the input dataset.
     # Needs to check the first tile in each folder because, if the input raster doesn't exist for this chunk,
@@ -529,7 +533,9 @@ def calculate_and_upload_LULUCF_fluxes(bounds, is_final, no_upload):
     # print("int32_list:", int32_list)
     # print("float32_list:", float32_list)
 
-    lu.print_and_log(f"Filling in missing data for chunk {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger)
+    # Only prints if not a final run
+    if not is_final:
+        lu.print_and_log(f"Filling in missing data for chunk {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger)
 
     filled_layers = uu.fill_missing_input_layers_with_no_data(layers, uint8_list, int16_list, int32_list, float32_list,
                                                               bounds_str, tile_id, is_final, logger)
@@ -539,7 +545,9 @@ def calculate_and_upload_LULUCF_fluxes(bounds, is_final, no_upload):
     ### Numba functions can accept (and return) dictionaries of arrays as long as each dictionary only has arrays of one data type (e.g., uint8, float32).
     ### Note: need to add new code if inputs with other data types are added
 
-    lu.print_and_log(f"Creating typed dictionaries for chunk {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger)
+    # Only prints if not a final run
+    if not is_final:
+        lu.print_and_log(f"Creating typed dictionaries for chunk {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger)
 
     # Creates the typed dictionaries for all input layers (including those that originally had no data)
     typed_dict_uint8, typed_dict_int16, typed_dict_int32, typed_dict_float32 = nu.create_typed_dicts(filled_layers)
