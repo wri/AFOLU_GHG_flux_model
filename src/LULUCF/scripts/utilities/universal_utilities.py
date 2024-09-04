@@ -79,6 +79,18 @@ gdal_dtype_mapping = {
     gdal.GDT_Float64: 'Float64'
 }
 
+# Maps GDAL datatypes to numpy datatypes
+def map_to_numpy_dtype(data_type):
+    dtype_map = {
+        'Float32': 'float32',
+        'Float64': 'float64',
+        'Byte': 'uint8',
+        'Int32': 'int32',
+        'Int16': 'int16',
+        # Add more mappings as needed
+    }
+    return dtype_map.get(data_type, 'float32')  # Defaults to 'float32' if argument not found
+
 
 # Gets the W, S, E, N bounds of a 10x10 degree tile
 def get_10x10_tile_bounds(tile_id):
@@ -146,16 +158,17 @@ def stage_duration(start_time_str, end_time_str, stage):
     print(f"Elapsed time for {stage}: {end_time - start_time}")
 
 
-# Lazily opens tile within provided bounds (i.e. one chunk) and returns as a numpy array
-# If it can't open the uri for the chunk (tile does not exist), it returns nothing.
-# Originally, I had it return an array of the NoData value if the chunk didn't exist but that
-# doesn't work because the dummy NoData chunk it downloads needs to have the same datatype as
-# chunks with actual data so that the Numba functions receive input data with consistent datatypes.
+# Lazily opens tile within provided bounds (i.e. one chunk) and returns as a numpy array.
+# If it can't open the uri for the chunk (tile does not exist), it creates a numpy array
+# of the correct datatype for that input.
+# The returned chunk needs to have the correct datatype because it'll eventually be used in a
+# numba function, which is very particular about datatypes.
 # For example, a dataset that's float32 can't have NoData chunks that are uint8 because
 # the Numba functions won't be able to handle that (since they're so particular about datatypes).
+# So, that is addressed here.
 #TODO use coiled.cluster --mount_bucket argument to see if it improves performance when accessing s3
 # (Here and other functions that use s3): https://chatgpt.com/share/e/1fe33655-3700-465c-8b5f-19b6b0444407
-def get_tile_dataset_rio(uri, bounds):
+def get_tile_dataset_rio(uri, data_type, bounds, chunk_length_pixels):
 
     # If the uri exists, the relevant window is opened and returned and returned as an array.
     # Note that this chunk could still just have NoData values, which would be downloaded.
@@ -164,18 +177,20 @@ def get_tile_dataset_rio(uri, bounds):
             window = rasterio.windows.from_bounds(*bounds, ds.transform)
             data = ds.read(1, window=window)
 
-        return data
-
-    # If the uri does not exist, no array is returned
+    # If the uri doesn't exist, a numpy array of the correct size and datatype populated with 0s is returned.
     except Exception as e:
 
-        print(f"Error accessing the dataset: {e}")
-        return None
+        numpy_dtype = map_to_numpy_dtype(data_type)   # Translates the GDAL-style datatype to numpy-style datatype
+        data = np.full((chunk_length_pixels, chunk_length_pixels), 0).astype(numpy_dtype)
+
+        print(f"Error accessing the dataset. Returning array of all 0s: {e}")
+
+    return data
 
 
 # Prepares list of chunks to download.
 # Chunks are defined by a bounding box.
-def prepare_to_download_chunk(bounds, download_dict, is_final, logger):
+def prepare_to_download_chunk(bounds, updated_download_dict, chunk_length_pixels, is_final, logger):
 
     futures = {}
 
@@ -187,8 +202,8 @@ def prepare_to_download_chunk(bounds, download_dict, is_final, logger):
     with concurrent.futures.ThreadPoolExecutor() as executor:
         lu.print_and_log(f"Requesting data in chunk {bounds_str} in {tile_id}: {timestr()}", is_final, logger)
 
-        for key, value in download_dict.items():
-            futures[executor.submit(get_tile_dataset_rio, value, bounds)] = key
+        for key, value in updated_download_dict.items():
+            futures[executor.submit(get_tile_dataset_rio, value[0], value[1], bounds, chunk_length_pixels)] = key
 
     return futures
 
@@ -201,8 +216,11 @@ def check_for_tile(download_dict, is_final, logger):
 
     while i < len(list(download_dict.values())):
 
-        s3_key = list(download_dict.values())[i][15:]
-        tile_id = re.findall(cn.tile_id_pattern, list(download_dict.values())[i])[0]  # Extracts the tile_id from the s3 path
+        # Tile path and name in s3, without s3://gfw2-data/ (hence, [len(cn.full_bucket_prefix)+1:])
+        # [0] is to select the s3 path element of the list in the dictionary value (as opposed to the datatype, which is [1]
+        s3_key = list(download_dict.values())[i][0][len(cn.full_bucket_prefix)+1:]
+
+        tile_id = re.findall(cn.tile_id_pattern, list(download_dict.values())[i][0])[0]  # Extracts the tile_id from the s3 path
 
         # Breaks the loop if the tile exists. No need to keep checking other tiles because one exists.
         try:
@@ -685,28 +703,28 @@ def calculate_chunk_stats(all_stats, stage):
 def first_file_name_in_s3_folder(download_dict):
 
 
-    # Configures S3 client with increased retries; retries can max out for global analyses
-    s3_config = Config(
-        retries={
-            'max_attempts': 10,  # Increases the number of retry attempts
-            'mode': 'standard'
-        }
-    )
-    s3_client = boto3.client("s3", config=s3_config)  # Uses the configured client with more retries
+    # # Configures S3 client with increased retries; retries can max out for global analyses
+    # s3_config = Config(
+    #     retries={
+    #         'max_attempts': 10,  # Increases the number of retry attempts
+    #         'mode': 'standard'
+    #     }
+    # )
+    # s3_client = boto3.client("s3", config=s3_config)  # Uses the configured client with more retries
+
+    s3_client = boto3.client("s3")
 
     # Initializes the dictionary to hold the first file paths
     first_tiles = {}
 
     # Iterates over the download_dict items
     for key, folder_path in download_dict.items():
+
         # Splits the path to get the directory part
         dir_path = os.path.dirname(folder_path)
 
         # Drops the s3://gfw2-data/ prefix and adds "/" to the end
         dir_path = dir_path[len(cn.full_bucket_prefix)+1:] + "/"
-
-        # Introduces small, random delay before hitting s3 to reduce to being overloaded
-        time.sleep(random.uniform(1, 2))
 
         # Lists metadata for everything in the bucket
         response = s3_client.list_objects_v2(Bucket=cn.short_bucket_prefix, Prefix=dir_path, Delimiter='/')
@@ -741,33 +759,45 @@ def get_dtype_from_s3(file_path):
         raise ValueError(f"Could not open file {vsis3_path}")
 
 
-# Categorizes tiles by their data type and makes a separate list for each datatype.
-# Needs to be expanded if additional datatypes are being used.
-# From https://chatgpt.com/share/e/9a7bf947-1c32-4898-ba6b-3b932a5220c1
-def categorize_files_by_dtype(first_tiles):
+# Creates a dictionary of inputs where the keys are the dataset names and the values are a list with the first
+# tile of the dataset in s3 and the datatype,
+# e.g., {'land_cover_2000': ['s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/landcover/composite/2000/raw/00N_010E.tif', 'Byte'],
+# 'agc_2000': ['s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs/AGC_density_MgC_ha/2000/40000_pixels/20240821/00N_010E__AGC_density_MgC_ha_2000.tif', 'Float32'],
+# 'drivers': ['s3://gfw2-data/climate/carbon_model/other_emissions_inputs/tree_cover_loss_drivers/processed/drivers_2022/20230407/00N_010E_tree_cover_loss_driver_processed.tif', 'Byte']}
+def add_file_type_to_dict(first_tiles):
 
-    # Output datatype lists
-    uint8_list = []
-    int16_list = []
-    int32_list = []
-    float32_list = []
+    # Dictionary where the keys are the dataset names and the values are a list with the first
+    # tile of the dataset in s3 and the datatype
+    download_dict_with_data_types = {}
 
+    # Iterates through the first tile of each tile set in s3 in the input dictionary
     for key, file_path in first_tiles.items():
-        if file_path:
-            dtype = get_dtype_from_s3(file_path)
 
-            if dtype == "Byte":
-                uint8_list.append(key)
-            elif dtype == "Int16":
-                int16_list.append(key)
-            elif dtype == "Int32":
-                int32_list.append(key)
-            elif dtype == "Float32":
-                float32_list.append(key)
-            else:
-                raise ValueError(f"Unexpected data type {dtype} for file {file_path}")
+        # Gets the datatype from the first tile of the dataset in s3
+        dtype = get_dtype_from_s3(file_path)
+        # Adds file path and dtype as a list as the value in the dictionary
+        download_dict_with_data_types[key] = [file_path, dtype]
 
-    return uint8_list, int16_list, int32_list, float32_list
+        # print(f"Key: {key}, File Path: {file_path}, Data Type: {dtype}")
+
+    return download_dict_with_data_types
+
+
+# Replaces a tile_id in s3 paths in a dictionary with another tile_id
+def replace_tile_id_in_dict(data_dict, new_tile_id):
+
+    # Loop through the dictionary and modify the values
+    for key, value in data_dict.items():
+        # Assuming value is a list where the first item is the file path
+        file_path = value[0]
+        # Replace the pattern in the file path with the new tile_id
+        updated_file_path = re.sub(cn.tile_id_pattern, new_tile_id, file_path)
+
+        # Update the dictionary with the new file path
+        data_dict[key][0] = updated_file_path
+
+    return data_dict
+
 
 
 # Fills any missing chunks (layers) with NoData (0s) of the correct datatype.

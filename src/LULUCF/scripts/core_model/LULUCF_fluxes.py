@@ -1,9 +1,14 @@
 """
-Run from src/LULUCF/
-python -m scripts.core_model.LULUCF_fluxes -cn AFOLU_flux_model_scripts -bb 116 -3 116.25 -2.75 -cs 0.25
+Run from src/LUL
 
-python -m scripts.utilities.create_cluster -n 100 -m 64 -c 8
+Test:
+python -m scripts.utilities.create_cluster -n 1 -m 16 -c 2
+python -m scripts.core_model.LULUCF_fluxes -cn AFOLU_flux_model_scripts -bb 10 49.75 10.25 50 -cs 0.25
+
+Full run:
+python -m scripts.utilities.create_cluster -n 200 -m 16 -c 2
 python -m scripts.core_model.LULUCF_fluxes -cn AFOLU_flux_model_scripts -bb -180 -60 180 80 -cs 1
+
 1 hour of running, 750 Coiled credits, $27 AWS costs, 10,614 tasks out of 50,400.
 Each worker tended to use 28-36 GB memory.
 boto3.exceptions.S3UploadFailedError: Failed to upload /tmp/30N_090E__99_25_100_26__litter_C_density_MgC_ha_2010_2015.tif
@@ -405,7 +410,7 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
 
 
 # Downloads inputs, prepares data, calculates LULUCF stocks and fluxes, and uploads outputs to s3
-def calculate_and_upload_LULUCF_fluxes(bounds, is_final, no_upload):
+def calculate_and_upload_LULUCF_fluxes(bounds, download_dict_with_data_types, is_final, no_upload):
 
     logger = lu.setup_logging()
 
@@ -414,54 +419,24 @@ def calculate_and_upload_LULUCF_fluxes(bounds, is_final, no_upload):
     chunk_length_pixels = uu.calc_chunk_length_pixels(bounds)  # Chunk length in pixels (as opposed to decimal degrees)
 
 
-    ### Part 1: Downloads chunks and check for data
+    ### Part 1: Checks if tile exists at all, downloads data in chunk if it does exist, and checks if chunk actually has relevant data.
+    ### I haven't figured out a good way to check if the chunk has relevant data before downloading,
+    ### so inputs are downloaded and then checked.
 
-    # Dictionary of data to download
-    download_dict = {
-        f"{cn.land_cover}_2000": f"{cn.LC_uri}/composite/2000/raw/{tile_id}.tif",
-        f"{cn.land_cover}_2005": f"{cn.LC_uri}/composite/2005/raw/{tile_id}.tif",
-        f"{cn.land_cover}_2010": f"{cn.LC_uri}/composite/2010/raw/{tile_id}.tif",
-        f"{cn.land_cover}_2015": f"{cn.LC_uri}/composite/2015/raw/{tile_id}.tif",
-        f"{cn.land_cover}_2020": f"{cn.LC_uri}/composite/2020/raw/{tile_id}.tif",
+    # Replaces the placeholder tile_id in the download data dictionary from main with the tile_id for this chunk
+    updated_download_dict = uu.replace_tile_id_in_dict(download_dict_with_data_types, tile_id)
 
-        f"{cn.vegetation_height}_2000": f"{cn.LC_uri}/vegetation_height/2000/{tile_id}_vegetation_height_2000.tif",
-        f"{cn.vegetation_height}_2005": f"{cn.LC_uri}/vegetation_height/2005/{tile_id}_vegetation_height_2005.tif",
-        f"{cn.vegetation_height}_2010": f"{cn.LC_uri}/vegetation_height/2010/{tile_id}_vegetation_height_2010.tif",
-        f"{cn.vegetation_height}_2015": f"{cn.LC_uri}/vegetation_height/2015/{tile_id}_vegetation_height_2015.tif",
-        f"{cn.vegetation_height}_2020": f"{cn.LC_uri}/vegetation_height/2020/{tile_id}_vegetation_height_2020.tif",
-
-        cn.agc_2000: f"{cn.agc_2000_path}{tile_id}__{cn.agc_2000_pattern}.tif",
-        cn.bgc_2000: f"{cn.bgc_2000_path}{tile_id}__{cn.bgc_2000_pattern}.tif",
-        cn.deadwood_c_2000: f"{cn.deadwood_c_2000_path}{tile_id}__{cn.deadwood_c_2000_pattern}.tif",
-        cn.litter_c_2000: f"{cn.litter_c_2000_path}{tile_id}__{cn.litter_c_2000_pattern}.tif",
-        cn.soil_c_2000: f"s3://gfw2-data/climate/carbon_model/carbon_pools/soil_carbon/intermediate_full_extent/standard/20231108/{tile_id}_soil_C_full_extent_2000_Mg_C_ha.tif",
-
-        cn.r_s_ratio: f"{cn.r_s_ratio_path}{tile_id}_{cn.r_s_ratio_pattern}.tif",
-
-        "drivers": f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/tree_cover_loss_drivers/processed/drivers_2022/20230407/{tile_id}_tree_cover_loss_driver_processed.tif",
-        cn.planted_forest_type_layer: f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/plantation_type/SDPTv2/20230911/{tile_id}_plantation_type_oilpalm_woodfiber_other.tif",  # Originally from gfw-data-lake, so it's in 400x400 windows
-        cn.planted_forest_tree_crop_layer: f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/plantation_simpleType__planted_forest_tree_crop/SDPTv2/20230911/{tile_id}.tif",  # Originally from gfw-data-lake, so it's in 400x400 windows
-        "peat": f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/peatlands/processed/20230315/{tile_id}_peat_mask_processed.tif",
-        # "ecozone": f"s3://gfw2-data/fao_ecozones/v2000/raster/epsg-4326/10/40000/class/gdal-geotiff/{tile_id}.tif",   # Originally from gfw-data-lake, so it's in 400x400 windows
-        # "iso": f"s3://gfw2-data/gadm_administrative_boundaries/v3.6/raster/epsg-4326/10/40000/adm0/gdal-geotiff/{tile_id}.tif",  # Originally from gfw-data-lake, so it's in 400x400 windows
-        "ifl_primary": f"s3://gfw2-data/climate/carbon_model/ifl_primary_merged/processed/20200724/{tile_id}_ifl_2000_primary_2001_merged.tif"
-    }
-
-    for year in range(cn.first_year, cn.last_year + 1):  # Annual burned area maps start in 2000
-        download_dict[f"{cn.burned_area}_{year}"] = f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/burn_year/burn_year_10x10_clip/ba_{year}_{tile_id}.tif"
-
-    for year in range(cn.first_year + 1, cn.last_year + 1):  # Annual forest disturbance maps start in 2001 and ends in 2020
-        download_dict[f"{cn.forest_disturbance}_{year}"] = f"{cn.LC_uri}/annual_forest_disturbance/raw/{year}_{tile_id}.tif"
-
-    # Checks whether tile exists at all. Doesn't try to download chunk if the tile doesn't exist.
-    tile_exists = uu.check_for_tile(download_dict, is_final, logger)
+    # Checks whether tile exists at all. Doesn't try to download data in chunk if the tile doesn't exist.
+    tile_exists = uu.check_for_tile(updated_download_dict, is_final, logger)
 
     if not tile_exists:
         return f"Skipped chunk {bounds_str} because {tile_id} does not exist for any inputs: {uu.timestr()}"
 
+    # If a particular tile doesn't exist for an input, an array of 0s of the correct size and datatype is returned instead.
+    # Thus, this returns a complete set of inputs (missing chunks filled).
     # Note: If running in a local Dask cluster, prints to console may be duplicated. Doesn't happen with a Coiled cluster of the same size (1 worker).
     # Seems to be a problem with local Dask getting overwhelmed by so many futures being created and downloaded from s3.
-    futures = uu.prepare_to_download_chunk(bounds, download_dict, is_final, logger)
+    futures = uu.prepare_to_download_chunk(bounds, updated_download_dict, chunk_length_pixels, is_final, logger)
     # print(futures)
 
     # Only prints if not a final run
@@ -479,15 +454,15 @@ def calculate_and_upload_LULUCF_fluxes(bounds, is_final, no_upload):
     # print(layers)
     # print(layers[soil_c_2000].dtype)
 
-    # List of layers that must be present for the chunk to be run
+    # List of layers that must be present for the chunk to be run.
+    # All of the listed layers must exist for this chunk in order to proceed.
     checked_layers = {cn.agc_2000: layers[cn.agc_2000], cn.bgc_2000: layers[cn.bgc_2000],
                       cn.deadwood_c_2000: layers[cn.deadwood_c_2000], cn.litter_c_2000: layers[cn.litter_c_2000],
                       f"{cn.land_cover}_2000": layers[f"{cn.land_cover}_2000"]}
 
     # print(f"Layers to check for data: {layers_to_check_for_data}")
 
-    # Checks chunk for data. Skips the chunk if it has no data in it.
-    # All of the checked layers must exist for this chunk.
+    # Checks chunk for data. Skips the chunk if it does not have the required data.
     data_in_chunk = uu.check_chunk_for_data(checked_layers, bounds_str, tile_id, "all", is_final, logger)
 
     if not data_in_chunk:
@@ -499,49 +474,13 @@ def calculate_and_upload_LULUCF_fluxes(bounds, is_final, no_upload):
     # Stores the stats for the chunk
     stats = []
 
-    # Calculate stats for the original layers
+    # Calculates stats for the input layers
     for key, array in layers.items():
         stats.append(uu.calculate_stats(array, key, bounds_str, tile_id, 'input_layer'))
     # print(stats)
 
 
-    ### Part 3: Fills in any missing input data chunks so the Numba function has a full dataset to work with.
-    ### Missing chunks are filled in here instead of using the typed dicts below just because numpy arrays are easier to work with.
-    ### And missing chunks are not filled in earlier (e.g., when downloading chunks)
-    ### so that chunk stats are calculated only for the chunks that do exist which is useful for QC.
-
-    # Only prints if not a final run
-    if not is_final:
-        lu.print_and_log(f"Assigning datatypes for inputs for chunk {bounds_str} in {tile_id} to datatype: {uu.timestr()}", is_final, logger)
-
-    # Gets the first tile in each input folder in order to determine the datatype of the input dataset.
-    # Needs to check the first tile in each folder because, if the input raster doesn't exist for this chunk,
-    # we can't assign a datatype for that input for this chunk.
-    # So instead it gets the datatype of the input from a raster that has to exist (the first one in s3).
-    first_tiles = uu.first_file_name_in_s3_folder(download_dict)
-
-    # Categorizes the files by their data types so that any missing inputs can be filled in
-    # with 0s of the correct datatype
-    #TODO It is inefficient to do this datatype categorization on every check since the datatype is the same for
-    # all chunks of the same input. It would be better to have this checked once upfront and then assigned to all chunks.
-    # However, that would mean providing the list of inputs before chunks are distributed,
-    # which would be quite a difference and require some rethinking.
-    uint8_list, int16_list, int32_list, float32_list = uu.categorize_files_by_dtype(first_tiles)
-
-    # print("uint8_list:", uint8_list)
-    # print("int16_list:", int16_list)
-    # print("int32_list:", int32_list)
-    # print("float32_list:", float32_list)
-
-    # Only prints if not a final run
-    if not is_final:
-        lu.print_and_log(f"Filling in missing data for chunk {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger)
-
-    filled_layers = uu.fill_missing_input_layers_with_no_data(layers, uint8_list, int16_list, int32_list, float32_list,
-                                                              bounds_str, tile_id, is_final, logger)
-
-
-    ### Part 4: Creates a separate dictionary for each chunk datatype so that they can be passed to Numba as separate arguments.
+    ### Part 3: Creates a separate dictionary for each chunk datatype so that they can be passed to Numba as separate arguments.
     ### Numba functions can accept (and return) dictionaries of arrays as long as each dictionary only has arrays of one data type (e.g., uint8, float32).
     ### Note: need to add new code if inputs with other data types are added
 
@@ -550,7 +489,7 @@ def calculate_and_upload_LULUCF_fluxes(bounds, is_final, no_upload):
         lu.print_and_log(f"Creating typed dictionaries for chunk {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger)
 
     # Creates the typed dictionaries for all input layers (including those that originally had no data)
-    typed_dict_uint8, typed_dict_int16, typed_dict_int32, typed_dict_float32 = nu.create_typed_dicts(filled_layers)
+    typed_dict_uint8, typed_dict_int16, typed_dict_int32, typed_dict_float32 = nu.create_typed_dicts(layers)
 
     # print("uint8_typed_list:", typed_dict_uint8)
     # print("int16_typed_list:", typed_dict_int16)
@@ -558,7 +497,7 @@ def calculate_and_upload_LULUCF_fluxes(bounds, is_final, no_upload):
     # print("float32_typed_list:", typed_dict_float32)
 
 
-    ### Part 5: Calculates LULUCF fluxes and densities
+    ### Part 4: Calculates LULUCF fluxes and densities
 
     lu.print_and_log(f"Calculating LULUCF fluxes and carbon densities in {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger)
 
@@ -588,7 +527,7 @@ def calculate_and_upload_LULUCF_fluxes(bounds, is_final, no_upload):
     del out_dict_float32
 
 
-    ### Part 6: Calculates min, mean, and max for each output chunk.
+    ### Part 5: Calculates min, mean, and max for each output chunk.
     ### Useful for QC-- to see if there are any egregiously incorrect or unexpected values.
 
     # Calculate stats for the output layers from create_starting_C_densities
@@ -596,9 +535,12 @@ def calculate_and_upload_LULUCF_fluxes(bounds, is_final, no_upload):
         stats.append(uu.calculate_stats(array, key, bounds_str, tile_id, 'output_layer'))
 
 
-    ### Part 7: Saves numpy arrays as rasters and uploads to s3
+    ### Part 6: Saves numpy arrays as rasters and uploads to s3
 
     # Only saves and uploads to s3 if enabled
+    #TODO Confirm that the chunk has data in it before proceeding. Model is saving chunks that are in the ocean and
+    # don't have data, e.g., [0 -1 1 0]. Actually, that's probably an issue better solved earlier in the model,
+    # before the chunk is run. Why was [0 -1 1 0] even run in the first place?  
     if not no_upload:
 
         out_no_data_val = 0  # NoData value for output raster (optional)
@@ -636,7 +578,7 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
 
     # Makes list of chunks to analyze
     chunks = uu.get_chunk_bounds(bounding_box, chunk_size)
-    print("Processing", len(chunks), "chunks")
+    print(f"Processing {len(chunks)} chunks")
     # print(chunks)
 
     # Determines if the output file names for final versions of outputs should be used
@@ -650,8 +592,67 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
     all_stats = []
     return_messages = []
 
+    # This is just a placeholder tile_id that is used to obtain the datatype of each tile set.
+    # It is overwritten when chunks are assigned and analyzed.
+    # Using this placeholder allows the full path and tile name to be specified up front, which simplifies things.
+    # Otherwise, we'd have just the path but not the file name now and would have to add in the file name later
+    # (probably at the chunk level).
+    sample_tile_id = "00N_000E"
+
+    # Dictionary of data to download (inputs to model)
+    download_dict = {
+        f"{cn.land_cover}_2000": f"{cn.LC_uri}/composite/2000/raw/{sample_tile_id}.tif",
+        f"{cn.land_cover}_2005": f"{cn.LC_uri}/composite/2005/raw/{sample_tile_id}.tif",
+        f"{cn.land_cover}_2010": f"{cn.LC_uri}/composite/2010/raw/{sample_tile_id}.tif",
+        f"{cn.land_cover}_2015": f"{cn.LC_uri}/composite/2015/raw/{sample_tile_id}.tif",
+        f"{cn.land_cover}_2020": f"{cn.LC_uri}/composite/2020/raw/{sample_tile_id}.tif",
+
+        f"{cn.vegetation_height}_2000": f"{cn.LC_uri}/vegetation_height/2000/{sample_tile_id}_vegetation_height_2000.tif",
+        f"{cn.vegetation_height}_2005": f"{cn.LC_uri}/vegetation_height/2005/{sample_tile_id}_vegetation_height_2005.tif",
+        f"{cn.vegetation_height}_2010": f"{cn.LC_uri}/vegetation_height/2010/{sample_tile_id}_vegetation_height_2010.tif",
+        f"{cn.vegetation_height}_2015": f"{cn.LC_uri}/vegetation_height/2015/{sample_tile_id}_vegetation_height_2015.tif",
+        f"{cn.vegetation_height}_2020": f"{cn.LC_uri}/vegetation_height/2020/{sample_tile_id}_vegetation_height_2020.tif",
+
+        cn.agc_2000: f"{cn.agc_2000_path}{sample_tile_id}__{cn.agc_2000_pattern}.tif",
+        cn.bgc_2000: f"{cn.bgc_2000_path}{sample_tile_id}__{cn.bgc_2000_pattern}.tif",
+        cn.deadwood_c_2000: f"{cn.deadwood_c_2000_path}{sample_tile_id}__{cn.deadwood_c_2000_pattern}.tif",
+        cn.litter_c_2000: f"{cn.litter_c_2000_path}{sample_tile_id}__{cn.litter_c_2000_pattern}.tif",
+        cn.soil_c_2000: f"s3://gfw2-data/climate/carbon_model/carbon_pools/soil_carbon/intermediate_full_extent/standard/20231108/{sample_tile_id}_soil_C_full_extent_2000_Mg_C_ha.tif",
+
+        cn.r_s_ratio: f"{cn.r_s_ratio_path}{sample_tile_id}_{cn.r_s_ratio_pattern}.tif",
+
+        "drivers": f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/tree_cover_loss_drivers/processed/drivers_2022/20230407/{sample_tile_id}_tree_cover_loss_driver_processed.tif",
+        cn.planted_forest_type_layer: f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/plantation_type/SDPTv2/20230911/{sample_tile_id}_plantation_type_oilpalm_woodfiber_other.tif",
+        # Originally from gfw-data-lake, so it's in 400x400 windows
+        cn.planted_forest_tree_crop_layer: f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/plantation_simpleType__planted_forest_tree_crop/SDPTv2/20230911/{sample_tile_id}.tif",
+        # Originally from gfw-data-lake, so it's in 400x400 windows
+        "peat": f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/peatlands/processed/20230315/{sample_tile_id}_peat_mask_processed.tif",
+        # "ecozone": f"s3://gfw2-data/fao_ecozones/v2000/raster/epsg-4326/10/40000/class/gdal-geotiff/{sample_tile_id}.tif",   # Originally from gfw-data-lake, so it's in 400x400 windows
+        # "iso": f"s3://gfw2-data/gadm_administrative_boundaries/v3.6/raster/epsg-4326/10/40000/adm0/gdal-geotiff/{sample_tile_id}.tif",  # Originally from gfw-data-lake, so it's in 400x400 windows
+        "ifl_primary": f"s3://gfw2-data/climate/carbon_model/ifl_primary_merged/processed/20200724/{sample_tile_id}_ifl_2000_primary_2001_merged.tif"
+    }
+
+    for year in range(cn.first_year, cn.last_year + 1):  # Annual burned area maps start in 2000
+        download_dict[f"{cn.burned_area}_{year}"] = f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/burn_year/burn_year_10x10_clip/ba_{year}_{sample_tile_id}.tif"
+
+    for year in range(cn.first_year + 1, cn.last_year + 1):  # Annual forest disturbance maps start in 2001 and ends in 2020
+        download_dict[f"{cn.forest_disturbance}_{year}"] = f"{cn.LC_uri}/annual_forest_disturbance/raw/{year}_{sample_tile_id}.tif"
+
+    # Returns the first tile in each input so that the datatype can be determined.
+    # This is done up front, once per tile set, rather than on each chunk, since
+    # all tiles have the same datatype for each input-- it only needs to be done once at the very beginning of the stage.
+
+    print(f"Getting tile_id of first tile in each tile set: {uu.timestr()}")
+    first_tiles = uu.first_file_name_in_s3_folder(download_dict)
+
+    # Creates a download dictionary with the datatype of each input in the values.
+    # This is supplied to each chunk that is being analyzed
+    print(f"Getting datatype of first tile in each tile set: {uu.timestr()}")
+    download_dict_with_data_types = uu.add_file_type_to_dict(first_tiles)
+
     # Creates list of tasks to run (1 task = 1 chunk)
-    delayed_results = [dask.delayed(calculate_and_upload_LULUCF_fluxes)(chunk, is_final, no_upload) for chunk in chunks]
+    print(f"Creating tasks and starting processing: {uu.timestr()}")
+    delayed_results = [dask.delayed(calculate_and_upload_LULUCF_fluxes)(chunk, download_dict_with_data_types, is_final, no_upload) for chunk in chunks]
 
     # Runs analysis and gathers results
     results = dask.compute(*delayed_results)
