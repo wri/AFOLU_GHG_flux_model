@@ -20,7 +20,6 @@ Your socket connection to the server was not read from or written to within the 
 
 import argparse
 import concurrent.futures
-import coiled
 import dask
 import numpy as np
 
@@ -418,6 +417,9 @@ def calculate_and_upload_LULUCF_fluxes(bounds, download_dict_with_data_types, is
     tile_id = uu.xy_to_tile_id(bounds[0], bounds[3])  # tile_id in YYN/S_XXXE/W
     chunk_length_pixels = uu.calc_chunk_length_pixels(bounds)  # Chunk length in pixels (as opposed to decimal degrees)
 
+    # Stores the min, mean, and max chunks for inputs and outputs for the chunk
+    chunk_stats = []
+
 
     ### Part 1: Checks if tile exists at all, downloads data in chunk if it does exist, and checks if chunk actually has relevant data.
     ### I haven't figured out a good way to check if the chunk has relevant data before downloading,
@@ -430,7 +432,7 @@ def calculate_and_upload_LULUCF_fluxes(bounds, download_dict_with_data_types, is
     tile_exists = uu.check_for_tile(updated_download_dict, is_final, logger)
 
     if not tile_exists:
-        return f"Skipped chunk {bounds_str} because {tile_id} does not exist for any inputs: {uu.timestr()}"
+        return f"Skipped chunk {bounds_str} because {tile_id} does not exist for any inputs: {uu.timestr()}", chunk_stats
 
     # If a particular tile doesn't exist for an input, an array of 0s of the correct size and datatype is returned instead.
     # Thus, this returns a complete set of inputs (missing chunks filled).
@@ -463,20 +465,19 @@ def calculate_and_upload_LULUCF_fluxes(bounds, download_dict_with_data_types, is
     # print(f"Layers to check for data: {layers_to_check_for_data}")
 
     # Checks chunk for data. Skips the chunk if it does not have the required data.
+    # data_in_chunk = uu.check_chunk_for_data(checked_layers, bounds_str, tile_id, "all", is_final, logger)
     data_in_chunk = uu.check_chunk_for_data(checked_layers, bounds_str, tile_id, "all", is_final, logger)
 
-    if not data_in_chunk:
-        return f"Skipped chunk {bounds_str} because of a lack of data: {uu.timestr()}"
+    if data_in_chunk == False:
+        return f"Skipped chunk {bounds_str} because of a lack of data: {uu.timestr()}", chunk_stats
+
 
     ### Part 2: Calculates min, mean, and max for each input chunk.
     ### Useful for QC-- to see if there are any egregiously incorrect or unexpected values.
 
-    # Stores the stats for the chunk
-    stats = []
-
     # Calculates stats for the input layers
     for key, array in layers.items():
-        stats.append(uu.calculate_stats(array, key, bounds_str, tile_id, 'input_layer'))
+        chunk_stats.append(uu.calculate_stats(array, key, bounds_str, tile_id, 'input_layer'))
     # print(stats)
 
 
@@ -532,7 +533,7 @@ def calculate_and_upload_LULUCF_fluxes(bounds, download_dict_with_data_types, is
 
     # Calculate stats for the output layers from create_starting_C_densities
     for key, array in out_dict_all_dtypes.items():
-        stats.append(uu.calculate_stats(array, key, bounds_str, tile_id, 'output_layer'))
+        chunk_stats.append(uu.calculate_stats(array, key, bounds_str, tile_id, 'output_layer'))
 
 
     ### Part 6: Saves numpy arrays as rasters and uploads to s3
@@ -561,7 +562,7 @@ def calculate_and_upload_LULUCF_fluxes(bounds, download_dict_with_data_types, is
     del out_dict_all_dtypes
 
     success_message = f"Success for {bounds_str}: {uu.timestr()}"
-    return success_message, stats  # Return both the success message and the statistics
+    return success_message, chunk_stats  # Return both the success message and the statistics
 
 
 def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False, no_log=False, no_upload=False):

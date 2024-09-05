@@ -245,7 +245,6 @@ def check_for_tile(download_dict, is_final, logger):
 # All: To have data, a chunk must have all necessary inputs (layers).
 # If one or more necessary input is missing, the loop is terminated and the chunk ultimately skipped.
 def check_chunk_for_data(required_layers, bounds_str, tile_id, any_or_all, is_final, logger):
-
     # Checks if ANY of the assessed inputs are present
     if any_or_all == "any":
 
@@ -258,7 +257,6 @@ def check_chunk_for_data(required_layers, bounds_str, tile_id, any_or_all, is_fi
             # Can't use np.all because it doesn't work in chunks that are mostly water; says nodata in chunk even if there is land
             # So, instead compare np.min and np.max.
             min = np.min(list(required_layers.values())[i])
-            # max = np.max(list(required_layers.values())[i])
 
             # Breaks the loop if there is data in the chunk.
             # Don't need to keep checking chunk for data because the condition has been met
@@ -271,7 +269,7 @@ def check_chunk_for_data(required_layers, bounds_str, tile_id, any_or_all, is_fi
 
             i += 1
 
-        # The one print statement regardless of whether the model is full-scale or not
+        # Printed regardless of whether or not the model is full-scale
         logger.info(f"flm: No data in chunk {bounds_str} for assessed inputs: {timestr()}")
         print(f"flm: No data in chunk {bounds_str} for assessed inputs: {timestr()}")
         return False
@@ -288,17 +286,18 @@ def check_chunk_for_data(required_layers, bounds_str, tile_id, any_or_all, is_fi
             min = np.min(value)
             max = np.max(value)
 
-            # Breaks the loop if min and max couldn't be calculated, i.e. chunk doesn't exist.
+            # Breaks the loop if min and max are the same, i.e. chunk doesn't exist.
+            # We assume that if min and max are the same, there are no valid pixels
             # Don't need to keep checking chunk for data because at least one input doesn't have data,
             # so not ALL of the inputs exist
-            if (min == None) and (max == None):
-                # The one print statement regardless of whether the model is full-scale or not
+            if min == max:
+                # Printed regardless of whether or not the model is full-scale
                 logger.info(f"flm: Chunk {bounds_str} does not exist for {key}. Skipping chunk: {timestr()}")  # The one print statement regardless of whether the model is full-scale or not
                 print(f"flm: Chunk {bounds_str} does not exist for {key}. Skipping chunk: {timestr()}")
                 return False
 
-                # If all required inputs are checked (for loop is completed), ALL inputs exist.
-        # The one print statement regardless of whether the model is full-scale or not
+        # If all required inputs are checked (for loop is completed), ALL inputs exist.
+        # Printed regardless of whether or not the model is full-scale.
         logger.info(f"flm: Chunk {bounds_str} has data for all assessed inputs: {timestr()}")  # The one print statement regardless of whether the model is full-scale or not
         print(f"flm: Chunk {bounds_str} has data for all assessed inputs: {timestr()}")
         return True
