@@ -100,6 +100,9 @@ tree_threshold = 5
 ### File name paths and patterns
 ########
 
+# Local path for chunk stats
+chunk_stats_path = "chunk_stats/"
+
 LC_uri = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/landcover"
 
 s3_out_dir = 'climate/AFOLU_flux_model/LULUCF/outputs'
@@ -110,20 +113,6 @@ combined_log = "AFOLU_model_log"
 
 agb_2000_path = f"{full_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/Processed/"
 agb_2000_pattern = "t_aboveground_biomass_ha_2000"
-
-carbon_pool_2000_date = "20240821"
-
-agc_2000_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs/AGC_density_MgC_ha/2000/40000_pixels/{carbon_pool_2000_date}/"
-agc_2000_pattern = "AGC_density_MgC_ha_2000"
-
-bgc_2000_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs/BGC_density_MgC_ha/2000/40000_pixels/{carbon_pool_2000_date}/"
-bgc_2000_pattern = "BGC_density_MgC_ha_2000"
-
-deadwood_c_2000_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs/deadwood_C_density_MgC_ha/2000/40000_pixels/{carbon_pool_2000_date}/"
-deadwood_c_2000_pattern = "deadwood_C_density_MgC_ha_2000"
-
-litter_c_2000_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs/litter_C_density_MgC_ha/2000/40000_pixels/{carbon_pool_2000_date}/"
-litter_c_2000_pattern = "litter_C_density_MgC_ha_2000"
 
 mangrove_agb_2000_path = f"{full_bucket_prefix}/climate/carbon_model/mangrove_biomass/processed/standard/20190220/"
 mangrove_agb_2000_pattern = "mangrove_agb_t_ha_2000"
@@ -142,6 +131,36 @@ r_s_ratio_pattern = "BGB_AGB_ratio"
 
 continent_ecozone_path = f"{full_bucket_prefix}/climate/carbon_model/fao_ecozones/ecozone_continent/20190116/processed/"
 continent_ecozone_pattern = "fao_ecozones_continents_processed"
+
+### Outputs
+
+outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs/"
+
+land_state_node_path_part = "land_state_node"
+
+AGC_density_path_part = "AGC_density_MgC_ha"
+BGC_density_path_part = "BGC_density_MgC_ha"
+deadwood_c_density_path_part = "deadwood_C_density_MgC_ha"
+litter_c_density_path_part = "litter_C_density_MgC_ha"
+
+AGC_flux_path_part = "AGC_flux_MgC_ha"
+BGC_flux_path_part = "BGC_flux_MgC_ha"
+deadwood_c_flux_path_part = "deadwood_C_flux_MgC_ha"
+litter_c_flux_path_part = "litter_C_flux_MgC_ha"
+
+carbon_pool_2000_date = "20240821"
+
+agc_2000_path = f"{outputs_path}{AGC_density_path_part}/2000/40000_pixels/{carbon_pool_2000_date}/"
+agc_2000_pattern = "AGC_density_MgC_ha_2000"
+
+bgc_2000_path = f"{outputs_path}{BGC_density_path_part}/2000/40000_pixels/{carbon_pool_2000_date}/"
+bgc_2000_pattern = "BGC_density_MgC_ha_2000"
+
+deadwood_c_2000_path = f"{outputs_path}{deadwood_c_density_path_part}/2000/40000_pixels/{carbon_pool_2000_date}/"
+deadwood_c_2000_pattern = "deadwood_C_density_MgC_ha_2000"
+
+litter_c_2000_path = f"{outputs_path}{litter_c_density_path_part}/2000/40000_pixels/{carbon_pool_2000_date}/"
+litter_c_2000_pattern = "litter_C_density_MgC_ha_2000"
 
 
 ### IPCC classes and change

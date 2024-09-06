@@ -389,22 +389,24 @@ def list_rasters_in_folder(full_in_folder):
 
 
 # Uploads a shapefile to s3
-def upload_shp(full_in_folder, in_folder, shp):
+def upload_shp(in_folder, shp):
 
-    print(f"flm: Uploading to {full_in_folder}{shp}: {timestr()}")
+    print(f"flm: Uploading to {in_folder}{shp}: {timestr()}")
 
     shp_pattern = shp[:-4]
 
     s3_client = boto3.client("s3")  # Needs to be in the same function as the upload_file call
-    s3_client.upload_file(f"/tmp/{shp}", "gfw2-data", Key=f"{in_folder[10:]}{shp}")
-    s3_client.upload_file(f"/tmp/{shp_pattern}.dbf", "gfw2-data", Key=f"{in_folder[10:]}{shp_pattern}.dbf")
-    s3_client.upload_file(f"/tmp/{shp_pattern}.prj", "gfw2-data", Key=f"{in_folder[10:]}{shp_pattern}.prj")
-    s3_client.upload_file(f"/tmp/{shp_pattern}.shx", "gfw2-data", Key=f"{in_folder[10:]}{shp_pattern}.shx")
+    s3_client.upload_file(f"/tmp/{shp}", "gfw2-data", Key=f"{in_folder[15:]}{shp}")
+    s3_client.upload_file(f"/tmp/{shp_pattern}.dbf", "gfw2-data", Key=f"{in_folder[15:]}{shp_pattern}.dbf")
+    s3_client.upload_file(f"/tmp/{shp_pattern}.prj", "gfw2-data", Key=f"{in_folder[15:]}{shp_pattern}.prj")
+    s3_client.upload_file(f"/tmp/{shp_pattern}.shx", "gfw2-data", Key=f"{in_folder[15:]}{shp_pattern}.shx")
 
     os.remove(f"/tmp/{shp}")
     os.remove(f"/tmp/{shp_pattern}.dbf")
     os.remove(f"/tmp/{shp_pattern}.prj")
     os.remove(f"/tmp/{shp_pattern}.shx")
+
+    print(f"flm: Uploaded to {in_folder}{shp}: {timestr()}")
 
 
 # Makes a shapefile of the footprints of rasters in a folder, for checking geographical completeness of rasters
@@ -417,8 +419,8 @@ def make_tile_footprint_shp(input_dict):
     print(f"flm: Making tile index shapefile for: {in_folder}: {timestr()}")
 
     # Folder including s3 key
-    s3_in_folder = f's3://{in_folder}'
-    vsis3_in_folder = f'/vsis3/{in_folder}'
+    s3_in_folder = in_folder
+    vsis3_in_folder = f'/vsis3/{in_folder[5:]}' #[5] drops the s3:// at the front
 
     # List of all the filenames in the folder
     filenames = list_rasters_in_folder(s3_in_folder)
@@ -426,20 +428,22 @@ def make_tile_footprint_shp(input_dict):
     # List of the tile paths in the folder
     tile_paths = [vsis3_in_folder + filename for filename in filenames]
 
-    file_paths = 's3_paths.txt'
+    file_paths_txt = f's3_paths_{pattern}.txt'
 
-    with open(f"/tmp/{file_paths}", 'w') as file:
+    with open(f"/tmp/{file_paths_txt}", 'w') as file:
         for item in tile_paths:
             file.write(item + '\n')
 
     # Output shapefile name
     shp = f"raster_footprints_{pattern}.shp"
 
-    cmd = ["gdaltindex", "-t_srs", "EPSG:4326", f"/tmp/{shp}", "--optfile", f"/tmp/{file_paths}"]
+    cmd = ["gdaltindex", "-t_srs", "EPSG:4326", f"/tmp/{shp}", "--optfile", f"/tmp/{file_paths_txt}"]
     subprocess.check_call(cmd)
 
     # Uploads shapefile to s3
-    upload_shp(s3_in_folder, in_folder, shp)
+    upload_shp(s3_in_folder, shp)
+
+    os.remove(f"/tmp/{file_paths_txt}")
 
     return(f"Completed: {timestr()}")
 
@@ -479,7 +483,7 @@ def create_list_for_aggregation(s3_in_folders):
         simple_file_names = []  # List of output aggregatd output 10x10 rasters
 
         # Raw filenames in an input folder, e.g., ['00N_000E__6_-2_8_0__IPCC_classes_2020.tif', '00N_000E__6_-4_8_-2__IPCC_classes_2020.tif',...]
-        filenames = list_rasters_in_folder(f"s3://{s3_in_folder}")
+        filenames = list_rasters_in_folder(s3_in_folder)
 
         # Iterates through all the files in a folder and converts them to the output names.
         # Essentially [tile_id]__[pattern].tif. Drops the chunk bounds from the middle.
@@ -521,12 +525,12 @@ def flatten_list(nested_list):
 
 # Merges rasters that are <10x10 degrees into 10x10 degree rasters in the standard grid.
 # Approach is to merge rasters with gdal.Warp and then upload them to s3.
-def merge_small_tiles_gdal(s3_name_dict):
+def merge_small_tiles_gdal(s3_name_dict, no_upload):
     in_folder = list(s3_name_dict.keys())[0]  # The input s3 folder for the small rasters
     out_file_name = list(s3_name_dict.values())[0][0]  # The output file name for the combined rasters
 
-    s3_in_folder = f's3://{in_folder}'  # The input s3 folder with s3:// prepended
-    vsis3_in_folder = f'/vsis3/{in_folder}'  # The input s3 folder with /vsis3/ prepended
+    s3_in_folder = in_folder  # The input s3 folder with s3:// prepended
+    vsis3_in_folder = f'/vsis3/{in_folder[5:]}'  # The input s3 folder with /vsis3/ prepended
 
     # Lists all the rasters in the specified s3 folder
     filenames = list_rasters_in_folder(s3_in_folder)
@@ -544,7 +548,7 @@ def merge_small_tiles_gdal(s3_name_dict):
     print(f"flm: Merging small rasters in {tile_id} in {vsis3_in_folder}")
 
     # Names the output folder. Same as the input folder but with the dimensions in pixels replaced
-    out_folder = re.sub(r'\d+_pixels', f'{cn.full_raster_dims}_pixels', in_folder[10:])  # [10:] to remove the gfw2-data/ at the front
+    out_folder = re.sub(r'\d+_pixels', f'{cn.full_raster_dims}_pixels', in_folder)
 
     min_x, min_y, max_x, max_y = get_10x10_tile_bounds(tile_id)
 
@@ -591,12 +595,14 @@ def merge_small_tiles_gdal(s3_name_dict):
 
     print(f"flm: Saving {out_file_name} to s3: {out_folder}{out_file_name}")
 
-    try:
-        s3_client.upload_file(merged_file, "gfw2-data", Key=f"{out_folder}{out_file_name}")
-        print(f"flm: Successfully uploaded {out_file_name} to s3")
-    except boto3.exceptions.S3UploadFailedError as e:
-        print(f"flm: Error uploading file to s3: {e}")
-        return f"failure for {s3_name_dict}"
+    if not no_upload:
+
+        try:
+            s3_client.upload_file(merged_file, "gfw2-data", Key=f"{out_folder[15:]}{out_file_name}")  #[15:] drops s3://gfw2-data/ from front
+            print(f"flm: Successfully uploaded {out_file_name} to s3")
+        except boto3.exceptions.S3UploadFailedError as e:
+            print(f"flm: Error uploading file to s3: {e}")
+            return f"failure for {s3_name_dict}"
 
     # Deletes the local merged raster
     os.remove(merged_file)
@@ -682,7 +688,8 @@ def calculate_chunk_stats(all_stats, stage):
     ).reset_index()
 
     # Write the combined statistics to a single Excel file
-    with pd.ExcelWriter(f'chunk_stats/{stage}_chunk_statistics_{timestr()}.xlsx') as writer:
+    #TODO Create chunk_stats folder if it doesn't already exist
+    with pd.ExcelWriter(f'{cn.chunk_stats_path}{stage}_chunk_statistics_{timestr()}.xlsx') as writer:
         sorted_stats.to_excel(writer, sheet_name='chunk_stats', index=False)
 
         # Write the min and max statistics to the second sheet

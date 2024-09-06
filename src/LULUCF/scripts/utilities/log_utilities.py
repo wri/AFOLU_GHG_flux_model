@@ -1,5 +1,4 @@
 import boto3
-import dask
 import logging
 import time
 
@@ -23,6 +22,7 @@ def compile_and_upload_log(no_log, client, cluster, stage,
     if no_log:
         return
 
+    #TODO Create log folder if it doesn't exist already
     log_name = f"{cn.combined_log}_{stage}_{time.strftime('%Y%m%d_%H_%M_%S')}.txt"
     local_log = f"{cn.local_log_path}{log_name}"
 

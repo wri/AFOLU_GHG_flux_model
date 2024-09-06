@@ -658,14 +658,30 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
     # Runs analysis and gathers results
     results = dask.compute(*delayed_results)
 
+    # Initializes counters for different types of return messages
+    success_count = 0
+    skipping_chunk_count = 0
+
     # Processes the chunk stats and returned messages
     # Results are the messages from the chunks and chunk stats
     for result in results:
-        success_message, chunk_stats = result
-        if success_message:
-            return_messages.append(success_message)
+        return_message, chunk_stats = result
+
+        if return_message and "success" in return_message:
+            success_count += 1
+
+        if return_message and "skipping chunk" in return_message:
+            skipping_chunk_count += 1
+
+        if return_message:
+            return_messages.append(return_message)
+
         if chunk_stats is not None:
             all_stats.extend(chunk_stats)
+
+    # Print the counts
+    print(f"Number of 'success' messages: {success_count}")
+    print(f"Number of 'skipping chunk' messages: {skipping_chunk_count}")
 
     # Prepares chunk stats spreadsheet: min, mean, max for all input and output chunks,
     # and min and max values across all chunks for all inputs and outputs
