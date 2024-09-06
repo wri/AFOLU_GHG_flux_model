@@ -56,6 +56,11 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
 
     r_s_ratio_block = in_dict_float32[cn.r_s_ratio].astype('float32')
 
+    planted_forest_type_block = in_dict_uint8[cn.planted_forest_type_layer]
+    planted_forest_tree_crop_block = in_dict_uint8[cn.planted_forest_tree_crop_layer]
+
+    ifl_primary_block = in_dict_uint8[cn.ifl_primary]
+
     # Stores the burned area blocks for the entire model duration
     burned_area_blocks_total = []
 
@@ -72,8 +77,6 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
         LC_curr_block = in_dict_uint8[f"{cn.land_cover}_{year}"]
         veg_h_prev_block = in_dict_uint8[f"{cn.vegetation_height}_{year - cn.interval_years}"]
         veg_h_curr_block = in_dict_uint8[f"{cn.vegetation_height}_{year}"]
-        planted_forest_type_block = in_dict_uint8[cn.planted_forest_type_layer]
-        planted_forest_tree_crop_block = in_dict_uint8[cn.planted_forest_tree_crop_layer]
 
         # Creates a list of all the burned area arrays from 2001 to the end of the interval
         for year_offset in range(year-4, year+1):
@@ -105,10 +108,13 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                 LC_curr = LC_curr_block[row, col]
                 veg_h_prev = veg_h_prev_block[row, col]
                 veg_h_curr = veg_h_curr_block[row, col]
+
+                r_s_ratio_cell = r_s_ratio_block[row, col]
+
                 planted_forest_type = planted_forest_type_block[row, col]
                 planted_forest_tree_crop = planted_forest_tree_crop_block[row, col]
 
-                r_s_ratio_cell = r_s_ratio_block[row, col]
+                ifl_primary = ifl_primary_block[row, col]
 
                 # Note: Stacking the burned area rasters using ndstack, stack, or flatten outside the pixel iteration did not work with numba.
                 # So just reading each raster from the list of rasters separately.
@@ -352,11 +358,35 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                                         agc_ef = 0.33
                                         c_flux_out, c_dens_out = nu.calc_T_T_non_stand_disturbs(agc_rf, agc_ef, r_s_ratio_cell, c_dens_in)
                             else:  # Natural forest without stand-replacing disturbance in the last interval (3112)
-                                state_out[row, col] = nu.accrete_node(node, 2)
-                                agc_rf = 2.1
-                                c_flux_out, c_dens_out = nu.calc_T_T_undisturbed(agc_rf, r_s_ratio_cell, c_dens_in)
-
-                                # if not sig_height_loss_prev_curr:    # Stable natural forest (31121)
+                                node = nu.accrete_node(node, 2)
+                                if not sig_height_loss_prev_curr:    # Stable natural forest (31121)
+                                    node = nu.accrete_node(node, 1)
+                                    if first_forest_dist_in_record == 0:   # Natural forest undisturbed since 2000 (311211)  ##TODO: Include "OR non-forest at some point" exception
+                                        node = nu.accrete_node(node, 1)
+                                        if ifl_primary == 0:  # Old secondary forest (3112111)
+                                            state_out[row, col] = nu.accrete_node(node, 1)
+                                            agc_rf = 0.5
+                                            c_flux_out, c_dens_out = nu.calc_T_T_undisturbed(agc_rf, r_s_ratio_cell, c_dens_in)
+                                        else:  # Primary forest (3112112)
+                                            state_out[row, col] = nu.accrete_node(node, 2)
+                                            agc_rf = 0.3
+                                            c_flux_out, c_dens_out = nu.calc_T_T_undisturbed(agc_rf, r_s_ratio_cell, c_dens_in)
+                                    else:   # Young secondary natural forest (311212)
+                                        state_out[row, col] = nu.accrete_node(node, 2)
+                                        agc_rf = 3.3
+                                        c_flux_out, c_dens_out = nu.calc_T_T_undisturbed(agc_rf, r_s_ratio_cell, c_dens_in)
+                                else:  # Partially disturbed natural forest (31122)
+                                    node = nu.accrete_node(node, 2)
+                                    if burned_area_last == 0: # Partially disturbed natural forest without fire (311221)
+                                        state_out[row, col] = nu.accrete_node(node, 1)
+                                        agc_rf = 1.3
+                                        agc_ef = 0.6
+                                        c_flux_out, c_dens_out = nu.calc_T_T_non_stand_disturbs(agc_rf, agc_ef, r_s_ratio_cell, c_dens_in)
+                                    else:  # Partially disturbed natural forest with fire (311222)
+                                        state_out[row, col] = nu.accrete_node(node, 2)
+                                        agc_rf = 1.3
+                                        agc_ef = 0.95
+                                        c_flux_out, c_dens_out = nu.calc_T_T_non_stand_disturbs(agc_rf, agc_ef, r_s_ratio_cell, c_dens_in)
 
                     else:
                         state_out[row, col] = 32
@@ -630,7 +660,7 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
         "peat": f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/peatlands/processed/20230315/{sample_tile_id}_peat_mask_processed.tif",
         # "ecozone": f"s3://gfw2-data/fao_ecozones/v2000/raster/epsg-4326/10/40000/class/gdal-geotiff/{sample_tile_id}.tif",   # Originally from gfw-data-lake, so it's in 400x400 windows
         # "iso": f"s3://gfw2-data/gadm_administrative_boundaries/v3.6/raster/epsg-4326/10/40000/adm0/gdal-geotiff/{sample_tile_id}.tif",  # Originally from gfw-data-lake, so it's in 400x400 windows
-        "ifl_primary": f"s3://gfw2-data/climate/carbon_model/ifl_primary_merged/processed/20200724/{sample_tile_id}_ifl_2000_primary_2001_merged.tif"
+        cn.ifl_primary: f"s3://gfw2-data/climate/carbon_model/ifl_primary_merged/processed/20200724/{sample_tile_id}_ifl_2000_primary_2001_merged.tif"
     }
 
     for year in range(cn.first_year, cn.last_year + 1):  # Annual burned area maps start in 2000
@@ -667,10 +697,12 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
     for result in results:
         return_message, chunk_stats = result
 
-        if return_message and "success" in return_message:
+        print(return_message)
+
+        if "Success" in return_message:
             success_count += 1
 
-        if return_message and "skipping chunk" in return_message:
+        if "skipping chunk" in return_message:
             skipping_chunk_count += 1
 
         if return_message:
@@ -680,8 +712,8 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
             all_stats.extend(chunk_stats)
 
     # Print the counts
-    print(f"Number of 'success' messages: {success_count}")
-    print(f"Number of 'skipping chunk' messages: {skipping_chunk_count}")
+    print(f"Number of 'Success' chunks: {success_count}")
+    print(f"Number of 'skipping chunk' chunks: {skipping_chunk_count}")
 
     # Prepares chunk stats spreadsheet: min, mean, max for all input and output chunks,
     # and min and max values across all chunks for all inputs and outputs
