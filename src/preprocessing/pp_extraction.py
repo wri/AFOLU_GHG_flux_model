@@ -17,22 +17,64 @@ import constants_and_names as cn  # Module containing constants like paths and S
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
-# AWS S3 setup
-s3_client = boto3.client('s3')
+# -------------------- Filtering Functions --------------------
 
-def read_shapefile_from_s3(s3_prefix, local_dir):
+def filter_gdf_dataset(gdf_dataset, dataset):
+    """
+    Apply attribute filtering to the GeoDataFrame based on the dataset.
+
+    Args:
+        gdf_dataset (gpd.GeoDataFrame): The input GeoDataFrame.
+        dataset (str): The name of the dataset ('finland', 'russia', etc.).
+
+    Returns:
+        gpd.GeoDataFrame: The filtered GeoDataFrame.
+    """
     try:
-        extensions = ['.shp', '.shx', '.dbf', '.prj', '.cpg']
-        for ext in extensions:
-            s3_path = f"{s3_prefix}{ext}"
-            local_path = os.path.join(local_dir, os.path.basename(s3_prefix) + ext)
-            logging.info(f"Attempting to download {s3_path} to {local_path}")
-            s3_client.download_file(cn.s3_bucket_name, s3_path, local_path)
-        shapefile_path = os.path.join(local_dir, os.path.basename(s3_prefix) + '.shp')
-        return shapefile_path
+        if dataset == 'finland':
+            # Example filter for Finland dataset
+            # Replace 'attribute_name' and 'desired_value' with actual values
+            # gdf_dataset = gdf_dataset[gdf_dataset['attribute_name'] == 'desired_value']
+            logging.info("Applying attribute filtering for Finland dataset.")
+            # Add your filtering logic here
+        elif dataset == 'russia':
+            # Example filter for Russia dataset
+            # gdf_dataset = gdf_dataset[gdf_dataset['attribute_name'] == 'desired_value']
+            logging.info("Applying attribute filtering for Russia dataset.")
+            # Add your filtering logic here
+        else:
+            logging.info(f"No specific attribute filtering applied for dataset '{dataset}'.")
+        return gdf_dataset
     except Exception as e:
-        logging.error(f"Error downloading shapefile from S3: {e}")
-        return None
+        logging.error(f"Error filtering GeoDataFrame for dataset '{dataset}': {e}")
+        return gdf_dataset  # Return unfiltered GeoDataFrame in case of error
+
+def filter_raster_data(data, dataset):
+    """
+    Apply value filtering to the raster data based on the dataset.
+
+    Args:
+        data (numpy.ndarray): The input raster data array.
+        dataset (str): The name of the dataset ('ireland', etc.).
+
+    Returns:
+        numpy.ndarray: The filtered raster data array.
+    """
+    try:
+        if dataset == 'ireland':
+            # Example filter for Ireland dataset
+            # Replace 'desired_value' with actual value(s)
+            # data = np.where(data == desired_value, data, 0)
+            logging.info("Applying raster value filtering for Ireland dataset.")
+            # Add your filtering logic here
+        else:
+            logging.info(f"No specific raster value filtering applied for dataset '{dataset}'.")
+        return data
+    except Exception as e:
+        logging.error(f"Error filtering raster data for dataset '{dataset}': {e}")
+        return data  # Return unfiltered data in case of error
+
+# -------------------- Main Processing Functions --------------------
 
 def rasterize_shapefile_with_ref(gdf, output_raster_path, transform, width, height, fill_value=0, burn_value=1, dtype='uint8', tile_id=None):
     """
@@ -116,8 +158,8 @@ def process_vector_dataset(dataset, tile_id=None, run_mode='default'):
         shapefile_path = os.path.join(cn.local_temp_dir, shapefile_name + '.shp')
         if not os.path.exists(shapefile_path):
             logging.info(f"{dataset.capitalize()} shapefile not found locally, downloading from S3.")
-            shapefile_path = read_shapefile_from_s3(shapefile_s3_prefix, cn.local_temp_dir)
-            if shapefile_path is None:
+            uu.download_shapefile_from_s3(shapefile_s3_prefix, cn.local_temp_dir, cn.s3_bucket_name)
+            if not os.path.exists(shapefile_path):
                 logging.error(f"Failed to download {dataset} shapefile. Exiting.")
                 return
         else:
@@ -125,10 +167,8 @@ def process_vector_dataset(dataset, tile_id=None, run_mode='default'):
 
         gdf_dataset = gpd.read_file(shapefile_path)
 
-        # Placeholder for filtering attributes
-        # Example: gdf_dataset = gdf_dataset[gdf_dataset['attribute_name'] == 'desired_value']
-        # TODO: Add filtering logic based on specific attributes for {dataset}
-        logging.info(f"Applying attribute filtering for {dataset} dataset (placeholder)")
+        # Apply attribute filtering
+        gdf_dataset = filter_gdf_dataset(gdf_dataset, dataset)
 
         # Ensure GeoDataFrame has valid geometries
         gdf_dataset['geometry'] = gdf_dataset['geometry'].buffer(0)
@@ -140,8 +180,8 @@ def process_vector_dataset(dataset, tile_id=None, run_mode='default'):
         index_shapefile = os.path.join(cn.local_temp_dir, os.path.basename(cn.index_shapefile_prefix) + '.shp')
         if not os.path.exists(index_shapefile):
             logging.info("Global peatlands index not found locally. Downloading...")
-            index_shapefile = read_shapefile_from_s3(cn.index_shapefile_prefix, cn.local_temp_dir)
-            if index_shapefile is None:
+            uu.download_shapefile_from_s3(cn.index_shapefile_prefix, cn.local_temp_dir, cn.s3_bucket_name)
+            if not os.path.exists(index_shapefile):
                 logging.error("Failed to download global peatlands index. Exiting.")
                 return
         gdf_tiles = gpd.read_file(index_shapefile)
@@ -193,16 +233,9 @@ def process_vector_tile(dataset, tile_id, gdf_dataset, run_mode='default'):
     s3_output_path = os.path.join(s3_output_dir, f"{tile_id}_{dataset}_extraction.tif").replace("\\", "/")
 
     if run_mode != 'test':
-        try:
-            s3_client.head_object(Bucket=cn.s3_bucket_name, Key=s3_output_path)
+        if uu.s3_file_exists(cn.s3_bucket_name, s3_output_path):
             logging.info(f"{s3_output_path} already exists on S3. Skipping processing.")
             return
-        except s3_client.exceptions.ClientError as e:
-            if e.response['Error']['Code'] == '404':
-                logging.info(f"{s3_output_path} does not exist on S3. Processing the tile.")
-            else:
-                logging.error(f"Error checking existence of {s3_output_path} on S3: {e}")
-                return
 
     logging.info(f"Starting processing of the tile {tile_id}")
 
@@ -323,7 +356,7 @@ def process_raster_dataset(dataset, tile_id=None, run_mode='default'):
         # Download the raster if not already present locally
         if not os.path.exists(local_raster_path):
             logging.info(f"Downloading {dataset} raster dataset from S3.")
-            s3_client.download_file(cn.s3_bucket_name, s3_raster_path, local_raster_path)
+            uu.download_file_from_s3(s3_raster_path, local_raster_path, cn.s3_bucket_name)
 
         # Open the raster dataset
         with rasterio.open(local_raster_path) as raster_dataset:
@@ -352,7 +385,7 @@ def process_raster_dataset(dataset, tile_id=None, run_mode='default'):
         index_shapefile = os.path.join(cn.local_temp_dir, os.path.basename(cn.index_shapefile_prefix) + '.shp')
         if not os.path.exists(index_shapefile):
             logging.info("Global peatlands index not found locally. Downloading...")
-            read_shapefile_from_s3(cn.index_shapefile_prefix, cn.local_temp_dir)
+            uu.download_shapefile_from_s3(cn.index_shapefile_prefix, cn.local_temp_dir, cn.s3_bucket_name)
         gdf_tiles = gpd.read_file(index_shapefile)
         logging.info(f"Tile index shapefile CRS: {gdf_tiles.crs}")
 
@@ -407,16 +440,9 @@ def process_raster_tile(dataset, tile_id, local_raster_path, run_mode='default')
 
         # Check if the output already exists
         if run_mode != 'test':
-            try:
-                s3_client.head_object(Bucket=cn.s3_bucket_name, Key=s3_output_path)
+            if uu.s3_file_exists(cn.s3_bucket_name, s3_output_path):
                 logging.info(f"{s3_output_path} already exists on S3. Skipping processing.")
                 return
-            except s3_client.exceptions.ClientError as e:
-                if e.response['Error']['Code'] == '404':
-                    logging.info(f"{s3_output_path} does not exist on S3. Processing the tile.")
-                else:
-                    logging.error(f"Error checking existence of {s3_output_path} on S3: {e}")
-                    return
 
         # Get tile properties from the peat tile (EPSG:4326)
         s3_input_raster_path = f"/vsis3/{cn.s3_bucket_name}/{cn.peat_tiles_prefix}{tile_id}_peat_mask_processed.tif"
@@ -446,10 +472,8 @@ def process_raster_tile(dataset, tile_id, local_raster_path, run_mode='default')
                 # Read the data
                 data = vrt.read(1)
 
-                # Placeholder for filtering raster values
-                # Example: data = np.where(data == desired_value, data, 0)
-                # TODO: Add logic to filter data based on specific values for {dataset}
-                logging.info(f"Applying raster value filtering for {dataset} dataset (placeholder)")
+                # Apply raster value filtering
+                data = filter_raster_data(data, dataset)
 
                 # If the data is empty after filtering, skip processing
                 if not data.any():
