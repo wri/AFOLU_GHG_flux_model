@@ -296,13 +296,53 @@ def main(tile_id=None, run_mode='default'):
         if tile_id:
             process_tile(tile_id, run_mode)
         else:
-            # Process all tiles
+            # Load the Finland shapefile
+            finland_shapefile_name = 'turvetuotantoalueet_jalkikaytto'
+            finland_shapefile_path = os.path.join(cn.local_temp_dir, finland_shapefile_name + '.shp')
+            if not os.path.exists(finland_shapefile_path):
+                logging.info(f"Finland shapefile not found locally, downloading from S3.")
+                uu.download_shapefile_from_s3(
+                    cn.datasets['extraction']['finland']['s3_raw'],
+                    cn.local_temp_dir,
+                    cn.s3_bucket_name
+                )
+            gdf_finland = gpd.read_file(finland_shapefile_path)
+
+            # Ensure Finland GeoDataFrame has valid geometries
+            gdf_finland['geometry'] = gdf_finland['geometry'].buffer(0)
+            logging.info(f"After buffer(0), type of gdf_finland: {type(gdf_finland)}")
+
+            # Explode multi-part geometries
+            gdf_finland = gdf_finland.explode(index_parts=False)
+            logging.info(f"After explode, type of gdf_finland: {type(gdf_finland)}")
+
+            # Check if gdf_finland is a GeoSeries and convert if necessary
+            if isinstance(gdf_finland, gpd.GeoSeries):
+                logging.info("Converting GeoSeries to GeoDataFrame")
+                gdf_finland = gpd.GeoDataFrame(geometry=gdf_finland)
+                gdf_finland.crs = gdf_tiles.crs
+
+            gdf_finland = gdf_finland.reset_index(drop=True)
+            gdf_finland = gdf_finland[~gdf_finland.geometry.is_empty & ~gdf_finland.geometry.isna()]
+
+            # Load tile index shapefile
             index_shapefile = os.path.join(cn.local_temp_dir, os.path.basename(cn.index_shapefile_prefix) + '.shp')
             if not os.path.exists(index_shapefile):
                 logging.info("Global peatlands index not found locally. Downloading...")
                 read_shapefile_from_s3(cn.index_shapefile_prefix, cn.local_temp_dir)
-            gdf = gpd.read_file(index_shapefile)
-            tile_ids = gdf['tile_id'].unique()
+            gdf_tiles = gpd.read_file(index_shapefile)
+
+            # Reproject Finland data to match tiles CRS if necessary
+            if gdf_finland.crs != gdf_tiles.crs:
+                logging.info(f"Reprojecting Finland data to match tiles CRS")
+                gdf_finland = gdf_finland.to_crs(gdf_tiles.crs)
+
+            # Perform spatial join to find tiles intersecting with Finland
+            tiles_intersecting_finland = gpd.sjoin(gdf_tiles, gdf_finland, how='inner', predicate='intersects')
+            tile_ids = tiles_intersecting_finland['tile_id'].unique()
+
+            logging.info(f"Found {len(tile_ids)} tiles intersecting with Finland dataset.")
+
             for tid in tile_ids:
                 process_tile(tid, run_mode)
 
@@ -311,10 +351,12 @@ def main(tile_id=None, run_mode='default'):
     finally:
         logging.info("Processing completed")
 
+
+
 if __name__ == "__main__":
     # Example usage
     # To process a specific tile, provide the tile_id
-    main(tile_id='70N_020E', run_mode='default')
+    # main(tile_id='70N_020E', run_mode='default')
     main(tile_id=None, run_mode='default')
 
 
