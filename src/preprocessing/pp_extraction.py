@@ -1,18 +1,67 @@
-import os
-import logging
-import boto3
-import geopandas as gpd
-import rasterio
-import numpy as np
-from shapely.geometry import box
-import gc
-import rasterio.warp
-import rasterio.mask
-from rasterio.vrt import WarpedVRT
+"""
+pp_extraction.py
 
-# Import your custom modules (ensure these are correctly set up in your environment)
-import pp_utilities as uu  # Utilities module with helper functions
-import constants_and_names as cn  # Module containing constants like paths and S3 prefixes
+This script processes peat extraction datasets from Finland, Ireland, and Russia to create a global mosaic of possible peat extraction areas. The output is intended for use in both the drainage model and emission factor selection for peatlands.
+
+Datasets Used:
+--------------
+
+1. **Finland Peatland Dataset**:
+   - **Source**: Geological Survey of Finland (GTK)
+   - **URL**: https://www.gtk.fi/en/current/first-spatial-dataset-on-peatlands-covers-mires-and-drained-peatlands-throughout-finland/
+   - **Description**: Provides comprehensive spatial data on peatlands across Finland, including mires and drained peatlands. Used to identify areas of peat extraction activities in Finland.
+
+2. **Ireland Peatland Dataset**:
+   - **Source**: National Peatlands Map for the Republic of Ireland
+   - **URL**: https://www.nature.com/articles/s41598-024-51660-0
+   - **Description**: Offers detailed information on the peatlands of Ireland. Used to identify peat extraction areas within Ireland.
+
+3. **Russia Peatland Dataset**:
+   - **Source**: Russian Register / Russian Federal Geologic Fund
+   - **Description**: Contains information on peatlands within Russia. Utilized to map peat extraction areas across Russia.
+
+Workflow:
+---------
+
+1. **Data Retrieval**:
+   - Downloads necessary shapefiles and raster datasets from AWS S3 storage using utility functions.
+
+2. **Data Processing**:
+   - **Vector Datasets (Finland and Russia)**:
+     - Reads shapefiles into GeoDataFrames.
+     - Applies attribute filtering to select relevant features.
+     - Cleans and validates geometries.
+     - Reprojects data to match the coordinate reference system (CRS) of the peatland tile index.
+     - Identifies intersecting tiles via spatial join.
+     - Clips and rasterizes data for each intersecting tile.
+   - **Raster Dataset (Ireland)**:
+     - Downloads the raster dataset and sets CRS if missing.
+     - Transforms raster bounds to match peatland tile index CRS.
+     - Identifies intersecting tiles based on spatial overlap.
+     - Reprojects and resamples raster data to match tile properties.
+     - Applies raster value filtering to retain specific values.
+
+3. **Output Generation**:
+   - Saves processed tiles as GeoTIFF files with compression and tiling options.
+   - Uploads outputs back to AWS S3 storage.
+   - Cleans up local temporary files.
+
+Usage:
+------
+
+The script can be run with specified arguments to process different datasets and tiles. For example:
+
+```python
+if __name__ == "__main__":
+    # Process Finland dataset
+    main(dataset='finland', tile_id=None, run_mode='default')
+
+    # Process Ireland dataset
+    main(dataset='ireland', tile_id=None, run_mode='default')
+
+    # Process Russia dataset
+    main(dataset='russia', tile_id=None, run_mode='default')
+"""
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -34,7 +83,7 @@ def filter_gdf_dataset(gdf_dataset, dataset):
         if dataset == 'finland':
             # Example filter for Finland dataset
             # Replace 'attribute_name' and 'desired_value' with actual values
-            # gdf_dataset = gdf_dataset[gdf_dataset['attribute_name'] == 'desired_value']
+            gdf_dataset = gdf_dataset[gdf_dataset['luokka'] == 'turvetuotanto']
             logging.info("Applying attribute filtering for Finland dataset.")
             # Add your filtering logic here
         elif dataset == 'russia':
@@ -62,11 +111,9 @@ def filter_raster_data(data, dataset):
     """
     try:
         if dataset == 'ireland':
-            # Example filter for Ireland dataset
-            # Replace 'desired_value' with actual value(s)
-            # data = np.where(data == desired_value, data, 0)
+            # Keep only values 1 and 2, set others to zero
             logging.info("Applying raster value filtering for Ireland dataset.")
-            # Add your filtering logic here
+            data = np.where((data == 1) | (data == 2), data, 0)
         else:
             logging.info(f"No specific raster value filtering applied for dataset '{dataset}'.")
         return data
