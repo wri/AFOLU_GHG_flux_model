@@ -21,30 +21,18 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 s3_client = boto3.client('s3')
 
 def read_shapefile_from_s3(s3_prefix, local_dir):
-    """
-    Read a shapefile from S3 into a GeoDataFrame.
-
-    Args:
-        s3_prefix (str): The S3 prefix (path without the file extension) for the shapefile.
-        local_dir (str): The local directory where the files will be saved.
-
-    Returns:
-        gpd.GeoDataFrame: The loaded GeoDataFrame.
-    """
     try:
         extensions = ['.shp', '.shx', '.dbf', '.prj', '.cpg']
         for ext in extensions:
             s3_path = f"{s3_prefix}{ext}"
             local_path = os.path.join(local_dir, os.path.basename(s3_prefix) + ext)
-            logging.info(f"Downloading {s3_path} to {local_path}")
+            logging.info(f"Attempting to download {s3_path} to {local_path}")
             s3_client.download_file(cn.s3_bucket_name, s3_path, local_path)
         shapefile_path = os.path.join(local_dir, os.path.basename(s3_prefix) + '.shp')
-        gdf = gpd.read_file(shapefile_path)
-        logging.info(f"Shapefile {shapefile_path} successfully loaded with {len(gdf)} features")
+        return shapefile_path
     except Exception as e:
-        logging.error(f"Error reading shapefile from S3: {e}")
-        gdf = gpd.GeoDataFrame()  # Return an empty GeoDataFrame in case of error
-    return gdf
+        logging.error(f"Error downloading shapefile from S3: {e}")
+        return None
 
 def rasterize_shapefile_with_ref(gdf, output_raster_path, transform, width, height, fill_value=0, burn_value=1, dtype='uint8', tile_id=None):
     """
@@ -107,12 +95,12 @@ def rasterize_shapefile_with_ref(gdf, output_raster_path, transform, width, heig
         logging.error(f"Error rasterizing shapefile for tile {tile_id}: {e}")
         raise  # Re-raise the exception to be caught in the calling function
 
-def process_finland(dataset, tile_id=None, run_mode='default'):
+def process_vector_dataset(dataset, tile_id=None, run_mode='default'):
     """
-    Process the Finland dataset.
+    Process vector datasets (Finland and Russia).
 
     Parameters:
-        dataset (str): The dataset to process ('finland').
+        dataset (str): The dataset to process ('finland' or 'russia').
         tile_id (str, optional): Tile ID to process a specific tile. Defaults to None.
         run_mode (str): The mode to run the script ('default' or 'test').
 
@@ -120,85 +108,89 @@ def process_finland(dataset, tile_id=None, run_mode='default'):
         None
     """
     try:
-        logging.info("Starting processing routine for Finland peat extraction dataset")
+        logging.info(f"Starting processing routine for {dataset.capitalize()} peat extraction dataset")
 
-        # Load the Finland shapefile
-        finland_shapefile_name = 'turvetuotantoalueet_jalkikaytto'
-        finland_shapefile_path = os.path.join(cn.local_temp_dir, finland_shapefile_name + '.shp')
-        if not os.path.exists(finland_shapefile_path):
-            logging.info(f"Finland shapefile not found locally, downloading from S3.")
-            uu.download_shapefile_from_s3(
-                cn.datasets['extraction']['finland']['s3_raw'],
-                cn.local_temp_dir,
-                cn.s3_bucket_name
-            )
-        gdf_finland = gpd.read_file(finland_shapefile_path)
+        # Load the shapefile
+        shapefile_s3_prefix = cn.datasets['extraction'][dataset]['s3_raw']
+        shapefile_name = os.path.basename(shapefile_s3_prefix)
+        shapefile_path = os.path.join(cn.local_temp_dir, shapefile_name + '.shp')
+        if not os.path.exists(shapefile_path):
+            logging.info(f"{dataset.capitalize()} shapefile not found locally, downloading from S3.")
+            shapefile_path = read_shapefile_from_s3(shapefile_s3_prefix, cn.local_temp_dir)
+            if shapefile_path is None:
+                logging.error(f"Failed to download {dataset} shapefile. Exiting.")
+                return
+        else:
+            logging.info(f"{dataset.capitalize()} shapefile found locally at {shapefile_path}")
 
-        # Ensure Finland GeoDataFrame has valid geometries
-        gdf_finland['geometry'] = gdf_finland['geometry'].buffer(0)
-        logging.info(f"After buffer(0), type of gdf_finland: {type(gdf_finland)}")
+        gdf_dataset = gpd.read_file(shapefile_path)
+
+        # Placeholder for filtering attributes
+        # Example: gdf_dataset = gdf_dataset[gdf_dataset['attribute_name'] == 'desired_value']
+        # TODO: Add filtering logic based on specific attributes for {dataset}
+        logging.info(f"Applying attribute filtering for {dataset} dataset (placeholder)")
+
+        # Ensure GeoDataFrame has valid geometries
+        gdf_dataset['geometry'] = gdf_dataset['geometry'].buffer(0)
 
         # Explode multi-part geometries
-        gdf_finland = gdf_finland.explode(index_parts=False)
-        logging.info(f"After explode, type of gdf_finland: {type(gdf_finland)}")
+        gdf_dataset = gdf_dataset.explode(index_parts=False)
 
         # Load tile index shapefile
         index_shapefile = os.path.join(cn.local_temp_dir, os.path.basename(cn.index_shapefile_prefix) + '.shp')
         if not os.path.exists(index_shapefile):
             logging.info("Global peatlands index not found locally. Downloading...")
-            read_shapefile_from_s3(cn.index_shapefile_prefix, cn.local_temp_dir)
+            index_shapefile = read_shapefile_from_s3(cn.index_shapefile_prefix, cn.local_temp_dir)
+            if index_shapefile is None:
+                logging.error("Failed to download global peatlands index. Exiting.")
+                return
         gdf_tiles = gpd.read_file(index_shapefile)
 
-        # Reproject Finland data to match tiles CRS if necessary
-        if gdf_finland.crs != gdf_tiles.crs:
-            logging.info(f"Reprojecting Finland data to match tiles CRS")
-            gdf_finland = gdf_finland.to_crs(gdf_tiles.crs)
+        # Reproject dataset to match tiles CRS if necessary
+        if gdf_dataset.crs != gdf_tiles.crs:
+            logging.info(f"Reprojecting {dataset} data to match tiles CRS")
+            gdf_dataset = gdf_dataset.to_crs(gdf_tiles.crs)
 
-        # Check if gdf_finland is a GeoSeries and convert if necessary
-        if isinstance(gdf_finland, gpd.GeoSeries):
-            logging.info("Converting GeoSeries to GeoDataFrame")
-            gdf_finland = gpd.GeoDataFrame(geometry=gdf_finland)
-            gdf_finland.crs = gdf_tiles.crs
+        gdf_dataset = gdf_dataset.reset_index(drop=True)
+        gdf_dataset = gdf_dataset[~gdf_dataset.geometry.is_empty & ~gdf_dataset.geometry.isna()]
 
-        gdf_finland = gdf_finland.reset_index(drop=True)
-        gdf_finland = gdf_finland[~gdf_finland.geometry.is_empty & ~gdf_finland.geometry.isna()]
+        # Perform spatial join to find tiles intersecting with the dataset
+        tiles_intersecting = gpd.sjoin(gdf_tiles, gdf_dataset, how='inner', predicate='intersects')
+        tile_ids = tiles_intersecting['tile_id'].unique()
 
-        # Perform spatial join to find tiles intersecting with Finland
-        tiles_intersecting_finland = gpd.sjoin(gdf_tiles, gdf_finland, how='inner', predicate='intersects')
-        tile_ids = tiles_intersecting_finland['tile_id'].unique()
-
-        logging.info(f"Found {len(tile_ids)} tiles intersecting with Finland dataset.")
+        logging.info(f"Found {len(tile_ids)} tiles intersecting with {dataset.capitalize()} dataset.")
 
         if tile_id:
             if tile_id in tile_ids:
-                process_finland_tile(tile_id, gdf_finland, run_mode)
+                process_vector_tile(dataset, tile_id, gdf_dataset, run_mode)
             else:
-                logging.info(f"Tile {tile_id} does not intersect with Finland dataset. Skipping.")
+                logging.info(f"Tile {tile_id} does not intersect with {dataset.capitalize()} dataset. Skipping.")
         else:
             for tid in tile_ids:
-                process_finland_tile(tid, gdf_finland, run_mode)
+                process_vector_tile(dataset, tid, gdf_dataset, run_mode)
 
     except Exception as e:
-        logging.error(f"Error processing Finland dataset: {e}")
+        logging.error(f"Error processing {dataset.capitalize()} dataset: {e}")
 
-def process_finland_tile(tile_id, gdf_finland, run_mode='default'):
+def process_vector_tile(dataset, tile_id, gdf_dataset, run_mode='default'):
     """
-    Processes a single tile for the Finland dataset.
+    Processes a single tile for vector datasets (Finland and Russia).
 
     Parameters:
+        dataset (str): The dataset to process ('finland' or 'russia').
         tile_id (str): ID of the tile to process.
-        gdf_finland (GeoDataFrame): The Finland GeoDataFrame.
+        gdf_dataset (GeoDataFrame): The dataset GeoDataFrame.
         run_mode (str): The mode to run the script ('default' or 'test').
 
     Returns:
         None
     """
-    output_dir = cn.datasets['extraction']['finland']['local_processed']
+    output_dir = cn.datasets['extraction'][dataset]['local_processed']
     os.makedirs(output_dir, exist_ok=True)
 
-    s3_output_dir = cn.datasets['extraction']['finland']['s3_processed']
-    local_output_path = os.path.join(output_dir, f"{tile_id}_finland_extraction.tif")
-    s3_output_path = os.path.join(s3_output_dir, f"{tile_id}_finland_extraction.tif").replace("\\", "/")
+    s3_output_dir = cn.datasets['extraction'][dataset]['s3_processed']
+    local_output_path = os.path.join(output_dir, f"{tile_id}_{dataset}_extraction.tif")
+    s3_output_path = os.path.join(s3_output_dir, f"{tile_id}_{dataset}_extraction.tif").replace("\\", "/")
 
     if run_mode != 'test':
         try:
@@ -225,23 +217,23 @@ def process_finland_tile(tile_id, gdf_finland, run_mode='default'):
                 tile_height = src.height
                 tile_crs = src.crs
 
-        # Reproject Finland data to match the tile's CRS
-        if gdf_finland.crs != tile_crs:
-            logging.info(f"Reprojecting Finland data to match tile CRS for tile {tile_id}")
-            gdf_finland_tile = gdf_finland.to_crs(tile_crs)
+        # Reproject dataset to match the tile's CRS
+        if gdf_dataset.crs != tile_crs:
+            logging.info(f"Reprojecting {dataset} data to match tile CRS for tile {tile_id}")
+            gdf_dataset_tile = gdf_dataset.to_crs(tile_crs)
         else:
-            gdf_finland_tile = gdf_finland
+            gdf_dataset_tile = gdf_dataset
 
         # Clip GeoDataFrame to tile bounds using geopandas.clip function
         tile_box = box(*tile_bounds)
-        gdf_tile = gpd.clip(gdf_finland_tile, tile_box)
+        gdf_tile = gpd.clip(gdf_dataset_tile, tile_box)
 
         # Check and convert if necessary
         logging.info(f"Type of gdf_tile after clipping: {type(gdf_tile)}")
         if isinstance(gdf_tile, gpd.GeoSeries):
             logging.info("Converting GeoSeries to GeoDataFrame")
             gdf_tile = gdf_tile.to_frame(name='geometry')
-            gdf_tile = gpd.GeoDataFrame(gdf_tile, geometry='geometry', crs=gdf_finland_tile.crs)
+            gdf_tile = gpd.GeoDataFrame(gdf_tile, geometry='geometry', crs=gdf_dataset_tile.crs)
 
         # Ensure 'geometry' column exists
         if 'geometry' not in gdf_tile.columns:
@@ -313,7 +305,15 @@ def process_finland_tile(tile_id, gdf_finland, run_mode='default'):
 
 def process_raster_dataset(dataset, tile_id=None, run_mode='default'):
     """
-    Process raster datasets (Ireland and Russia).
+    Process raster datasets (Ireland).
+
+    Parameters:
+        dataset (str): The dataset to process ('ireland').
+        tile_id (str, optional): Tile ID to process a specific tile. Defaults to None.
+        run_mode (str): The mode to run the script ('default' or 'test').
+
+    Returns:
+        None
     """
     try:
         # Load the raster dataset from S3
@@ -385,6 +385,15 @@ def process_raster_dataset(dataset, tile_id=None, run_mode='default'):
 def process_raster_tile(dataset, tile_id, local_raster_path, run_mode='default'):
     """
     Process a single tile for raster datasets, including 'hansenize' step.
+
+    Parameters:
+        dataset (str): The dataset to process ('ireland').
+        tile_id (str): Tile ID to process.
+        local_raster_path (str): Path to the local raster file.
+        run_mode (str): The mode to run the script ('default' or 'test').
+
+    Returns:
+        None
     """
     try:
         logging.info(f"Processing tile {tile_id} for dataset {dataset}")
@@ -394,7 +403,7 @@ def process_raster_tile(dataset, tile_id, local_raster_path, run_mode='default')
         os.makedirs(output_dir, exist_ok=True)
         local_output_path = os.path.join(output_dir, f"{tile_id}_{dataset}_extraction.tif")
         s3_output_dir = cn.datasets['extraction'][dataset]['s3_processed']
-        s3_output_path = os.path.join(s3_output_dir, f"{tile_id}_extraction.tif").replace("\\", "/")
+        s3_output_path = os.path.join(s3_output_dir, f"{tile_id}_{dataset}_extraction.tif").replace("\\", "/")
 
         # Check if the output already exists
         if run_mode != 'test':
@@ -437,18 +446,14 @@ def process_raster_tile(dataset, tile_id, local_raster_path, run_mode='default')
                 # Read the data
                 data = vrt.read(1)
 
-                # Mask the data with the tile bounds
-                data, _ = rasterio.mask.mask(
-                    vrt,
-                    [box(*tile_bounds)],
-                    crop=True,
-                    all_touched=True,
-                    invert=False
-                )
+                # Placeholder for filtering raster values
+                # Example: data = np.where(data == desired_value, data, 0)
+                # TODO: Add logic to filter data based on specific values for {dataset}
+                logging.info(f"Applying raster value filtering for {dataset} dataset (placeholder)")
 
-                # If the data is empty, skip processing
+                # If the data is empty after filtering, skip processing
                 if not data.any():
-                    logging.info(f"No data in tile {tile_id} after masking. Skipping.")
+                    logging.info(f"No data in tile {tile_id} after filtering. Skipping.")
                     return
 
                 # Ensure data is uint8 and nodata is set to 0
@@ -491,13 +496,21 @@ def process_raster_tile(dataset, tile_id, local_raster_path, run_mode='default')
 def main(dataset='finland', tile_id=None, run_mode='default'):
     """
     Main function to orchestrate the processing based on provided arguments.
+
+    Parameters:
+        dataset (str): The dataset to process ('finland', 'ireland', 'russia').
+        tile_id (str, optional): Tile ID to process a specific tile. Defaults to None.
+        run_mode (str, optional): The mode to run the script ('default' or 'test'). Defaults to 'default'.
+
+    Returns:
+        None
     """
     try:
         logging.info(f"Starting main processing routine for {dataset} peat extraction dataset")
 
-        if dataset == 'finland':
-            process_finland(dataset, tile_id, run_mode)
-        elif dataset in ['ireland', 'russia']:
+        if dataset in ['finland', 'russia']:
+            process_vector_dataset(dataset, tile_id, run_mode)
+        elif dataset == 'ireland':
             process_raster_dataset(dataset, tile_id, run_mode)
         else:
             logging.error(f"Dataset '{dataset}' is not recognized. Please choose 'finland', 'ireland', or 'russia'.")
@@ -506,7 +519,6 @@ def main(dataset='finland', tile_id=None, run_mode='default'):
         logging.error(f"Error in main processing routine: {e}")
     finally:
         logging.info("Processing completed")
-
 
 if __name__ == "__main__":
     # Example usage
