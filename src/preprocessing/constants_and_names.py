@@ -106,7 +106,7 @@ datasets = {
             'local_processed': f'{local_temp_dir}/extraction/ireland/{today_date}/'
         },
         'russia': {
-            's3_raw': f'{project_dir}/{raw_dir}/peat_extraction/russia/your_raw_data_file',  # Placeholder
+            's3_raw': f'{project_dir}/{raw_dir}/extraction/Russia/allocated_mineral_reserve',  # Placeholder
             's3_processed_base': f'{project_dir}/{processed_dir}/extraction/',
             's3_processed': f'{project_dir}/{processed_dir}/extraction/{today_date}/',
             'local_processed': f'{local_temp_dir}/extraction/russia/{today_date}/'
