@@ -94,19 +94,22 @@ datasets = {
     },
     'extraction': {
         'finland': {
-            's3_raw': f'{project_dir}/{raw_dir}/extraction/Finland_turvetuotantoalueet/turvetuotantoalueet_jalkikaytto',
+            's3_raw': f'{project_dir}/{raw_dir}/extraction/Finland/Finland_turvetuotantoalueet/turvetuotantoalueet_jalkikaytto',
             's3_processed_base': f'{project_dir}/{processed_dir}/extraction/',
             's3_processed': f'{project_dir}/{processed_dir}/extraction/{today_date}/',
             'local_processed': f'{local_temp_dir}/extraction/finland/{today_date}/'
         },
         'ireland': {
-            's3_raw': f'{project_dir}/{raw_dir}/extraction/Ireland_Habibetal/RF_S2_LU_5_11_23.tif',
+            's3_raw': f'{project_dir}/{raw_dir}/extraction/Ireland/Ireland_Habibetal/RF_S2_LU_5_11_23.tif',
             's3_processed_base': f'{project_dir}/{processed_dir}/extraction/',
             's3_processed': f'{project_dir}/{processed_dir}/extraction/{today_date}/',
             'local_processed': f'{local_temp_dir}/extraction/ireland/{today_date}/'
         },
         'russia': {
-            's3_raw': f'{project_dir}/{raw_dir}/extraction/Russia/allocated_mineral_reserve',  # Placeholder
+            's3_raw': [
+                f'{project_dir}/{raw_dir}/extraction/Russia/allocated_without_licenses/allocated_mineral_reserve',
+                f'{project_dir}/{raw_dir}/extraction/Russia/allocated_with_licenses/peat_extraction_dates.'
+            ],
             's3_processed_base': f'{project_dir}/{processed_dir}/extraction/',
             's3_processed': f'{project_dir}/{processed_dir}/extraction/{today_date}/',
             'local_processed': f'{local_temp_dir}/extraction/russia/{today_date}/'

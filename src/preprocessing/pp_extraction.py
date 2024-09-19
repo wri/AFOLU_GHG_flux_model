@@ -199,20 +199,42 @@ def process_vector_dataset(dataset, tile_id=None, run_mode='default'):
     try:
         logging.info(f"Starting processing routine for {dataset.capitalize()} peat extraction dataset")
 
-        # Load the shapefile
-        shapefile_s3_prefix = cn.datasets['extraction'][dataset]['s3_raw']
-        shapefile_name = os.path.basename(shapefile_s3_prefix)
-        shapefile_path = os.path.join(cn.local_temp_dir, shapefile_name + '.shp')
-        if not os.path.exists(shapefile_path):
-            logging.info(f"{dataset.capitalize()} shapefile not found locally, downloading from S3.")
-            uu.download_shapefile_from_s3(shapefile_s3_prefix, cn.local_temp_dir, cn.s3_bucket_name)
-            if not os.path.exists(shapefile_path):
-                logging.error(f"Failed to download {dataset} shapefile. Exiting.")
+        # Initialize an empty GeoDataFrame for Russia
+        gdf_dataset = gpd.GeoDataFrame()
+
+        # Load and merge shapefiles for Russia
+        if dataset == 'russia':
+            # Check if 's3_raw' is a list
+            if isinstance(cn.datasets['extraction'][dataset]['s3_raw'], list):
+                gdf_list = []
+                for s3_prefix in cn.datasets['extraction'][dataset]['s3_raw']:
+                    shapefile_name = os.path.basename(s3_prefix)
+                    shapefile_path = os.path.join(cn.local_temp_dir, shapefile_name + '.shp')
+                    if not os.path.exists(shapefile_path):
+                        logging.info(f"{shapefile_name} shapefile not found locally, downloading from S3.")
+                        uu.download_shapefile_from_s3(s3_prefix, cn.local_temp_dir, cn.s3_bucket_name)
+                    else:
+                        logging.info(f"{shapefile_name} shapefile found locally at {shapefile_path}")
+                    # Read the shapefile
+                    gdf_part = gpd.read_file(shapefile_path)
+                    # Append to the list
+                    gdf_list.append(gdf_part)
+                # Merge the datasets
+                gdf_dataset = gpd.GeoDataFrame(pd.concat(gdf_list, ignore_index=True), crs=gdf_list[0].crs)
+            else:
+                logging.error(f"Expected a list of S3 paths for Russia datasets in 's3_raw'.")
                 return
         else:
-            logging.info(f"{dataset.capitalize()} shapefile found locally at {shapefile_path}")
-
-        gdf_dataset = gpd.read_file(shapefile_path)
+            # For other datasets (e.g., Finland), proceed as before
+            shapefile_s3_prefix = cn.datasets['extraction'][dataset]['s3_raw']
+            shapefile_name = os.path.basename(shapefile_s3_prefix)
+            shapefile_path = os.path.join(cn.local_temp_dir, shapefile_name + '.shp')
+            if not os.path.exists(shapefile_path):
+                logging.info(f"{dataset.capitalize()} shapefile not found locally, downloading from S3.")
+                uu.download_shapefile_from_s3(shapefile_s3_prefix, cn.local_temp_dir, cn.s3_bucket_name)
+            else:
+                logging.info(f"{dataset.capitalize()} shapefile found locally at {shapefile_path}")
+            gdf_dataset = gpd.read_file(shapefile_path)
 
         # Apply attribute filtering
         gdf_dataset = filter_gdf_dataset(gdf_dataset, dataset)
@@ -258,6 +280,7 @@ def process_vector_dataset(dataset, tile_id=None, run_mode='default'):
 
     except Exception as e:
         logging.error(f"Error processing {dataset.capitalize()} dataset: {e}")
+
 
 def process_vector_tile(dataset, tile_id, gdf_dataset, run_mode='default'):
     """
