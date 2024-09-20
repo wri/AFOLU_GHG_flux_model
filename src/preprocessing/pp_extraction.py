@@ -62,6 +62,27 @@ if __name__ == "__main__":
     # Process Russia dataset
     main(dataset='russia', tile_id=None, run_mode='default')
 """
+# pp_extraction.py
+
+import os
+import logging
+import boto3
+import geopandas as gpd
+import pandas as pd  # For merging multiple GeoDataFrames
+import rasterio
+import rasterio.features
+import rasterio.warp
+import rasterio.mask
+from rasterio.vrt import WarpedVRT
+import numpy as np
+from shapely.geometry import box
+import shapely.speedups
+import gc
+
+# Import custom modules (ensure these are correctly set up in your environment)
+import pp_utilities as uu  # Utilities module with helper functions
+import constants_and_names as cn  # Module containing constants like paths and S3 prefixes
+
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -302,10 +323,22 @@ def process_vector_tile(dataset, tile_id, gdf_dataset, run_mode='default'):
     local_output_path = os.path.join(output_dir, f"{tile_id}_{dataset}_extraction.tif")
     s3_output_path = os.path.join(s3_output_dir, f"{tile_id}_{dataset}_extraction.tif").replace("\\", "/")
 
-    if run_mode != 'test':
-        if uu.s3_file_exists(cn.s3_bucket_name, s3_output_path):
-            logging.info(f"{s3_output_path} already exists on S3. Skipping processing.")
-            return
+    try:
+        if run_mode != 'test':
+            if uu.s3_file_exists(cn.s3_bucket_name, s3_output_path):
+                logging.info(f"{s3_output_path} already exists on S3. Skipping processing.")
+                return
+            else:
+                logging.info(f"{s3_output_path} does not exist on S3. Proceeding with processing.")
+    except botocore.exceptions.ClientError as e:
+        logging.error(f"A ClientError occurred: {e}")
+        return
+    except (botocore.exceptions.NoCredentialsError, botocore.exceptions.PartialCredentialsError) as e:
+        logging.error(f"AWS credentials error: {e}")
+        return
+    except Exception as e:
+        logging.error(f"An unexpected error occurred: {e}")
+        return
 
     logging.info(f"Starting processing of the tile {tile_id}")
 
@@ -617,8 +650,8 @@ def main(dataset='finland', tile_id=None, run_mode='default'):
 if __name__ == "__main__":
     # Example usage
     # Process Finland dataset
-    # main(dataset='finland', tile_id=None, run_mode='default')
+    main(dataset='finland', tile_id=None, run_mode='default')
     # Process Ireland dataset
-    # main(dataset='ireland', tile_id=None, run_mode='default')
+    main(dataset='ireland', tile_id=None, run_mode='default')
     # Process Russia dataset
     main(dataset='russia', tile_id=None, run_mode='default')

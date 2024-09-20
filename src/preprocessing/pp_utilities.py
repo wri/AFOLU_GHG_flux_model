@@ -31,6 +31,10 @@ s3_client = boto3.client('s3', config=config)
 
 # -------------------- S3 Utilities --------------------
 
+import boto3
+import botocore.exceptions
+import logging
+
 def s3_file_exists(bucket, key):
     """
     Check if a file exists in an S3 bucket.
@@ -42,19 +46,26 @@ def s3_file_exists(bucket, key):
     Returns:
         bool: True if the file exists, False otherwise.
     """
+    s3_client = boto3.client('s3')
     try:
         s3_client.head_object(Bucket=bucket, Key=key)
         logging.info(f"File exists: s3://{bucket}/{key}")
         return True
-    except s3_client.exceptions.NoSuchKey:
-        logging.info(f"File does not exist: s3://{bucket}/{key}")
-        return False
-    except (NoCredentialsError, PartialCredentialsError) as e:
-        logging.error(f"Credentials error: {e}")
-        return False
+    except botocore.exceptions.ClientError as e:
+        error_code = e.response['Error']['Code']
+        if error_code == '404':
+            logging.info(f"File does not exist: s3://{bucket}/{key}")
+            return False
+        else:
+            logging.error(f"Unexpected ClientError when checking file existence: {e}")
+            raise  # Re-raise the exception for unexpected ClientErrors
+    except (botocore.exceptions.NoCredentialsError, botocore.exceptions.PartialCredentialsError) as e:
+        logging.error(f"AWS credentials error: {e}")
+        raise  # Re-raise to handle credentials issues at a higher level
     except Exception as e:
-        logging.error(f"Error checking file existence in S3: {e}")
-        return False
+        logging.error(f"Unexpected error checking file existence in S3: {e}")
+        raise  # Re-raise unexpected exceptions
+
 
 def list_s3_files(bucket, prefix):
     """
