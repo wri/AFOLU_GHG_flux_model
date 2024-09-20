@@ -108,7 +108,7 @@ datasets = {
         'russia': {
             's3_raw': [
                 f'{project_dir}/{raw_dir}/extraction/Russia/allocated_without_licenses/allocated_mineral_reserve',
-                f'{project_dir}/{raw_dir}/extraction/Russia/allocated_with_licenses/peat_extraction_dates.'
+                f'{project_dir}/{raw_dir}/extraction/Russia/allocated_with_licenses/peat_extraction_dates'
             ],
             's3_processed_base': f'{project_dir}/{processed_dir}/extraction/',
             's3_processed': f'{project_dir}/{processed_dir}/extraction/{today_date}/',
