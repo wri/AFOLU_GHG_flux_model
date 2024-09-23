@@ -148,6 +148,8 @@ BGC_flux_path_part = "BGC_flux_MgC_ha"
 deadwood_c_flux_path_part = "deadwood_C_flux_MgC_ha"
 litter_c_flux_path_part = "litter_C_flux_MgC_ha"
 
+
+
 carbon_pool_2000_date = "20240821"
 
 agc_2000_path = f"{outputs_path}{AGC_density_path_part}/2000/40000_pixels/{carbon_pool_2000_date}/"
@@ -180,6 +182,9 @@ agc_flux_pattern = "AGC_flux_MgC_ha"
 bgc_flux_pattern = "BGC_flux_MgC_ha"
 deadwood_c_flux_pattern = "deadwood_C_flux_MgC_ha"
 litter_c_flux_pattern = "litter_C_flux_MgC_ha"
+
+ch4_flux_pattern = "CH4_flux_MgCO2e_ha"
+n2o_flux_pattern = "N2O_flux_MgCO2e_ha"
 
 land_cover = "land_cover"
 vegetation_height = "vegetation_height"

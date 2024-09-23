@@ -112,7 +112,7 @@ def calc_NT_T(agc_rf, r_s_ratio_cell, c_dens_in):
     return c_fluxes_out, c_dens_out
 
 
-# Fluxes and stocks for tree converted to non-tree
+# Fluxes and stocks for tree converted to non-tree without fire
 @jit(nopython=True)
 def calc_T_NT(agc_ef, r_s_ratio_cell, c_dens_in):
 
@@ -136,6 +136,34 @@ def calc_T_NT(agc_ef, r_s_ratio_cell, c_dens_in):
     c_dens_out = np.array([agc_dens_out, bgc_dens_out, deadwood_c_dens_out, litter_c_dens_out]).astype('float32')
 
     return c_fluxes_out, c_dens_out
+
+# Fluxes and stocks for tree converted to non-tree with fire
+@jit(nopython=True)
+def calc_T_NT_fire(agc_ef, r_s_ratio_cell, c_dens_in):
+
+    agc_dens_in = c_dens_in[0]
+    bgc_dens_in = c_dens_in[1]
+    deadwood_c_dens_in = c_dens_in[2]
+    litter_c_dens_in = c_dens_in[3]
+
+    agc_flux_out = agc_dens_in * agc_ef
+    bgc_flux_out = float(agc_flux_out) * r_s_ratio_cell
+    deadwood_c_flux_out = deadwood_c_dens_in * agc_ef
+    litter_c_flux_out = litter_c_dens_in * agc_ef
+    ch4_flux_out = 0
+    n2o_flux_out = 0
+
+    agc_dens_out = agc_dens_in - agc_flux_out
+    bgc_dens_out = bgc_dens_in - bgc_flux_out
+    deadwood_c_dens_out = deadwood_c_dens_in - deadwood_c_flux_out
+    litter_c_dens_out = litter_c_dens_in - litter_c_flux_out
+
+    # Must specify float32 because numba is quite particular about datatypes
+    c_fluxes_out = np.array([agc_flux_out, bgc_flux_out, deadwood_c_flux_out, litter_c_flux_out]).astype('float32')
+    non_co2_fluxes_out = np.array([ch4_flux_out, n2o_flux_out]).astype('float32')
+    c_dens_out = np.array([agc_dens_out, bgc_dens_out, deadwood_c_dens_out, litter_c_dens_out]).astype('float32')
+
+    return c_fluxes_out, non_co2_fluxes_out, c_dens_out
 
 
 # Fluxes and stocks for trees remaining trees without disturbances
