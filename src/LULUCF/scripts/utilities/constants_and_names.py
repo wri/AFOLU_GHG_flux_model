@@ -68,11 +68,15 @@ tropical_high_elev_litter_c_ratio = 0.01
 non_tropical_deadwood_c_ratio = 0.08
 non_tropical_litter_c_ratio = 0.04
 
+# Global warming potentials (GWP)
+gwp_ch4 = 27 # AR6 WG1 Table 7.15
+gwp_n2o = 273 # AR6 WG1 Table 7.15
+
 # Removal factors for deadwood and litter carbon
-deadwood_c_NT_T_rf = 0
-litter_c_NT_T_rf = 0
-deadwood_c_T_T_rf = 0
-litter_c_T_T_rf = 0
+deadwood_c_NT_T_rf = 0  # NT->T removal factor
+litter_c_NT_T_rf = 0  # NT->T removal factor
+deadwood_c_T_T_rf = 0  # T->T removal factor
+litter_c_T_T_rf = 0  # T->T removal factor
 
 
 ### GLCLU codes
@@ -94,6 +98,9 @@ sig_height_loss_threshold = 5
 
 # Height minimum for trees (meters)
 tree_threshold = 5
+
+# Converts tonnes to megatonnes
+t_to_Mt = 10**-3
 
 
 ########
@@ -206,6 +213,7 @@ r_s_ratio = "r_s_ratio"
 ### Other inputs
 
 burned_area = "burned_area"
+burned_area_pattern = "ba"
 forest_disturbance = "forest_disturbance"
 
 planted_forest_type_layer = "planted_forest_type"

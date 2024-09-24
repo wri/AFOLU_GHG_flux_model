@@ -698,14 +698,8 @@ def calculate_chunk_stats(all_stats, stage):
 
 # Gets the name of the first file in a dictionary of dataset names and folders in s3.
 # Returns dictionary of dataset names with the full path of the first file in the s3 folder.
-# Note that this doesn't work perfectly for burned_area where all years are in the same folder;
-# it assigns the first time of the folder (a 2000 tile) to all the burned area years.
-# However, that's currently okay because this first tile retrieval function is just used to assign each
-# input to a datatype, and all the burned area years have the same datatype, so this doesn't actually
-# mis-assign any of the burned area years to the wrong datatype.
 # From https://chatgpt.com/share/e/9a7bf947-1c32-4898-ba6b-3b932a5220c1
 def first_file_name_in_s3_folder(download_dict):
-
 
     # # Configures S3 client with increased retries; retries can max out for global analyses
     # s3_config = Config(
