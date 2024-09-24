@@ -2,7 +2,7 @@
 
 import logging
 import os
-from config.constants import project_dir, processed_dir
+from config.constants_and_names import project_dir, processed_dir
 from datetime import datetime
 import boto3
 import time

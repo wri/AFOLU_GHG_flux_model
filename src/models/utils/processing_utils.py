@@ -1,7 +1,7 @@
 # utils/processing_utils.py
 
 import numpy as np
-from numba import jit, types, Dict
+from numba import jit, types
 import pandas as pd
 import requests
 from io import BytesIO
@@ -15,20 +15,8 @@ from utils.logging_utils import timestr, print_and_log
 
 @jit(nopython=True)
 def accrete_node(combo, new):
-    """
-    Accretes a new node value into the combo using Numba for performance.
-
-    Args:
-        combo (int): Existing combo value.
-        new (int): New value to accrete.
-
-    Returns:
-        int: Updated combo value.
-    """
-    return combo * 10 + new
-
-
-accrete_node = jit(nopython=True)(accrete_node)
+    combo = combo * 10 + new
+    return combo
 
 
 def create_typed_dicts(layers: TypedDict[str, np.ndarray]) -> Tuple[NumbaDict, NumbaDict, NumbaDict, NumbaDict]:

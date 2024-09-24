@@ -5,7 +5,7 @@ import re
 import numpy as np
 import concurrent.futures
 import boto3
-from numba import types, Dict
+from numba.typed import Dict
 from typing import List, Dict as TypedDict
 
 
