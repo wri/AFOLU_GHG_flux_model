@@ -844,7 +844,7 @@ def hansenize(
             '-tr', '0.00025', '0.00025',
             '-tap',
             '-r', 'near',
-            '-dstnodata', str(nodata_value) if nodata_value is not None else '-inf',
+            '-dstnodata', str(nodata_value) if nodata_value is not None else '0',
             '-co', 'COMPRESS=DEFLATE',
             '-co', 'TILED=YES',
             '-overwrite',
