@@ -5,6 +5,8 @@ import boto3
 import pp_utilities as uu
 import rasterio
 import constants_and_names as cn
+import pp_hansenize_gdal as hg
+
 
 """
 This script processes raster tiles by resampling them to a specified resolution,
@@ -64,22 +66,30 @@ def process_tile(tile_key, dataset, tile_bounds, run_mode='default'):
             logging.error(f"Tile bounds not found for {tile_id}")
             return
 
-        uu.hansenize(
-            input_path=raw_raster_path,
-            output_raster_path=local_output_path,
+        # **Use the new hansenize_gdal function from pp_hansenize_gdal.py**
+        hg.hansenize_gdal(
+            input_paths=raw_raster_path,
+            output_path=local_output_path,
             bounds=tile_bounds,
-            s3_bucket=cn.s3_bucket_name,
-            s3_prefix=s3_output_dir,
-            run_mode=run_mode
+            nodata_value=0,        # Set NoData value to 0
+            dtype='Float32'        # Set data type as needed (adjust if necessary)
         )
 
-        # **Add this block to convert meters to kilometers for the 'engert' dataset**
+        # **Perform conversion before uploading and deleting**
         if dataset == 'engert':
             logging.info("Converting meters to kilometers for engert dataset")
             with rasterio.open(local_output_path, 'r+') as dst:
                 data = dst.read(1)
                 data = data / 1000.0  # Convert meters to kilometers
                 dst.write(data, 1)
+                dst.update_tags(units='kilometers')
+
+        # **Now upload the file and delete it locally**
+        s3_client.upload_file(local_output_path, cn.s3_bucket_name, s3_output_path)
+        logging.info(f"Successfully uploaded {local_output_path} to s3://{cn.s3_bucket_name}/{s3_output_path}")
+
+        os.remove(local_output_path)
+        logging.info(f"Deleted local file: {local_output_path}")
 
         logging.info("Processing completed")
     except Exception as e:
