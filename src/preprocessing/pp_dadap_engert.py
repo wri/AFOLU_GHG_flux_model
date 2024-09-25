@@ -3,6 +3,7 @@ import logging
 import gc
 import boto3
 import pp_utilities as uu
+import rasterio
 import constants_and_names as cn
 
 """
@@ -10,6 +11,9 @@ This script processes raster tiles by resampling them to a specified resolution,
 clipping them to tile bounds, and uploading the processed tiles to S3.
 This script is not currently using dask but I plan to set up a version that uses dask.
 TODO: solve weird statistics problem
+
+Dadap data is already in length of road / cell 
+Engert data is in meters of road / cell and must be converted to km
 """
 
 # Setup logging
@@ -68,6 +72,14 @@ def process_tile(tile_key, dataset, tile_bounds, run_mode='default'):
             s3_prefix=s3_output_dir,
             run_mode=run_mode
         )
+
+        # **Add this block to convert meters to kilometers for the 'engert' dataset**
+        if dataset == 'engert':
+            logging.info("Converting meters to kilometers for engert dataset")
+            with rasterio.open(local_output_path, 'r+') as dst:
+                data = dst.read(1)
+                data = data / 1000.0  # Convert meters to kilometers
+                dst.write(data, 1)
 
         logging.info("Processing completed")
     except Exception as e:
@@ -130,9 +142,9 @@ def main(tile_id=None, dataset='engert', run_mode='default'):
 # Example usage
 if __name__ == "__main__":
     # Replace '00N_110E' with the tile ID you want to test
-    main(tile_id='00N_110E', dataset='engert', run_mode='test')
-    main(tile_id='00N_110E', dataset='dadap', run_mode='test')
+    # main(tile_id='00N_110E', dataset='engert', run_mode='test')
+    # main(tile_id='00N_110E', dataset='dadap', run_mode='test')
 
     # Process datasets separately
-    # main(dataset='engert', run_mode='default')
-    # main(dataset='dadap', run_mode='default')
+    main(dataset='engert', run_mode='default')
+    main(dataset='dadap', run_mode='default')
