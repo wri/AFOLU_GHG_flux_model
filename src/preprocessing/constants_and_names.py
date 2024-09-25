@@ -69,13 +69,13 @@ datasets = {
     'engert': {
         's3_raw': f'{project_dir}/{raw_dir}/roads/engert_roads/engert_asiapac_ghrdens_1km_resample_30m.tif',
         's3_processed_base': f'{project_dir}/{processed_dir}/engert_density/30m/',
-        's3_processed': f'{project_dir}/{processed_dir}/engert_density/30m/{today_date}/',
+        's3_processed': f'{project_dir}/{processed_dir}/engert_density/30m/{today_date}',
         'local_processed': f'{local_temp_dir}/engert_density/{today_date}/'
     },
     'dadap': {
         's3_raw': f'{project_dir}/{raw_dir}/canals/Dadap_SEA_Drainage/canal_length_data/canal_length_1km_resample_30m.tif',
         's3_processed_base': f'{project_dir}/{processed_dir}/dadap_density/30m/',
-        's3_processed': f'{project_dir}/{processed_dir}/dadap_density/30m/{today_date}/',
+        's3_processed': f'{project_dir}/{processed_dir}/dadap_density/30m/{today_date}',
         'local_processed': f'{local_temp_dir}/dadap_density/{today_date}/'
     },
     'descals': {

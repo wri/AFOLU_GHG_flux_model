@@ -69,14 +69,14 @@ datasets = {
         's3_processed_base': os.path.join(project_dir, processed_dir, 'engert_density', '30m'),
         's3_processed': os.path.join(project_dir, processed_dir, 'engert_density', '30m', today_date),
         'local_processed': os.path.join(local_temp_dir, 'engert_density', today_date),
-        'working_version': os.path.join(project_dir, processed_dir, 'engert_density', '30m', 'working_version')
+        'working_version': os.path.join(project_dir, processed_dir, 'engert_density', '30m', '20240925')
     },
     'dadap': {
         's3_raw': os.path.join(project_dir, raw_dir, 'canals', 'Dadap_SEA_Drainage', 'canal_length_data', 'canal_length_1km_resample_30m.tif'),
         's3_processed_base': os.path.join(project_dir, processed_dir, 'dadap_density', '30m'),
         's3_processed': os.path.join(project_dir, processed_dir, 'dadap_density', '30m', today_date),
         'local_processed': os.path.join(local_temp_dir, 'dadap_density', today_date),
-        'working_version': os.path.join(project_dir, processed_dir, 'dadap_density', '30m', 'working_version')
+        'working_version': os.path.join(project_dir, processed_dir, 'dadap_density', '30m', '20240925')
     },
     'planted_forest_type': {
         's3_processed_base': os.path.join('climate', 'carbon_model', 'other_emissions_inputs', 'plantation_type', 'SDPTv2', '20230911'),
