@@ -381,7 +381,7 @@ def process_chunk(bounds, feature_type, tile_id):
     output_dir = cn.datasets[feature_type.split('_')[0]][feature_type.split('_')[1]]['local_processed']
     bounds_str = "_".join([str(round(x, 2)) for x in bounds])
     local_output_path = os.path.join(output_dir, f"{tile_id}_{bounds_str}_{feature_type}_density.tif")
-    s3_output_path = f"{cn.datasets[feature_type.split('_')[0]][feature_type.split('_')[1]]['s3_processed']}/{tile_id}_{bounds_str}_{feature_type}_density.tif"
+    s3_output_path = f"{cn.datasets[feature_type.split('_')[0]][feature_type.split('_')[1]][('s3_processed_small')]}/{tile_id}_{bounds_str}_{feature_type}_density.tif"
 
     logging.info(f"Starting processing of the chunk {bounds_str} for tile {tile_id}")
 
@@ -580,4 +580,7 @@ if __name__ == "__main__":
 coiled test in WSL for chunk with data:
 
 python pp_roads_canals_chunks_rio.py --tile_id 00N_110E --feature_type osm_canals --run_mode default --client coiled --chunk_bounds "112, -4, 114, -2"
+
+Note that OSM roads had errors when running with 40 workers 32Gib memory 
+Recommended running with more workers or more memory or both 
 """
