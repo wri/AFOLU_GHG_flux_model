@@ -580,7 +580,7 @@ def setup_coiled_cluster():
         region="us-east-1",
         name="test_coiled_connection",
         account='wri-forest-research',
-        worker_memory="32GiB"
+        worker_memory="64GiB"
     )
     coiled_client = coiled_cluster.get_client()
     return coiled_client, coiled_cluster
@@ -716,14 +716,43 @@ def create_tile_index_from_s3(s3_directories, output_dir):
         gdf.to_file(output_shapefile, driver='ESRI Shapefile')
         logging.info(f"Tile index shapefile created at {output_shapefile}")
 
-def list_tile_ids(bucket, prefix, pattern=r"(\d{2}[NS]_\d{3}[EW])_peat_mask_processed\.tif"):
+# def list_tile_ids(bucket, prefix, pattern=r"(\d{2}[NS]_\d{3}[EW])_peat_mask_processed\.tif"):
+#     """
+#     List all tile IDs in a specified S3 directory matching a given pattern.
+#
+#     Args:
+#         bucket (str): The S3 bucket name.
+#         prefix (str): The prefix path in the S3 bucket.
+#         pattern (str, optional): Regex pattern to match tile IDs. Defaults to a specific peat mask pattern.
+#
+#     Returns:
+#         list: List of tile IDs.
+#     """
+#     keys = []
+#     tile_ids = set()
+#     try:
+#         paginator = s3_client.get_paginator('list_objects_v2')
+#         for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+#             for obj in page.get('Contents', []):
+#                 keys.append(obj['Key'])
+#
+#         # Extract tile IDs from filenames
+#         for key in keys:
+#             match = re.match(pattern, os.path.basename(key))
+#             if match:
+#                 tile_ids.add(match.group(1))
+#     except Exception as e:
+#         logging.error(f"Error listing files in s3://{bucket}/{prefix}: {e}")
+#     return list(tile_ids)
+
+def list_tile_ids(bucket, prefix, pattern):
     """
     List all tile IDs in a specified S3 directory matching a given pattern.
 
     Args:
         bucket (str): The S3 bucket name.
         prefix (str): The prefix path in the S3 bucket.
-        pattern (str, optional): Regex pattern to match tile IDs. Defaults to a specific peat mask pattern.
+        pattern (str): Regex pattern to match tile IDs.
 
     Returns:
         list: List of tile IDs.
@@ -731,16 +760,23 @@ def list_tile_ids(bucket, prefix, pattern=r"(\d{2}[NS]_\d{3}[EW])_peat_mask_proc
     keys = []
     tile_ids = set()
     try:
+        logging.info(f"Listing files in s3://{bucket}/{prefix} with pattern '{pattern}'")
         paginator = s3_client.get_paginator('list_objects_v2')
         for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
             for obj in page.get('Contents', []):
                 keys.append(obj['Key'])
 
+        logging.info(f"Retrieved {len(keys)} keys from S3")
+
         # Extract tile IDs from filenames
         for key in keys:
-            match = re.match(pattern, os.path.basename(key))
+            filename = os.path.basename(key)
+            logging.debug(f"Processing filename: {filename}")
+            match = re.match(pattern, filename)
             if match:
                 tile_ids.add(match.group(1))
+            else:
+                logging.debug(f"No match for filename: {filename}")
     except Exception as e:
         logging.error(f"Error listing files in s3://{bucket}/{prefix}: {e}")
     return list(tile_ids)
@@ -870,3 +906,43 @@ def hansenize(
 
     except Exception as e:
         logging.error(f"Error in hansenize function: {e}")
+
+
+# In pp_utilities.py
+
+import rasterio
+from rasterio.merge import merge
+
+def merge_rasters(input_files, output_path):
+    """
+    Merge multiple raster files into one.
+
+    Args:
+        input_files (list): List of paths to input raster files.
+        output_path (str): Path to save the merged raster.
+
+    Returns:
+        None
+    """
+    try:
+        sources = [rasterio.open(f) for f in input_files]
+        mosaic, out_transform = merge(sources)
+        out_meta = sources[0].meta.copy()
+        out_meta.update({
+            "driver": "GTiff",
+            "height": mosaic.shape[1],
+            "width": mosaic.shape[2],
+            "transform": out_transform,
+            "compress": "lzw"
+        })
+
+        with rasterio.open(output_path, "w", **out_meta) as dest:
+            dest.write(mosaic)
+
+        logging.info(f"Merged raster saved to {output_path}")
+
+        for src in sources:
+            src.close()
+
+    except Exception as e:
+        logging.error(f"Error merging rasters: {e}")
