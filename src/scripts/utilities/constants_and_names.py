@@ -43,28 +43,28 @@ datasets = {
         'roads': {
             's3_raw': os.path.join(project_dir, raw_dir, 'roads', 'osm_roads', 'roads_by_tile'),
             's3_processed_base': os.path.join(project_dir, processed_dir, 'osm_roads_density'),
-            's3_processed_small': f'{project_dir}/{processed_dir}/osm_roads_density/4000_pixels/{today_date}',
+            's3_processed_small': os.path.join(project_dir, processed_dir, 'osm_roads_density', '4000_pixels', today_date),
             's3_processed': os.path.join(project_dir, processed_dir, 'osm_roads_density', today_date),
             'local_processed': os.path.join(local_temp_dir, 'osm_roads_density', today_date),
-            'working_version': os.path.join(project_dir, processed_dir, 'osm_roads_density', 'working_version') # note this needs to be updated
+            # 'working_version': os.path.join(project_dir, processed_dir, 'osm_roads_density', 'working_version') # note this needs to be updated
         },
         'canals': {
             's3_raw': os.path.join(project_dir, raw_dir, 'roads', 'osm_roads', 'canals_by_tile'),
             's3_processed_base': os.path.join(project_dir, processed_dir, 'osm_canals_density'),
-            's3_processed_small': f'{project_dir}/{processed_dir}/osm_canals_density/4000_pixels/{today_date}',
+            's3_processed_small': os.path.join(project_dir, processed_dir, 'osm_canals_density', '4000_pixels', today_date),
             's3_processed': os.path.join(project_dir, processed_dir, 'osm_canals_density', today_date),
             'local_processed': os.path.join(local_temp_dir, 'osm_canals_density', today_date),
-            'working_version': os.path.join(project_dir, processed_dir, 'osm_canals_density', '20240822')
+            # 'working_version': os.path.join(project_dir, processed_dir, 'osm_canals_density', '20240822')
         }
     },
     'grip': {
         'roads': {
             's3_raw': os.path.join(project_dir, raw_dir, 'roads', 'grip_roads', 'roads_by_tile'),
             's3_processed_base': os.path.join(project_dir, processed_dir, 'grip_density'),
-            's3_processed_small': f'{project_dir}/{processed_dir}/grip_density/4000_pixels/{today_date}',
+            's3_processed_small': os.path.join(project_dir, processed_dir, 'grip_density', '4000_pixels', today_date),
             's3_processed': os.path.join(project_dir, processed_dir, 'grip_density', today_date),
             'local_processed': os.path.join(local_temp_dir, 'grip_density', today_date),
-            'working_version': os.path.join(project_dir, processed_dir, 'grip_density', '20240822') #note this needs to be updated
+            # 'working_version': os.path.join(project_dir, processed_dir, 'grip_density', '20240822') #note this needs to be updated
         }
     },
     'engert': {
@@ -83,7 +83,7 @@ datasets = {
     },
     'planted_forest_type': {
         's3_processed_base': os.path.join('climate', 'carbon_model', 'other_emissions_inputs', 'plantation_type', 'SDPTv2', '20230911'),
-        'working_version': os.path.join('climate', 'carbon_model', 'other_emissions_inputs', 'plantation_type', 'SDPTv2', 'working_version')
+        # 'working_version': os.path.join('climate', 'carbon_model', 'other_emissions_inputs', 'plantation_type', 'SDPTv2', 'working_version')
     }
     # Add other datasets as needed
 }
@@ -125,15 +125,30 @@ file_patterns = {
 
 # Prepare download dictionary using 'working_version' paths
 download_dict = {
-    f"{file_patterns['land_cover']}_2020": f"{lc_uri}/composite/2020/raw/{sample_tile_id}.tif",
-    file_patterns['planted_forest_type_layer']: f"s3://{s3_bucket_name}/{datasets['planted_forest_type']['working_version']}/{sample_tile_id}_plantation_type_oilpalm_woodfiber_other.tif",
-    file_patterns['peat']: f"s3://{s3_bucket_name}/{peat_tiles_prefix_1km}{sample_tile_id}{peat_pattern}",
-    file_patterns['dadap']: f"s3://{s3_bucket_name}/{datasets['dadap']['working_version']}/dadap_{sample_tile_id}.tif",
-    file_patterns['engert']: f"s3://{s3_bucket_name}/{datasets['engert']['working_version']}/engert_{sample_tile_id}.tif",
-    file_patterns['grip']: f"s3://{s3_bucket_name}/{datasets['grip']['working_version']}/grip_density_{sample_tile_id}.tif",
-    file_patterns['osm_roads']: f"s3://{s3_bucket_name}/{datasets['osm']['roads']['working_version']}/roads_density_{sample_tile_id}.tif",
-    file_patterns['osm_canals']: f"s3://{s3_bucket_name}/{datasets['osm']['canals']['working_version']}/canals_density_{sample_tile_id}.tif"
+    # f"{file_patterns['land_cover']}_2020": f"{lc_uri}/composite/2020/raw/{sample_tile_id}.tif",
+    # # file_patterns['planted_forest_type_layer']: f"s3://{s3_bucket_name}/{datasets['planted_forest_type']['working_version']}/{sample_tile_id}_plantation_type_oilpalm_woodfiber_other.tif",
+    # file_patterns['peat']: f"s3://{s3_bucket_name}/{peat_tiles_prefix_1km}{sample_tile_id}{peat_pattern}",
+    # file_patterns['dadap']: f"s3://{s3_bucket_name}/{datasets['dadap']['working_version']}/dadap_{sample_tile_id}.tif",
+    # file_patterns['engert']: f"s3://{s3_bucket_name}/{datasets['engert']['working_version']}/engert_{sample_tile_id}.tif",
+    # file_patterns['grip']: f"s3://{s3_bucket_name}/{datasets['grip']['working_version']}/grip_density_{sample_tile_id}.tif",
+    # file_patterns['osm_roads']: f"s3://{s3_bucket_name}/{datasets['osm']['roads']['working_version']}/roads_density_{sample_tile_id}.tif",
+    # file_patterns['osm_canals']: f"s3://{s3_bucket_name}/{datasets['osm']['canals']['working_version']}/canals_density_{sample_tile_id}.tif"
 }
+
+
+### Miscellaneous
+
+full_raster_dims = 40000    # Size of a 10x10 deg raster in pixels
+
+# Threshold for height loss to be counted as tree loss (meters)
+sig_height_loss_threshold = 5
+
+# Height minimum for trees (meters)
+tree_threshold = 5
+
+# Converts tonnes to megatonnes
+t_to_Mt = 10**-3
+
 
 # ---------------------------------------------------
 # 5. Helper Functions

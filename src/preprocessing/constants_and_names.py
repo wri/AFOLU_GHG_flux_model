@@ -1,128 +1,171 @@
+# config/constants_and_names.py
+
 import os
 from datetime import datetime
 import boto3
 from botocore.exceptions import ClientError
 
-# S3 bucket and prefixes
-s3_bucket_name = 'gfw2-data'
-local_root = 'C:/GIS/Data/Global'
-# local_root = 'mnt/c/GIS/Data/Global'
-# local_temp_dir = f"{local_root}/tmp"
-local_temp_dir = '/tmp'
-project_dir = 'climate/AFOLU_flux_model/organic_soils'
-processed_dir = 'inputs/processed'
-raw_dir = 'inputs/raw'
+# ---------------------------------------------------
+# 1. General Configuration
+# ---------------------------------------------------
 
-# Today's date for versioning in S3 and local processed paths
+# S3 Configuration
+s3_bucket_name = 'gfw2-data'
+s3_region_name = 'us-east-1'
+
+# Project Directories
+project_dir = 'climate/AFOLU_flux_model/organic_soils'
+raw_dir = 'inputs/raw'
+processed_dir = 'inputs/processed'
+
+# Local Directories
+local_root = 'C:/GIS/Data/Global'  # Adjust as needed for your local environment
+local_temp_dir = '/tmp'  # Adjust based on your environment
+
+# Date Configuration
 today_date = datetime.today().strftime('%Y%m%d')
 
-# Peat tiles paths
-# peat_tiles_prefix = f'{project_dir}/{processed_dir}/peatlands/processed/{today_date}/' #to be used when we have OGH
-peat_tiles_prefix = 'climate/carbon_model/other_emissions_inputs/peatlands/processed/20230315/'
-peat_tiles_prefix_1km = 'climate/AFOLU_flux_model/organic_soils/inputs/processed/peat_mask/1km/'
-index_shapefile_prefix = f'{project_dir}/{raw_dir}/index/Global_Peatlands'
+# File Patterns
 peat_pattern = '_peat_mask_processed.tif'
+peat_tiles_prefix_1km = 'climate/AFOLU_flux_model/organic_soils/inputs/processed/peat_mask/1km/'
 
-# Regional shapefiles paths
-grip_regional_shapefiles = [
-    f"{project_dir}/{raw_dir}/roads/grip_roads/regional_shapefiles/GRIP4_Region1_vector_shp/GRIP4_region1.shp",
-    f"{project_dir}/{raw_dir}/roads/grip_roads/regional_shapefiles/GRIP4_Region2_vector_shp/GRIP4_region2.shp",
-    f"{project_dir}/{raw_dir}/roads/grip_roads/regional_shapefiles/GRIP4_Region3_vector_shp/GRIP4_region3.shp",
-    f"{project_dir}/{raw_dir}/roads/grip_roads/regional_shapefiles/GRIP4_Region4_vector_shp/GRIP4_region4.shp",
-    f"{project_dir}/{raw_dir}/roads/grip_roads/regional_shapefiles/GRIP4_Region5_vector_shp/GRIP4_region5.shp",
-    f"{project_dir}/{raw_dir}/roads/grip_roads/regional_shapefiles/GRIP4_Region6_vector_shp/GRIP4_region6.shp",
-    f"{project_dir}/{raw_dir}/roads/grip_roads/regional_shapefiles/GRIP4_Region7_vector_shp/GRIP4_region7.shp"
-]
+# Sample Tile ID Placeholder
+sample_tile_id = '{tile_id}'
 
-osm_pbf_files = {
-    'raw': f'{project_dir}/{raw_dir}/', #need to transfer the data and update this
-    'filtered': {
-        'roads': f'{project_dir}/{raw_dir}/roads/osm_roads/osm_filtered/filtered_roads/',
-        'canals': f'{project_dir}/{raw_dir}/roads/osm_roads/osm_filtered/filtered_canals/'
-    }
-}
+# ---------------------------------------------------
+# 2. Dataset Configurations
+# ---------------------------------------------------
 
-# Datasets
+# TODO update working version paths
+
 datasets = {
     'osm': {
         'roads': {
-            's3_raw': f'{project_dir}/{raw_dir}/roads/osm_roads/roads_by_tile/',
-            's3_processed_base': f'{project_dir}/{processed_dir}/osm_roads_density/',
-            's3_processed_small': f'{project_dir}/{processed_dir}/osm_roads_density/4000_pixels/{today_date}',
-            's3_processed': f'{project_dir}/{processed_dir}/osm_roads_density/{today_date}',
-            'local_processed': f'{local_temp_dir}/osm_roads_density/{today_date}'
+            's3_raw': os.path.join(project_dir, raw_dir, 'roads', 'osm_roads', 'roads_by_tile'),
+            's3_processed_base': os.path.join(project_dir, processed_dir, 'osm_roads_density'),
+            's3_processed_small': os.path.join(project_dir, processed_dir, 'osm_roads_density', '4000_pixels', today_date),
+            's3_processed': os.path.join(project_dir, processed_dir, 'osm_roads_density', today_date),
+            'local_processed': os.path.join(local_temp_dir, 'osm_roads_density', today_date),
+            # 'working_version': os.path.join(project_dir, processed_dir, 'osm_roads_density', 'working_version') # note this needs to be updated
         },
         'canals': {
-            's3_raw': f'{project_dir}/{raw_dir}/roads/osm_roads/canals_by_tile/',
-            's3_processed_base': f'{project_dir}/{processed_dir}/osm_canals_density/',
-            's3_processed_small': f'{project_dir}/{processed_dir}/osm_canals_density/4000_pixels/{today_date}',
-            's3_processed': f'{project_dir}/{processed_dir}/osm_canals_density/{today_date}',
-            'local_processed': f'{local_temp_dir}/osm_canals_density/{today_date}/'
+            's3_raw': os.path.join(project_dir, raw_dir, 'roads', 'osm_roads', 'canals_by_tile'),
+            's3_processed_base': os.path.join(project_dir, processed_dir, 'osm_canals_density'),
+            's3_processed_small': os.path.join(project_dir, processed_dir, 'osm_canals_density', '4000_pixels', today_date),
+            's3_processed': os.path.join(project_dir, processed_dir, 'osm_canals_density', today_date),
+            'local_processed': os.path.join(local_temp_dir, 'osm_canals_density', today_date),
+            # 'working_version': os.path.join(project_dir, processed_dir, 'osm_canals_density', '20240822')
         }
     },
     'grip': {
         'roads': {
-            's3_raw': f'{project_dir}/{raw_dir}/roads/grip_roads/roads_by_tile/',
-            's3_processed_base': f'{project_dir}/{processed_dir}/grip_density/',
-            's3_processed_small': f'{project_dir}/{processed_dir}/grip_density/4000_pixels/{today_date}',
-            's3_processed': f'{project_dir}/{processed_dir}/grip_density/{today_date}',
-            'local_processed': f'{local_temp_dir}/grip_density/{today_date}'
+            's3_raw': os.path.join(project_dir, raw_dir, 'roads', 'grip_roads', 'roads_by_tile'),
+            's3_processed_base': os.path.join(project_dir, processed_dir, 'grip_density'),
+            's3_processed_small': os.path.join(project_dir, processed_dir, 'grip_density', '4000_pixels', today_date),
+            's3_processed': os.path.join(project_dir, processed_dir, 'grip_density', today_date),
+            'local_processed': os.path.join(local_temp_dir, 'grip_density', today_date),
+            # 'working_version': os.path.join(project_dir, processed_dir, 'grip_density', '20240822') #note this needs to be updated
         }
     },
     'engert': {
-        's3_raw': f'{project_dir}/{raw_dir}/roads/engert_roads/engert_asiapac_ghrdens_1km_resample_30m.tif',
-        's3_processed_base': f'{project_dir}/{processed_dir}/engert_density/30m/',
-        's3_processed': f'{project_dir}/{processed_dir}/engert_density/30m/{today_date}',
-        'local_processed': f'{local_temp_dir}/engert_density/{today_date}/'
+        's3_raw': os.path.join(project_dir, raw_dir, 'roads', 'engert_roads', 'engert_asiapac_ghrdens_1km_resample_30m.tif'),
+        's3_processed_base': os.path.join(project_dir, processed_dir, 'engert_density', '30m'),
+        's3_processed': os.path.join(project_dir, processed_dir, 'engert_density', '30m', today_date),
+        'local_processed': os.path.join(local_temp_dir, 'engert_density', today_date),
+        'working_version': os.path.join(project_dir, processed_dir, 'engert_density', '30m', '20240925')
     },
     'dadap': {
-        's3_raw': f'{project_dir}/{raw_dir}/canals/Dadap_SEA_Drainage/canal_length_data/canal_length_1km_resample_30m.tif',
-        's3_processed_base': f'{project_dir}/{processed_dir}/dadap_density/30m/',
-        's3_processed': f'{project_dir}/{processed_dir}/dadap_density/30m/{today_date}',
-        'local_processed': f'{local_temp_dir}/dadap_density/{today_date}/'
+        's3_raw': os.path.join(project_dir, raw_dir, 'canals', 'Dadap_SEA_Drainage', 'canal_length_data', 'canal_length_1km_resample_30m.tif'),
+        's3_processed_base': os.path.join(project_dir, processed_dir, 'dadap_density', '30m'),
+        's3_processed': os.path.join(project_dir, processed_dir, 'dadap_density', '30m', today_date),
+        'local_processed': os.path.join(local_temp_dir, 'dadap_density', today_date),
+        'working_version': os.path.join(project_dir, processed_dir, 'dadap_density', '30m', '20240925')
     },
-    'descals': {
-        'descals_extent': {
-            's3_raw': f'{project_dir}/{raw_dir}/plantations/plantation_extent/',
-            's3_processed_base': f'{project_dir}/{processed_dir}/descals_plantation/extent',
-            's3_processed': f'{project_dir}/{processed_dir}/descals_plantation/extent/{today_date}',
-            'local_processed': f'{local_temp_dir}/descals_plantation/extent/{today_date}'
-        },
-        'descals_year': {
-            's3_raw': f'{project_dir}/{raw_dir}/plantations/plantation_year/',
-            's3_processed_base': f'{project_dir}/{processed_dir}/descals_plantation/year',
-            's3_processed': f'{project_dir}/{processed_dir}/descals_plantation/year/{today_date}',
-            'local_processed': f'{local_temp_dir}/descals_plantation/year/{today_date}'
-        }
-    },
-    'extraction': {
-        'finland': {
-            's3_raw': f'{project_dir}/{raw_dir}/extraction/Finland/Finland_turvetuotantoalueet/turvetuotantoalueet_jalkikaytto',
-            's3_processed_base': f'{project_dir}/{processed_dir}/extraction/',
-            's3_processed': f'{project_dir}/{processed_dir}/extraction/{today_date}/',
-            'local_processed': f'{local_temp_dir}/extraction/finland/{today_date}/'
-        },
-        'ireland': {
-            's3_raw': f'{project_dir}/{raw_dir}/extraction/Ireland/Ireland_Habibetal/RF_S2_LU_5_11_23.tif',
-            's3_processed_base': f'{project_dir}/{processed_dir}/extraction/',
-            's3_processed': f'{project_dir}/{processed_dir}/extraction/{today_date}/',
-            'local_processed': f'{local_temp_dir}/extraction/ireland/{today_date}/'
-        },
-        'russia': {
-            's3_raw': [
-                f'{project_dir}/{raw_dir}/extraction/Russia/allocated_without_licenses/allocated_mineral_reserve',
-                f'{project_dir}/{raw_dir}/extraction/Russia/allocated_with_licenses/peat_extraction_dates'
-            ],
-            's3_processed_base': f'{project_dir}/{processed_dir}/extraction/',
-            's3_processed': f'{project_dir}/{processed_dir}/extraction/{today_date}/',
-            'local_processed': f'{local_temp_dir}/extraction/russia/{today_date}/'
-        }
+    'planted_forest_type': {
+        's3_processed_base': os.path.join('climate', 'carbon_model', 'other_emissions_inputs', 'plantation_type', 'SDPTv2', '20230911'),
+        # 'working_version': os.path.join('climate', 'carbon_model', 'other_emissions_inputs', 'plantation_type', 'SDPTv2', 'working_version')
     }
+    # Add other datasets as needed
+}
+
+# ---------------------------------------------------
+# 3. General Paths and Constants
+# ---------------------------------------------------
+
+# Land Cover URI
+lc_uri = 's3://gfw2-data/climate/AFOLU_flux_model/LULUCF/inputs/LC'
+
+# IPCC Codes
+ipcc_codes = {
+    'forest': 1,
+    'cropland': 2,
+    'settlement': 3,
+    'wetland': 4,
+    'grassland': 5,
+    'otherland': 6
+}
+
+# File Name Patterns
+file_patterns = {
+    'land_cover': "IPCC_basic_classes",
+    'vegetation_height': "vegetation_height",
+    'planted_forest_type_layer': "planted_forest_type",
+    'planted_forest_tree_crop_layer': "planted_forest_tree_crop",
+    'peat': "peat",
+    'dadap': "dadap",
+    'engert': "engert",
+    'grip': "grip",
+    'osm_roads': "osm_roads",
+    'osm_canals': "osm_canals"
+}
+
+# ---------------------------------------------------
+# 4. Download Dictionary
+# ---------------------------------------------------
+
+# Prepare download dictionary using 'working_version' paths
+download_dict = {
+    # f"{file_patterns['land_cover']}_2020": f"{lc_uri}/composite/2020/raw/{sample_tile_id}.tif",
+    # # file_patterns['planted_forest_type_layer']: f"s3://{s3_bucket_name}/{datasets['planted_forest_type']['working_version']}/{sample_tile_id}_plantation_type_oilpalm_woodfiber_other.tif",
+    # file_patterns['peat']: f"s3://{s3_bucket_name}/{peat_tiles_prefix_1km}{sample_tile_id}{peat_pattern}",
+    # file_patterns['dadap']: f"s3://{s3_bucket_name}/{datasets['dadap']['working_version']}/dadap_{sample_tile_id}.tif",
+    # file_patterns['engert']: f"s3://{s3_bucket_name}/{datasets['engert']['working_version']}/engert_{sample_tile_id}.tif",
+    # file_patterns['grip']: f"s3://{s3_bucket_name}/{datasets['grip']['working_version']}/grip_density_{sample_tile_id}.tif",
+    # file_patterns['osm_roads']: f"s3://{s3_bucket_name}/{datasets['osm']['roads']['working_version']}/roads_density_{sample_tile_id}.tif",
+    # file_patterns['osm_canals']: f"s3://{s3_bucket_name}/{datasets['osm']['canals']['working_version']}/canals_density_{sample_tile_id}.tif"
 }
 
 
-# Function to check if an S3 path exists
+### Miscellaneous
+
+full_raster_dims = 40000    # Size of a 10x10 deg raster in pixels
+
+# Threshold for height loss to be counted as tree loss (meters)
+sig_height_loss_threshold = 5
+
+# Height minimum for trees (meters)
+tree_threshold = 5
+
+# Converts tonnes to megatonnes
+t_to_Mt = 10**-3
+
+
+# ---------------------------------------------------
+# 5. Helper Functions
+# ---------------------------------------------------
+
 def check_s3_path_exists(s3_client, bucket, path):
+    """
+    Check if a specific path exists in an S3 bucket.
+
+    Args:
+        s3_client (boto3.client): The boto3 S3 client.
+        bucket (str): The name of the S3 bucket.
+        path (str): The S3 object key/path.
+
+    Returns:
+        bool: True if the path exists, False otherwise.
+    """
     try:
         s3_client.head_object(Bucket=bucket, Key=path)
         return True
@@ -132,3 +175,12 @@ def check_s3_path_exists(s3_client, bucket, path):
         else:
             print(f"ClientError {e.response['Error']['Code']}: {path} - {e.response['Message']}")
         return False
+
+# ---------------------------------------------------
+# 6. AWS S3 Client Initialization
+# ---------------------------------------------------
+
+# Initialize S3 Resource and Client
+s3 = boto3.resource('s3', region_name=s3_region_name)
+s3_client = boto3.client('s3', region_name=s3_region_name)
+my_bucket = s3.Bucket(s3_bucket_name)
