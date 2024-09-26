@@ -48,12 +48,14 @@ datasets = {
         'roads': {
             's3_raw': f'{project_dir}/{raw_dir}/roads/osm_roads/roads_by_tile/',
             's3_processed_base': f'{project_dir}/{processed_dir}/osm_roads_density/',
+            's3_processed_small': f'{project_dir}/{processed_dir}/osm_roads_density/4000_pixels/{today_date}',
             's3_processed': f'{project_dir}/{processed_dir}/osm_roads_density/{today_date}',
             'local_processed': f'{local_temp_dir}/osm_roads_density/{today_date}'
         },
         'canals': {
             's3_raw': f'{project_dir}/{raw_dir}/roads/osm_roads/canals_by_tile/',
             's3_processed_base': f'{project_dir}/{processed_dir}/osm_canals_density/',
+            's3_processed_small': f'{project_dir}/{processed_dir}/osm_canals_density/4000_pixels/{today_date}',
             's3_processed': f'{project_dir}/{processed_dir}/osm_canals_density/{today_date}',
             'local_processed': f'{local_temp_dir}/osm_canals_density/{today_date}/'
         }
@@ -62,6 +64,7 @@ datasets = {
         'roads': {
             's3_raw': f'{project_dir}/{raw_dir}/roads/grip_roads/roads_by_tile/',
             's3_processed_base': f'{project_dir}/{processed_dir}/grip_density/',
+            's3_processed_small': f'{project_dir}/{processed_dir}/grip_density/4000_pixels/{today_date}',
             's3_processed': f'{project_dir}/{processed_dir}/grip_density/{today_date}',
             'local_processed': f'{local_temp_dir}/grip_density/{today_date}'
         }

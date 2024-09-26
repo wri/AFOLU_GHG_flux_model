@@ -45,14 +45,14 @@ datasets = {
             's3_processed_base': os.path.join(project_dir, processed_dir, 'osm_roads_density'),
             's3_processed': os.path.join(project_dir, processed_dir, 'osm_roads_density', today_date),
             'local_processed': os.path.join(local_temp_dir, 'osm_roads_density', today_date),
-            'working_version': os.path.join(project_dir, processed_dir, 'osm_roads_density', 'working_version')
+            'working_version': os.path.join(project_dir, processed_dir, 'osm_roads_density', 'working_version') # note this needs to be updated
         },
         'canals': {
             's3_raw': os.path.join(project_dir, raw_dir, 'roads', 'osm_roads', 'canals_by_tile'),
             's3_processed_base': os.path.join(project_dir, processed_dir, 'osm_canals_density'),
             's3_processed': os.path.join(project_dir, processed_dir, 'osm_canals_density', today_date),
             'local_processed': os.path.join(local_temp_dir, 'osm_canals_density', today_date),
-            'working_version': os.path.join(project_dir, processed_dir, 'osm_canals_density', 'working_version')
+            'working_version': os.path.join(project_dir, processed_dir, 'osm_canals_density', '20240822')
         }
     },
     'grip': {
@@ -61,7 +61,7 @@ datasets = {
             's3_processed_base': os.path.join(project_dir, processed_dir, 'grip_density'),
             's3_processed': os.path.join(project_dir, processed_dir, 'grip_density', today_date),
             'local_processed': os.path.join(local_temp_dir, 'grip_density', today_date),
-            'working_version': os.path.join(project_dir, processed_dir, 'grip_density', 'working_version')
+            'working_version': os.path.join(project_dir, processed_dir, 'grip_density', '20240822') #note this needs to be updated
         }
     },
     'engert': {
