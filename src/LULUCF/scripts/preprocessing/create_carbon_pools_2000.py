@@ -110,7 +110,7 @@ def create_starting_C_densities(in_dict_uint8, in_dict_int16, in_dict_int32, in_
 
                 # If no mapped R:S, uses the global default value instead
                 if r_s_ratio == 0:
-                    r_s_ratio = cn.default_r_s
+                    r_s_ratio = cn.default_r_s_non_mang
                 bgc_ratio = r_s_ratio  # Uses R:S for BGC
 
                 if climate_domain == 1:  # Tropical/subtropical

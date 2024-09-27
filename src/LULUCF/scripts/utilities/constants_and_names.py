@@ -45,7 +45,7 @@ biomass_to_carbon_mangrove = 0.45   # Conversion of biomass to carbon for mangro
 
 # Default root:shoot when no Huang et al. 2021 is available. The average slope of the AGB:BGB relationship in Figure 3 of Mokany et al. 2006.
 # and is only used where Huang et al. 2021 can't reach (remote Pacific islands).
-default_r_s = 0.26
+default_r_s_non_mang = 0.26
 
 rate_ratio_spreadsheet = 'http://gfw2-data.s3.amazonaws.com/climate/AFOLU_flux_model/LULUCF/rate_ratio_lookup_tables/rate_and_ratio_lookup_tables_20240718.xlsx'
 mangrove_rate_ratio_tab = 'mang gain C ratio, for model'

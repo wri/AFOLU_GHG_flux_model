@@ -166,7 +166,7 @@ def stage_duration(start_time_str, end_time_str, stage):
 # So, that is addressed here.
 #TODO use coiled.cluster --mount_bucket argument to see if it improves performance when accessing s3
 # (Here and other functions that use s3): https://chatgpt.com/share/e/1fe33655-3700-465c-8b5f-19b6b0444407
-def get_tile_dataset_rio(uri, data_type, bounds, chunk_length_pixels):
+def get_tile_dataset_rio(uri, data_type, bounds, chunk_length_pixels, is_final, logger):
 
     # If the uri exists, the relevant window is opened and returned and returned as an array.
     # Note that this chunk could still just have NoData values, which would be downloaded.
@@ -181,7 +181,7 @@ def get_tile_dataset_rio(uri, data_type, bounds, chunk_length_pixels):
         numpy_dtype = map_to_numpy_dtype(data_type)   # Translates the GDAL-style datatype to numpy-style datatype
         data = np.full((chunk_length_pixels, chunk_length_pixels), 0).astype(numpy_dtype)
 
-        print(f"Error accessing the dataset. Returning array of all 0s: {e}")
+        lu.print_and_log(f"flm: Error accessing the dataset. Returning array of all 0s: {e}", is_final, logger)
 
     return data
 
@@ -201,14 +201,22 @@ def prepare_to_download_chunk(bounds, updated_download_dict, chunk_length_pixels
         lu.print_and_log(f"Requesting data in chunk {bounds_str} in {tile_id}: {timestr()}", is_final, logger)
 
         for key, value in updated_download_dict.items():
-            futures[executor.submit(get_tile_dataset_rio, value[0], value[1], bounds, chunk_length_pixels)] = key
+            futures[executor.submit(get_tile_dataset_rio, value[0], value[1], bounds, chunk_length_pixels, is_final, logger)] = key
 
     return futures
 
 
 # Checks if tiles exist at all
 def check_for_tile(download_dict, is_final, logger):
-    s3 = boto3.client('s3')
+
+    # Configures S3 client with increased retries; retries can max out for global analyses
+    s3_config = Config(
+        retries={
+            'max_attempts': 10,  # Increases the number of retry attempts
+            'mode': 'standard'
+        }
+    )
+    s3_client = boto3.client("s3", config=s3_config)  # Uses the configured client with more retries
 
     i = 0
 
@@ -222,7 +230,7 @@ def check_for_tile(download_dict, is_final, logger):
 
         # Breaks the loop if the tile exists. No need to keep checking other tiles because one exists.
         try:
-            s3.head_object(Bucket='gfw2-data', Key=s3_key)
+            s3_client.head_object(Bucket='gfw2-data', Key=s3_key)
 
             lu.print_and_log(f"Tile id {tile_id} exists for some inputs. Proceeding: {timestr()} ", is_final, logger)
 
@@ -232,7 +240,7 @@ def check_for_tile(download_dict, is_final, logger):
 
         i += 1
 
-    lu.print_and_log(f"Tile id {tile_id} does not exist. Skipping chunk: {timestr()}", is_final, logger)
+    lu.print_and_log(f"Tile id {tile_id} does not exist. Skipped chunk: {timestr()}", is_final, logger)
 
     return False
 
@@ -290,8 +298,8 @@ def check_chunk_for_data(required_layers, bounds_str, tile_id, any_or_all, is_fi
             # so not ALL of the inputs exist
             if min == max:
                 # Printed regardless of whether or not the model is full-scale
-                logger.info(f"flm: Chunk {bounds_str} does not exist for {key}. Skipping chunk: {timestr()}")  # The one print statement regardless of whether the model is full-scale or not
-                print(f"flm: Chunk {bounds_str} does not exist for {key}. Skipping chunk: {timestr()}")
+                logger.info(f"flm: Chunk {bounds_str} does not exist for {key}. Skipped chunk: {timestr()}")  # The one print statement regardless of whether the model is full-scale or not
+                print(f"flm: Chunk {bounds_str} does not exist for {key}. Skipped chunk: {timestr()}")
                 return False
 
         # If all required inputs are checked (for loop is completed), ALL inputs exist.
@@ -669,6 +677,9 @@ def calculate_stats(array, name, bounds_str, tile_id, in_out):
 # Also calculates the min and max value for each input and output across all chunks
 # From https://chatgpt.com/share/e/5599b6b0-1aaa-4d54-98d3-c720a436dd9a
 def calculate_chunk_stats(all_stats, stage):
+
+    print("Calculating tile stats...")
+
     # Convert accumulated statistics to a DataFrame
     df_all_stats = pd.DataFrame(all_stats)
 
@@ -687,6 +698,9 @@ def calculate_chunk_stats(all_stats, stage):
 
     # Write the combined statistics to a single Excel file
     #TODO Create chunk_stats folder if it doesn't already exist
+    #TODO Full global model has too many rows for Excel spreadsheet
+    # ("ValueError: This sheet is too large! Your sheet size is: 1797180, 8 Max sheet size is: 1048576, 16384", so need to split it somehow (input and output in separate tabs?)
+    #TODO Add try-except to spreadsheet creation so that it continues the post-processing even if the spreadsheet fails.
     with pd.ExcelWriter(f'{cn.chunk_stats_path}{stage}_chunk_statistics_{timestr()}.xlsx') as writer:
         sorted_stats.to_excel(writer, sheet_name='chunk_stats', index=False)
 
@@ -700,15 +714,6 @@ def calculate_chunk_stats(all_stats, stage):
 # Returns dictionary of dataset names with the full path of the first file in the s3 folder.
 # From https://chatgpt.com/share/e/9a7bf947-1c32-4898-ba6b-3b932a5220c1
 def first_file_name_in_s3_folder(download_dict):
-
-    # # Configures S3 client with increased retries; retries can max out for global analyses
-    # s3_config = Config(
-    #     retries={
-    #         'max_attempts': 10,  # Increases the number of retry attempts
-    #         'mode': 'standard'
-    #     }
-    # )
-    # s3_client = boto3.client("s3", config=s3_config)  # Uses the configured client with more retries
 
     s3_client = boto3.client("s3")
 

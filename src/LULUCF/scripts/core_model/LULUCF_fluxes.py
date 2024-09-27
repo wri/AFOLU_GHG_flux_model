@@ -113,6 +113,10 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
 
                 r_s_ratio_cell = r_s_ratio_block[row, col]
 
+                # Replaces pixel without R:S (0) with the global non-mangrove R:S default #TODO This is the non-mangrove default. Need to adjust if mangrove pixel?
+                if r_s_ratio_cell == 0:
+                    r_s_ratio_cell = cn.default_r_s_non_mang
+
                 planted_forest_type_cell = planted_forest_type_block[row, col]
                 planted_forest_tree_crop_cell = planted_forest_tree_crop_block[row, col]
 
@@ -836,12 +840,10 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
     for result in results:
         return_message, chunk_stats = result
 
-        print(return_message)
-
         if "Success" in return_message:
             success_count += 1
 
-        if "skipping chunk" in return_message:
+        if "Skipped chunk" in return_message:
             skipping_chunk_count += 1
 
         if return_message:
@@ -850,9 +852,13 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
         if chunk_stats is not None:
             all_stats.extend(chunk_stats)
 
+    # Prints the returned messages
+    for message in return_messages:
+        print(message)
+
     # Print the counts
     print(f"Number of 'Success' chunks: {success_count}")
-    print(f"Number of 'skipping chunk' chunks: {skipping_chunk_count}")
+    print(f"Number of 'Skipped' chunks: {skipping_chunk_count}")
     print(f"Difference between submitted chunks and processed chunks: {len(chunks) - (success_count + skipping_chunk_count)}")
 
     # Prepares chunk stats spreadsheet: min, mean, max for all input and output chunks,
@@ -862,17 +868,14 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
         uu.calculate_chunk_stats(all_stats, stage)
 
     # Ending time for stage
+    # TODO Report duration before stats calculation and after (not just after stats calculation)
     end_time = uu.timestr()
     print(f"Stage {stage} ended at: {end_time}")
     uu.stage_duration(start_time, end_time, stage)
 
-    # Prints the returned messages
-    for message in return_messages:
-        print(message)
-
     # Creates combined log if not deactivated
-    log_note = "Global carbon pool 2000 run"
-    lu.compile_and_upload_log(no_log, client, cluster, stage, len(chunks), chunk_size, start_time, end_time, log_note)
+    log_note = f"{stage} run"
+    lu.compile_and_upload_log(no_log, client, cluster, stage, len(chunks), chunk_size, start_time, end_time, success_count, skipping_chunk_count, log_note)
 
     if not run_local:
         # Closes the Dask client if not running locally

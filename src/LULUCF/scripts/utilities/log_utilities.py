@@ -15,8 +15,8 @@ from . import universal_utilities as uu
 # Gets the logs for all workers
 #TODO Wait to run this until all entries have been added to the Coiled log--
 # running this right after the model finishes means that final log entries haven't made it into Coiled yet.
-def compile_and_upload_log(no_log, client, cluster, stage,
-                           chunk_count, chunk_size_deg, start_time_str, end_time_str, log_note):
+def compile_and_upload_log(no_log, client, cluster, stage, chunk_count, chunk_size_deg,
+                           start_time_str, end_time_str, success_count, skipping_chunk_count, log_note):
 
     # Only consolidates the worker logs and uploads to s3 if not deactivated
     if no_log:
@@ -31,8 +31,10 @@ def compile_and_upload_log(no_log, client, cluster, stage,
     # Recovers legs from Coiled
     logs = cluster.get_logs()
 
-    # Converts the start time of the stage run from string to datetime so it can be compared to the log entries' times
+    # Converts the start and end times of the stage run from string to datetime.
+    # Uses start_time to filter log entries to only those after the start_time
     start_time = datetime.strptime(start_time_str, "%Y%m%d_%H_%M_%S")
+    end_time = datetime.strptime(end_time_str, "%Y%m%d_%H_%M_%S")
 
     # Retrieves the number of workers
     n_workers = len(client.scheduler_info()['workers'])  # Get the number of connected workers
@@ -84,10 +86,17 @@ def compile_and_upload_log(no_log, client, cluster, stage,
                     # If the datetime format is incorrect, skip this line
                     continue
 
-    end_time = f"Stage ended at: {end_time_str}"
+    end_time_message = f"Stage ended at: {end_time_str}"
+    stage_duration = (f"Elapsed time for {stage}: {end_time - start_time}")
+
+    success_chunk_message = f"Number of 'Success' chunks: {success_count}"
+    skip_chunk_message = f"Number of 'Skipped' chunks: {skipping_chunk_count}"
+    difference_message = f"Difference between submitted chunks and processed chunks: {chunk_count - (success_count + skipping_chunk_count)}"
 
     # Combine the header and filtered logs into a single string
-    combined_filtered_logs = "\n".join(header_lines) + "\n".join(filtered_logs) + "\n" + end_time
+    combined_filtered_logs = (("\n".join(header_lines) + "\n".join(filtered_logs) +
+                              "\n" + end_time_message + "\n" + stage_duration) +
+                              "\n" + success_chunk_message + "\n" + skip_chunk_message + "\n" + difference_message)
 
     # Save the filtered logs to a text file
     with open(local_log, "w") as file:
