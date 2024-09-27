@@ -180,6 +180,8 @@ IPCC_change_pattern = "IPCC_change"
 
 land_state_pattern = "land_state_node"
 
+gain_year_count_pattern = "gain_year_count_pre_post_disturb"
+
 agb_dens_pattern = "AGB_density_MgAGB_ha"
 agc_dens_pattern = "AGC_density_MgC_ha"
 bgc_dens_pattern = "BGC_density_MgC_ha"

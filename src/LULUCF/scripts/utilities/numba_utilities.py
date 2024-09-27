@@ -1,3 +1,4 @@
+import math
 import numpy as np
 from numba import jit
 from numba.typed import Dict
@@ -95,11 +96,16 @@ def calc_NT_T(agc_rf, r_s_ratio_cell, c_dens_in):
     deadwood_c_dens_in = c_dens_in[2]
     litter_c_dens_in = c_dens_in[3]
 
-    agc_flux_out = (agc_rf * cn.NF_F_gain_year) * -1
+    # Number of years of removals
+    gain_year_count = cn.NF_F_gain_year
+
+    # Calculates fluxes
+    agc_flux_out = (agc_rf * gain_year_count) * -1
     bgc_flux_out = float(agc_flux_out) * r_s_ratio_cell
     deadwood_c_flux_out= cn.deadwood_c_NT_T_rf
     litter_c_flux_out= cn.litter_c_NT_T_rf
 
+    # Calculates carbon pool densities
     agc_dens_out = agc_dens_in - agc_flux_out
     bgc_dens_out = bgc_dens_in - bgc_flux_out
     deadwood_c_dens_out = deadwood_c_dens_in - deadwood_c_flux_out
@@ -109,7 +115,7 @@ def calc_NT_T(agc_rf, r_s_ratio_cell, c_dens_in):
     c_fluxes_out = np.array([agc_flux_out, bgc_flux_out, deadwood_c_flux_out, litter_c_flux_out]).astype('float32')
     c_dens_out = np.array([agc_dens_out, bgc_dens_out, deadwood_c_dens_out, litter_c_dens_out]).astype('float32')
 
-    return c_fluxes_out, c_dens_out
+    return c_fluxes_out, c_dens_out, gain_year_count
 
 
 # Calculate non-CO2 emissions
@@ -120,10 +126,16 @@ def fire_equations(carbon_in, r_s_ratio_cell, Cf, Gef_ch4, Gef_n2o):
     # Cf is the combustion factor
     # Gef_ch4 and Gef_n2o are the emission factors for their respective gases
 
-    # print(f"Carbon in: {carbon_in}; R:S: {r_s_ratio_cell}; Cf: {Cf}; Gef_ch4: {Gef_ch4}; GWP CH4: {cn.gwp_ch4}")
+    # Default non-CO2 gases to 0
+    ch4_flux_out = 0
+    n2o_flux_out = 0
 
-    ch4_flux_out = (carbon_in/r_s_ratio_cell) * Cf * Gef_ch4 * cn.t_to_Mt * cn.gwp_ch4  # TODO This assumes non-mangrove. Need to make flexible?
-    n2o_flux_out = (carbon_in/r_s_ratio_cell) * Cf * Gef_n2o * cn.t_to_Mt * cn.gwp_n2o  # TODO This assumes non-mangrove. Need to make flexible?
+    if (isinstance(Cf, (int, float)) and isinstance(Gef_ch4, (int, float)) and isinstance(Gef_n2o, (int, float))):
+
+        # print(f"Carbon in: {carbon_in}; R:S: {r_s_ratio_cell}; Cf: {Cf}; Gef_ch4: {Gef_ch4}; GWP CH4: {cn.gwp_ch4}")
+
+        ch4_flux_out = (carbon_in/r_s_ratio_cell) * Cf * Gef_ch4 * cn.t_to_Mt * cn.gwp_ch4  # TODO This assumes non-mangrove. Need to make flexible?
+        n2o_flux_out = (carbon_in/r_s_ratio_cell) * Cf * Gef_n2o * cn.t_to_Mt * cn.gwp_n2o  # TODO This assumes non-mangrove. Need to make flexible?
 
     # print(f"ch4_flux_out: {ch4_flux_out}; n2o_flux_out: {n2o_flux_out};")
 
@@ -133,13 +145,32 @@ def fire_equations(carbon_in, r_s_ratio_cell, Cf, Gef_ch4, Gef_n2o):
 # Fluxes and stocks for tree converted to non-tree with and without fire.
 # Non-CO2 gas emissions are only calculated if arguments for fires are supplied.
 @jit(nopython=True)
-def calc_T_NT(agc_ef, r_s_ratio_cell, c_dens_in, Cf=None, Gef_ch4=None, Gef_n2o=None):
+def calc_T_NT(agc_rf, agc_ef, forest_dist_last, r_s_ratio_cell, end_year, c_dens_in, Cf=None, Gef_ch4=None, Gef_n2o=None):
+
     agc_dens_in = c_dens_in[0]
     bgc_dens_in = c_dens_in[1]
     deadwood_c_dens_in = c_dens_in[2]
     litter_c_dens_in = c_dens_in[3]
 
-    agc_flux_out = agc_dens_in * agc_ef
+    # Calculates the number of years of tree growth before loss occurred
+    # TODO Make sure the logic about number of years actually matches the decision tree. I don't think they match right now.
+    if forest_dist_last > 0:
+        # If a forest disturbance was detected, the growth_years are the number of years until detection of the last disturbance.
+        # There is no growth in the year of disturbance of the years after.
+        # For example, if the time interval is 2010-2015 and the disturbance is detected in 2013,
+        # there should be 2 years of growth (years t-4 and t-3, 2011 and 2012).
+        # TODO Make sure this is actually right. What if the disturbance is in 2015 (end of interval)?
+        growth_years = forest_dist_last - (end_year-cn.interval_years)
+    else:
+        # If a forest disturbance was not detected, the disturbance is assumed to occur in the middle of the interval
+        # (year t-2), with removals until then (years t-4 and t-3). There are no removals in the year of assumed
+        # disturbance or the years after.
+        growth_years = math.floor(cn.interval_years/2)
+
+    # Gross removals before canopy disturbance (tonnes C/ha)
+    removals_before_loss = (agc_rf * growth_years) * -1
+
+    agc_flux_out = (agc_dens_in + (removals_before_loss*-1)) * agc_ef
     bgc_flux_out = float(agc_flux_out) * r_s_ratio_cell
     deadwood_c_flux_out = deadwood_c_dens_in * agc_ef
     litter_c_flux_out = litter_c_dens_in * agc_ef
@@ -153,13 +184,8 @@ def calc_T_NT(agc_ef, r_s_ratio_cell, c_dens_in, Cf=None, Gef_ch4=None, Gef_n2o=
     c_fluxes_out = np.array([agc_flux_out, bgc_flux_out, deadwood_c_flux_out, litter_c_flux_out]).astype('float32')
     c_dens_out = np.array([agc_dens_out, bgc_dens_out, deadwood_c_dens_out, litter_c_dens_out]).astype('float32')
 
-    # Default non-CO2 gases to 0
-    ch4_flux_out = 0
-    n2o_flux_out = 0
-
     # Calculates non-CO2 gases, if required (as determined by fire-related argument to function)
-    if (isinstance(Cf, (int, float)) and isinstance(Gef_ch4, (int, float)) and isinstance(Gef_n2o, (int, float))):
-        ch4_flux_out, n2o_flux_out = fire_equations(agc_dens_in, r_s_ratio_cell, Cf, Gef_ch4, Gef_n2o)  # agc_dens_in can be any set of carbon pools
+    ch4_flux_out, n2o_flux_out = fire_equations(agc_dens_in, r_s_ratio_cell, Cf, Gef_ch4, Gef_n2o)  # agc_dens_in can be any set of carbon pools
 
     non_co2_fluxes_out = np.array([ch4_flux_out, n2o_flux_out]).astype('float32')
 
@@ -215,13 +241,8 @@ def calc_T_T_non_stand_disturbs(agc_rf, agc_ef, r_s_ratio_cell, c_dens_in, Cf=No
     c_fluxes_out = np.array([agc_flux_out, bgc_flux_out, deadwood_c_flux_out, litter_c_flux_out]).astype('float32')
     c_dens_out = np.array([agc_dens_out, bgc_dens_out, deadwood_c_dens_out, litter_c_dens_out]).astype('float32')
 
-    # Default non-CO2 gases to 0
-    ch4_flux_out = 0
-    n2o_flux_out = 0
-
     # Calculates non-CO2 gases, if required (as determined by fire-related argument to function)
-    if (isinstance(Cf, (int, float)) and isinstance(Gef_ch4, (int, float)) and isinstance(Gef_n2o, (int, float))):
-        ch4_flux_out, n2o_flux_out = fire_equations(agc_dens_in, r_s_ratio_cell, Cf, Gef_ch4, Gef_n2o)  # agc_dens_in can be any set of carbon pools
+    ch4_flux_out, n2o_flux_out = fire_equations(agc_dens_in, r_s_ratio_cell, Cf, Gef_ch4, Gef_n2o)  # agc_dens_in can be any set of carbon pools
 
     non_co2_fluxes_out = np.array([ch4_flux_out, n2o_flux_out]).astype('float32')
 
@@ -252,13 +273,8 @@ def calc_T_T_stand_disturbs(agc_rf, agc_ef, r_s_ratio_cell, c_dens_in, Cf=None, 
     c_fluxes_out = np.array([agc_flux_out, bgc_flux_out, deadwood_c_flux_out, litter_c_flux_out]).astype('float32')
     c_dens_out = np.array([agc_dens_out, bgc_dens_out, deadwood_c_dens_out, litter_c_dens_out]).astype('float32')
 
-    # Default non-CO2 gases to 0
-    ch4_flux_out = 0
-    n2o_flux_out = 0
-
     # Calculates non-CO2 gases, if required (as determined by fire-related argument to function)
-    if (isinstance(Cf, (int, float)) and isinstance(Gef_ch4, (int, float)) and isinstance(Gef_n2o, (int, float))):
-        ch4_flux_out, n2o_flux_out = fire_equations(agc_dens_in, r_s_ratio_cell, Cf, Gef_ch4, Gef_n2o)  # agc_dens_in can be any set of carbon pools
+    ch4_flux_out, n2o_flux_out = fire_equations(agc_dens_in, r_s_ratio_cell, Cf, Gef_ch4, Gef_n2o)  # agc_dens_in can be any set of carbon pools
 
     non_co2_fluxes_out = np.array([ch4_flux_out, n2o_flux_out]).astype('float32')
 
