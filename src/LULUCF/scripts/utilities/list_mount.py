@@ -40,7 +40,7 @@ def list_mounted_directories():
     root_path = "/mount/"    # Directories in /mount/:
     if os.path.exists(root_path):
         print(f"Directories in {root_path}:")
-        for directory in os.listdir(root_path):
+        for directory in os.listdir(f"{root_path}gfw2-data/climate/AFOLU_flux_model/"):
             print(directory)
     else:
         print(f"Mount point {root_path} does not exist.")
