@@ -1,29 +1,5 @@
-import os
-
-# def list_files_in_directory(path):
-#     if os.path.exists(path):
-#         print(f"Files in {path}:")
-#         for root, dirs, files in os.walk(path):
-#             for file in files:
-#                 print(os.path.join(root, file))
-#     else:
-#         print(f"Directory {path} does not exist.")
-#
-# list_files_in_directory("/mnt/")
-
-
-# def list_mounted_directories():
-#     root_path = "/mnt/"
-#     if os.path.exists(root_path):
-#         print(f"Directories in {root_path}:")
-#         for directory in os.listdir(root_path):
-#             print(directory)
-#     else:
-#         print(f"Mount point {root_path} does not exist.")
-#
-# list_mounted_directories()
-
 import coiled
+import rasterio
 import os
 from dask.distributed import Client
 from dask.distributed import print
@@ -40,7 +16,7 @@ def list_mounted_directories():
     root_path = "/mount/"    # Directories in /mount/:
     if os.path.exists(root_path):
         print(f"Directories in {root_path}:")
-        for directory in os.listdir(f"{root_path}gfw2-data/climate/AFOLU_flux_model/"):
+        for directory in os.listdir(f"{root_path}gfw2-data/climate/"):
             print(directory)
     else:
         print(f"Mount point {root_path} does not exist.")
@@ -52,6 +28,29 @@ def list_mounted_directories():
             print(directory)
     else:
         print(f"Mount point {root_path} does not exist.")
+
+
+
+    # Define the S3 URI and convert it to the local mounted path
+    s3_uri = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs/AGC_density_MgC_ha/2000/40000_pixels/20240821/00N_000E__AGC_density_MgC_ha_2000.tif"
+    local_uri = s3_uri.replace("s3://gfw2-data/", "/mount/gfw2-data/")
+
+    # Access the file using rasterio
+    try:
+        with rasterio.open(local_uri) as dataset:
+            # Read metadata and a small portion of the data to test access
+            print("Dataset metadata:")
+            print(dataset.meta)
+
+            # Read a small portion of data (e.g., the first window)
+            window = rasterio.windows.Window(0, 0, 100, 100)
+            data = dataset.read(1, window=window)
+            print("Data sample:")
+            print(data)
+            print(data.max())
+
+    except Exception as e:
+        print(f"Failed to access the dataset: {e}")
 
 def main():
     # Connect to or create the Coiled cluster
@@ -77,4 +76,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
