@@ -99,8 +99,8 @@ sig_height_loss_threshold = 5
 # Height minimum for trees (meters)
 tree_threshold = 5
 
-# Converts tonnes to megatonnes
-t_to_Mt = 10**-3
+# Converts grams to kilograms for burning of dry matter
+g_to_kg = 10 ** -3
 
 
 ########

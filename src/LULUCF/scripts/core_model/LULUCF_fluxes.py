@@ -793,6 +793,7 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
 
         cn.r_s_ratio: f"{cn.r_s_ratio_path}{sample_tile_id}_{cn.r_s_ratio_pattern}.tif",
 
+        # TODO Switch to 1-km driver model, including in decision tree
         cn.drivers: f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/tree_cover_loss_drivers/processed/drivers_2022/20230407/{sample_tile_id}_tree_cover_loss_driver_processed.tif",
         cn.planted_forest_type_layer: f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/plantation_type/SDPTv2/20230911/{sample_tile_id}_plantation_type_oilpalm_woodfiber_other.tif",
         # Originally from gfw-data-lake, so it's in 400x400 windows
@@ -826,10 +827,18 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
 
     # Creates list of tasks to run (1 task = 1 chunk)
     print(f"Creating tasks and starting processing: {uu.timestr()}")
-    delayed_results = [dask.delayed(calculate_and_upload_LULUCF_fluxes)(chunk, download_dict_with_data_types, is_final, no_upload) for chunk in chunks]
+    # delayed_results = [dask.delayed(calculate_and_upload_LULUCF_fluxes)(chunk, download_dict_with_data_types, is_final, no_upload) for chunk in chunks]
+    #
+    # # Runs analysis and gathers results
+    # results = dask.compute(*delayed_results)
 
-    # Runs analysis and gathers results
-    results = dask.compute(*delayed_results)
+    futures = []
+    for chunk in chunks:
+        future = client.submit(calculate_and_upload_LULUCF_fluxes, chunk, download_dict_with_data_types, is_final, no_upload)
+        futures.append(future)
+
+    # Collect the results once they are finished
+    results = client.gather(futures)
 
     # Initializes counters for different types of return messages
     success_count = 0
@@ -861,6 +870,10 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
     print(f"Number of 'Skipped' chunks: {skipping_chunk_count}")
     print(f"Difference between submitted chunks and processed chunks: {len(chunks) - (success_count + skipping_chunk_count)}")
 
+    end_time_1 = uu.timestr()
+    print(f"Stage {stage} ended at: {end_time_1}")
+    uu.stage_duration(start_time, end_time_1, stage)
+
     # Prepares chunk stats spreadsheet: min, mean, max for all input and output chunks,
     # and min and max values across all chunks for all inputs and outputs
     # only if not suppressed by the --no_stats flag
@@ -868,14 +881,13 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
         uu.calculate_chunk_stats(all_stats, stage)
 
     # Ending time for stage
-    # TODO Report duration before stats calculation and after (not just after stats calculation)
-    end_time = uu.timestr()
-    print(f"Stage {stage} ended at: {end_time}")
-    uu.stage_duration(start_time, end_time, stage)
+    end_time_2 = uu.timestr()
+    print(f"Stage {stage} ended at: {end_time_2}")
+    uu.stage_duration(start_time, end_time_2, stage)
 
     # Creates combined log if not deactivated
     log_note = f"{stage} run"
-    lu.compile_and_upload_log(no_log, client, cluster, stage, len(chunks), chunk_size, start_time, end_time, success_count, skipping_chunk_count, log_note)
+    lu.compile_and_upload_log(no_log, client, cluster, stage, len(chunks), chunk_size, start_time, end_time_2, success_count, skipping_chunk_count, log_note)
 
     if not run_local:
         # Closes the Dask client if not running locally

@@ -1,9 +1,9 @@
 """
-Run from src/LUL
+Run from src/LULUCF
 
 Test:
 python -m scripts.utilities.create_cluster -n 1 -m 16 -c 2
-python -m scripts.core_model.LULUCF_fluxes_postprocessing -cn AFOLU_flux_model_scripts -d 20240830
+python -m scripts.core_model.LULUCF_fluxes_postprocessing -cn AFOLU_flux_model_scripts -d 20240930
 
 """
 
@@ -52,7 +52,7 @@ def main(cluster_name, date, run_local=False, no_upload=False):
         #
         # f"{cn.outputs_path}{cn.BGC_density_path_part}/2000_2005/4000_pixels/{date}/",
         # f"{cn.outputs_path}{cn.BGC_density_path_part}/2005_2010/4000_pixels/{date}/",
-        # f"{cn.outputs_path}{cn.BGC_density_path_part}/2010_2015/4000_pixels/{date}/",
+        f"{cn.outputs_path}{cn.BGC_density_path_part}/2010_2015/4000_pixels/{date}/",
         # f"{cn.outputs_path}{cn.BGC_density_path_part}/2015_2020/4000_pixels/{date}/",
         #
         # f"{cn.outputs_path}{cn.deadwood_c_density_path_part}/2000_2005/4000_pixels/{date}/",
@@ -73,7 +73,7 @@ def main(cluster_name, date, run_local=False, no_upload=False):
         # f"{cn.outputs_path}{cn.BGC_flux_path_part}/2000_2005/4000_pixels/{date}/",
         # f"{cn.outputs_path}{cn.BGC_flux_path_part}/2005_2010/4000_pixels/{date}/",
         # f"{cn.outputs_path}{cn.BGC_flux_path_part}/2010_2015/4000_pixels/{date}/",
-        # f"{cn.outputs_path}{cn.BGC_flux_path_part}/2015_2020/4000_pixels/{date}/",
+        f"{cn.outputs_path}{cn.BGC_flux_path_part}/2015_2020/4000_pixels/{date}/",
         #
         # f"{cn.outputs_path}{cn.deadwood_c_flux_path_part}/2000_2005/4000_pixels/{date}/",
         # f"{cn.outputs_path}{cn.deadwood_c_flux_path_part}/2005_2010/4000_pixels/{date}/",

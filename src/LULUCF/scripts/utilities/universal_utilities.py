@@ -696,18 +696,32 @@ def calculate_chunk_stats(all_stats, stage):
         max_value=('max_value', 'max')
     ).reset_index()
 
+    # Creates a dictionary to store separate DataFrames for each 'in_out' value
+    # so that input and output layers can be reported on separate tabs.
+    # That's necessary for full model runs, where Excel doesn't have enough rows to put all chunk stats in one tab.
+    in_out_tables = {in_out_value: sorted_stats[sorted_stats['in_out'] == in_out_value]
+                     for in_out_value in sorted_stats['in_out'].unique()}
+
     # Write the combined statistics to a single Excel file
     #TODO Create chunk_stats folder if it doesn't already exist
-    #TODO Full global model has too many rows for Excel spreadsheet
-    # ("ValueError: This sheet is too large! Your sheet size is: 1797180, 8 Max sheet size is: 1048576, 16384", so need to split it somehow (input and output in separate tabs?)
-    #TODO Add try-except to spreadsheet creation so that it continues the post-processing even if the spreadsheet fails.
-    with pd.ExcelWriter(f'{cn.chunk_stats_path}{stage}_chunk_statistics_{timestr()}.xlsx') as writer:
-        sorted_stats.to_excel(writer, sheet_name='chunk_stats', index=False)
 
-        # Write the min and max statistics to the second sheet
-        min_max_stats.to_excel(writer, sheet_name='min_max_for_layers', index=False)
+    # Should continue with model post-processing even if chunk stats don't work for some reason
+    # (e.g., more many rows output than rows in an Excel spreadsheet)
+    try:
+        with pd.ExcelWriter(f'{cn.chunk_stats_path}{stage}_chunk_statistics_{timestr()}.xlsx') as writer:
 
-    print(sorted_stats.head())  # Show first few rows of the stats DataFrame for inspection
+            # Writes each 'in_out' DataFrame to its own sheet
+            for in_out_value, table in in_out_tables.items():
+                sheet_name = f"chunk_stats_{str(in_out_value)}"
+                table.to_excel(writer, sheet_name=sheet_name, index=False)
+
+            # Write the min and max statistics to the second sheet
+            min_max_stats.to_excel(writer, sheet_name='min_max_for_layers', index=False)
+
+        print(sorted_stats.head())  # Show first few rows of the stats DataFrame for inspection
+
+    except Exception as e:
+        print(f"Can't print chunk stats: {e}")
 
 
 # Gets the name of the first file in a dictionary of dataset names and folders in s3.

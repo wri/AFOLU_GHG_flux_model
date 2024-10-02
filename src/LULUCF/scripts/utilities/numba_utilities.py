@@ -134,8 +134,8 @@ def fire_equations(carbon_in, r_s_ratio_cell, Cf, Gef_ch4, Gef_n2o):
 
         # print(f"Carbon in: {carbon_in}; R:S: {r_s_ratio_cell}; Cf: {Cf}; Gef_ch4: {Gef_ch4}; GWP CH4: {cn.gwp_ch4}")
 
-        ch4_flux_out = (carbon_in/r_s_ratio_cell) * Cf * Gef_ch4 * cn.t_to_Mt * cn.gwp_ch4  # TODO This assumes non-mangrove. Need to make flexible?
-        n2o_flux_out = (carbon_in/r_s_ratio_cell) * Cf * Gef_n2o * cn.t_to_Mt * cn.gwp_n2o  # TODO This assumes non-mangrove. Need to make flexible?
+        ch4_flux_out = (carbon_in/r_s_ratio_cell) * Cf * Gef_ch4 * cn.g_to_kg * cn.gwp_ch4  # TODO This assumes non-mangrove. Need to make flexible?
+        n2o_flux_out = (carbon_in/r_s_ratio_cell) * Cf * Gef_n2o * cn.g_to_kg * cn.gwp_n2o  # TODO This assumes non-mangrove. Need to make flexible?
 
     # print(f"ch4_flux_out: {ch4_flux_out}; n2o_flux_out: {n2o_flux_out};")
 
