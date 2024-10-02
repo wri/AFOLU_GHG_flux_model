@@ -1,4 +1,4 @@
-# src/scripts/models/post_processing.py
+# src/preprocessing/pp_aggregate_tiles.py
 
 import argparse
 import logging
@@ -10,9 +10,7 @@ import warnings
 import sys
 import re
 import boto3
-import rasterio
-import rioxarray as rxr
-import xarray as xr
+import subprocess
 
 # Project imports
 import constants_and_names as cn
@@ -38,7 +36,6 @@ warnings.filterwarnings('ignore', 'Geometry is in a geographic CRS. Results from
 uu.create_directory_if_not_exists(cn.local_temp_dir)
 logging.info("Directories and paths set up")
 
-
 # ----------------------------- Utility Functions -----------------------------
 
 def adjust_output_path(input_path):
@@ -52,7 +49,6 @@ def adjust_output_path(input_path):
         str: The adjusted output path.
     """
     return input_path.replace('4000_pixels', f'{str(cn.full_raster_dims)}_pixels')
-
 
 def extract_tile_id_from_filename(filename):
     """
@@ -69,7 +65,6 @@ def extract_tile_id_from_filename(filename):
         return match.group(1)
     else:
         return None
-
 
 def list_tile_ids(bucket, prefix, pattern):
     """
@@ -108,80 +103,102 @@ def list_tile_ids(bucket, prefix, pattern):
         logging.error(f"Error listing files in s3://{bucket}/{prefix}: {e}")
     return list(tile_ids)
 
+# ----------------------------- GDAL Hansenize Functions -----------------------------
 
-# ----------------------------- Hansenize Functions -----------------------------
-
-def merge_and_clip_rasters_rio(raster_paths, output_path, bounds, nodata_value=None):
+def clip_raster_to_tile(input_path, output_path, bounds, nodata_value=None, dtype=None):
     """
-    Merges multiple rasters and clips to specified bounds using rioxarray.
+    Clips a raster to specified bounds using GDAL's gdalwarp command.
 
     Args:
-        raster_paths (list): List of raster paths to merge.
-        output_path (str): Path to save the merged and clipped raster.
+        input_path (str): Path to the input raster.
+        output_path (str): Path to save the clipped raster.
         bounds (tuple): Bounding box (minx, miny, maxx, maxy) for clipping.
-        nodata_value (float, optional): NoData value to set for the output raster.
+        nodata_value (float): NoData value to set for the output raster.
+        dtype (str): Data type for the output raster.
     """
     try:
-        logging.info(f"Merging rasters: {raster_paths}")
-
-        # Open rasters and ensure they have the same CRS
-        rasters = []
-        for raster_path in raster_paths:
-            raster = rxr.open_rasterio(raster_path, masked=True)
-            if raster.rio.crs is None:
-                raster = raster.rio.write_crs('EPSG:4326')  # Assuming WGS84
-            elif raster.rio.crs != 'EPSG:4326':
-                raster = raster.rio.reproject('EPSG:4326')
-            rasters.append(raster)
-
-        # Merge rasters
-        from rioxarray.merge import merge_arrays
-        merged_raster = merge_arrays(rasters)
-
-        # Log CRS and bounds
-        logging.info(f"Merged raster CRS: {merged_raster.rio.crs}")
-        raster_bounds = merged_raster.rio.bounds()
-        logging.info(f"Merged raster bounds: {raster_bounds}")
-        logging.info(f"Clipping to bounds: {bounds}")
-
-        # Check if bounds overlap
-        from rasterio.coords import disjoint_bounds
-        if disjoint_bounds(bounds, raster_bounds):
-            logging.error("Clipping bounds do not overlap with merged raster bounds.")
-            return  # Or handle the error as needed
-
         minx, miny, maxx, maxy = bounds
-        logging.info(f"Clipping merged raster to bounds {bounds}")
-        clipped_raster = merged_raster.rio.clip_box(minx, miny, maxx, maxy)
+        gdalwarp_cmd = [
+            'gdalwarp',
+            '-te', str(minx), str(miny), str(maxx), str(maxy),
+            '-dstnodata', str(nodata_value) if nodata_value is not None else '0',
+            '-co', 'COMPRESS=DEFLATE',
+            '-co', 'TILED=YES',
+            '-overwrite'
+        ]
 
-        if nodata_value is not None:
-            clipped_raster = clipped_raster.rio.write_nodata(nodata_value, inplace=True)
-            logging.info(f"Set NoData value to {nodata_value} for {output_path}")
+        if dtype:
+            gdalwarp_cmd.extend(['-ot', dtype])  # Correctly add the data type option
 
-        # Ensure output has specific resolution and parameters
-        # For example, set the resolution to 0.00025 degrees (approx 30m)
-        desired_resolution = (0.00025, 0.00025)
-        clipped_raster = clipped_raster.rio.reproject(
-            clipped_raster.rio.crs,
-            resolution=desired_resolution,
-            resampling=rasterio.enums.Resampling.nearest
-        )
+        # Include any other options like -tr and -tap if needed
+        gdalwarp_cmd.extend([
+            '-tr', '0.00025', '0.00025',  # Set the output resolution explicitly
+            '-tap'                         # Align pixels
+        ])
 
-        # Save the raster with desired compression and tiling options
-        clipped_raster.rio.to_raster(
-            output_path,
-            compress='DEFLATE',
-            tiled=True,
-            windowed=True,
-            driver='GTiff',
-            BIGTIFF='IF_SAFER'
-        )
-        logging.info(f"Rasters merged and clipped successfully: {output_path}")
+        # Add input and output paths
+        gdalwarp_cmd.extend([input_path, output_path])
 
+        logging.info(f"Clipping raster with command: {' '.join(gdalwarp_cmd)}")
+        subprocess.run(gdalwarp_cmd, check=True)
+        logging.info(f"Raster clipped successfully: {output_path}")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"GDAL error during clipping: {e}")
     except Exception as e:
-        logging.error(f"Error during raster merging and clipping with rioxarray: {e}", exc_info=True)
+        logging.error(f"Unexpected error during raster clipping: {e}")
+
+def merge_and_clip_rasters_gdal(raster_paths, output_path, bounds, nodata_value=None, dtype=None):
+    """
+    Merges multiple rasters and clips to specified bounds using GDAL.
+    """
+    try:
+        minx, miny, maxx, maxy = bounds
+        gdalwarp_cmd = [
+            'gdalwarp',
+            '-te', str(minx), str(miny), str(maxx), str(maxy),
+            '-tr', '0.00025', '0.00025',  # Set the output resolution explicitly
+            '-r', 'near',                  # Resampling method
+            '-t_srs', 'EPSG:4326',         # Set the output CRS
+            '-dstnodata', str(nodata_value) if nodata_value is not None else '0',
+            '-co', 'COMPRESS=DEFLATE',
+            '-co', 'TILED=YES',
+            '-overwrite'
+        ]
+
+        if dtype:
+            gdalwarp_cmd.extend(['-ot', dtype])  # Correctly add the data type option
+
+        # Add raster paths and output path
+        gdalwarp_cmd.extend(raster_paths + [output_path])
+
+        logging.info(f"Merging and clipping rasters with command: {' '.join(gdalwarp_cmd)}")
+        subprocess.run(gdalwarp_cmd, check=True)
+        logging.info(f"Rasters merged and clipped successfully: {output_path}")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"GDAL error during merge and clip: {e}")
+        raise
+    except Exception as e:
+        logging.error(f"Unexpected error during raster merging and clipping: {e}")
         raise
 
+
+def hansenize_gdal(input_paths, output_path, bounds, nodata_value=None, dtype=None):
+    """
+    Main function for processing using GDAL.
+
+    Args:
+        input_paths (str or list): Input raster path or list of paths to process.
+        output_path (str): Path to save the processed raster.
+        bounds (tuple): Bounding box (minx, miny, maxx, maxy) for processing.
+        nodata_value (float): NoData value to set for the output raster.
+        dtype (str): Data type for the output raster.
+    """
+    if isinstance(input_paths, list):
+        merge_and_clip_rasters_gdal(input_paths, output_path, bounds, nodata_value, dtype)
+    else:
+        clip_raster_to_tile(input_paths, output_path, bounds, nodata_value, dtype)
+
+    gc.collect()
 
 # ----------------------------- Main Processing Functions -----------------------------
 
@@ -252,29 +269,25 @@ def merge_tiles(tile_id, s3_in_folder, s3_out_folder, dataset_name, no_upload=Fa
         # For latitude, subtract 10 degrees to get the minimum latitude
         bounds = (lon_deg, lat_deg - 10, lon_deg + 10, lat_deg)
 
-        # Merge and clip rasters using rioxarray
+        # Merge and clip rasters using GDAL hansenize functions
         output_filename = f"{tile_id}_{dataset_name}.tif"
         merged_raster_path = os.path.join(local_temp_dir, output_filename)
-        merge_and_clip_rasters_rio(local_tile_files, merged_raster_path, bounds)
+        hansenize_gdal(local_tile_files, merged_raster_path, bounds)
 
-        # Compress and upload the merged raster
-        compressed_raster_path = os.path.join(local_temp_dir, f"{tile_id}_{dataset_name}_compressed.tif")
-        uu.compress_file(merged_raster_path, compressed_raster_path)
-
+        # Upload the merged raster if required
         if not no_upload:
             s3_output_path = os.path.join(s3_out_folder, output_filename)
             s3_output_path = s3_output_path.replace("\\", "/")  # Ensure S3 path uses forward slashes
-            uu.upload_file_to_s3(compressed_raster_path, s3_bucket_name, s3_output_path)
+            uu.upload_file_to_s3(merged_raster_path, s3_bucket_name, s3_output_path)
 
         # Clean up local files
-        for local_file in local_tile_files + [merged_raster_path, compressed_raster_path]:
+        for local_file in local_tile_files + [merged_raster_path]:
             uu.delete_file_if_exists(local_file)
 
         gc.collect()
 
     except Exception as e:
         logging.error(f"Error processing tile {tile_id}: {e}", exc_info=True)
-
 
 def process_all_tiles(s3_in_folder, s3_out_folder, tile_id=None, no_upload=False):
     """
@@ -334,20 +347,16 @@ def process_all_tiles(s3_in_folder, s3_out_folder, tile_id=None, no_upload=False
     logging.info(f"Computing {len(tasks)} tasks")
     dask.compute(*tasks)
 
-
 # ----------------------------- Main Function -----------------------------
 
-def main(cluster_name=None, date=cn.today_date, run_local=False, no_upload=False, workspace='wri-forest-research',
-         tile_id=None, dataset=None):
+def main(date=cn.today_date, run_local=False, no_upload=False, tile_id=None, dataset=None):
     """
     Main function to handle post-processing of LULUCF fluxes.
 
     Args:
-        cluster_name (str): Name of the Coiled cluster.
         date (str): Date in YYYYMMDD format to process.
         run_local (bool): Flag to run the script locally without Dask/Coiled.
         no_upload (bool): Flag to disable uploading outputs to S3.
-        workspace (str): Coiled workspace name.
         tile_id (str, optional): Specific tile ID to process.
         dataset (str, optional): Specific dataset to process.
 
@@ -361,7 +370,7 @@ def main(cluster_name=None, date=cn.today_date, run_local=False, no_upload=False
         client = Client(cluster)
         logging.info("Running locally with Dask LocalCluster")
     else:
-        client, cluster = uu.setup_coiled_cluster(cluster_name, workspace)
+        client, cluster = uu.setup_coiled_cluster()
         logging.info(f"Coiled cluster initialized: {cluster.name}")
 
     try:
@@ -389,19 +398,15 @@ def main(cluster_name=None, date=cn.today_date, run_local=False, no_upload=False
             cluster.close()
             logging.info("Coiled cluster closed")
 
-
 # ----------------------------- Command-Line Interface -----------------------------
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Post-processing of LULUCF fluxes.")
-    parser.add_argument('-cn', '--cluster_name', help='Coiled cluster name')
     parser.add_argument('-d', '--date', help='Date in YYYYMMDD to process', default=cn.today_date)
     parser.add_argument('--run_local', action='store_true', help='Run locally without Dask/Coiled')
     parser.add_argument('--no_upload', action='store_true', help='Do not save and upload outputs to S3')
-    parser.add_argument('-w', '--workspace', help='Coiled workspace name', default='wri-forest-research')
     parser.add_argument('--tile_id', type=str, help='Specific tile ID to process')
-    parser.add_argument('--dataset', type=str, choices=['osm_roads_density', 'osm_canals_density', 'grip_density'],
-                        help='Specific dataset to process')
+    parser.add_argument('--dataset', type=str, choices=['osm_roads_density', 'osm_canals_density', 'grip_density'], help='Specific dataset to process')
     args = parser.parse_args()
 
     # Ensure 'full_raster_dims' is a string
@@ -414,16 +419,38 @@ if __name__ == "__main__":
     # Check if script is run with command-line arguments
     if not any(sys.argv[1:]):
         # Default values for running directly from an IDE without command-line arguments
-        cluster_name = 'aggregate_tiles'
         date = '20240925'
         run_local = True
         no_upload = False
-        workspace = 'wri-forest-research'
         tile_id = '00N_110E'  # Set a default tile ID for testing
         dataset = 'osm_roads_density'  # Specify a dataset to process
 
-        main(cluster_name=cluster_name, date=date, run_local=run_local, no_upload=no_upload,
-             workspace=workspace, tile_id=tile_id, dataset=dataset)
+        main(date=date, run_local=run_local, no_upload=no_upload, tile_id=tile_id, dataset=dataset)
     else:
-        main(cluster_name=args.cluster_name, date=args.date, run_local=args.run_local, no_upload=args.no_upload,
-             workspace=args.workspace, tile_id=args.tile_id, dataset=args.dataset)
+        main(date=args.date, run_local=args.run_local, no_upload=args.no_upload, tile_id=args.tile_id, dataset=args.dataset)
+
+
+"""
+Example Command-Line Usages:
+
+1. Run for a specific date, tile, and dataset without uploading outputs:
+
+   python pp_aggregate_tiles.py --date 20240101 --tile_id 00N_110E --dataset osm_canals_density --no_upload
+
+2. Run for a specific date, tile, and dataset with uploading outputs:
+
+   python pp_aggregate_tiles.py --date 20240822 --tile_id 00N_110E --dataset osm_canals_density
+
+3. Run locally for all datasets and tiles for today's date:
+
+   python pp_aggregate_tiles.py --run_local
+
+4. Run using Coiled cluster for the 'grip_density' dataset:
+
+   python pp_aggregate_tiles.py --dataset grip_density
+
+5. Run for a specific tile across all datasets:
+
+   python pp_aggregate_tiles.py --tile_id 00N_110E
+
+"""
