@@ -29,6 +29,11 @@ today_date = datetime.today().strftime('%Y%m%d')
 peat_pattern = '_peat_mask_processed.tif'
 peat_tiles_prefix_1km = 'climate/AFOLU_flux_model/organic_soils/inputs/processed/peat_mask/1km/'
 
+# Peat tiles paths
+# peat_tiles_prefix = f'{project_dir}/{processed_dir}/peatlands/processed/{today_date}/' #to be used when we have OGH
+peat_tiles_prefix = 'climate/carbon_model/other_emissions_inputs/peatlands/processed/20230315/'
+index_shapefile_prefix = f'{project_dir}/{raw_dir}/index/Global_Peatlands'
+
 # Sample Tile ID Placeholder
 sample_tile_id = '{tile_id}'
 
