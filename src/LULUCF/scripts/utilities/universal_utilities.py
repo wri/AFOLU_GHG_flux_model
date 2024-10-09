@@ -740,8 +740,18 @@ def first_file_name_in_s3_folder(download_dict):
         # Splits the path to get the directory part
         dir_path = os.path.dirname(folder_path)
 
+        print(dir_path)
+
         # Drops the s3://gfw2-data/ prefix and adds "/" to the end
-        dir_path = dir_path[len(cn.full_bucket_prefix)+1:] + "/"
+        dir_path = dir_path + "/"
+
+        print(dir_path)
+
+        for directory in os.listdir(f"{root_path}gfw2-data/climate/AFOLU_flux_model"):
+            print(directory)
+
+        for file in os.listdir(dir_path):
+            print(file)
 
         # Lists metadata for everything in the bucket
         response = s3_client.list_objects_v2(Bucket=cn.short_bucket_prefix, Prefix=dir_path, Delimiter='/')
@@ -752,6 +762,8 @@ def first_file_name_in_s3_folder(download_dict):
             first_tiles[key] = cn.full_bucket_prefix + "/" + response['Contents'][1]['Key']
         else:
             first_tiles[key] = None  # In case no files are found
+
+        os.quit()
 
     return first_tiles
 

@@ -19,7 +19,8 @@ def create_cluster(n_workers, worker_memory, worker_cpu):
         region="us-east-1",
         name="AFOLU_flux_model_scripts",
         workspace='wri-forest-research',
-        # mount_bucket="s3://gfw2-data",
+        mount_bucket="s3://gfw2-data",
+        allow_ssh=True,
         worker_memory = worker_memory_str,
         worker_cpu = worker_cpu
     )

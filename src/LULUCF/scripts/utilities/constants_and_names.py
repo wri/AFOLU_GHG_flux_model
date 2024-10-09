@@ -14,6 +14,8 @@ short_bucket_prefix = "gfw2-data"
 full_bucket_prefix = "s3://" + short_bucket_prefix
 s3_client = boto3.client("s3")
 
+mounted_bucket_prefix = "/mount/gfw2-data"
+
 ### Pattern for tile_ids in regex form
 tile_id_pattern = r"[0-9]{2}[A-Z][_][0-9]{3}[A-Z]"
 
@@ -110,7 +112,7 @@ g_to_kg = 10 ** -3
 # Local path for chunk stats
 chunk_stats_path = "chunk_stats/"
 
-LC_uri = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/landcover"
+LC_uri = f"{mounted_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/landcover"
 
 s3_out_dir = 'climate/AFOLU_flux_model/LULUCF/outputs'
 
@@ -118,30 +120,30 @@ local_log_path = "logs/"
 s3_log_path = "climate/AFOLU_flux_model/LULUCF/model_logs/"
 combined_log = "AFOLU_model_log"
 
-agb_2000_path = f"{full_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/Processed/"
+agb_2000_path = f"{mounted_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/Processed/"
 agb_2000_pattern = "t_aboveground_biomass_ha_2000"
 
-mangrove_agb_2000_path = f"{full_bucket_prefix}/climate/carbon_model/mangrove_biomass/processed/standard/20190220/"
+mangrove_agb_2000_path = f"{mounted_bucket_prefix}/climate/carbon_model/mangrove_biomass/processed/standard/20190220/"
 mangrove_agb_2000_pattern = "mangrove_agb_t_ha_2000"
 
-elevation_path = f"{full_bucket_prefix}/climate/carbon_model/inputs_for_carbon_pools/processed/elevation/20190418/"
+elevation_path = f"{mounted_bucket_prefix}/climate/carbon_model/inputs_for_carbon_pools/processed/elevation/20190418/"
 elevation_pattern = "elevation"
 
-climate_domain_path = f"{full_bucket_prefix}/climate/carbon_model/inputs_for_carbon_pools/processed/fao_ecozones_bor_tem_tro/20190418/"
+climate_domain_path = f"{mounted_bucket_prefix}/climate/carbon_model/inputs_for_carbon_pools/processed/fao_ecozones_bor_tem_tro/20190418/"
 climate_domain_pattern = "fao_ecozones_bor_tem_tro_processed"
 
-precipitation_path = f"{full_bucket_prefix}/climate/carbon_model/inputs_for_carbon_pools/processed/precip/20190418/"
+precipitation_path = f"{mounted_bucket_prefix}/climate/carbon_model/inputs_for_carbon_pools/processed/precip/20190418/"
 precipitation_pattern = "precip_mm_annual"
 
-r_s_ratio_path = f"{full_bucket_prefix}/climate/carbon_model/BGB_AGB_ratio/processed/20230216/"
+r_s_ratio_path = f"{mounted_bucket_prefix}/climate/carbon_model/BGB_AGB_ratio/processed/20230216/"
 r_s_ratio_pattern = "BGB_AGB_ratio"
 
-continent_ecozone_path = f"{full_bucket_prefix}/climate/carbon_model/fao_ecozones/ecozone_continent/20190116/processed/"
+continent_ecozone_path = f"{mounted_bucket_prefix}/climate/carbon_model/fao_ecozones/ecozone_continent/20190116/processed/"
 continent_ecozone_pattern = "fao_ecozones_continents_processed"
 
 ### Outputs
 
-outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs/"
+outputs_path = f"{mounted_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs/"
 
 land_state_node_path_part = "land_state_node"
 

@@ -24,6 +24,83 @@ from ..utilities import universal_utilities as uu
 from ..utilities import log_utilities as lu
 from ..utilities import numba_utilities as nu
 
+import os
+import rasterio
+
+
+def first_file_name_in_s3_folder_local(download_dict):
+
+    # Initializes the dictionary to hold the first file paths
+    first_tiles = {}
+
+
+    # Define the S3 URI and convert it to the local mounted path
+    s3_uri = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs/AGC_density_MgC_ha/2000/40000_pixels/20240821/00N_000E__AGC_density_MgC_ha_2000.tif"
+    local_uri = s3_uri.replace("s3://gfw2-data/", "/mount/gfw2-data/")
+
+    print(local_uri)
+
+    # Access the file using rasterio
+    try:
+        with rasterio.open(local_uri) as dataset:
+            # Read metadata and a small portion of the data to test access
+            print("Dataset metadata:")
+            print(dataset.meta)
+
+            # Read a small portion of data (e.g., the first window)
+            window = rasterio.windows.Window(0, 0, 100, 100)
+            data = dataset.read(1, window=window)
+            print("Data sample:")
+            print(data)
+            print(data.max())
+
+    except Exception as e:
+        print(f"Failed to access the dataset: {e}")
+
+    # Iterates over the download_dict items
+    for key, folder_path in download_dict.items():
+
+        # Splits the path to get the directory part
+        dir_path = os.path.dirname(folder_path)
+
+        print(dir_path)
+
+        # Drops the s3://gfw2-data/ prefix and adds "/" to the end
+        dir_path = dir_path + "/"
+
+        print(dir_path)
+
+        root_path = "/mount/"  # Directories in /mount/:
+        if os.path.exists(root_path):
+            print(f"Directories in {root_path}:")
+            for directory in os.listdir(f"{root_path}"):
+                print(directory)
+        else:
+            print(f"Mount point {root_path} does not exist.")
+
+
+        os.quit()
+
+        # for directory in os.listdir(f"/mount/gfw2-data/climate/AFOLU_flux_model"):
+        #     print(directory)
+        #
+        # for file in os.listdir(dir_path):
+        #     print(file)
+
+        # Lists metadata for everything in the bucket
+        response = s3_client.list_objects_v2(Bucket=cn.short_bucket_prefix, Prefix=dir_path, Delimiter='/')
+
+        # Checks if the folder contains any files
+        if 'Contents' in response and len(response['Contents']) > 0:
+            # Uses the first file in the folder (index 0 instead of 1)
+            first_tiles[key] = cn.full_bucket_prefix + "/" + response['Contents'][1]['Key']
+        else:
+            first_tiles[key] = None  # In case no files are found
+
+        os.quit()
+
+    return first_tiles
+
 
 # Function to calculate LULUCF fluxes and carbon densities
 # Operates pixel by pixel, so uses numba (Python compiled to C++).
@@ -789,25 +866,25 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
         cn.bgc_2000: f"{cn.bgc_2000_path}{sample_tile_id}__{cn.bgc_2000_pattern}.tif",
         cn.deadwood_c_2000: f"{cn.deadwood_c_2000_path}{sample_tile_id}__{cn.deadwood_c_2000_pattern}.tif",
         cn.litter_c_2000: f"{cn.litter_c_2000_path}{sample_tile_id}__{cn.litter_c_2000_pattern}.tif",
-        cn.soil_c_2000: f"s3://gfw2-data/climate/carbon_model/carbon_pools/soil_carbon/intermediate_full_extent/standard/20231108/{sample_tile_id}_soil_C_full_extent_2000_Mg_C_ha.tif",
+        cn.soil_c_2000: f"/mount/gfw2-data/climate/carbon_model/carbon_pools/soil_carbon/intermediate_full_extent/standard/20231108/{sample_tile_id}_soil_C_full_extent_2000_Mg_C_ha.tif",
 
         cn.r_s_ratio: f"{cn.r_s_ratio_path}{sample_tile_id}_{cn.r_s_ratio_pattern}.tif",
 
         # TODO Switch to 1-km driver model, including in decision tree
-        cn.drivers: f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/tree_cover_loss_drivers/processed/drivers_2022/20230407/{sample_tile_id}_tree_cover_loss_driver_processed.tif",
-        cn.planted_forest_type_layer: f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/plantation_type/SDPTv2/20230911/{sample_tile_id}_plantation_type_oilpalm_woodfiber_other.tif",
+        cn.drivers: f"/mount/gfw2-data/climate/carbon_model/other_emissions_inputs/tree_cover_loss_drivers/processed/drivers_2022/20230407/{sample_tile_id}_tree_cover_loss_driver_processed.tif",
+        cn.planted_forest_type_layer: f"/mount/gfw2-data/climate/carbon_model/other_emissions_inputs/plantation_type/SDPTv2/20230911/{sample_tile_id}_plantation_type_oilpalm_woodfiber_other.tif",
         # Originally from gfw-data-lake, so it's in 400x400 windows
-        cn.planted_forest_tree_crop_layer: f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/plantation_simpleType__planted_forest_tree_crop/SDPTv2/20230911/{sample_tile_id}.tif",
+        cn.planted_forest_tree_crop_layer: f"/mount/gfw2-data/climate/carbon_model/other_emissions_inputs/plantation_simpleType__planted_forest_tree_crop/SDPTv2/20230911/{sample_tile_id}.tif",
         # Originally from gfw-data-lake, so it's in 400x400 windows
-        "peat": f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/peatlands/processed/20230315/{sample_tile_id}_peat_mask_processed.tif",
+        "peat": f"/mount/gfw2-data/climate/carbon_model/other_emissions_inputs/peatlands/processed/20230315/{sample_tile_id}_peat_mask_processed.tif",
         # "ecozone": f"s3://gfw2-data/fao_ecozones/v2000/raster/epsg-4326/10/40000/class/gdal-geotiff/{sample_tile_id}.tif",   # Originally from gfw-data-lake, so it's in 400x400 windows
         # "iso": f"s3://gfw2-data/gadm_administrative_boundaries/v3.6/raster/epsg-4326/10/40000/adm0/gdal-geotiff/{sample_tile_id}.tif",  # Originally from gfw-data-lake, so it's in 400x400 windows
-        cn.ifl_primary: f"s3://gfw2-data/climate/carbon_model/ifl_primary_merged/processed/20200724/{sample_tile_id}_ifl_2000_primary_2001_merged.tif"
+        cn.ifl_primary: f"/mount/gfw2-data/climate/carbon_model/ifl_primary_merged/processed/20200724/{sample_tile_id}_ifl_2000_primary_2001_merged.tif"
     }
 
     # All years need to be in their own folder
     for year in range(cn.first_year, cn.last_year + 1):  # Annual burned area maps start in 2000
-        download_dict[f"{cn.burned_area}_{year}"] = f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/burn_year/burn_year_10x10_clip_by_year/{year}/{cn.burned_area_pattern}_{year}_{sample_tile_id}.tif"
+        download_dict[f"{cn.burned_area}_{year}"] = f"/mount/gfw2-data/climate/carbon_model/other_emissions_inputs/burn_year/burn_year_10x10_clip_by_year/{year}/{cn.burned_area_pattern}_{year}_{sample_tile_id}.tif"
 
     # All years need to be in their own folder
     for year in range(cn.first_year + 1, cn.last_year + 1):  # Annual forest disturbance maps start in 2001 and ends in 2020
@@ -818,7 +895,10 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
     # all tiles have the same datatype for each input-- it only needs to be done once at the very beginning of the stage.
 
     print(f"Getting tile_id of first tile in each tile set: {uu.timestr()}")
-    first_tiles = uu.first_file_name_in_s3_folder(download_dict)
+    first_tiles = first_file_name_in_s3_folder_local(download_dict)
+    print(first_tiles)
+
+    os.quit()
 
     # Creates a download dictionary with the datatype of each input in the values.
     # This is supplied to each chunk that is being analyzed
