@@ -139,9 +139,31 @@ r_s_ratio_pattern = "BGB_AGB_ratio"
 continent_ecozone_path = f"{full_bucket_prefix}/climate/carbon_model/fao_ecozones/ecozone_continent/20190116/processed/"
 continent_ecozone_pattern = "fao_ecozones_continents_processed"
 
+natural_forest_dir =  f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/natural_forest_mean_biomass_accumulation_rates_all_years/"
+natural_forest_0_5_raw_dir =  f"{natural_forest_dir}/rate_0_5/raw/"
+natural_forest_6_10_raw_dir =  f"{natural_forest_dir}/rate_6_10/raw/"
+natural_forest_11_15_raw_dir =  f"{natural_forest_dir}/rate_11_15/raw/"
+natural_forest_16_20_raw_dir =  f"{natural_forest_dir}/rate_16_20/raw/"
+natural_forest_21_100_raw_dir =  f"{natural_forest_dir}/rate_21_100/raw/"
+
+# used as both the raw raster name and pattern for hansenized tile output following the tile ID
+natural_forest_0_5_pattern =  "natural_forest_mean_biomass_accumulation_rate_0_5.tif"
+natural_forest_6_10_pattern =  "natural_forest_mean_biomass_accumulation_rate_6_10.tif"
+natural_forest_11_15_pattern =  "natural_forest_mean_biomass_accumulation_rate_11_15.tif"
+natural_forest_16_20_pattern =  "natural_forest_mean_biomass_accumulation_rate_16_20.tif"
+natural_forest_21_100_pattern =  "natural_forest_mean_biomass_accumulation_rate_21_100.tif"
+
+drivers_raw_dir = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/tree_cover_loss_drivers/raw/"
+drivers_raw_pattern = "preliminary_drivers_1km_10032024.tif"
+drivers_processed_dir = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/tree_cover_loss_drivers/processed/drivers_2023/"
+drivers_processed_pattern = "tree_cover_loss_driver_processed"
+
+
 ### Outputs
 
 outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs/"
+
+
 
 land_state_node_path_part = "land_state_node"
 
