@@ -637,15 +637,6 @@ def convert_lookup_table_to_array(spreadsheet, sheet_name, fields_to_keep):
     return filtered_array
 
 
-# Creates arrays of 0s for any missing inputs and puts them in the corresponding typed dictionary
-def complete_inputs(existing_input_list, typed_dict, datatype, chunk_length_pixels, bounds_str, tile_id, is_final, logger):
-    for dataset_name in existing_input_list:
-        if dataset_name not in typed_dict.keys():
-            typed_dict[dataset_name] = np.full((chunk_length_pixels, chunk_length_pixels), 0, dtype=datatype)
-            lu.print_and_log(f"Created {dataset_name} for chunk {bounds_str} in {tile_id}: {timestr()}", is_final, logger)
-    return typed_dict
-
-
 # Calculates stats for a chunk (numpy array)
 # From https://chatgpt.com/share/e/5599b6b0-1aaa-4d54-98d3-c720a436dd9a
 def calculate_stats(array, name, bounds_str, tile_id, in_out):
@@ -680,40 +671,49 @@ def calculate_chunk_stats(all_stats, stage):
 
     print("Calculating tile stats...")
 
-    # Convert accumulated statistics to a DataFrame
+    # Converts accumulated statistics to a DataFrame
     df_all_stats = pd.DataFrame(all_stats)
 
-    # Convert problematic non-numeric values to NaN
+    # Converts problematic non-numeric values to NaN
     df_all_stats['min_value'] = pd.to_numeric(df_all_stats['min_value'], errors='coerce')
     df_all_stats['max_value'] = pd.to_numeric(df_all_stats['max_value'], errors='coerce')
 
-    # Sort the DataFrame by 'in_out' and 'layer_name'
+    # Sorts the DataFrame by 'in_out' and 'layer_name'
     sorted_stats = df_all_stats.sort_values(by=['in_out', 'layer_name']).reset_index(drop=True)
 
-    # Calculate the min and max values for each layer_name
+    # Calculates the min and max values for each layer_name across all chunks
     min_max_stats = df_all_stats.groupby('layer_name').agg(
         min_value=('min_value', 'min'),
         max_value=('max_value', 'max')
     ).reset_index()
 
-    # Creates a dictionary to store separate DataFrames for each 'in_out' value
-    # so that input and output layers can be reported on separate tabs.
-    # That's necessary for full model runs, where Excel doesn't have enough rows to put all chunk stats in one tab.
-    in_out_tables = {in_out_value: sorted_stats[sorted_stats['in_out'] == in_out_value]
-                     for in_out_value in sorted_stats['in_out'].unique()}
+    # Calculates the min and max values for each layer_name for each chunk.
+    # There are so many chunks with so many inputs and outputs in a full model run that Excel can't handle all the rows
+    # and they need to be split across multiple workbook tabs.
 
-    # Write the combined statistics to a single Excel file
-    #TODO Create chunk_stats folder if it doesn't already exist
+    # Separates input rows (in_out == 'input') and output rows (in_out == 'output')
+    input_rows = sorted_stats[sorted_stats['in_out'] == 'input_layer']
+    output_rows = sorted_stats[sorted_stats['in_out'] == 'output_layer']
 
+    # Splits output rows based on 'layer_name' containing 'flux', 'gross', or 'net'
+    flux_output = output_rows[output_rows['layer_name'].str.contains('gross|net|flux', case=False, na=False)]
+
+    # If any output rows don't contain 'flux', 'gross', or 'net', puts them in a separate tab
+    other_output = output_rows[~output_rows['layer_name'].str.contains('flux|gross|net', case=False, na=False)]
+
+    # Writes the data to a single Excel file with separate sheets.
     # Should continue with model post-processing even if chunk stats don't work for some reason
     # (e.g., more many rows output than rows in an Excel spreadsheet)
     try:
         with pd.ExcelWriter(f'{cn.chunk_stats_path}{stage}_chunk_statistics_{timestr()}.xlsx') as writer:
 
-            # Writes each 'in_out' DataFrame to its own sheet
-            for in_out_value, table in in_out_tables.items():
-                sheet_name = f"chunk_stats_{str(in_out_value)}"
-                table.to_excel(writer, sheet_name=sheet_name, index=False)
+            # Writes input rows to one sheet
+            input_rows.to_excel(writer, sheet_name='input_stats', index=False)
+
+            # Writes output rows based on layer_name conditions to separate sheets
+            flux_output.to_excel(writer, sheet_name='flux_outputs', index=False)
+
+            other_output.to_excel(writer, sheet_name='other_outputs', index=False)
 
             # Write the min and max statistics to the second sheet
             min_max_stats.to_excel(writer, sheet_name='min_max_for_layers', index=False)

@@ -1,6 +1,8 @@
 import math
 import boto3
 
+import numpy as np
+
 ########
 ### Constants
 ########
@@ -102,6 +104,13 @@ tree_threshold = 5
 # Converts grams to kilograms for burning of dry matter
 g_to_kg = 10 ** -3
 
+# Which carbon pools are emitted under different circumstances for full tree loss: AGC, BGC, deadwood C, litter C.
+# Need to specify numpy datatype because they're used in the Numba functions, which need explicit datatypes
+agc_emissions_only = np.array([1, 0, 0, 0]).astype('uint8')
+all_but_bgc_emissions = np.array([1, 0, 1, 1]).astype('uint8')
+biomass_emissions_only = np.array([1, 1, 0, 0]).astype('uint8')
+all_non_soil_pools = np.array([1, 1, 1, 1]).astype('uint8')
+
 
 ########
 ### File name paths and patterns
@@ -180,20 +189,35 @@ IPCC_change_pattern = "IPCC_change"
 
 land_state_pattern = "land_state_node"
 
-gain_year_count_pattern = "gain_year_count_pre_post_disturb"
+gain_year_count_pattern = "gain_year_count"
 
+agc_rf_pattern = "aboveground_carbon_removal_factor_UNITS_TBD" #TODO Specify RF units here
+
+# Gross and net fluxes
+agc_gross_emis_pattern = "AGC_gross_emis_MgC_ha"
+bgc_gross_emis_pattern = "BGC_gross_emis_MgC_ha"
+deadwood_c_gross_emis_pattern = "deadwood_C_gross_emis_MgC_ha"
+litter_c_gross_emis_pattern = "litter_C_gross_emis_MgC_ha"
+
+agc_gross_removals_pattern = "AGC_gross_removals_MgC_ha"
+bgc_gross_removals_pattern = "BGC_gross_removals_MgC_ha"
+deadwood_c_gross_removals_pattern = "deadwood_C_gross_removals_MgC_ha"
+litter_c_gross_removals_pattern = "litter_C_gross_removals_MgC_ha"
+
+agc_net_flux_pattern = "AGC_net_flux_MgC_ha"
+bgc_net_flux_pattern = "BGC_net_flux_MgC_ha"
+deadwood_c_net_flux_pattern = "deadwood_C_net_flux_MgC_ha"
+litter_c_net_flux_pattern = "litter_C_net_flux_MgC_ha"
+
+ch4_flux_pattern = "CH4_flux_MgCO2e_ha"
+n2o_flux_pattern = "N2O_flux_MgCO2e_ha"
+
+# Carbon density patterns
 agb_dens_pattern = "AGB_density_MgAGB_ha"
 agc_dens_pattern = "AGC_density_MgC_ha"
 bgc_dens_pattern = "BGC_density_MgC_ha"
 deadwood_c_dens_pattern = "deadwood_C_density_MgC_ha"
 litter_c_dens_pattern = "litter_C_density_MgC_ha"
-agc_flux_pattern = "AGC_flux_MgC_ha"
-bgc_flux_pattern = "BGC_flux_MgC_ha"
-deadwood_c_flux_pattern = "deadwood_C_flux_MgC_ha"
-litter_c_flux_pattern = "litter_C_flux_MgC_ha"
-
-ch4_flux_pattern = "CH4_flux_MgCO2e_ha"
-n2o_flux_pattern = "N2O_flux_MgCO2e_ha"
 
 land_cover = "land_cover"
 vegetation_height = "vegetation_height"

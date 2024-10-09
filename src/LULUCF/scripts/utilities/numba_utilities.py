@@ -87,35 +87,28 @@ def create_typed_dicts(layers):
     return typed_dict_uint8, typed_dict_int16, typed_dict_int32, typed_dict_float32
 
 
-# Fluxes and stocks for non-tree converted to tree
+# Returns the starting carbon density for each carbon pool
 @jit(nopython=True)
-def calc_NT_T(agc_rf, r_s_ratio_cell, c_dens_in):
+def unpack_starting_carbon_densities(c_dens_in):
 
-    agc_dens_in = c_dens_in[0]
-    bgc_dens_in = c_dens_in[1]
-    deadwood_c_dens_in = c_dens_in[2]
-    litter_c_dens_in = c_dens_in[3]
+    agc_dens_in = np.float32(c_dens_in[0])
+    bgc_dens_in = np.float32(c_dens_in[1])
+    deadwood_c_dens_in = np.float32(c_dens_in[2])
+    litter_c_dens_in = np.float32(c_dens_in[3])
 
-    # Number of years of removals
-    gain_year_count = cn.NF_F_gain_year
+    return agc_dens_in, bgc_dens_in, deadwood_c_dens_in, litter_c_dens_in
 
-    # Calculates fluxes
-    agc_flux_out = (agc_rf * gain_year_count) * -1
-    bgc_flux_out = float(agc_flux_out) * r_s_ratio_cell
-    deadwood_c_flux_out= cn.deadwood_c_NT_T_rf
-    litter_c_flux_out= cn.litter_c_NT_T_rf
 
-    # Calculates carbon pool densities
-    agc_dens_out = agc_dens_in - agc_flux_out
-    bgc_dens_out = bgc_dens_in - bgc_flux_out
-    deadwood_c_dens_out = deadwood_c_dens_in - deadwood_c_flux_out
-    litter_c_dens_out = litter_c_dens_in - litter_c_flux_out
+# Returns the emission factor for each carbon pool
+@jit(nopython=True)
+def unpack_stand_replacing_emission_factors(ef):
 
-    # Must specify float32 because numba is quite particular about datatypes
-    c_fluxes_out = np.array([agc_flux_out, bgc_flux_out, deadwood_c_flux_out, litter_c_flux_out]).astype('float32')
-    c_dens_out = np.array([agc_dens_out, bgc_dens_out, deadwood_c_dens_out, litter_c_dens_out]).astype('float32')
+    agc_ef = np.float32(ef[0])
+    bgc_ef = np.float32(ef[1])
+    deadwood_c_ef = np.float32(ef[2])
+    litter_c_ef = np.float32(ef[3])
 
-    return c_fluxes_out, c_dens_out, gain_year_count
+    return agc_ef, bgc_ef, deadwood_c_ef, litter_c_ef
 
 
 # Calculate non-CO2 emissions
@@ -142,57 +135,110 @@ def fire_equations(carbon_in, r_s_ratio_cell, Cf, Gef_ch4, Gef_n2o):
     return ch4_flux_out, n2o_flux_out
 
 
-# Fluxes and stocks for tree converted to non-tree with and without fire.
+# Gross and net fluxes and ending carbon stocks for non-tree converted to tree
+@jit(nopython=True)
+def calc_NT_T(agc_rf, r_s_ratio_cell, c_dens_in):
+
+    # Retrieves the starting densities for each carbon pool from the input array
+    agc_dens_in, bgc_dens_in, deadwood_c_dens_in, litter_c_dens_in = unpack_starting_carbon_densities(c_dens_in)
+
+    # Step 1: Calculates the number of years of carbon gain
+    gain_year_count = cn.NF_F_gain_year
+
+    # Step 2: Calculates gross removals by carbon pools. Gross removals are negative.
+    agc_gross_removals_out = (agc_rf * gain_year_count) * -1
+    bgc_gross_removals_out = float(agc_gross_removals_out) * r_s_ratio_cell
+    deadwood_c_gross_removals_out= cn.deadwood_c_NT_T_rf
+    litter_c_gross_removals_out= cn.litter_c_NT_T_rf
+
+    # Step 3: Calculates gross emissions by carbon pools
+    agc_gross_emis_out = 0
+    bgc_gross_emis_out = 0
+    deadwood_c_gross_emis_out = 0
+    litter_c_gross_emis_out = 0
+
+    # Step 4: Calculates ending carbon densities by carbon pool
+    agc_dens_out = agc_dens_in - agc_gross_removals_out
+    bgc_dens_out = bgc_dens_in - bgc_gross_removals_out
+    deadwood_c_dens_out = deadwood_c_dens_in - deadwood_c_gross_removals_out
+    litter_c_dens_out = litter_c_dens_in - litter_c_gross_removals_out
+
+    # Step 5: Prepares outputs
+    # Consolidates all gross fluxes from all carbon pools into arrays to reduce the number of arguments returned to the decision tree
+    # Must specify float32 because numba is quite particular about datatypes
+    c_gross_removals_out = np.array([agc_gross_removals_out, bgc_gross_removals_out, deadwood_c_gross_removals_out, litter_c_gross_removals_out]).astype('float32')
+    c_gross_emissions_out = np.array([agc_gross_emis_out, bgc_gross_emis_out, deadwood_c_gross_emis_out, litter_c_gross_emis_out]).astype('float32')
+    c_dens_out = np.array([agc_dens_out, bgc_dens_out, deadwood_c_dens_out, litter_c_dens_out]).astype('float32')
+
+    return c_gross_emissions_out, c_gross_removals_out, c_dens_out, gain_year_count
+
+
+# Gross and net fluxes and ending carbon stocks for tree converted to non-tree with and without fire.
 # Non-CO2 gas emissions are only calculated if arguments for fires are supplied.
 @jit(nopython=True)
-def calc_T_NT(agc_rf, agc_ef, forest_dist_last, r_s_ratio_cell, end_year, c_dens_in, Cf=None, Gef_ch4=None, Gef_n2o=None):
+def calc_T_NT(agc_rf, ef_by_pool, forest_dist_last, r_s_ratio_cell, end_year, c_dens_in, Cf=None, Gef_ch4=None, Gef_n2o=None):
 
-    agc_dens_in = c_dens_in[0]
-    bgc_dens_in = c_dens_in[1]
-    deadwood_c_dens_in = c_dens_in[2]
-    litter_c_dens_in = c_dens_in[3]
+    # Retrieves the starting densities for each carbon pool from the input array
+    agc_dens_in, bgc_dens_in, deadwood_c_dens_in, litter_c_dens_in = unpack_starting_carbon_densities(c_dens_in)
 
-    # Calculates the number of years of tree growth before loss occurred
+    # Emission factor for each non-soil carbon pool
+    agc_ef, bgc_ef, deadwood_c_ef, litter_c_ef = unpack_stand_replacing_emission_factors(ef_by_pool)
+
+    ## Step 1: Calculates the number of years of carbon gin before loss occurred
     # TODO Make sure the logic about number of years actually matches the decision tree. I don't think they match right now.
     if forest_dist_last > 0:
-        # If a forest disturbance was detected, the growth_years are the number of years until detection of the last disturbance.
+        # If a forest disturbance was detected, the gain_year_count are the number of years until detection of the last disturbance.
         # There is no growth in the year of disturbance of the years after.
         # For example, if the time interval is 2010-2015 and the disturbance is detected in 2013,
         # there should be 2 years of growth (years t-4 and t-3, 2011 and 2012).
         # TODO Make sure this is actually right. What if the disturbance is in 2015 (end of interval)?
-        growth_years = forest_dist_last - (end_year-cn.interval_years)
+        gain_year_count = forest_dist_last - (end_year-cn.interval_years)
     else:
         # If a forest disturbance was not detected, the disturbance is assumed to occur in the middle of the interval
         # (year t-2), with removals until then (years t-4 and t-3). There are no removals in the year of assumed
         # disturbance or the years after.
-        growth_years = math.floor(cn.interval_years/2)
+        gain_year_count = math.floor(cn.interval_years/2)
 
-    # Gross removals before canopy disturbance (tonnes C/ha)
-    removals_before_loss = (agc_rf * growth_years) * -1
+    # Step 2: Calculates gross removals by carbon pools. Gross removals are negative.
+    agc_gross_removals_out = (agc_rf * gain_year_count) * -1
+    bgc_gross_removals_out = float(agc_gross_removals_out) * r_s_ratio_cell
+    deadwood_c_gross_removals_out= cn.deadwood_c_NT_T_rf
+    litter_c_gross_removals_out= cn.litter_c_NT_T_rf
 
-    agc_flux_out = (agc_dens_in + (removals_before_loss*-1)) * agc_ef
-    bgc_flux_out = float(agc_flux_out) * r_s_ratio_cell
-    deadwood_c_flux_out = deadwood_c_dens_in * agc_ef
-    litter_c_flux_out = litter_c_dens_in * agc_ef
+    # Step 3: Calculates carbon densities at the year of loss by carbon pool
+    agc_pre_disturb = agc_dens_in - agc_gross_removals_out
+    bgc_pre_disturb = bgc_dens_in - bgc_gross_removals_out
+    deadwood_c_pre_disturb = deadwood_c_dens_in - deadwood_c_gross_removals_out
+    litter_c_pre_disturb = litter_c_dens_in - litter_c_gross_removals_out
 
-    agc_dens_out = agc_dens_in - agc_flux_out
-    bgc_dens_out = bgc_dens_in - bgc_flux_out
-    deadwood_c_dens_out = deadwood_c_dens_in - deadwood_c_flux_out
-    litter_c_dens_out = litter_c_dens_in - litter_c_flux_out
+    # Step 4: Calculates gross emissions by carbon pools
+    agc_gross_emis_out = agc_pre_disturb * agc_ef
+    bgc_gross_emis_out = bgc_pre_disturb * bgc_ef
+    deadwood_c_gross_emis_out = deadwood_c_pre_disturb * deadwood_c_ef
+    litter_c_gross_emis_out = litter_c_pre_disturb * litter_c_ef
 
-    # Must specify float32 because numba is quite particular about datatypes
-    c_fluxes_out = np.array([agc_flux_out, bgc_flux_out, deadwood_c_flux_out, litter_c_flux_out]).astype('float32')
-    c_dens_out = np.array([agc_dens_out, bgc_dens_out, deadwood_c_dens_out, litter_c_dens_out]).astype('float32')
+    # Step 5: Calculates ending carbon densities by carbon pool.
+    # Starts with carbon density in, adds gross removals (subtracts negative value), subtracts emissions
+    agc_dens_out = agc_dens_in - agc_gross_removals_out - agc_gross_emis_out
+    bgc_dens_out = bgc_dens_in - bgc_gross_removals_out - bgc_gross_emis_out
+    deadwood_c_dens_out = deadwood_c_dens_in - deadwood_c_gross_removals_out - deadwood_c_gross_emis_out
+    litter_c_dens_out = litter_c_dens_in - litter_c_gross_removals_out - litter_c_gross_emis_out
 
-    # Calculates non-CO2 gases, if required (as determined by fire-related argument to function)
+    # Step 6: Calculates non-CO2 gases, if required (as determined by fire-related argument to function)
     ch4_flux_out, n2o_flux_out = fire_equations(agc_dens_in, r_s_ratio_cell, Cf, Gef_ch4, Gef_n2o)  # agc_dens_in can be any set of carbon pools
 
+    # Step 7: Prepares outputs
+    # Consolidates all gross fluxes from all carbon pools into arrays to reduce the number of arguments returned to the decision tree
+    # Must specify float32 because numba is quite particular about datatypes
+    c_gross_removals_out = np.array([agc_gross_removals_out, bgc_gross_removals_out, deadwood_c_gross_removals_out, litter_c_gross_removals_out]).astype('float32')
+    c_gross_emissions_out = np.array([agc_gross_emis_out, bgc_gross_emis_out, deadwood_c_gross_emis_out, litter_c_gross_emis_out]).astype('float32')
+    c_dens_out = np.array([agc_dens_out, bgc_dens_out, deadwood_c_dens_out, litter_c_dens_out]).astype('float32')
     non_co2_fluxes_out = np.array([ch4_flux_out, n2o_flux_out]).astype('float32')
 
-    return c_fluxes_out, non_co2_fluxes_out, c_dens_out
+    return c_gross_emissions_out, c_gross_removals_out, non_co2_fluxes_out, c_dens_out, gain_year_count
 
 
-# Fluxes and stocks for trees remaining trees without disturbances
+# Gross and net fluxes and ending carbon stocks for trees remaining trees without disturbances
 @jit(nopython=True)
 def calc_T_T_undisturbed(agc_rf, r_s_ratio_cell, c_dens_in):
 
@@ -218,7 +264,7 @@ def calc_T_T_undisturbed(agc_rf, r_s_ratio_cell, c_dens_in):
     return c_fluxes_out, c_dens_out
 
 
-# Fluxes and stocks for trees remaining trees with non-stand-replacing disturbances
+# Gross and net fluxes and ending carbon stocks for trees remaining trees with non-stand-replacing disturbances
 #TODO include sequence of fluxes for disturbances: pre-disturb removals, emissions, post-disturb removals
 @jit(nopython=True)
 def calc_T_T_non_stand_disturbs(agc_rf, agc_ef, r_s_ratio_cell, c_dens_in, Cf=None, Gef_ch4=None, Gef_n2o=None):
@@ -249,7 +295,7 @@ def calc_T_T_non_stand_disturbs(agc_rf, agc_ef, r_s_ratio_cell, c_dens_in, Cf=No
     return c_fluxes_out, non_co2_fluxes_out, c_dens_out
 
 
-# Fluxes and stocks for trees remaining trees with stand-replacing disturbances
+# Gross and net fluxes and ending carbon stocks for trees remaining trees with stand-replacing disturbances
 #TODO include sequence of fluxes for disturbances: pre-disturb removals, emissions, post-disturb removals
 @jit(nopython=True)
 def calc_T_T_stand_disturbs(agc_rf, agc_ef, r_s_ratio_cell, c_dens_in, Cf=None, Gef_ch4=None, Gef_n2o=None):
