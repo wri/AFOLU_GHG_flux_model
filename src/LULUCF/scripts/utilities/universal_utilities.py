@@ -251,7 +251,8 @@ def check_for_tile(download_dict, is_final, logger):
 
 # List files in an S3 bucket with a certain pattern.
 def list_s3_files_with_pattern(s3_path, pattern):
-    s3 = boto3.client('s3')
+    s3 = boto3.client("s3")
+
     matching_files = []
 
     bucket_name, prefix = split_s3_path(s3_path)
@@ -265,6 +266,9 @@ def list_s3_files_with_pattern(s3_path, pattern):
             key = obj['Key']
             if key.endswith(pattern):
                 matching_files.append(f"s3://{bucket_name}/{key}")
+        print(f"Files matching pattern '{pattern}':")
+        for file in matching_files:
+            print(file)
     else:
         print(f"No files found in the bucket '{bucket_name}' with the prefix '{prefix}'")
 
@@ -878,7 +882,7 @@ def fill_missing_input_layers_with_no_data(layers, uint8_list, int16_list, int32
     return layers
 
 # Function to build a VRT using GDAL with vsis3 paths
-@delayed
+#@delayed
 def build_vrt_gdal(s3_paths, output_vrt):
     # Convert S3 paths to GDAL's vsis3 format
     vsis3_paths = [path.replace("s3://", "/vsis3/") for path in s3_paths]
@@ -886,12 +890,32 @@ def build_vrt_gdal(s3_paths, output_vrt):
 
     # Use GDAL to build the VRT
     gdal.BuildVRT(output_s3_path, vsis3_paths)
+
+    #Check that file exists
+    s3 = boto3.client('s3')
+    bucket_name, prefix = split_s3_path(output_vrt)
+    try:
+        s3.head_object(Bucket=bucket_name, Key=prefix)
+        print(f"VRT successfully created at: {output_vrt}")
+    except s3.exceptions.ClientError as e:
+        if e.response['Error']['Code'] == "404":
+            raise RuntimeError(f"Failed to build VRT at: {output_vrt}")
+        else:
+            raise RuntimeError(f"Error accessing S3: {e}")
+
+    # Flush and close the VRT dataset
+    vrt = None
+
     return output_vrt
 
 # Function to read a VRT from S3 using GDAL and vsis3
-@delayed
+#@delayed
 def warp_to_hansen(source_raster_s3_path, output_raster_s3_path, xmin, ymin, xmax, ymax, dt, no_data, tiled=False,
                    x_pixel_window=None, y_pixel_window=None):
+
+    # Set the environment variable to enable random writes for S3
+    os.environ['CPL_VSIL_USE_TEMP_FILE_FOR_RANDOM_WRITE'] = 'YES'
+
     # Check that pixel window arguments are given if tiled = True
     if tiled and not (x_pixel_window and y_pixel_window):
         raise ValueError("If tiled = True, x_pixel_window and y_pixel_window must be passed as arguments")
@@ -936,7 +960,6 @@ def warp_to_hansen(source_raster_s3_path, output_raster_s3_path, xmin, ymin, xma
             format='GTiff'  # Output format
         )
 
-    # print(options)
     gdal.Warp(output_gdal_path, source_gdal_path, options=options)
 
     print(f"Warped raster saved at: {output_gdal_path}")
