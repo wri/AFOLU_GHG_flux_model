@@ -146,10 +146,10 @@ def create_starting_C_densities(in_dict_uint8, in_dict_int16, in_dict_int32, in_
 
     # Adds the output arrays to the dictionary with the appropriate data type
     # Outputs need .copy() so that previous intervals' arrays in dicationary aren't overwritten because arrays in dictionaries are mutable (courtesy of ChatGPT).
-    out_dict_float32[f"{cn.agc_dens_pattern}_{cn.first_year}"] = agc_2000_out_block.copy()
-    out_dict_float32[f"{cn.bgc_dens_pattern}_{cn.first_year}"] = bgc_2000_out_block.copy()
-    out_dict_float32[f"{cn.deadwood_c_dens_pattern}_{cn.first_year}"] = deadwood_c_2000_out_block.copy()
-    out_dict_float32[f"{cn.litter_c_dens_pattern}_{cn.first_year}"] = litter_c_2000_out_block.copy()
+    out_dict_float32[f"{cn.agc_dens_pattern}_{cn.first_model_year}"] = agc_2000_out_block.copy()
+    out_dict_float32[f"{cn.bgc_dens_pattern}_{cn.first_model_year}"] = bgc_2000_out_block.copy()
+    out_dict_float32[f"{cn.deadwood_c_dens_pattern}_{cn.first_model_year}"] = deadwood_c_2000_out_block.copy()
+    out_dict_float32[f"{cn.litter_c_dens_pattern}_{cn.first_model_year}"] = litter_c_2000_out_block.copy()
 
     # return output dictionary/ies
     return out_dict_float32
@@ -297,7 +297,7 @@ def create_and_upload_starting_C_densities(bounds, is_final, mangrove_C_ratio_ar
         out_pattern = key[:-5]  # Drops the year (2000) from the end of the string
 
         # Dictionary with metadata for each array
-        out_dict_all_dtypes[key] = [value, data_type, out_pattern, cn.first_year]
+        out_dict_all_dtypes[key] = [value, data_type, out_pattern, cn.first_model_year]
 
     uu.save_and_upload_small_raster_set(bounds, chunk_length_pixels, tile_id, bounds_str, out_dict_all_dtypes,
                                         is_final, logger, out_no_data_val)

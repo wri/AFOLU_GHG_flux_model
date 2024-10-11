@@ -176,7 +176,7 @@ def calc_NT_T(agc_rf, r_s_ratio_cell, c_dens_in):
 # Gross and net fluxes and ending carbon stocks for tree converted to non-tree with and without fire.
 # Non-CO2 gas emissions are only calculated if arguments for fires are supplied.
 @jit(nopython=True)
-def calc_T_NT(agc_rf, ef_by_pool, forest_dist_last, r_s_ratio_cell, end_year, c_dens_in, Cf=None, Gef_ch4=None, Gef_n2o=None):
+def calc_T_NT(agc_rf, ef_by_pool, forest_dist_last, r_s_ratio_cell, interval_end_year, c_dens_in, Cf=None, Gef_ch4=None, Gef_n2o=None):
 
     # Retrieves the starting densities for each carbon pool from the input array
     agc_dens_in, bgc_dens_in, deadwood_c_dens_in, litter_c_dens_in = unpack_starting_carbon_densities(c_dens_in)
@@ -185,14 +185,19 @@ def calc_T_NT(agc_rf, ef_by_pool, forest_dist_last, r_s_ratio_cell, end_year, c_
     agc_ef, bgc_ef, deadwood_c_ef, litter_c_ef = unpack_stand_replacing_emission_factors(ef_by_pool)
 
     ## Step 1: Calculates the number of years of carbon gin before loss occurred
-    # TODO Make sure the logic about number of years actually matches the decision tree. I don't think they match right now.
     if forest_dist_last > 0:
         # If a forest disturbance was detected, the gain_year_count are the number of years until detection of the last disturbance.
-        # There is no growth in the year of disturbance of the years after.
-        # For example, if the time interval is 2010-2015 and the disturbance is detected in 2013,
+        # There is no growth in the year of disturbance or the years after.
+        # The - 1 at the excludes the disturbance year from the gain_year_count since we decided there are no removals in the disturbance year.
+        # For example, if the time interval is 2010-2015 and the disturbance is detected in 2013 (t-2),
         # there should be 2 years of growth (years t-4 and t-3, 2011 and 2012).
-        # TODO Make sure this is actually right. What if the disturbance is in 2015 (end of interval)?
-        gain_year_count = forest_dist_last - (end_year-cn.interval_years)
+        # This table illustrates each case for the example interval of 2010-2015.
+        # 0 years         11               - ((2015              - 2000)                - 5) - 1   (year t-4)
+        # 1 years         12               - ((2015              - 2000)                - 5) - 1   (year t-3)
+        # 2 years         13               - ((2015              - 2000)                - 5) - 1   (year t-2)
+        # 3 years         14               - ((2015              - 2000)                - 5) - 1   (year t-1)
+        # 4 years         15               - ((2015              - 2000)                - 5) - 1   (year t)
+        gain_year_count = forest_dist_last - ((interval_end_year - cn.first_model_year) - cn.interval_years) - 1
     else:
         # If a forest disturbance was not detected, the disturbance is assumed to occur in the middle of the interval
         # (year t-2), with removals until then (years t-4 and t-3). There are no removals in the year of assumed

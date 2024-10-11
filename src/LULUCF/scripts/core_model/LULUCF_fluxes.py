@@ -37,7 +37,7 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
     out_dict_uint32 = {}
     out_dict_float32 = {}
 
-    end_years = list(range(cn.first_year, cn.last_year + 1, cn.interval_years))[1:]
+    end_years = list(range(cn.first_model_year, cn.last_model_year + 1, cn.interval_years))[1:]
     # end_years = [2005, 2010]
 
     # Numpy arrays for outputs that do depend on previous interval's values
@@ -78,11 +78,18 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
             # print(year_key)
             burned_area_blocks_total.append(in_dict_uint8[year_key])
 
-        # Creates a list of all the forest disturbance arrays from 2001 to the end of the interval
+        # Creates a list of all the forest disturbance arrays from 2001 to the end of the interval.
+        # The values in the list are the disturbance year starting from 1, e.g., 2001=1, 2008=8, 2017=17.
         for year_offset in range(end_year-4, end_year+1):
+            # The name of the disturbance layer in the input dictionary
             year_key = f"{cn.forest_disturbance}_{year_offset}"
-            # print(year_key)
-            forest_dist_blocks_total.append(in_dict_uint8[year_key])
+
+            # Replaces the binary annual disturbance array with the year of disturbance (1, 2, 3...2020)
+            year_disturb_array = in_dict_uint8[year_key] * (year_offset - cn.first_model_year)
+
+            # Makes a list of disturbance arrays with the disturbance year.
+            # uint8 is okay because the highest value should be 20 (not 2020).
+            forest_dist_blocks_total.append(year_disturb_array.astype('uint8'))
 
 
         # Numpy arrays for outputs that don't depend on previous interval's values
@@ -152,6 +159,9 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                 # Most recent year with forest disturbance during the interval
                 forest_dist_last = max([forest_dist_t_4, forest_dist_t_3, forest_dist_t_2, forest_dist_t_1, forest_dist_t])
 
+                # if forest_dist_last > 0:
+                #     print(forest_dist_last)
+
                 # Records the first year of burned area in the pixel, to indicate whether fire was reported at all
                 # in the record
                 first_burn_in_record = 0
@@ -172,7 +182,7 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                 #     print("fire", row, col, first_burn_in_record)
 
                 # Loops over forest disturbance pixels since 2001 to see if there was a disturbance.
-                # Stops once a disturbance is detected because all that matters here is that there was a disturbance at some point.
+                # Stops once a disturbance is detected because all that matters here is that there was a disturbance at some point (not the specific year).
                 for forest_dist_year in forest_dist_blocks_total:
                     # Update the maximum value for this pixel
                     if forest_dist_year[row, col] > 0:
@@ -212,8 +222,7 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                 # Starting decision tree node value
                 node = 0
 
-
-                # Need to force into float32 because numba is so particular about datatypes.
+                # Need to force arrays into float32 because numba is so particular about datatypes.
                 state_out = 0
                 gain_year_count = 0
                 agc_rf = 0
@@ -593,7 +602,7 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
 
         out_dict_uint8[f"{cn.gain_year_count_pattern}_{year_range}"] = gain_year_count_out_block.copy()
 
-        out_dict_uint32[f"{cn.agc_rf_pattern}_{year_range}"] = agc_rf_out_block.copy()
+        out_dict_float32[f"{cn.agc_rf_pattern}_{year_range}"] = agc_rf_out_block.copy()
 
         #TODO Convert C fluxes to CO2 fluxes somewhere in the process
         # (best place TBD but perhaps out here rather than in the decision tree so only need to apply 44/12 a few times)
@@ -853,11 +862,11 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
     }
 
     # All years need to be in their own folder
-    for year in range(cn.first_year, cn.last_year + 1):  # Annual burned area maps start in 2000
+    for year in range(cn.first_model_year, cn.last_model_year + 1):  # Annual burned area maps start in 2000
         download_dict[f"{cn.burned_area}_{year}"] = f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/burn_year/burn_year_10x10_clip_by_year/{year}/{cn.burned_area_pattern}_{year}_{sample_tile_id}.tif"
 
     # All years need to be in their own folder
-    for year in range(cn.first_year + 1, cn.last_year + 1):  # Annual forest disturbance maps start in 2001 and ends in 2020
+    for year in range(cn.first_model_year + 1, cn.last_model_year + 1):  # Annual forest disturbance maps start in 2001 and ends in 2020
         download_dict[f"{cn.forest_disturbance}_{year}"] = f"{cn.LC_uri}/annual_forest_disturbance/raw/{year}/{year}_{sample_tile_id}.tif"
 
     # Returns the first tile in each input so that the datatype can be determined.

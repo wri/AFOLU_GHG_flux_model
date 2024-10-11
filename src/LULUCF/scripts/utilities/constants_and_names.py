@@ -30,8 +30,8 @@ otherland_IPCC = 6
 IPCC_class_max_val = 6  # Maximum value of IPCC class codes
 
 ### Model years
-first_year = 2000  # First year of model
-last_year = 2020   # Last year of model
+first_model_year = 2000  # First year of model
+last_model_year = 2020   # Last year of model
 
 # Number of years in interval.
 interval_years = 5    #TODO: calculate programmatically in numba function rather than coded here-- for greater flexibility.
@@ -191,7 +191,7 @@ land_state_pattern = "land_state_node"
 
 gain_year_count_pattern = "gain_year_count"
 
-agc_rf_pattern = "aboveground_carbon_removal_factor_UNITS_TBD" #TODO Specify RF units here
+agc_rf_pattern = "AGC_removal_factor_UNITS_TBD" #TODO Specify RF units here
 
 # Gross and net fluxes
 agc_gross_emis_pattern = "AGC_gross_emis_MgC_ha"
