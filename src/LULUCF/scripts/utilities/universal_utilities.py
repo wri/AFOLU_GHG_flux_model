@@ -52,7 +52,11 @@ def connect_to_Coiled_cluster(cluster_name, run_local):
 
         return cluster, client
 
-
+# Splits a full s3 path "s3://bucket-name/rest_of_path" into "bucket-name" and "rest_of_path"
+def split_s3_path(s3_path):
+    s3_path = s3_path.replace("s3://", "")   # Remove the "s3://" prefix
+    bucket, key = s3_path.split("/", 1)    # Split the remaining string by the first "/"
+    return bucket, key
 
 # Chunk bounds as a string
 def boundstr(bounds):
@@ -244,6 +248,26 @@ def check_for_tile(download_dict, is_final, logger):
 
     return False
 
+# List files in an S3 bucket with a certain pattern.
+def list_s3_files_with_pattern(s3_path, pattern):
+    s3 = boto3.client('s3')
+    matching_files = []
+
+    bucket_name, prefix = split_s3_path(s3_path)
+
+    # List objects in the bucket with the given prefix
+    response = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+
+    # Check if any contents are returned
+    if 'Contents' in response:
+        for obj in response['Contents']:
+            key = obj['Key']
+            if key.endswith(pattern):
+                matching_files.append(f"s3://{bucket_name}/{key}")
+    else:
+        print(f"No files found in the bucket '{bucket_name}' with the prefix '{prefix}'")
+
+    return matching_files
 
 # Checks whether a chunk has data in it.
 # There are two options for how to assess if a chunk has data (any_or_all argument): if any assessed input has data, or if all assessed inputs have data.
