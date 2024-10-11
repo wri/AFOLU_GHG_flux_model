@@ -16,6 +16,7 @@ import concurrent.futures
 from botocore.config import Config
 from dask.distributed import print
 from dask.distributed import Client
+from dask import delayed
 from datetime import datetime
 from io import BytesIO
 from osgeo import gdal
@@ -875,3 +876,68 @@ def fill_missing_input_layers_with_no_data(layers, uint8_list, int16_list, int32
                 raise ValueError(f"No data available to determine the size for the missing layer {key} for chunk {bounds_str} in {tile_id}: {timestr()}")
 
     return layers
+
+# Function to build a VRT using GDAL with vsis3 paths
+@delayed
+def build_vrt_gdal(s3_paths, output_vrt):
+    # Convert S3 paths to GDAL's vsis3 format
+    vsis3_paths = [path.replace("s3://", "/vsis3/") for path in s3_paths]
+    output_s3_path = output_vrt.replace("s3://", "/vsis3/")
+
+    # Use GDAL to build the VRT
+    gdal.BuildVRT(output_s3_path, vsis3_paths)
+    return output_vrt
+
+# Function to read a VRT from S3 using GDAL and vsis3
+@delayed
+def warp_to_hansen(source_raster_s3_path, output_raster_s3_path, xmin, ymin, xmax, ymax, dt, no_data, tiled=False,
+                   x_pixel_window=None, y_pixel_window=None):
+    # Check that pixel window arguments are given if tiled = True
+    if tiled and not (x_pixel_window and y_pixel_window):
+        raise ValueError("If tiled = True, x_pixel_window and y_pixel_window must be passed as arguments")
+
+    # Convert the S3 paths to GDAL's vsis3 paths
+    source_gdal_path = source_raster_s3_path.replace("s3://", "/vsis3/")
+    output_gdal_path = output_raster_s3_path.replace("s3://", "/vsis3/")
+
+    # Open the VRT
+    dataset = gdal.Open(source_gdal_path)
+
+    if dataset is None:
+        raise RuntimeError(f"Failed to open VRT: {source_gdal_path}")
+
+    if tiled == True:
+        # Warp the VRT to the new raster
+        options = gdal.WarpOptions(
+            dstSRS='EPSG:4326',
+            xRes=0.00025,
+            yRes=0.00025,
+            targetAlignedPixels=True,
+            outputBounds=[xmin, ymin, xmax, ymax],
+            dstNodata=no_data,
+            outputType=dt,
+            creationOptions=['COMPRESS=DEFLATE', 'TILED=YES',
+                             f'BLOCKXSIZE={x_pixel_window}',
+                             f'BLOCKYSIZE={y_pixel_window}'],
+            # Add Deflate compression and tiling with block dimensions
+            format='GTiff'
+        )
+    else:
+        # Warp the VRT to the new raster
+        options = gdal.WarpOptions(
+            dstSRS='EPSG:4326',  # Reproject to WGS84
+            xRes=0.00025,  # X resolution (10 degrees)
+            yRes=0.00025,  # Y resolution (10 degrees)
+            targetAlignedPixels=True,  # Ensure target aligned pixels (-tap)
+            outputBounds=[xmin, ymin, xmax, ymax],  # Output bounds
+            dstNodata=no_data,  # Set no data to 0
+            outputType=dt,  # Output data type
+            creationOptions=['COMPRESS=DEFLATE', 'TILED=NO'],  # Add Deflate compression and no tiling (40,000 x 1)
+            format='GTiff'  # Output format
+        )
+
+    # print(options)
+    gdal.Warp(output_gdal_path, source_gdal_path, options=options)
+
+    print(f"Warped raster saved at: {output_gdal_path}")
+    return output_gdal_path
