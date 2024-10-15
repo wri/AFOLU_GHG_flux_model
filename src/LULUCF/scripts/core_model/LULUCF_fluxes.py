@@ -49,6 +49,12 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
 
     r_s_ratio_block = in_dict_float32[cn.r_s_ratio].astype('float32')
 
+    # Removal factor (Mg [some unit]/ha/yr) #TODO Units TBD
+    # Because this is used to store the RF from the previous interval,
+    # it persists from one interval to the next. Therefore, it must be defined before the first iteration.
+    # That way, removal factors can be over-written by those used in the latest interval.
+    agc_rf_out_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('float32')
+
     planted_forest_type_block = in_dict_uint8[cn.planted_forest_type_layer]
     planted_forest_tree_crop_block = in_dict_uint8[cn.planted_forest_tree_crop_layer]
 
@@ -100,9 +106,6 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
         # Second digit (if it exists) is post-disturbance years of growth
         gain_year_count_out_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('uint8')
 
-        # Removal factor (Mg [some unit]/ha/yr) #TODO Units TBD
-        agc_rf_out_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('float32')
-
         agc_gross_emis_out_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('float32')
         bgc_gross_emis_out_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('float32')
         deadwood_c_gross_emis_out_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('float32')
@@ -128,6 +131,9 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                 veg_h_curr = veg_h_curr_block[row, col]
 
                 r_s_ratio_cell = r_s_ratio_block[row, col]
+
+                # TODO What to do if this is the first interval and there is no previous RF?
+                agc_rf_prev = agc_rf_out_block[row, col]  # The removal factor from the previous interval
 
                 # Replaces pixel without R:S (0) with the global non-mangrove R:S default #TODO This is the non-mangrove default. Need to adjust if mangrove pixel?
                 if r_s_ratio_cell == 0:
@@ -243,7 +249,7 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                             c_gross_emis_out, c_gross_removals_out, c_dens_out, gain_year_count = nu.calc_NT_T(agc_rf, r_s_ratio_cell, c_dens_in)
                         else:  # New terrestrial natural forest (112)
                             state_out = nu.accrete_node(node, 2)
-                            agc_rf = 5.6
+                            agc_rf = 100
                             c_gross_emis_out, c_gross_removals_out, c_dens_out, gain_year_count = nu.calc_NT_T(agc_rf, r_s_ratio_cell, c_dens_in)
                     else:  # New SDPT trees (12)
                         state_out = nu.accrete_node(node, 2)
@@ -393,18 +399,18 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                                 node = nu.accrete_node(node, 1)
                                 if not sig_height_loss_prev_curr:  # Stable trees outside forests (31111)
                                     state_out = nu.accrete_node(node, 1)
-                                    agc_rf = 2.8
+                                    agc_rf = agc_rf_prev
                                     c_net_flux_out, c_dens_out = nu.calc_T_T_undisturbed(agc_rf, r_s_ratio_cell, c_dens_in)
                                 else:  # Partially disturbed trees outside forests (31112)
                                     node = nu.accrete_node(node, 2)
                                     if burned_area_last == 0:  # Partially disturbed trees outside forests without fire (311121)
                                         state_out = nu.accrete_node(node, 1)
-                                        agc_rf = 1.3
+                                        agc_rf = agc_rf_prev
                                         agc_ef = 0.9
                                         c_net_flux_out, non_co2_flux_out, c_dens_out = nu.calc_T_T_non_stand_disturbs(agc_rf, agc_ef, r_s_ratio_cell, c_dens_in)
                                     else:  # Partially disturbed trees outside forests with fire (311122)
                                         state_out = nu.accrete_node(node, 2)
-                                        agc_rf = 0.75
+                                        agc_rf = agc_rf_prev
                                         agc_ef = 0.33
                                         c_net_flux_out, non_co2_flux_out, c_dens_out = nu.calc_T_T_non_stand_disturbs(agc_rf, agc_ef, r_s_ratio_cell, c_dens_in, 0.5, 4.7, 0.26)
                             else:  # Natural forest without stand-replacing disturbance in the last interval (3112)
@@ -417,26 +423,34 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                                         node = nu.accrete_node(node, 1)
                                         if ifl_primary_cell == 0:  # Old secondary forest (3112111)
                                             state_out = nu.accrete_node(node, 1)
-                                            agc_rf = 0.5
+                                            agc_rf = agc_rf_prev
                                             c_net_flux_out, c_dens_out = nu.calc_T_T_undisturbed(agc_rf, r_s_ratio_cell, c_dens_in)
                                         else:  # Primary forest (3112112)
                                             state_out = nu.accrete_node(node, 2)
-                                            agc_rf = 0.3
+                                            agc_rf = agc_rf_prev
                                             c_net_flux_out, c_dens_out = nu.calc_T_T_undisturbed(agc_rf, r_s_ratio_cell, c_dens_in)
                                     else:   # Young secondary natural forest (311212)
                                         state_out = nu.accrete_node(node, 2)
-                                        agc_rf = 3.3
+                                        agc_rf = agc_rf_prev
                                         c_net_flux_out, c_dens_out = nu.calc_T_T_undisturbed(agc_rf, r_s_ratio_cell, c_dens_in)
                                 else:  # Partially disturbed natural forest (31122)
                                     node = nu.accrete_node(node, 2)
                                     if burned_area_last == 0: # Partially disturbed natural forest without fire (311221)
                                         state_out = nu.accrete_node(node, 1)
-                                        agc_rf = 1.3
+                                        agc_rf = agc_rf_prev
                                         agc_ef = 0.6
                                         c_net_flux_out, non_co2_flux_out, c_dens_out = nu.calc_T_T_non_stand_disturbs(agc_rf, agc_ef, r_s_ratio_cell, c_dens_in)
+
+                                        # if end_year == 2010:
+                                        #     print(state_out)
+                                        #     print(agc_rf_prev)
+                                        #     print(agc_rf)
+                                        #     print(c_net_flux_out)
+                                        #     os.quit()
+
                                     else:  # Partially disturbed natural forest with fire (311222)
                                         state_out = nu.accrete_node(node, 2)
-                                        agc_rf = 1.3
+                                        agc_rf = agc_rf_prev
                                         agc_ef = 0.95
                                         c_net_flux_out, non_co2_flux_out, c_dens_out = nu.calc_T_T_non_stand_disturbs(agc_rf, agc_ef, r_s_ratio_cell, c_dens_in, 0.5, 4.7, 0.26)
                         else:  # SDPT planted trees without stand-replacing disturbance in the last interval (312)

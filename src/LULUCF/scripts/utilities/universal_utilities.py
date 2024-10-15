@@ -164,8 +164,6 @@ def stage_duration(start_time_str, end_time_str, stage):
 # For example, a dataset that's float32 can't have NoData chunks that are uint8 because
 # the Numba functions won't be able to handle that (since they're so particular about datatypes).
 # So, that is addressed here.
-#TODO use coiled.cluster --mount_bucket argument to see if it improves performance when accessing s3
-# (Here and other functions that use s3): https://chatgpt.com/share/e/1fe33655-3700-465c-8b5f-19b6b0444407
 def get_tile_dataset_rio(uri, data_type, bounds, chunk_length_pixels, is_final, logger):
 
     # If the uri exists, the relevant window is opened and returned and returned as an array.
