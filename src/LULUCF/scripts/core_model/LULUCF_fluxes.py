@@ -794,8 +794,6 @@ def calculate_and_upload_LULUCF_fluxes(bounds, download_dict_with_data_types, is
 
             # Retrieves the file name pattern and date(s) covered for the output file for use in s3 folder construction
             out_pattern, year_range = uu.strip_and_extract_years(key)
-            print(out_pattern)
-            print(year_range)
 
             # Dictionary with metadata for each array
             out_dict_all_dtypes[key] = [value, data_type, out_pattern, year_range]
