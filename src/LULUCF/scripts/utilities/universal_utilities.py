@@ -849,3 +849,12 @@ def fill_missing_input_layers_with_no_data(layers, uint8_list, int16_list, int32
                 raise ValueError(f"No data available to determine the size for the missing layer {key} for chunk {bounds_str} in {tile_id}: {timestr()}")
 
     return layers
+
+
+# Extracts the file name pattern and year (or year range) from a string
+def strip_and_extract_years(key):
+
+    pattern = re.sub(cn.date_date_range_pattern, '', key)
+    year_range = re.search(cn.date_date_range_pattern, key).group()[1:]
+
+    return pattern, year_range

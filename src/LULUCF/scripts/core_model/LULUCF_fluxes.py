@@ -12,7 +12,7 @@ python -m scripts.core_model.LULUCF_fluxes -cn AFOLU_flux_model_scripts -bb -180
 
 import argparse
 import concurrent.futures
-import dask
+import re
 import numpy as np
 
 from dask.distributed import print
@@ -198,7 +198,7 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                 # if first_forest_dist_in_record > 0:
                 #     print("disturbance", row, col, first_forest_dist_in_record)
 
-                # Input carbon densities for the pools
+                # Input carbon densities for the pools using the end of the previous interval
                 agc_dens_in = agc_dens_block[row, col]
                 bgc_dens_in = bgc_dens_block[row, col]
                 deadwood_c_dens_in = deadwood_c_dens_block[row, col]
@@ -206,7 +206,7 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                 soil_c_dens = soil_c_dens_block[row, col]
 
                 # Makes a list of carbon densities to save space in the decision tree below.
-                # This list is input to flux calulation functions as one argument, rather than a separate argument
+                # This list is input to flux calculation functions as one argument, rather than a separate argument
                 # for each pool
                 c_dens_in = [agc_dens_in, bgc_dens_in, deadwood_c_dens_in, litter_c_dens_in]
 
@@ -638,10 +638,10 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
         out_dict_float32[f"{cn.ch4_flux_pattern}_{year_range}"] = ch4_gross_emis_out_block.copy()
         out_dict_float32[f"{cn.n2o_flux_pattern}_{year_range}"] = n2o_gross_emis_out_block.copy()
 
-        out_dict_float32[f"{cn.agc_dens_pattern}_{year_range}"] = agc_dens_block.copy()
-        out_dict_float32[f"{cn.bgc_dens_pattern}_{year_range}"] = bgc_dens_block.copy()
-        out_dict_float32[f"{cn.deadwood_c_dens_pattern}_{year_range}"] = deadwood_c_dens_block.copy()
-        out_dict_float32[f"{cn.litter_c_dens_pattern}_{year_range}"] = litter_c_dens_block.copy()
+        out_dict_float32[f"{cn.agc_dens_pattern}_{end_year}"] = agc_dens_block.copy()
+        out_dict_float32[f"{cn.bgc_dens_pattern}_{end_year}"] = bgc_dens_block.copy()
+        out_dict_float32[f"{cn.deadwood_c_dens_pattern}_{end_year}"] = deadwood_c_dens_block.copy()
+        out_dict_float32[f"{cn.litter_c_dens_pattern}_{end_year}"] = litter_c_dens_block.copy()
 
     return out_dict_uint8, out_dict_uint32, out_dict_float32
 
@@ -789,9 +789,13 @@ def calculate_and_upload_LULUCF_fluxes(bounds, download_dict_with_data_types, is
 
         # Adds metadata used for uploading outputs to s3 to the dictionary
         for key, value in out_dict_all_dtypes.items():
+            print(key)
             data_type = value.dtype.name
-            out_pattern = key[:-10] # Drops the date range from the end of the string
-            year_range = key[-9:]  # Extracts the year range XXXX_YYYY from the file name
+
+            # Retrieves the file name pattern and date(s) covered for the output file for use in s3 folder construction
+            out_pattern, year_range = uu.strip_and_extract_years(key)
+            print(out_pattern)
+            print(year_range)
 
             # Dictionary with metadata for each array
             out_dict_all_dtypes[key] = [value, data_type, out_pattern, year_range]

@@ -116,6 +116,8 @@ all_non_soil_pools = np.array([1, 1, 1, 1]).astype('uint8')
 ### File name paths and patterns
 ########
 
+date_date_range_pattern = r'_\d{4}(_\d{4})?'   # Pattern for date (XXXX) or date range XXXX_YYYY in output file names
+
 # Local path for chunk stats
 chunk_stats_path = "chunk_stats/"
 
