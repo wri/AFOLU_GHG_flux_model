@@ -24,10 +24,6 @@ from ..utilities import log_utilities as lu
 from ..utilities import numba_utilities as nu
 
 
-
-
-
-
 # Function to calculate LULUCF fluxes and carbon densities
 # Operates pixel by pixel, so uses numba (Python compiled to C++).
 @jit(nopython=True)
@@ -76,6 +72,9 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
     # This is assessed at the pixel level because numba wouldn't allow the needed logical operations on numpy arrays (chunks).
     # Tall vegetation is basd on the composite land cover maps, not the canopy height maps.
     most_recent_year_not_forest_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('uint16')
+
+    # Number of years of regrowth for new forest
+    years_of_new_forest_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('uint8')
 
 
     # Iterates through model intervals
@@ -244,6 +243,25 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
 
                 # Checks whether to update whether the most recent year is non-tall vegetation
                 most_recent_year_not_forest = nu.check_most_recent_year_not_forest(LC_curr, LC_prev, most_recent_year_not_forest, interval_end_year)
+
+                # Number of years of regrowth for new forest
+                years_of_new_forest = years_of_new_forest_block[row, col]
+
+                # Determines if the number of years of regrowth should be calculated.
+                # Condition 1: The end of the interval must be after the last year that was not tall vegetation,
+                # i.e. there was not tall vegetation previously but there is at the end of this interval (indicating regrowth).
+                # Condition 2: There must have been some year that was not forest,
+                # i.e. the years of regrowth is only relevant when there was not forest some year.
+                if (interval_end_year > most_recent_year_not_forest) & (most_recent_year_not_forest > 0):
+
+                    # Calculates the number of years of regrowth since the last year that was not forest
+                    years_of_new_forest = (interval_end_year - most_recent_year_not_forest)
+
+                #TODO Try out this rule. It should reset the growth year counter in cases where there was tall vegetation and then there wasn't.
+                if not tall_veg_curr:
+
+                    years_of_new_forest = 0
+
 
                 # Starting decision tree node value
                 node = 0
@@ -598,7 +616,6 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                 # Populates the output arrays with the calculated fluxes and densities
                 state_out_block[row, col] = state_out
 
-                gain_year_count_out_block[row, col] = gain_year_count
                 agc_rf_out_block[row, col] = agc_rf
 
                 agc_gross_emis_out_block[row, col] = c_gross_emis_out[0]
@@ -620,7 +637,9 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                 litter_c_dens_block[row, col] = c_dens_out[3]
 
                 #Test/intermediate outputs
+                gain_year_count_out_block[row, col] = gain_year_count
                 most_recent_year_not_forest_block[row, col] = most_recent_year_not_forest
+                years_of_new_forest_block[row, col] = years_of_new_forest
 
 
         # End of iteration calculations and outputs
@@ -636,8 +655,6 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
         year_range = f"{interval_end_year - cn.interval_years}_{interval_end_year}"
 
         out_dict_uint32[f"{cn.land_state_pattern}_{year_range}"] = state_out_block.copy()
-
-        out_dict_uint8[f"{cn.gain_year_count_pattern}_{year_range}"] = gain_year_count_out_block.copy()
 
         out_dict_float32[f"{cn.agc_rf_pattern}_{year_range}"] = agc_rf_out_block.copy()
 
@@ -667,7 +684,10 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
         out_dict_float32[f"{cn.litter_c_dens_pattern}_{interval_end_year}"] = litter_c_dens_block.copy()
 
         # Test/intermediate outputs
-        out_dict_uint16 [f"most_recent_year_not_forest_{cn.first_model_year}_{interval_end_year}"] = most_recent_year_not_forest_block.copy()
+        out_dict_uint8[f"{cn.gain_year_count_pattern}_{year_range}"] = gain_year_count_out_block.copy()
+        # Years selected to show it represents from model start to end of current interval
+        out_dict_uint16[f"most_recent_year_not_forest_{cn.first_model_year}_{interval_end_year}"] = most_recent_year_not_forest_block.copy()
+        out_dict_uint8[f"years_of_new_forest_{year_range}"] = years_of_new_forest_block.copy()
 
     return out_dict_uint8, out_dict_uint16, out_dict_uint32, out_dict_float32
 
