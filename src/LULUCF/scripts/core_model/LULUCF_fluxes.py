@@ -24,6 +24,10 @@ from ..utilities import log_utilities as lu
 from ..utilities import numba_utilities as nu
 
 
+
+
+
+
 # Function to calculate LULUCF fluxes and carbon densities
 # Operates pixel by pixel, so uses numba (Python compiled to C++).
 @jit(nopython=True)
@@ -33,6 +37,7 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
     # This is because a dictionary in a Numba function cannot have arrays with multiple data types, so each dictionary has to store only one data type,
     # just like inputs to the function.
     out_dict_uint8 = {}
+    out_dict_uint16 = {}
     out_dict_uint32 = {}
     out_dict_float32 = {}
 
@@ -66,11 +71,11 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
     # Stores the forest disturbance blocks for the entire model duration
     forest_dist_blocks_total = []
 
-    # Stores whether each pixel has ever not had a tall vegetation composite land cover since the start of the model.
-    # 0=always been tall vegetation. 1=not always been tall vegetation.
+    # Stores the last year that each pixel did not have tall vegetation composite land cover.
+    # 0=Always tall vegetation so far. Other values represent the last year of non-tall vegetation.
     # This is assessed at the pixel level because numba wouldn't allow the needed logical operations on numpy arrays (chunks).
-    # It uses the composite land cover maps, not the canopy height maps.
-    ever_not_been_forest_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('uint8')
+    # Tall vegetation is basd on the composite land cover maps, not the canopy height maps.
+    most_recent_year_not_forest_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('uint16')
 
 
     # Iterates through model intervals
@@ -234,7 +239,11 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
 
                 sig_height_loss_prev_curr = (veg_h_prev - veg_h_curr >= cn.sig_height_loss_threshold)
 
-                ever_not_been_forest = nu.check_if_never_forest(LC_curr, LC_prev, ever_not_been_forest_block, interval_end_year, row, col)
+                # The most recent year of non-tall vegetation composite land cover in the cell
+                most_recent_year_not_forest = most_recent_year_not_forest_block[row, col]
+
+                # Checks whether to update whether the most recent year is non-tall vegetation
+                most_recent_year_not_forest = nu.check_most_recent_year_not_forest(LC_curr, LC_prev, most_recent_year_not_forest, interval_end_year)
 
                 # Starting decision tree node value
                 node = 0
@@ -611,7 +620,7 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                 litter_c_dens_block[row, col] = c_dens_out[3]
 
                 #Test/intermediate outputs
-                ever_not_been_forest_block[row, col] = ever_not_been_forest
+                most_recent_year_not_forest_block[row, col] = most_recent_year_not_forest
 
 
         # End of iteration calculations and outputs
@@ -658,9 +667,9 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
         out_dict_float32[f"{cn.litter_c_dens_pattern}_{interval_end_year}"] = litter_c_dens_block.copy()
 
         # Test/intermediate outputs
-        out_dict_uint8[f"ever_not_been_forest_{cn.first_model_year}_{interval_end_year}"] = ever_not_been_forest_block.copy()
+        out_dict_uint16 [f"most_recent_year_not_forest_{cn.first_model_year}_{interval_end_year}"] = most_recent_year_not_forest_block.copy()
 
-    return out_dict_uint8, out_dict_uint32, out_dict_float32
+    return out_dict_uint8, out_dict_uint16, out_dict_uint32, out_dict_float32
 
 
 # Downloads inputs, prepares data, calculates LULUCF stocks and fluxes, and uploads outputs to s3
@@ -759,7 +768,7 @@ def calculate_and_upload_LULUCF_fluxes(bounds, download_dict_with_data_types, is
 
     lu.print_and_log(f"Calculating LULUCF fluxes and carbon densities in {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger)
 
-    out_dict_uint8, out_dict_uint32, out_dict_float32 = LULUCF_fluxes(
+    out_dict_uint8, out_dict_uint16, out_dict_uint32, out_dict_float32 = LULUCF_fluxes(
         typed_dict_uint8, typed_dict_int16, typed_dict_float32
     )
 
@@ -777,6 +786,9 @@ def calculate_and_upload_LULUCF_fluxes(bounds, download_dict_with_data_types, is
     for key, value in out_dict_uint8.items():
         out_dict_all_dtypes[key] = value
 
+    for key, value in out_dict_uint16.items():
+        out_dict_all_dtypes[key] = value
+
     for key, value in out_dict_uint32.items():
         out_dict_all_dtypes[key] = value
 
@@ -785,6 +797,7 @@ def calculate_and_upload_LULUCF_fluxes(bounds, download_dict_with_data_types, is
 
     # Clear memory of unneeded arrays
     del out_dict_uint8
+    del out_dict_uint16
     del out_dict_uint32
     del out_dict_float32
 
