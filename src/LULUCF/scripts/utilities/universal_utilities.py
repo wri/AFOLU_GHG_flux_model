@@ -852,6 +852,7 @@ def fill_missing_input_layers_with_no_data(layers, uint8_list, int16_list, int32
 
 
 # Extracts the file name pattern and year (or year range) from a string
+# Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/670e9a35-71b8-800a-aae1-9bbff7485a30 (including the pattern)
 def strip_and_extract_years(key):
 
     pattern = re.sub(cn.date_date_range_pattern, '', key)

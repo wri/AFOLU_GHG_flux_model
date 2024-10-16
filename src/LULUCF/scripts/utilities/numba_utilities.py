@@ -330,3 +330,60 @@ def calc_T_T_stand_disturbs(agc_rf, agc_ef, r_s_ratio_cell, c_dens_in, Cf=None, 
     non_co2_fluxes_out = np.array([ch4_flux_out, n2o_flux_out]).astype('float32')
 
     return c_fluxes_out, non_co2_fluxes_out, c_dens_out
+
+
+# Checks if pixel has not been forested from the model start to the end of the current interval.
+# It uses the composite land cover maps, not the canopy height maps.
+@jit(nopython=True)
+def check_if_never_forest(LC_curr, LC_prev, ever_not_been_forest_block, interval_end_year, row, col):
+
+    # Stores whether each pixel has ever not had a tall vegetation land cover since the start of the model.
+    # 0=always been tall vegetation. 1=not always been tall vegetation.
+    # Uses the value from the previous interval because this is a cumulative metric.
+    # Theoretically, checking whether pixels are ever not forest could be done at the chunk level rather
+    # than at the pixel level (as done here). However, numba doesn't allow the conditional operation
+    # that would have to be applied to numpy arrays, so I'm doing it at the pixel level instead.
+    # I have no idea if checking if pixels have ever not been forest is faster or slower at the pixel level
+    # than at the numpy array level, but the array-level operation isn't even an option.
+    ever_not_been_forest = ever_not_been_forest_block[row, col]
+
+    # If the pixel is already identified as having not been forest at some point, it's not assessed again.
+    # There's no reason to check it again because the ever_not_been_forest state is permanent
+    if ever_not_been_forest == 1:
+
+        return ever_not_been_forest
+
+    # If the pixel has only had forest so far, it is checked at the current interval
+    else:
+
+        # For the first interval, the land cover in 2000 has to be checked as well
+        if interval_end_year == (cn.first_model_year + cn.interval_years):
+
+            # Criteria for excluding tall vegetation land cover
+            not_tall_veg_condition = (
+                    (LC_prev < cn.tree_dry_min_height_code) |
+                    ((LC_prev > cn.tree_dry_max_height_code) & (LC_prev < cn.tree_wet_min_height_code))
+                    | (LC_prev > cn.tree_wet_max_height_code)
+            )
+
+            # Sets cell to 1 wherever land cover is not tall vegetation. Permanent status for rest of the model.
+            ever_not_been_forest = not_tall_veg_condition
+
+            # If the land cover in 2000 is not forest, there's no reason to check the land cover at the end of the interval.
+            if ever_not_been_forest == 1:
+
+                return ever_not_been_forest
+
+
+        # Checks the current end of interval land cover
+        # Criteria for excluding tall vegetation land cover
+        not_tall_veg_condition = (
+                (LC_curr < cn.tree_dry_min_height_code) |
+                ((LC_curr > cn.tree_dry_max_height_code) & (LC_curr < cn.tree_wet_min_height_code))
+                | (LC_curr > cn.tree_wet_max_height_code)
+        )
+
+        # Sets cell to 1 wherever land cover is not tall vegetation. Permanent status for rest of the model.
+        ever_not_been_forest = not_tall_veg_condition
+
+    return ever_not_been_forest
