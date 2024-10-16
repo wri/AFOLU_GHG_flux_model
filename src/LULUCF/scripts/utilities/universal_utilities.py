@@ -905,8 +905,9 @@ def build_vrt_gdal(s3_paths, output_vrt):
 
 
 # Function to read a VRT from S3 using GDAL and vsis3
-def warp_to_hansen(source_raster_s3_path, output_raster_s3_path, xmin, ymin, xmax, ymax, dt, no_data, tiled=False,
-                   x_pixel_window=None, y_pixel_window=None):
+def warp_to_hansen(source_raster_s3_path, output_raster_s3_path, xmin, ymin, xmax, ymax, dt, no_data, tiled=True,
+                   x_pixel_window=400, y_pixel_window=400):
+    #If tiled=False, set x_pixel_window=None, y_pixel_window=None
 
     # Set the environment variable to enable random writes for S3
     os.environ['CPL_VSIL_USE_TEMP_FILE_FOR_RANDOM_WRITE'] = 'YES'

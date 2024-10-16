@@ -8,35 +8,35 @@ from src.LULUCF.scripts.utilities import constants_and_names as cn
 from src.LULUCF.scripts.utilities import universal_utilities as uu
 
 #Create coiled cluster
-cluster = coiled.Cluster(
-        n_workers=1,
-        use_best_zone=True,
-        compute_purchase_option="spot_with_fallback",
-        idle_timeout="15 minutes",
-        region="us-east-1",
-        name="testing_hansenize",
-        workspace='wri-forest-research',
-        worker_memory = "8GiB",
-        worker_cpu = 4,
-        environ = {'CPL_VSIL_USE_TEMP_FILE_FOR_RANDOM_WRITE':'YES'}
-    )
-
-#Coiled cluster (cloud run)
-client = cluster.get_client()
-client
+# cluster = coiled.Cluster(
+#         n_workers=1,
+#         use_best_zone=True,
+#         compute_purchase_option="spot_with_fallback",
+#         idle_timeout="15 minutes",
+#         region="us-east-1",
+#         name="testing_hansenize",
+#         workspace='wri-forest-research',
+#         worker_memory = "8GiB",
+#         worker_cpu = 4,
+#         environ = {'CPL_VSIL_USE_TEMP_FILE_FOR_RANDOM_WRITE':'YES'}
+#     )
+#
+# #Coiled cluster (cloud run)
+# client = cluster.get_client()
+# client
 
 # Local cluster with multiple workers
-# cluster = LocalCluster()
-# client = Client(cluster)
-# client
-#Took 32.5 minutes to process drivers data locally
+cluster = LocalCluster()
+client = Client(cluster)
+client
+#Took 32.5 minutes to process drivers data locally (uint8)
 
 
 #Set the environment variable to enable random writes for S3
 os.environ['CPL_VSIL_USE_TEMP_FILE_FOR_RANDOM_WRITE'] = 'YES'
 
 #Set process
-process = 'drivers'
+process = 'secondary_natural_forest'
 #TODO add text input file or command line arguments to determine which inputs to preprocess
 
 #Step 1: Create download dictionary
@@ -127,6 +127,7 @@ vrt_results = client.gather(vrt_futures)
 tile_futures = []
 
 tile_id_list = ['00N_000E', '00N_010E']
+#TODO see LULUCF model (take a bounding box as a command line argument, and make chunks)
 #for tile_id in cn.tile_id_list:
 for tile_id in tile_id_list:
     for key,items in download_upload_dictionary.items():
