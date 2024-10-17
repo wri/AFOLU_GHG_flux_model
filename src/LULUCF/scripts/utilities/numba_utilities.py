@@ -371,3 +371,25 @@ def check_most_recent_year_not_forest(LC_curr, LC_prev, most_recent_year_not_for
         most_recent_year_not_forest = interval_end_year
 
     return most_recent_year_not_forest
+
+
+# Calculates the number of years of forest regrowth since the last year of not-tall vegetation
+@jit(nopython=True)
+def calculate_years_of_new_forest(interval_end_year, most_recent_year_not_forest, tall_veg_curr, years_of_new_forest):
+
+    # Determines if the number of years of regrowth should be calculated.
+    # Condition 1: The end of the interval must be after the last year that was not tall vegetation,
+    # i.e. there was not tall vegetation previously but there is at the end of this interval (indicating regrowth).
+    # Condition 2: There must have been some year that was not forest,
+    # i.e. the years of regrowth is only relevant when there was not forest some year.
+    if (interval_end_year > most_recent_year_not_forest) & (most_recent_year_not_forest > 0):
+
+        # Calculates the number of years of regrowth since the last year that was not forest
+        years_of_new_forest = (interval_end_year - most_recent_year_not_forest)
+
+    # Resets the growth year counter in cases where there was tall vegetation and then there wasn't in the next interval.
+    # Otherwise, the years counter would continue accruing even if tall veg was lost.
+    if not tall_veg_curr:
+        years_of_new_forest = 0
+
+    return years_of_new_forest

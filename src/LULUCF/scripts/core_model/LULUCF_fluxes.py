@@ -244,23 +244,12 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
                 # Checks whether to update whether the most recent year is non-tall vegetation
                 most_recent_year_not_forest = nu.check_most_recent_year_not_forest(LC_curr, LC_prev, most_recent_year_not_forest, interval_end_year)
 
+
                 # Number of years of regrowth for new forest
                 years_of_new_forest = years_of_new_forest_block[row, col]
 
-                # Determines if the number of years of regrowth should be calculated.
-                # Condition 1: The end of the interval must be after the last year that was not tall vegetation,
-                # i.e. there was not tall vegetation previously but there is at the end of this interval (indicating regrowth).
-                # Condition 2: There must have been some year that was not forest,
-                # i.e. the years of regrowth is only relevant when there was not forest some year.
-                if (interval_end_year > most_recent_year_not_forest) & (most_recent_year_not_forest > 0):
-
-                    # Calculates the number of years of regrowth since the last year that was not forest
-                    years_of_new_forest = (interval_end_year - most_recent_year_not_forest)
-
-                #TODO Try out this rule. It should reset the growth year counter in cases where there was tall vegetation and then there wasn't.
-                if not tall_veg_curr:
-
-                    years_of_new_forest = 0
+                # Calculates the number of years of forest regrowth since the last year of not-tall vegetation
+                years_of_new_forest = nu.calculate_years_of_new_forest(interval_end_year, most_recent_year_not_forest, tall_veg_curr, years_of_new_forest)
 
 
                 # Starting decision tree node value
