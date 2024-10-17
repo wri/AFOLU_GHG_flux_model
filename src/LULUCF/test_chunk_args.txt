@@ -25,6 +25,7 @@
 -bb 10 49.75 10.25 50 -cs 0.25      # 0.25x0.25 deg, 1 chunk (has data, no fire)
 -bb 15 41.75 15.25 42 -cs 0.25      # 0.25x0.25 deg, 1 chunk (has data with fire)
 -bb 116 -3 116.25 -2.75 -cs 0.25    # 0.25x0.25 deg, 1 chunk (has mangroves)
+-bb 115.25 -3.75 115.5 -3.5 -cs 0.25     # 0.25x0.25 deg, 1 chunk (has oil palm 2000 extent and Descals planting year outside SDPTv2 extent)
 
 
 # Range of no-data cases for testing

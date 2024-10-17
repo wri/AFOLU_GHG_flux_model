@@ -255,3 +255,9 @@ continent_ecozone = "continent_ecozone"
 ifl_primary = "ifl_primary"
 
 drivers = "drivers"
+
+oil_palm_2000_extent = "oil_palm_2000_extent"
+
+oil_palm_first_year = "oil_palm_first_year"
+
+organic_soil_extent = "organic_soil_extent"
