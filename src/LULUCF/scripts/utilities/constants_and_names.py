@@ -119,6 +119,9 @@ all_but_bgc_emissions = np.array([1, 0, 1, 1]).astype('uint8')
 biomass_emissions_only = np.array([1, 1, 0, 0]).astype('uint8')
 all_non_soil_pools = np.array([1, 1, 1, 1]).astype('uint8')
 
+SDPT_oil_palm_code = 1
+SDPT_wood_fiber_code = 2
+SDPT_other_code = 3
 
 ########
 ### File name paths and patterns
