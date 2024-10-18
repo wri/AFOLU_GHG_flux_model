@@ -70,8 +70,8 @@ tropical_high_elev_litter_c_ratio = 0.01
 non_tropical_deadwood_c_ratio = 0.08
 non_tropical_litter_c_ratio = 0.04
 
-# Aboveground carbon removal factor for oil palm (Mg C/ha/yr)
-#TODO Confirm value and units and add source
+# Aboveground carbon removal factor for oil palm (Mg C/ha/yr).
+# From IPCC 2019 Refinement Cropland Table 5.3.
 oil_palm_agc_rf = 2.4
 
 # Aboveground carbon removal factor for trees outside forests (Mg C/ha/yr), assuming that the entire hectare is ToF
@@ -160,6 +160,9 @@ r_s_ratio_pattern = "BGB_AGB_ratio"
 
 continent_ecozone_path = f"{full_bucket_prefix}/climate/carbon_model/fao_ecozones/ecozone_continent/20190116/processed/"
 continent_ecozone_pattern = "fao_ecozones_continents_processed"
+
+natural_forest_growth_curve_path = f"{full_bucket_prefix}/gfw2-data/climate/secondary_forest_carbon_curves__Robinson_et_al/processed/20241004/"
+natural_forest_growth_curve_pattern = "natural_forest_mean_growth_rate__Mg_AGC_ha_yr"
 
 ### Outputs
 
@@ -273,3 +276,5 @@ oil_palm_2000_extent = "oil_palm_2000_extent"
 oil_palm_first_year = "oil_palm_first_year"
 
 organic_soil_extent = "organic_soil_extent"
+
+natural_forest_growth_curve = "natural_forest_mean_growth_rate__Mg_AGC_ha_yr"
