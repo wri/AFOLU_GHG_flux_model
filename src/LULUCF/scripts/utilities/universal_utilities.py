@@ -937,7 +937,6 @@ def warp_to_hansen(source_raster_s3_path, output_raster_s3_path, xmin, ymin, xma
                 creationOptions=['COMPRESS=DEFLATE', 'TILED=YES',
                                  f'BLOCKXSIZE={x_pixel_window}',
                                  f'BLOCKYSIZE={y_pixel_window}'],
-                # Add Deflate compression and tiling with block dimensions
                 format='GTiff'
             )
         else:
@@ -958,6 +957,7 @@ def warp_to_hansen(source_raster_s3_path, output_raster_s3_path, xmin, ymin, xma
 
         print(f"Warped raster saved at: {output_gdal_path}")
         return output_gdal_path
+        #TODO read s3 to make sure the raster actually is there
 
     else:
         raise RuntimeError(f"Failed to open VRT: {source_gdal_path}")

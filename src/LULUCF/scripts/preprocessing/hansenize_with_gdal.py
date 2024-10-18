@@ -17,8 +17,8 @@ from src.LULUCF.scripts.utilities import universal_utilities as uu
 #         name="testing_hansenize",
 #         workspace='wri-forest-research',
 #         worker_memory = "8GiB",
-#         worker_cpu = 4,
-#         environ = {'CPL_VSIL_USE_TEMP_FILE_FOR_RANDOM_WRITE':'YES'}
+#         worker_cpu = 2,
+#         #environ = {'CPL_VSIL_USE_TEMP_FILE_FOR_RANDOM_WRITE':'YES'}
 #     )
 #
 # #Coiled cluster (cloud run)
@@ -46,11 +46,9 @@ if process == 'drivers':
         'raw_dir': cn.drivers_raw_dir,
         'raw_pattern': cn.drivers_pattern,
         'vrt': "drivers.vrt",
-        #'processed_dir': cn.drivers_processed_dir,
-        'processed_dir': "s3://gfw2-data/drivers_of_loss/1_km/processed/coiled_testing/",
+        'processed_dir': cn.drivers_processed_dir,
         'processed_pattern': cn.drivers_pattern
     }
-    #TODO change dir back
 
 if process == 'secondary_natural_forest':
     download_upload_dictionary["secondary_natural_forest_0_5"] = {
@@ -112,24 +110,29 @@ for key,items in download_upload_dictionary.items():
     vrt_futures.append(future)
     #This works locally, but does not write out the vrt using gdal when running with coiled
 
-    #Add datatype to download_upload dictionary
+# Collect the results once they are finished
+vrt_results = client.gather(vrt_futures)
+#TODO change GDAL commands to use subprocess instead of Python API
+
+#Step 3: Get GDAL datatype of each VRT
+for key,items in download_upload_dictionary.items():
+    path = items["raw_dir"]
+    vrt = items["vrt"]
+
+    # Add datatype to download_upload dictionary
+    output_vrt = f"{path}{vrt}"
     dt = uu.get_dtype_from_s3(output_vrt)
     if dt:
         gdal_dt = next(key for key, value in uu.gdal_dtype_mapping.items() if value == dt)  # Get GDAL data type
         download_upload_dictionary[key]["dt"] = gdal_dt
         print(f"vrt for {key} has data type: {dt} ({gdal_dt})")
-    #This works both locally and in coiled to retrieve the datatype using GDAL
-
-# Collect the results once they are finished
-vrt_results = client.gather(vrt_futures)
+        # This works both locally and in coiled to retrieve the datatype using GDAL
 
 #Step 3: Use warp_to_hansen to preprocess each dataset into 10x10 degree tiles
-tile_futures = []
-
-tile_id_list = ['00N_000E', '00N_010E']
 #TODO see LULUCF model (take a bounding box as a command line argument, and make chunks)
-#for tile_id in cn.tile_id_list:
-for tile_id in tile_id_list:
+#TODO in warp_to_hansen, read s3 to make sure the raster actually is there
+for tile_id in cn.tile_id_list:
+    tile_futures = []
     for key,items in download_upload_dictionary.items():
         output_vrt = f"{items['raw_dir']}{items['vrt']}"
         output_tile = f"{items['processed_dir']}{tile_id}_{items['processed_pattern']}"
@@ -138,10 +141,18 @@ for tile_id in tile_id_list:
         tile_future = client.submit(uu.warp_to_hansen, output_vrt, output_tile, xmin, ymin, xmax, ymax, dt, 0, True, 400, 400)
         tile_futures.append(tile_future)
         print(f"Submitting future to hansenize {output_tile}")
+
+    # Collect the results once they are finished
+    tile_results = client.gather(tile_futures)
     #This works locally, but cannot open the vrt when running with coiled
 
-# Collect the results once they are finished
-tile_results = client.gather(tile_futures)
+#TODO: Change for loop/ tile_futures /tile_results structure so parallelizes more tasks with Coiled?
+#Note: Get this warning each time for the first tile to finish so there is always 1 tile missing:
+#ERROR 1: DoSinglePartPUT of /vsis3/gfw2-data/climate/secondary_forest_carbon_curves__Robinson_et_al/processed/20241004/rate_6_10/00N_010E_natural_forest_mean_growth_rate__Mg_AGC_ha_yr__6_10_years.tif failed
+#ERROR 3: /vsis3/gfw2-data/climate/secondary_forest_carbon_curves__Robinson_et_al/processed/20241004/rate_6_10/00N_010E_natural_forest_mean_growth_rate__Mg_AGC_ha_yr__6_10_years.tif: I/O error
+
+
+
 
 #dask delayed methods
 # vrt_task = uu.build_vrt_gdal(raster_list, output_vrt)
