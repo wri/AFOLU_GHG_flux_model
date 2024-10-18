@@ -161,8 +161,12 @@ r_s_ratio_pattern = "BGB_AGB_ratio"
 continent_ecozone_path = f"{full_bucket_prefix}/climate/carbon_model/fao_ecozones/ecozone_continent/20190116/processed/"
 continent_ecozone_pattern = "fao_ecozones_continents_processed"
 
-natural_forest_growth_curve_path = f"{full_bucket_prefix}/gfw2-data/climate/secondary_forest_carbon_curves__Robinson_et_al/processed/20241004/"
+natural_forest_growth_curve_path = f"{full_bucket_prefix}/climate/secondary_forest_carbon_curves__Robinson_et_al/processed/20241004/"
 natural_forest_growth_curve_pattern = "natural_forest_mean_growth_rate__Mg_AGC_ha_yr"
+natural_forest_growth_curve_intervals = ['0_5', '6_10', '11_15', '16_20', '21_100']
+
+drivers_path = f"{full_bucket_prefix}/drivers_of_loss/1_km/processed/20241004/"
+drivers_pattern = "drivers_of_TCL_1_km_20241004"
 
 ### Outputs
 
