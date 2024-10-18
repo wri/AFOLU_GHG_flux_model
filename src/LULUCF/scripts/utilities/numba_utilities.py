@@ -148,8 +148,8 @@ def calc_NT_T(agc_rf, r_s_ratio_cell, c_dens_in):
     # Step 2: Calculates gross removals by carbon pools. Gross removals are negative.
     agc_gross_removals_out = (agc_rf * gain_year_count) * -1
     bgc_gross_removals_out = float(agc_gross_removals_out) * r_s_ratio_cell
-    deadwood_c_gross_removals_out= cn.deadwood_c_NT_T_rf
-    litter_c_gross_removals_out= cn.litter_c_NT_T_rf
+    deadwood_c_gross_removals_out = cn.deadwood_c_NT_T_rf
+    litter_c_gross_removals_out = cn.litter_c_NT_T_rf
 
     # Step 3: Calculates gross emissions by carbon pools
     agc_gross_emis_out = 0

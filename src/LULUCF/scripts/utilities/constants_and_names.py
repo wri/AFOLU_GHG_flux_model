@@ -70,6 +70,14 @@ tropical_high_elev_litter_c_ratio = 0.01
 non_tropical_deadwood_c_ratio = 0.08
 non_tropical_litter_c_ratio = 0.04
 
+# Aboveground carbon removal factor for oil palm (Mg C/ha/yr)
+#TODO Confirm value and units and add source
+oil_palm_agc_rf = 2.4
+
+# Aboveground carbon removal factor for trees outside forests (Mg C/ha/yr), assuming that the entire hectare is ToF
+#TODO Confirm value and units and add source
+trees_outside_forests_agc_rf_max = 2.8
+
 # Global warming potentials (GWP)
 gwp_ch4 = 27 # AR6 WG1 Table 7.15
 gwp_n2o = 273 # AR6 WG1 Table 7.15
@@ -246,6 +254,7 @@ forest_disturbance = "forest_disturbance"
 
 planted_forest_type_layer = "planted_forest_type"
 planted_forest_tree_crop_layer = "planted_forest_tree_crop"
+planted_forest_removal_factor_layer = "planted_forest_removal_factor_Mg_AGC_ha_yr"
 
 elevation = "elevation"
 climate_domain = "climate_domain"
