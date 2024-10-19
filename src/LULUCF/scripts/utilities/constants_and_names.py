@@ -129,16 +129,23 @@ SDPT_other_code = 3
 
 date_date_range_pattern = r'_\d{4}(_\d{4})?'   # Pattern for date (XXXX) or date range XXXX_YYYY in output file names
 
-# Local path for chunk stats
-chunk_stats_path = "chunk_stats/"
-
-LC_uri = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/landcover"
-
 s3_out_dir = 'climate/AFOLU_flux_model/LULUCF/outputs'
 
 local_log_path = "logs/"
 s3_log_path = "climate/AFOLU_flux_model/LULUCF/model_logs/"
 combined_log = "AFOLU_model_log"
+
+# Local path for chunk stats
+chunk_stats_path = "chunk_stats/"
+
+land_cover_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/landcover/composite/"
+land_cover_pattern = "land_cover"
+
+vegetation_height_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/landcover/vegetation_height/"
+vegetation_height_pattern = "vegetation_height"
+
+annual_forest_disturbance_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/landcover/annual_forest_disturbance/raw/"
+forest_disturbance_layer_name = "forest_disturbance"
 
 agb_2000_path = f"{full_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/Processed/"
 agb_2000_pattern = "t_aboveground_biomass_ha_2000"
@@ -167,10 +174,53 @@ natural_forest_growth_curve_intervals = ['0_5', '6_10', '11_15', '16_20', '21_10
 
 drivers_path = f"{full_bucket_prefix}/drivers_of_loss/1_km/processed/20241004/"
 drivers_pattern = "drivers_of_TCL_1_km_20241004"
+'''
+From Radost Stanimirova via Slack 2024-10-18:
+//1: Permanent agriculture
+//2: Hard commodities
+//3: Shifting cultivation
+//4: Forest management
+//5: "Wildfire
+//6: Settlements & Infrastructure
+//7: Other natural disturbances
+'''
 
-### Outputs
+ifl_primary_path = f"{full_bucket_prefix}/climate/carbon_model/ifl_primary_merged/processed/20200724/"
+ifl_primary_pattern = "ifl_2000_primary_2001_merged"
+
+planted_forest_type_path = f"{full_bucket_prefix}/climate/carbon_model/other_emissions_inputs/plantation_type/SDPTv2/20230911/"
+planted_forest_type_pattern = "plantation_type_oilpalm_woodfiber_other"
+
+planted_forest_removal_factor_path = f"{full_bucket_prefix}/climate/carbon_model/annual_removal_factor_planted_forest/SDPTv2_AGC/20230911/"
+planted_forest_removal_factor_pattern = "annual_gain_rate_AGC_Mg_ha_planted_forest"
+
+oil_palm_2000_extent_path = f"{full_bucket_prefix}/climate/carbon_model/other_emissions_inputs/IDN_MYS_plantation_pre_2000/processed/20200724/"
+oil_palm_2000_extent_pattern = "plantation_2000_or_earlier_processed"
+
+oil_palm_first_year_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/organic_soils/inputs/processed/descals_plantation/year/20240823/"
+oil_palm_first_year_pattern = "descals_year"
+
+# Originally from gfw-data-lake, so it's in 400x400 windows
+planted_forest_tree_crop_path = f"{full_bucket_prefix}/climate/carbon_model/other_emissions_inputs/plantation_simpleType__planted_forest_tree_crop/SDPTv2/20230911/"
+planted_forest_tree_crop_pattern = "planted_forest_tree_crop"
+
+burned_area_path = f"{full_bucket_prefix}/climate/carbon_model/other_emissions_inputs/burn_year/burn_year_10x10_clip_by_year/"
+burned_area_pattern = "ba"
+
+organic_soil_extent_path = f"{full_bucket_prefix}/climate/carbon_model/other_emissions_inputs/peatlands/processed/20230315/"
+organic_soil_extent_pattern = "peat_mask_processed"
+
+
+##### Outputs
 
 outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs/"
+
+
+### IPCC classes and change
+IPCC_class_path = "IPCC_basic_classes"
+IPCC_class_pattern = "IPCC_classes"
+IPCC_change_path = "IPCC_basic_change"
+IPCC_change_pattern = "IPCC_change"
 
 land_state_node_path_part = "land_state_node"
 
@@ -179,33 +229,30 @@ BGC_density_path_part = "BGC_density_MgC_ha"
 deadwood_c_density_path_part = "deadwood_C_density_MgC_ha"
 litter_c_density_path_part = "litter_C_density_MgC_ha"
 
-AGC_flux_path_part = "AGC_flux_MgC_ha"
-BGC_flux_path_part = "BGC_flux_MgC_ha"
-deadwood_c_flux_path_part = "deadwood_C_flux_MgC_ha"
-litter_c_flux_path_part = "litter_C_flux_MgC_ha"
-
-
+# Carbon density patterns
+agb_dens_pattern = "AGB_density_MgAGB_ha"
+agc_dens_pattern = "AGC_density_MgC_ha"
+bgc_dens_pattern = "BGC_density_MgC_ha"
+deadwood_c_dens_pattern = "deadwood_C_density_MgC_ha"
+litter_c_dens_pattern = "litter_C_density_MgC_ha"
+soil_c_dens_pattern = "soil_c_MgC_ha"
 
 carbon_pool_2000_date = "20240821"
 
 agc_2000_path = f"{outputs_path}{AGC_density_path_part}/2000/40000_pixels/{carbon_pool_2000_date}/"
-agc_2000_pattern = "AGC_density_MgC_ha_2000"
+agc_2000_pattern = f"{agc_dens_pattern}_2000"
 
 bgc_2000_path = f"{outputs_path}{BGC_density_path_part}/2000/40000_pixels/{carbon_pool_2000_date}/"
-bgc_2000_pattern = "BGC_density_MgC_ha_2000"
+bgc_2000_pattern = f"{bgc_dens_pattern}_2000"
 
 deadwood_c_2000_path = f"{outputs_path}{deadwood_c_density_path_part}/2000/40000_pixels/{carbon_pool_2000_date}/"
-deadwood_c_2000_pattern = "deadwood_C_density_MgC_ha_2000"
+deadwood_c_2000_pattern = f"{deadwood_c_dens_pattern}_2000"
 
 litter_c_2000_path = f"{outputs_path}{litter_c_density_path_part}/2000/40000_pixels/{carbon_pool_2000_date}/"
-litter_c_2000_pattern = "litter_C_density_MgC_ha_2000"
+litter_c_2000_pattern = f"{litter_c_dens_pattern}_2000"
 
-
-### IPCC classes and change
-IPCC_class_path = "IPCC_basic_classes"
-IPCC_class_pattern = "IPCC_classes"
-IPCC_change_path = "IPCC_basic_change"
-IPCC_change_pattern = "IPCC_change"
+soil_c_2000_path = f"{full_bucket_prefix}/climate/carbon_model/carbon_pools/soil_carbon/intermediate_full_extent/standard/20231108/"
+soil_c_2000_pattern = "soil_C_full_extent_2000_Mg_C_ha"
 
 land_state_pattern = "land_state_node"
 
@@ -231,54 +278,3 @@ litter_c_net_flux_pattern = "litter_C_net_flux_MgC_ha"
 
 ch4_flux_pattern = "CH4_flux_MgCO2e_ha"
 n2o_flux_pattern = "N2O_flux_MgCO2e_ha"
-
-# Carbon density patterns
-agb_dens_pattern = "AGB_density_MgAGB_ha"
-agc_dens_pattern = "AGC_density_MgC_ha"
-bgc_dens_pattern = "BGC_density_MgC_ha"
-deadwood_c_dens_pattern = "deadwood_C_density_MgC_ha"
-litter_c_dens_pattern = "litter_C_density_MgC_ha"
-
-land_cover = "land_cover"
-vegetation_height = "vegetation_height"
-
-
-### Carbon pools
-
-agb_2000 = "agb_2000"
-mangrove_agb_2000 = "mangrove_agb_2000"
-agc_2000 = "agc_2000"
-bgc_2000 = "bgc_2000"
-deadwood_c_2000 = "deadwood_c_2000"
-litter_c_2000 = "litter_c_2000"
-soil_c_2000 = "soil_c_2000"
-
-r_s_ratio = "r_s_ratio"
-
-
-### Other inputs
-
-burned_area = "burned_area"
-burned_area_pattern = "ba"
-forest_disturbance = "forest_disturbance"
-
-planted_forest_type_layer = "planted_forest_type"
-planted_forest_tree_crop_layer = "planted_forest_tree_crop"
-planted_forest_removal_factor_layer = "planted_forest_removal_factor_Mg_AGC_ha_yr"
-
-elevation = "elevation"
-climate_domain = "climate_domain"
-precipitation = "precipitation"
-continent_ecozone = "continent_ecozone"
-
-ifl_primary = "ifl_primary"
-
-drivers = "drivers"
-
-oil_palm_2000_extent = "oil_palm_2000_extent"
-
-oil_palm_first_year = "oil_palm_first_year"
-
-organic_soil_extent = "organic_soil_extent"
-
-natural_forest_growth_curve = "natural_forest_mean_growth_rate__Mg_AGC_ha_yr"

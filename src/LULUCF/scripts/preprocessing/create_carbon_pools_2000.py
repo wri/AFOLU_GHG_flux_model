@@ -38,13 +38,13 @@ def create_starting_C_densities(in_dict_uint8, in_dict_int16, in_dict_int32, in_
     # print(in_dict_float32)
 
     # Input blocks for remaining inputs, now that they definitely exist (either originally or have been created)
-    whrc_agb_2000_block = in_dict_int16["agb_2000"]
-    mangrove_agb_2000_block = in_dict_float32["mangrove_agb_2000"]
-    r_s_ratio_block = in_dict_float32["r_s_ratio"]
-    elevation_block = in_dict_int16["elevation"]
-    climate_domain_block = in_dict_int16["climate_domain"]
-    precipitation_block = in_dict_int32["precipitation"]
-    continent_ecozone_block = in_dict_int16["continent_ecozone"]
+    whrc_agb_2000_block = in_dict_int16[cn.agb_2000_pattern]
+    mangrove_agb_2000_block = in_dict_float32[cn.mangrove_agb_2000_pattern]
+    r_s_ratio_block = in_dict_float32[cn.r_s_ratio_pattern]
+    elevation_block = in_dict_int16[cn.elevation_pattern]
+    climate_domain_block = in_dict_int16[cn.climate_domain_pattern]
+    precipitation_block = in_dict_int32[cn.precipitation_pattern]
+    continent_ecozone_block = in_dict_int16[cn.continent_ecozone_pattern]
 
     mangrove_in_chunk = True  # Flag for whether chunk has mangrove in it
     whrc_agb_2000_in_chunk = True  # Flag for whether chunk has WHRC AGB 2000 in it
@@ -169,13 +169,13 @@ def create_and_upload_starting_C_densities(bounds, is_final, mangrove_C_ratio_ar
     # Dictionary of data to download
     download_dict = {
 
-        cn.agb_2000: f"{cn.agb_2000_path}{tile_id}_{cn.agb_2000_pattern}.tif",
-        cn.mangrove_agb_2000: f"{cn.mangrove_agb_2000_path}{tile_id}_{cn.mangrove_agb_2000_pattern}.tif",
-        cn.elevation: f"{cn.elevation_path}{tile_id}_{cn.elevation_pattern}.tif",
-        cn.climate_domain: f"{cn.climate_domain_path}{tile_id}_{cn.climate_domain_pattern}.tif",
-        cn.precipitation: f"{cn.precipitation_path}{tile_id}_{cn.precipitation_pattern}.tif",
-        cn.r_s_ratio: f"{cn.r_s_ratio_path}{tile_id}_{cn.r_s_ratio_pattern}.tif",
-        cn.continent_ecozone: f"{cn.continent_ecozone_path}{tile_id}_{cn.continent_ecozone_pattern}.tif"
+        cn.agb_2000_pattern: f"{cn.agb_2000_path}{tile_id}_{cn.agb_2000_pattern}.tif",
+        cn.mangrove_agb_2000_pattern: f"{cn.mangrove_agb_2000_path}{tile_id}_{cn.mangrove_agb_2000_pattern}.tif",
+        cn.elevation_pattern: f"{cn.elevation_path}{tile_id}_{cn.elevation_pattern}.tif",
+        cn.climate_domain_pattern: f"{cn.climate_domain_path}{tile_id}_{cn.climate_domain_pattern}.tif",
+        cn.precipitation_pattern: f"{cn.precipitation_path}{tile_id}_{cn.precipitation_pattern}.tif",
+        cn.r_s_ratio_pattern: f"{cn.r_s_ratio_path}{tile_id}_{cn.r_s_ratio_pattern}.tif",
+        cn.continent_ecozone_pattern: f"{cn.continent_ecozone_path}{tile_id}_{cn.continent_ecozone_pattern}.tif"
     }
 
     # Checks whether the tile exists at all for any of the inputs (not just the necessary inputs)

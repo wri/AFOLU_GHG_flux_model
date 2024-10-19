@@ -41,29 +41,29 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
     # interval_end_years = [2005, 2010]
 
     # Numpy arrays for outputs that do depend on previous interval's values
-    agc_dens_block = in_dict_float32[cn.agc_2000].astype('float32')
-    bgc_dens_block = in_dict_float32[cn.bgc_2000].astype('float32')
-    deadwood_c_dens_block = in_dict_float32[cn.deadwood_c_2000].astype('float32')
-    litter_c_dens_block = in_dict_float32[cn.litter_c_2000].astype('float32')
-    soil_c_dens_block = in_dict_int16[cn.soil_c_2000].astype('float32')
+    agc_dens_block = in_dict_float32[cn.agc_2000_pattern].astype('float32')
+    bgc_dens_block = in_dict_float32[cn.bgc_2000_pattern].astype('float32')
+    deadwood_c_dens_block = in_dict_float32[cn.deadwood_c_2000_pattern].astype('float32')
+    litter_c_dens_block = in_dict_float32[cn.litter_c_2000_pattern].astype('float32')
+    soil_c_dens_block = in_dict_int16[cn.soil_c_2000_pattern].astype('float32')
 
-    r_s_ratio_block = in_dict_float32[cn.r_s_ratio].astype('float32')
+    r_s_ratio_block = in_dict_float32[cn.r_s_ratio_pattern].astype('float32')
 
     # Removal factor (Mg [some unit]/ha/yr) #TODO Units TBD
     # Because this is used to store the RF from the previous interval,
     # it persists from one interval to the next. Therefore, it must be defined before the first iteration.
     # That way, removal factors can be over-written by those used in the latest interval.
-    agc_rf_out_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('float32')
+    agc_rf_out_block = np.zeros(in_dict_float32[cn.agc_2000_pattern].shape).astype('float32')
 
-    planted_forest_type_block = in_dict_uint8[cn.planted_forest_type_layer]
-    planted_forest_tree_crop_block = in_dict_uint8[cn.planted_forest_tree_crop_layer]
-    planted_forest_removal_factor_block = in_dict_float32[cn.planted_forest_removal_factor_layer]
-    oil_palm_2000_extent_block = in_dict_uint8[cn.oil_palm_2000_extent]
-    oil_palm_first_year_block = in_dict_int16[cn.oil_palm_first_year]
+    planted_forest_type_block = in_dict_uint8[cn.planted_forest_type_pattern]
+    planted_forest_tree_crop_block = in_dict_uint8[cn.planted_forest_tree_crop_pattern]
+    planted_forest_removal_factor_block = in_dict_float32[cn.planted_forest_removal_factor_pattern]
+    oil_palm_2000_extent_block = in_dict_uint8[cn.oil_palm_2000_extent_pattern]
+    oil_palm_first_year_block = in_dict_int16[cn.oil_palm_first_year_pattern]
 
 
-    ifl_primary_block = in_dict_uint8[cn.ifl_primary]
-    drivers_block = in_dict_uint8[cn.drivers]
+    ifl_primary_block = in_dict_uint8[cn.ifl_primary_pattern]
+    drivers_block = in_dict_uint8[cn.drivers_pattern]
 
     # Stores the burned area blocks for the entire model duration
     burned_area_blocks_total = []
@@ -75,10 +75,10 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
     # 0=Always tall vegetation so far. Other values represent the last year of non-tall vegetation.
     # This is assessed at the pixel level because numba wouldn't allow the needed logical operations on numpy arrays (chunks).
     # Tall vegetation is basd on the composite land cover maps, not the canopy height maps.
-    most_recent_year_not_forest_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('uint16')
+    most_recent_year_not_forest_block = np.zeros(in_dict_float32[cn.agc_2000_pattern].shape).astype('uint16')
 
     # Number of years of regrowth for new forest
-    years_of_new_forest_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('uint8')
+    years_of_new_forest_block = np.zeros(in_dict_float32[cn.agc_2000_pattern].shape).astype('uint8')
 
 
     # Iterates through model intervals
@@ -87,16 +87,16 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
         # print(f"Now at {interval_end_year}:")
 
         # Writes the dictionary entries to a chunk for use in the decision tree
-        LC_prev_block = in_dict_uint8[f"{cn.land_cover}_{interval_end_year - cn.interval_years}"]
-        LC_curr_block = in_dict_uint8[f"{cn.land_cover}_{interval_end_year}"]
-        veg_h_prev_block = in_dict_uint8[f"{cn.vegetation_height}_{interval_end_year - cn.interval_years}"]
-        veg_h_curr_block = in_dict_uint8[f"{cn.vegetation_height}_{interval_end_year}"]
+        LC_prev_block = in_dict_uint8[f"{cn.land_cover_pattern}_{interval_end_year - cn.interval_years}"]
+        LC_curr_block = in_dict_uint8[f"{cn.land_cover_pattern}_{interval_end_year}"]
+        veg_h_prev_block = in_dict_uint8[f"{cn.vegetation_height_pattern}_{interval_end_year - cn.interval_years}"]
+        veg_h_curr_block = in_dict_uint8[f"{cn.vegetation_height_pattern}_{interval_end_year}"]
 
         # Creates a list of all the burned area arrays from 2001 to the end of the interval.
         # It works by getting the burned area chunks for the current interval and appending them to a list of chunks
         # from previous intervals.
         for year_offset in range(interval_end_year-4, interval_end_year+1):
-            year_key = f"{cn.burned_area}_{year_offset}"
+            year_key = f"{cn.burned_area_pattern}_{year_offset}"
             burned_area_blocks_total.append(in_dict_uint8[year_key])
 
         # Creates a list of all the forest disturbance arrays from 2001 to the end of the interval.
@@ -105,7 +105,7 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
         # chunks from previous intervals.
         for year_offset in range(interval_end_year-4, interval_end_year+1):
             # The name of the disturbance layer in the input dictionary
-            year_key = f"{cn.forest_disturbance}_{year_offset}"
+            year_key = f"{cn.forest_disturbance_layer_name}_{year_offset}"
 
             # Replaces the binary annual disturbance array with the year of disturbance (1, 2, 3...2020)
             year_disturb_array = in_dict_uint8[year_key] * (year_offset - cn.first_model_year)
@@ -116,25 +116,25 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
 
 
         # Numpy arrays for outputs that don't depend on previous interval's values
-        state_out_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('uint32')  # Land cover state at end of interval
+        state_out_block = np.zeros(in_dict_float32[cn.agc_2000_pattern].shape).astype('uint32')  # Land cover state at end of interval
 
         # Number of years of canopy growth.
         # First digit is pre-disturbance years of growth.
         # Second digit (if it exists) is post-disturbance years of growth
-        gain_year_count_out_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('uint8')
+        gain_year_count_out_block = np.zeros(in_dict_float32[cn.agc_2000_pattern].shape).astype('uint8')
 
-        agc_gross_emis_out_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('float32')
-        bgc_gross_emis_out_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('float32')
-        deadwood_c_gross_emis_out_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('float32')
-        litter_c_gross_emis_out_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('float32')
+        agc_gross_emis_out_block = np.zeros(in_dict_float32[cn.agc_2000_pattern].shape).astype('float32')
+        bgc_gross_emis_out_block = np.zeros(in_dict_float32[cn.agc_2000_pattern].shape).astype('float32')
+        deadwood_c_gross_emis_out_block = np.zeros(in_dict_float32[cn.agc_2000_pattern].shape).astype('float32')
+        litter_c_gross_emis_out_block = np.zeros(in_dict_float32[cn.agc_2000_pattern].shape).astype('float32')
 
-        ch4_gross_emis_out_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('float32')
-        n2o_gross_emis_out_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('float32')
+        ch4_gross_emis_out_block = np.zeros(in_dict_float32[cn.agc_2000_pattern].shape).astype('float32')
+        n2o_gross_emis_out_block = np.zeros(in_dict_float32[cn.agc_2000_pattern].shape).astype('float32')
 
-        agc_gross_removals_out_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('float32')
-        bgc_gross_removals_out_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('float32')
-        deadwood_c_gross_removals_out_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('float32')
-        litter_c_gross_removals_out_block = np.zeros(in_dict_float32[cn.agc_2000].shape).astype('float32')
+        agc_gross_removals_out_block = np.zeros(in_dict_float32[cn.agc_2000_pattern].shape).astype('float32')
+        bgc_gross_removals_out_block = np.zeros(in_dict_float32[cn.agc_2000_pattern].shape).astype('float32')
+        deadwood_c_gross_removals_out_block = np.zeros(in_dict_float32[cn.agc_2000_pattern].shape).astype('float32')
+        litter_c_gross_removals_out_block = np.zeros(in_dict_float32[cn.agc_2000_pattern].shape).astype('float32')
 
         # Iterates through all pixels in the chunk
         for row in range(LC_curr_block.shape[0]):
@@ -724,13 +724,14 @@ def calculate_and_upload_LULUCF_fluxes(bounds, download_dict_with_data_types, is
     # Test prints
     # print(layers)
     # print(layers['burned_area_2002'].max())
-    # print(layers[soil_c_2000].dtype)
+    # print(layers[soil_c_2000_pattern].dtype)
 
     # List of layers that must be present for the chunk to be run.
     # All of the listed layers must exist for this chunk in order to proceed.
-    checked_layers = {cn.agc_2000: layers[cn.agc_2000], cn.bgc_2000: layers[cn.bgc_2000],
-                      cn.deadwood_c_2000: layers[cn.deadwood_c_2000], cn.litter_c_2000: layers[cn.litter_c_2000],
-                      f"{cn.land_cover}_2000": layers[f"{cn.land_cover}_2000"]}
+    checked_layers = {cn.agc_2000_pattern: layers[cn.agc_2000_pattern], cn.bgc_2000_pattern: layers[cn.bgc_2000_pattern],
+                      cn.deadwood_c_2000_pattern: layers[cn.deadwood_c_2000_pattern],
+                      cn.litter_c_2000_pattern: layers[cn.litter_c_2000_pattern],
+                      f"{cn.land_cover_pattern}_2000": layers[f"{cn.land_cover_pattern}_2000"]}
 
     # print(f"Layers to check for data: {layers_to_check_for_data}")
 
@@ -762,10 +763,10 @@ def calculate_and_upload_LULUCF_fluxes(bounds, download_dict_with_data_types, is
     # Creates the typed dictionaries for all input layers (including those that originally had no data)
     typed_dict_uint8, typed_dict_int16, typed_dict_int32, typed_dict_float32 = nu.create_typed_dicts(layers)
 
-    # print("uint8_typed_list:", typed_dict_uint8)
-    # print("int16_typed_list:", typed_dict_int16)
-    # print("int32_typed_list:", typed_dict_int32)
-    # print("float32_typed_list:", typed_dict_float32)
+    print("uint8_typed_list:", typed_dict_uint8)
+    print("int16_typed_list:", typed_dict_int16)
+    print("int32_typed_list:", typed_dict_int32)
+    print("float32_typed_list:", typed_dict_float32)
 
 
     ### Part 4: Calculates LULUCF fluxes and densities
@@ -878,60 +879,50 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
 
     # Dictionary of data to download (inputs to model)
     download_dict = {
-        f"{cn.land_cover}_2000": f"{cn.LC_uri}/composite/2000/raw/{sample_tile_id}.tif",
-        f"{cn.land_cover}_2005": f"{cn.LC_uri}/composite/2005/raw/{sample_tile_id}.tif",
-        f"{cn.land_cover}_2010": f"{cn.LC_uri}/composite/2010/raw/{sample_tile_id}.tif",
-        f"{cn.land_cover}_2015": f"{cn.LC_uri}/composite/2015/raw/{sample_tile_id}.tif",
-        f"{cn.land_cover}_2020": f"{cn.LC_uri}/composite/2020/raw/{sample_tile_id}.tif",
 
-        f"{cn.vegetation_height}_2000": f"{cn.LC_uri}/vegetation_height/2000/{sample_tile_id}_vegetation_height_2000.tif",
-        f"{cn.vegetation_height}_2005": f"{cn.LC_uri}/vegetation_height/2005/{sample_tile_id}_vegetation_height_2005.tif",
-        f"{cn.vegetation_height}_2010": f"{cn.LC_uri}/vegetation_height/2010/{sample_tile_id}_vegetation_height_2010.tif",
-        f"{cn.vegetation_height}_2015": f"{cn.LC_uri}/vegetation_height/2015/{sample_tile_id}_vegetation_height_2015.tif",
-        f"{cn.vegetation_height}_2020": f"{cn.LC_uri}/vegetation_height/2020/{sample_tile_id}_vegetation_height_2020.tif",
+        cn.agc_2000_pattern: f"{cn.agc_2000_path}{sample_tile_id}__{cn.agc_2000_pattern}.tif",
+        cn.bgc_2000_pattern: f"{cn.bgc_2000_path}{sample_tile_id}__{cn.bgc_2000_pattern}.tif",
+        cn.deadwood_c_2000_pattern: f"{cn.deadwood_c_2000_path}{sample_tile_id}__{cn.deadwood_c_2000_pattern}.tif",
+        cn.litter_c_2000_pattern: f"{cn.litter_c_2000_path}{sample_tile_id}__{cn.litter_c_2000_pattern}.tif",
+        cn.soil_c_2000_pattern: f"{cn.soil_c_2000_path}{sample_tile_id}_{cn.soil_c_2000_pattern}.tif",
 
-        cn.agc_2000: f"{cn.agc_2000_path}{sample_tile_id}__{cn.agc_2000_pattern}.tif",
-        cn.bgc_2000: f"{cn.bgc_2000_path}{sample_tile_id}__{cn.bgc_2000_pattern}.tif",
-        cn.deadwood_c_2000: f"{cn.deadwood_c_2000_path}{sample_tile_id}__{cn.deadwood_c_2000_pattern}.tif",
-        cn.litter_c_2000: f"{cn.litter_c_2000_path}{sample_tile_id}__{cn.litter_c_2000_pattern}.tif",
-        cn.soil_c_2000: f"s3://gfw2-data/climate/carbon_model/carbon_pools/soil_carbon/intermediate_full_extent/standard/20231108/{sample_tile_id}_soil_C_full_extent_2000_Mg_C_ha.tif",
+        cn.r_s_ratio_pattern: f"{cn.r_s_ratio_path}{sample_tile_id}_{cn.r_s_ratio_pattern}.tif",
 
-        cn.r_s_ratio: f"{cn.r_s_ratio_path}{sample_tile_id}_{cn.r_s_ratio_pattern}.tif",
+        cn.drivers_pattern: f"{cn.drivers_path}{sample_tile_id}_{cn.drivers_pattern}.tif",
 
-        f"{cn.natural_forest_growth_curve}_0_5": f"{cn.natural_forest_growth_curve_path}rate_0_5/{sample_tile_id}_{cn.natural_forest_growth_curve_pattern}__0_5_years.tif",
-        f"{cn.natural_forest_growth_curve}_6_10": f"{cn.natural_forest_growth_curve_path}rate_0_5/{sample_tile_id}_{cn.natural_forest_growth_curve_pattern}__0_5_years.tif",
-        f"{cn.natural_forest_growth_curve}_11_15": f"{cn.natural_forest_growth_curve_path}rate_0_5/{sample_tile_id}_{cn.natural_forest_growth_curve_pattern}__0_5_years.tif",
-        f"{cn.natural_forest_growth_curve}_16_20": f"{cn.natural_forest_growth_curve_path}rate_0_5/{sample_tile_id}_{cn.natural_forest_growth_curve_pattern}__0_5_years.tif",
-        f"{cn.natural_forest_growth_curve}_21_100": f"{cn.natural_forest_growth_curve_path}rate_0_5/{sample_tile_id}_{cn.natural_forest_growth_curve_pattern}__0_5_years.tif",
-
-        # TODO Switch to 1-km driver model, including in decision tree
-        cn.drivers: f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/tree_cover_loss_drivers/processed/drivers_2022/20230407/{sample_tile_id}_tree_cover_loss_driver_processed.tif",
-
-        cn.planted_forest_type_layer: f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/plantation_type/SDPTv2/20230911/{sample_tile_id}_plantation_type_oilpalm_woodfiber_other.tif",
-        cn.planted_forest_removal_factor_layer: f"s3://gfw2-data/climate/carbon_model/annual_removal_factor_planted_forest/SDPTv2_AGC/20230911/{sample_tile_id}_annual_gain_rate_AGC_Mg_ha_planted_forest.tif",
-        cn.oil_palm_2000_extent: f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/IDN_MYS_plantation_pre_2000/processed/20200724/{sample_tile_id}_plantation_2000_or_earlier_processed.tif",
-        cn.oil_palm_first_year: f"s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/inputs/processed/descals_plantation/year/20240823/descals_year_{sample_tile_id}.tif",
+        cn.planted_forest_type_pattern: f"{cn.planted_forest_type_path}{sample_tile_id}_{cn.planted_forest_type_pattern}.tif",
+        cn.planted_forest_removal_factor_pattern: f"{cn.planted_forest_removal_factor_path}{sample_tile_id}_{cn.planted_forest_removal_factor_pattern}.tif",
+        cn.oil_palm_2000_extent_pattern: f"{cn.oil_palm_2000_extent_path}{sample_tile_id}_{cn.oil_palm_2000_extent_pattern}.tif",
+        cn.oil_palm_first_year_pattern: f"{cn.oil_palm_first_year_path}{cn.oil_palm_first_year_pattern}_{sample_tile_id}.tif",   # Pattern is before tile_id for this input
         # Originally from gfw-data-lake, so it's in 400x400 windows
-        cn.planted_forest_tree_crop_layer: f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/plantation_simpleType__planted_forest_tree_crop/SDPTv2/20230911/{sample_tile_id}.tif",
+        cn.planted_forest_tree_crop_pattern: f"{cn.planted_forest_tree_crop_path}{sample_tile_id}.tif",
 
         # Originally from gfw-data-lake, so it's in 400x400 windows
-        cn.organic_soil_extent: f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/peatlands/processed/20230315/{sample_tile_id}_peat_mask_processed.tif",
+        cn.organic_soil_extent_pattern: f"{cn.organic_soil_extent_path}{sample_tile_id}_{cn.organic_soil_extent_pattern}.tif",
         # "ecozone": f"s3://gfw2-data/fao_ecozones/v2000/raster/epsg-4326/10/40000/class/gdal-geotiff/{sample_tile_id}.tif",   # Originally from gfw-data-lake, so it's in 400x400 windows
         # "iso": f"s3://gfw2-data/gadm_administrative_boundaries/v3.6/raster/epsg-4326/10/40000/adm0/gdal-geotiff/{sample_tile_id}.tif",  # Originally from gfw-data-lake, so it's in 400x400 windows
-        cn.ifl_primary: f"s3://gfw2-data/climate/carbon_model/ifl_primary_merged/processed/20200724/{sample_tile_id}_ifl_2000_primary_2001_merged.tif"
+        cn.ifl_primary_pattern: f"{cn.ifl_primary_path}{sample_tile_id}_{cn.ifl_primary_pattern}.tif"
     }
 
+    # Land cover and vegetation height rasters (5-year intervals)
+    for year in range(cn.first_model_year, cn.last_model_year + 1, cn.interval_years):
+        download_dict[f"{cn.land_cover_pattern}_{year}"] = f"{cn.land_cover_path}{year}/raw/{sample_tile_id}.tif"
+        download_dict[f"{cn.vegetation_height_pattern}_{year}"] = f"{cn.vegetation_height_path}{year}/{sample_tile_id}_{cn.vegetation_height_pattern}_{year}.tif"
+
+    # Burned area rasters (annual)
     # All years need to be in their own folder
     for year in range(cn.first_model_year, cn.last_model_year + 1):  # Annual burned area maps start in 2000
-        download_dict[f"{cn.burned_area}_{year}"] = f"s3://gfw2-data/climate/carbon_model/other_emissions_inputs/burn_year/burn_year_10x10_clip_by_year/{year}/{cn.burned_area_pattern}_{year}_{sample_tile_id}.tif"
+        download_dict[f"{cn.burned_area_pattern}_{year}"] = f"{cn.burned_area_path}{year}/{cn.burned_area_pattern}_{year}_{sample_tile_id}.tif"
 
+    # Forest disturbance rasters (annual)
     # All years need to be in their own folder
     for year in range(cn.first_model_year + 1, cn.last_model_year + 1):  # Annual forest disturbance maps start in 2001 and ends in 2020
-        download_dict[f"{cn.forest_disturbance}_{year}"] = f"{cn.LC_uri}/annual_forest_disturbance/raw/{year}/{year}_{sample_tile_id}.tif"
+        download_dict[f"{cn.forest_disturbance_layer_name}_{year}"] = f"{cn.annual_forest_disturbance_path}{year}/{year}_{sample_tile_id}.tif"
 
+    # Young natural forest rasters (several age intervals)
     # Each growth interval's rate is in its own folder
     for growth_interval in cn.natural_forest_growth_curve_intervals:
-        download_dict[f"{cn.natural_forest_growth_curve}_{growth_interval}"] = f"{cn.natural_forest_growth_curve_path}rate_{growth_interval}/{sample_tile_id}_{cn.natural_forest_growth_curve_pattern}__{growth_interval}_years.tif"
+        download_dict[f"{cn.natural_forest_growth_curve_pattern}_{growth_interval}"] = f"{cn.natural_forest_growth_curve_path}rate_{growth_interval}/{sample_tile_id}_{cn.natural_forest_growth_curve_pattern}__{growth_interval}_years.tif"
 
     # Returns the first tile in each input so that the datatype can be determined.
     # This is done up front, once per tile set, rather than on each chunk, since
@@ -940,7 +931,8 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
     first_tiles = uu.first_file_name_in_s3_folder(download_dict)
 
     # Creates a download dictionary with the datatype of each input in the values.
-    # This is supplied to each chunk that is being analyzed
+    # This is supplied to each chunk that is being analyzed.
+    # This also serves as a check of whether all inputs are being found (s3 paths correct)
     print(f"Getting datatype of first tile in each tile set: {uu.timestr()}")
     download_dict_with_data_types = uu.add_file_type_to_dict(first_tiles)
 
