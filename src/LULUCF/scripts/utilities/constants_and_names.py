@@ -98,6 +98,12 @@ tree_dry_max_height_code = 48
 tree_wet_min_height_code = 127
 tree_wet_max_height_code = 148
 
+# IPCC Tier 1 removal factor spreadsheet (IPCC 2019, Table 4.9)
+IPCC_removal_factor_table_url = "http://gfw2-data.s3.amazonaws.com/climate/carbon_model/removal_rate_tables/"
+IPCC_removal_factor_table_name = "gain_rate_continent_ecozone_age_20230821.xlsx"
+IPCC_removal_factor_table_full_path = f"{IPCC_removal_factor_table_url}{IPCC_removal_factor_table_name}"
+IPCC_removal_factor_table_tab = "natrl fores gain, for std model"
+
 
 ### Miscellaneous
 

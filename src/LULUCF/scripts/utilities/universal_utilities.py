@@ -627,10 +627,8 @@ def convert_lookup_table_to_array(spreadsheet, sheet_name, fields_to_keep):
     filtered_data = excel_df[fields_to_keep]
 
     # Converts from dataframe to Numpy array
-    filtered_array = filtered_data.to_numpy().astype(
-        float)  # Need to convert Pandas dataframe to numpy array because Numba jit-decorated function can't use dataframes.
-    filtered_array = filtered_array.astype(
-        float)  # Convert from object dtype to float dtype-- necessary for numba to use it
+    filtered_array = filtered_data.to_numpy().astype(float)  # Need to convert Pandas dataframe to numpy array because Numba jit-decorated function can't use dataframes.
+    filtered_array = filtered_array.astype(float)  # Convert from object dtype to float dtype-- necessary for numba to use it
 
     return filtered_array
 

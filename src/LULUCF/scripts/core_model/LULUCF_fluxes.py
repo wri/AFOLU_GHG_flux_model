@@ -27,7 +27,7 @@ from ..utilities import numba_utilities as nu
 # Function to calculate LULUCF fluxes and carbon densities
 # Operates pixel by pixel, so uses numba (Python compiled to C++).
 @jit(nopython=True)
-def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
+def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32, primary_forest_RFs):
 
     # Separate dictionaries for output numpy arrays of each datatype, named by output data type).
     # This is because a dictionary in a Numba function cannot have arrays with multiple data types, so each dictionary has to store only one data type,
@@ -782,7 +782,7 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32):
 
 
 # Downloads inputs, prepares data, calculates LULUCF stocks and fluxes, and uploads outputs to s3
-def calculate_and_upload_LULUCF_fluxes(bounds, download_dict_with_data_types, is_final, no_upload):
+def calculate_and_upload_LULUCF_fluxes(bounds, primary_forest_RFs, download_dict_with_data_types, is_final, no_upload):
 
     logger = lu.setup_logging()
 
@@ -879,7 +879,7 @@ def calculate_and_upload_LULUCF_fluxes(bounds, download_dict_with_data_types, is
     lu.print_and_log(f"Calculating LULUCF fluxes and carbon densities in {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger)
 
     out_dict_uint8, out_dict_uint16, out_dict_uint32, out_dict_float32 = LULUCF_fluxes(
-        typed_dict_uint8, typed_dict_int16, typed_dict_float32
+        typed_dict_uint8, typed_dict_int16, typed_dict_float32, primary_forest_RFs
     )
 
     # print(out_dict_uint32)
@@ -1041,12 +1041,16 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
     print(f"Getting datatype of first tile in each tile set: {uu.timestr()}")
     download_dict_with_data_types = uu.add_file_type_to_dict(first_tiles)
 
+    # Creates numpy array of IPCC Tier 1 primary forest removal factors by continent-ecozone combination
+    primary_forest_RFs = uu.convert_lookup_table_to_array(cn.IPCC_removal_factor_table_full_path, cn.IPCC_removal_factor_table_tab, ['gainEcoCon', 'growth_primary'])
+    print(primary_forest_RFs)
+
     # Creates list of tasks to run (1 task = 1 chunk)
     print(f"Creating tasks and starting processing: {uu.timestr()}")
 
     futures = []
     for chunk in chunks:
-        future = client.submit(calculate_and_upload_LULUCF_fluxes, chunk, download_dict_with_data_types, is_final, no_upload)
+        future = client.submit(calculate_and_upload_LULUCF_fluxes, chunk, primary_forest_RFs, download_dict_with_data_types, is_final, no_upload)
         futures.append(future)
 
     # Collect the results once they are finished
