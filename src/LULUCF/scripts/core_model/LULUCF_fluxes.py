@@ -67,9 +67,9 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32, primary_forest_
     oil_palm_2000_extent_block = in_dict_uint8[cn.oil_palm_2000_extent_pattern]
     oil_palm_first_year_block = in_dict_int16[cn.oil_palm_first_year_pattern]
 
-
     ifl_primary_block = in_dict_uint8[cn.ifl_primary_pattern]
     drivers_block = in_dict_uint8[cn.drivers_pattern]
+    continent_ecozone_block = in_dict_int16[cn.continent_ecozone_pattern]
 
     # Stores the burned area blocks for the entire model duration
     burned_area_blocks_total = []
@@ -85,6 +85,9 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32, primary_forest_
 
     # Number of years of regrowth for new forest
     years_of_new_forest_block = np.zeros(in_dict_float32[cn.agc_2000_pattern].shape).astype('uint8')
+
+    # Year in which forest loss occurs/is assigned during an interval (0 if no loss)
+    year_of_forest_loss_block = np.zeros(in_dict_float32[cn.agc_2000_pattern].shape).astype('uint16')
 
 
     # Iterates through model intervals
@@ -176,6 +179,7 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32, primary_forest_
 
                 ifl_primary_cell = ifl_primary_block[row, col]
                 drivers_cell = drivers_block[row, col]
+                continent_ecozone_cell = continent_ecozone_block[row, col]
 
                 # Note: Stacking the burned area rasters using ndstack, stack, or flatten outside the pixel iteration did not work with numba.
                 # So just reading each raster from the list of rasters separately.
@@ -259,14 +263,19 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32, primary_forest_
                 short_veg_prev = (((LC_prev >= 2) and (LC_prev <= 24)) or ((LC_prev >= 102) and (LC_prev <= 124)))
                 short_veg_curr = (((LC_curr >= 2) and (LC_curr <= 24)) or ((LC_curr >= 102) and (LC_curr <= 124)))
 
-                sig_height_loss_prev_curr = (veg_h_prev - veg_h_curr >= cn.sig_height_loss_threshold)
+
+                # Height change during the interval. Need to recast to signed int8 from uint8 so that negative values (height gain) stay negative.
+                height_change_prev_curr = np.int8(veg_h_prev - veg_h_curr)
+
+                # Is height loss during the interval significant in absolute change (m)?
+                sig_height_loss_prev_curr_abs = (height_change_prev_curr >= cn.sig_height_loss_threshold_abs)
 
                 tall_veg_gain = (not tree_prev and tree_curr)
                 tall_veg_loss = (tree_prev and not tree_curr)
 
                 SDPT_planted_trees = (planted_forest_type_cell > 0)  # All SDPT planted trees
                 SDPT_oil_palm = (planted_forest_type_cell == cn.SDPT_oil_palm_code)  # Oil palm in SDPT planted trees
-                oil_palm_after_Descals = (interval_end_year > oil_palm_first_year_cell) and (oil_palm_first_year_cell != 0) # Need to exclude NoData (0s) from first year of oil palm
+                oil_palm_after_Descals = (interval_end_year > oil_palm_first_year_cell) and (oil_palm_first_year_cell != 0) # Second condition to exclude NoData (0s) from first year of oil palm
                 oil_palm_pre_2000 = (oil_palm_2000_extent_cell == 1)
 
                 all_planted_trees = (SDPT_planted_trees or oil_palm_pre_2000 or oil_palm_after_Descals)
@@ -511,15 +520,14 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32, primary_forest_
                                 ef = cn.all_non_soil_pools
                                 c_gross_emis_out, c_gross_removals_out, non_co2_flux_out, c_dens_out, gain_year_count = nu.calc_T_NT(agc_rf, ef, forest_dist_last, r_s_ratio_cell, interval_end_year, c_dens_in)
 
+                ### Trees remaining trees
+                elif (tree_prev) and (tree_curr):  # Trees remaining trees (3)    ##TODO: Include mangrove exception.
+                    node = nu.accrete_node(node, 3)
+                    if (forest_dist_last > 0) or (sig_height_loss_prev_curr_abs) :  # Partially disturbed trees (31)
+                        state_out = nu.accrete_node(node, 1)
 
-
-
-
-                # ### Trees remaining trees
-                # elif (tree_prev) and (tree_curr):  # Trees remaining trees (3)    ##TODO: Include mangrove exception.
-                #     node = nu.accrete_node(node, 3)
-                #     if forest_dist_last == 0:  # Trees without stand-replacing disturbances in the last interval (31)
-                #         node = nu.accrete_node(node, 1)
+                    else:
+                        state_out = nu.accrete_node(node, 2)  # Undisturbed trees (32)
                 #         if planted_forest_type_cell == 0:  # Non-planted trees without stand-replacing disturbance in the last interval (311)
                 #             node = nu.accrete_node(node, 1)
                 #             if not tall_veg_curr:  # Trees outside forests without stand-replacing disturbance in the last interval (3111)
@@ -777,6 +785,7 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32, primary_forest_
         # Years selected to show it represents from model start to end of current interval
         out_dict_uint16[f"most_recent_year_not_forest_{cn.first_model_year}_{interval_end_year}"] = most_recent_year_not_forest_block.copy()
         out_dict_uint8[f"years_of_new_forest_{year_range}"] = years_of_new_forest_block.copy()
+        out_dict_uint16[f"years_of_forest_loss_{year_range}"] = year_of_forest_loss_block.copy()
 
     return out_dict_uint8, out_dict_uint16, out_dict_uint32, out_dict_float32
 
@@ -1006,7 +1015,8 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
         cn.organic_soil_extent_pattern: f"{cn.organic_soil_extent_path}{sample_tile_id}_{cn.organic_soil_extent_pattern}.tif",
         # "ecozone": f"s3://gfw2-data/fao_ecozones/v2000/raster/epsg-4326/10/40000/class/gdal-geotiff/{sample_tile_id}.tif",   # Originally from gfw-data-lake, so it's in 400x400 windows
         # "iso": f"s3://gfw2-data/gadm_administrative_boundaries/v3.6/raster/epsg-4326/10/40000/adm0/gdal-geotiff/{sample_tile_id}.tif",  # Originally from gfw-data-lake, so it's in 400x400 windows
-        cn.ifl_primary_pattern: f"{cn.ifl_primary_path}{sample_tile_id}_{cn.ifl_primary_pattern}.tif"
+        cn.ifl_primary_pattern: f"{cn.ifl_primary_path}{sample_tile_id}_{cn.ifl_primary_pattern}.tif",
+        cn.continent_ecozone_pattern: f"{cn.continent_ecozone_path}{sample_tile_id}_{cn.continent_ecozone_pattern}.tif"
     }
 
     # Land cover and vegetation height rasters (5-year intervals)
@@ -1041,16 +1051,19 @@ def main(cluster_name, bounding_box, chunk_size, run_local=False, no_stats=False
     print(f"Getting datatype of first tile in each tile set: {uu.timestr()}")
     download_dict_with_data_types = uu.add_file_type_to_dict(first_tiles)
 
-    # Creates numpy array of IPCC Tier 1 primary forest removal factors by continent-ecozone combination
-    primary_forest_RFs = uu.convert_lookup_table_to_array(cn.IPCC_removal_factor_table_full_path, cn.IPCC_removal_factor_table_tab, ['gainEcoCon', 'growth_primary'])
-    print(primary_forest_RFs)
+    # Creates numpy array of IPCC Tier 1 primary forest removal factors by continent-ecozone combination.
+    # Needs to by a numpy array for the numba function to use it.
+    primary_forest_RFs = uu.convert_lookup_table_to_array(cn.IPCC_removal_factor_table_full_path,
+                                                          cn.IPCC_removal_factor_table_tab,
+                                                          ['gainEcoCon', 'growth_primary'])
 
     # Creates list of tasks to run (1 task = 1 chunk)
     print(f"Creating tasks and starting processing: {uu.timestr()}")
 
     futures = []
     for chunk in chunks:
-        future = client.submit(calculate_and_upload_LULUCF_fluxes, chunk, primary_forest_RFs, download_dict_with_data_types, is_final, no_upload)
+        future = client.submit(calculate_and_upload_LULUCF_fluxes, chunk,
+                               primary_forest_RFs, download_dict_with_data_types, is_final, no_upload)
         futures.append(future)
 
     # Collect the results once they are finished
