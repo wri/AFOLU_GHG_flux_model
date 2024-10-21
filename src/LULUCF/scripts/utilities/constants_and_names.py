@@ -174,6 +174,7 @@ natural_forest_growth_curve_intervals = ['0_5', '6_10', '11_15', '16_20', '21_10
 
 drivers_path = f"{full_bucket_prefix}/drivers_of_loss/1_km/processed/20241004/"
 drivers_pattern = "drivers_of_TCL_1_km_20241004"
+
 '''
 From Radost Stanimirova via Slack 2024-10-18:
 //1: Permanent agriculture
@@ -184,6 +185,19 @@ From Radost Stanimirova via Slack 2024-10-18:
 //6: Settlements & Infrastructure
 //7: Other natural disturbances
 '''
+permanent_agriculture = 1
+hard_commodities = 2
+shifting_cultivation = 3
+forest_management = 4
+wildfire = 5
+settlements_and_infrastruct = 6
+other_natural_disturbances = 7
+
+# Drivers categorized by what carbon pools are emitted from stand-replacing non-fire disturbances
+# Need to be tuples rather than lists because the numba function can't check list membership but can check tuple membership
+drivers_biomass_C_only = (forest_management, wildfire, other_natural_disturbances)
+drivers_non_soil_C = (permanent_agriculture, hard_commodities, shifting_cultivation, settlements_and_infrastruct)
+
 
 ifl_primary_path = f"{full_bucket_prefix}/climate/carbon_model/ifl_primary_merged/processed/20200724/"
 ifl_primary_pattern = "ifl_2000_primary_2001_merged"
