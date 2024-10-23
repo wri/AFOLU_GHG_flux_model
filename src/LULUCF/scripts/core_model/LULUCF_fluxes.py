@@ -26,7 +26,7 @@ from ..utilities import numba_utilities as nu
 
 # Function to calculate LULUCF fluxes and carbon densities
 # Operates pixel by pixel, so uses numba (Python compiled to C++).
-# @jit(nopython=True)
+@jit(nopython=True)
 def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32, primary_forest_RFs):
 
     # Separate dictionaries for output numpy arrays of each datatype, named by output data type).
@@ -309,26 +309,38 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32, primary_forest_
                 if most_recent_year_not_forest == 0:
 
                     # The maximum vegetation height through all intervals so far
-                    vegetation_max_height_so_far = max(vegetation_height_all_intervals_so_far)
+                    vegetation_max_height_since_last_non_forest = max(vegetation_height_all_intervals_so_far)
 
                 # Determines the maximum height so far if the pixel hasn't had forest at least one year since the beginning of the model
                 else:
 
-                    # Need years and heights so far to be numpy arrays for proper subsetting of them
-                    years_so_far_array = np.array([years_so_far])
-                    heights_so_far_array = np.array([vegetation_height_all_intervals_so_far])
+                    # # Need years and heights so far to be numpy arrays for proper subsetting of them
+                    # years_so_far_array = np.array([years_so_far])
+                    # heights_so_far_array = np.array([vegetation_height_all_intervals_so_far])
+                    #
+                    # # Selects the heights corresponding to years greater than the interval end year
+                    # heights_since_last_time_not_forest = heights_so_far_array[years_so_far_array > most_recent_year_not_forest]
 
-                    # Selects the heights corresponding to years greater than the interval end year
-                    heights_since_last_time_not_forest = heights_so_far_array[years_so_far_array > most_recent_year_not_forest]
+                    heights_since_last_time_not_forest = []
+
+                    # Loops over the years and corresponding heights to only get heights that are after the most recent
+                    # non-forest year.
+                    # This could be done more elegantly with conditional numpy arrays but that approach
+                    # isn't supported in the numba function, unfortunately.
+                    for i in range(len(years_so_far)):
+                        if years_so_far[i] > most_recent_year_not_forest:
+                            heights_since_last_time_not_forest.append(vegetation_height_all_intervals_so_far[i])
 
                     # The maximum height in the years since the last non-forest interval
-                    vegetation_max_height_so_far = np.max(heights_since_last_time_not_forest)
+                    vegetation_max_height_since_last_non_forest = max(heights_since_last_time_not_forest)
 
-                if (row == 0) and (col == 0):
-                    print("interval end year:", interval_end_year)
-                    print("vegetation height so far:", vegetation_height_all_intervals_so_far)
-                    print("most recent year not forest:", most_recent_year_not_forest)
-                    print("max height so far:", vegetation_max_height_so_far)
+                double_max = vegetation_max_height_since_last_non_forest * 2
+
+                # if (row == 0) and (col == 0):
+                #     print("interval end year:", interval_end_year)
+                #     print("vegetation height so far:", vegetation_height_all_intervals_so_far)
+                #     print("most recent year not forest:", most_recent_year_not_forest)
+                #     print("max height so far:", vegetation_max_height_so_far)
 
 
 
