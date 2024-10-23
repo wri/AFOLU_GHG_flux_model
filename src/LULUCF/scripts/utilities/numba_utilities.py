@@ -341,7 +341,7 @@ def calc_T_T_stand_disturbs(agc_rf, agc_ef, r_s_ratio_cell, c_dens_in, Cf=None, 
 # I have no idea if checking if pixels have ever not been forest is faster or slower at the pixel level
 # than at the numpy array level, but the array-level operation isn't even an option.
 @jit(nopython=True)
-def check_most_recent_year_not_forest(LC_curr, LC_prev, most_recent_year_not_forest, interval_end_year):
+def check_most_recent_year_not_tall_veg(LC_curr, LC_prev, most_recent_year_not_forest, interval_end_year):
 
     # For the first interval, the land cover in 2000 has to be checked for tall vegetation as well
     if interval_end_year == (cn.first_model_year + cn.interval_years):
@@ -375,7 +375,7 @@ def check_most_recent_year_not_forest(LC_curr, LC_prev, most_recent_year_not_for
 
 # Calculates the number of years of forest regrowth since the last year of not-tall vegetation
 @jit(nopython=True)
-def calculate_years_of_new_forest(interval_end_year, most_recent_year_not_forest, tall_veg_curr, years_of_new_forest):
+def calculate_years_of_forest_regrowth(interval_end_year, most_recent_year_not_forest, tall_veg_curr, years_of_forest_regrowth):
 
     # Determines if the number of years of regrowth should be calculated.
     # Condition 1: The end of the interval must be after the last year that was not tall vegetation,
@@ -385,11 +385,68 @@ def calculate_years_of_new_forest(interval_end_year, most_recent_year_not_forest
     if (interval_end_year > most_recent_year_not_forest) & (most_recent_year_not_forest > 0):
 
         # Calculates the number of years of regrowth since the last year that was not forest
-        years_of_new_forest = (interval_end_year - most_recent_year_not_forest)
+        years_of_forest_regrowth = (interval_end_year - most_recent_year_not_forest)
 
     # Resets the growth year counter in cases where there was tall vegetation and then there wasn't in the next interval.
     # Otherwise, the years counter would continue accruing even if tall veg was lost.
     if not tall_veg_curr:
-        years_of_new_forest = 0
+        years_of_forest_regrowth = 0
 
-    return years_of_new_forest
+    return years_of_forest_regrowth
+
+
+# Calculates the maximum canopy height since the last time a pixel was classified as not tall vegetation land cover.
+# This is used to determine whether current height has decreased significantly from this maximum height.
+@jit(nopython=True)
+def calc_max_height_since_last_time_not_tall_veg(most_recent_year_not_tall_veg, interval_end_year, in_dict_uint8, row, col):
+
+    # Arrays of vegetation height and corresponding years in all intervals through the current one
+    vegetation_height_all_intervals_so_far = []
+    years_so_far = []
+
+    # Iterates through all intervals so far to make arrays of vegetation heights and corresponding years
+    for year_offset in list(range(cn.first_model_year, interval_end_year + 1, cn.interval_years)):
+        # Vegetation height layer to retrieve
+        year_key = f"{cn.vegetation_height_pattern}_{year_offset}"
+
+        # Adds vegetation height and corresponding years to arrays from previous intervals
+        vegetation_height_all_intervals_so_far.append(in_dict_uint8[year_key][row, col])
+        years_so_far.append(year_offset)
+
+    # Determines the maximum height so far if the pixel has been tall vegetation land cover since the beginning of the model
+    if most_recent_year_not_tall_veg == 0:
+
+        # The maximum vegetation height through all intervals so far
+        max_height_since_last_time_not_tall_veg = max(vegetation_height_all_intervals_so_far)
+
+    # Determines the maximum height so far if the pixel hasn't had tall vegetation land cover at least one year since the beginning of the model
+    else:
+
+        heights_since_last_time_not_tall_veg = []
+
+        # Loops over the years and corresponding heights to only get heights that are after the most recent
+        # non-tall vegetation year.
+        # This could be done more elegantly with conditional numpy arrays but that approach
+        # isn't supported in the numba function, unfortunately.
+        # https://chatgpt.com/share/e/6718fb20-48d8-800a-9eb2-d751bd6b1a8f
+        for i in range(len(years_so_far)):
+            if years_so_far[i] > most_recent_year_not_tall_veg:
+                heights_since_last_time_not_tall_veg.append(vegetation_height_all_intervals_so_far[i])
+
+        # In case the pixel is currently non-tall vegetation land cover, so there are no intervals since then
+        # and therefore no heights
+        if len(heights_since_last_time_not_tall_veg) == 0:
+
+            # Uses the current vegetation height (which would exist when the land cover is not tall vegetation
+            # but there is still tall vegetation in the individual tree height layer)
+            max_height_since_last_time_not_tall_veg = in_dict_uint8[f"{cn.vegetation_height_pattern}_{interval_end_year}"][row, col]
+            # max_height_since_last_time_not_tall_veg = 0
+
+        # When the pixel was previously non-tall vegetation but is now tall vegetation,
+        # so there are intervals since then.
+        else:
+
+            # The maximum height in the years since the last non-tall vegetation land cover interval
+            max_height_since_last_time_not_tall_veg = max(heights_since_last_time_not_tall_veg)
+
+    return max_height_since_last_time_not_tall_veg
