@@ -132,6 +132,12 @@ r_s_ratio_pattern = "BGB_AGB_ratio"
 continent_ecozone_path = f"{full_bucket_prefix}/climate/carbon_model/fao_ecozones/ecozone_continent/20190116/processed/"
 continent_ecozone_pattern = "fao_ecozones_continents_processed"
 
+ifl_primary_path = f"{full_bucket_prefix}/climate/carbon_model/ifl_primary_merged/processed/20200724/"
+ifl_primary_pattern = "ifl_2000_primary_2001_merged"
+
+drivers_path = f"{full_bucket_prefix}/drivers_of_loss/1_km/processed/20241004/"
+drivers_pattern = "drivers_of_TCL_1_km_20241004"
+
 ### Outputs
 
 outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs/"
@@ -196,6 +202,8 @@ litter_c_2000 = "litter_c_2000"
 soil_c_2000 = "soil_c_2000"
 
 r_s_ratio = "r_s_ratio"
+
+
 
 
 ### Other inputs
