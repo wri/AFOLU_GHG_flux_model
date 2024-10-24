@@ -877,7 +877,7 @@ def LULUCF_fluxes(in_dict_uint8, in_dict_int16, in_dict_float32, primary_forest_
         out_dict_uint8[f"{cn.gain_year_count_pattern}_{year_range}"] = gain_year_count_out_block.copy()
         # Years selected to show it represents from model start to end of current interval
         out_dict_uint16[f"most_recent_year_not_tall_veg_{cn.first_model_year}_{interval_end_year}"] = most_recent_year_not_tall_veg_block.copy()
-        out_dict_uint8[f"years_of_forest_regrowth_{year_range}"] = years_of_forest_regrowth_block.copy()
+        out_dict_uint8[f"years_of_forest_regrowth_{interval_end_year}"] = years_of_forest_regrowth_block.copy()
         out_dict_uint16[f"years_of_forest_loss_{year_range}"] = year_of_forest_loss_block.copy()
         out_dict_uint8[f"max_height_since_last_time_not_tall_veg_{year_range}"] = max_height_since_last_time_not_tall_veg_block.copy()
 
