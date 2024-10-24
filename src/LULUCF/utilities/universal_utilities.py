@@ -956,36 +956,32 @@ def calculate_total_mgc(numba_dict, input_units="MgC_ha", rep_str="MgC", pixel_a
     
     return output_dict
 
-# def compute_zonal_stats_to_dataframe(total_mgc_dict, combined_zone_result):
-#     zonal_stats_futures = {}
-
-#     # Ensure that the combined_zone_result is an xr DataArray for zonal_stats function
-#     combined_zone_result = xr.DataArray(combined_zone_result)  
-
-#     for layer_name, layer_data in total_mgc_dict.items():
+# Function to reverse the bit-shifting process
+def reverse_bit_shifting(df, column_name, sorted_layers):
+    
+    # Calculate bits_needed_per_layer based on max values from Dask arrays in sorted_layers
+    bits_needed_per_layer = []
+    
+    for layer_name, layer_array in sorted_layers:
+        # Ensure the layer is a Dask array and calculate max value
+        layer_array = ensure_dask_array(layer_array)
+        max_value = da.max(layer_array).compute()  # Compute the maximum value
         
-#         # Ensure layer_data is an xr DataArray for zonal_stats function
-#         layer_data = xr.DataArray(layer_data) 
+        # Determine the number of bits needed to represent this layer
+        bits_needed = calculate_bits_needed(max_value)
+        bits_needed_per_layer.append(bits_needed)
 
-#         # Use Dask futures to compute zonal statistics in parallel
-#         future = client.submit(zonal_stats, zones=combined_zone_result, values=layer_data, stats_funcs=['count', 'sum', 'min', 'max'])
-#         zonal_stats_futures[layer_name] = future
+    total_shift = sum(bits_needed_per_layer)  # Start with the total bits used
 
-#     # Create an empty list to hold all data frames for each layer
-#     all_layer_dfs = []
+    # Reverse bit-shifting: loop through each layer in reverse order
+    layers = [layer_name for layer_name, _ in sorted_layers]  # Get the sorted layer names
+    for i in range(len(layers)-1, -1, -1):
+        layer = layers[i]
+        bits_needed = bits_needed_per_layer[i]
+        total_shift -= bits_needed
+        # Create a mask for extracting the current layer
+        mask = (1 << bits_needed) - 1
+        # Shift right and apply the mask to extract the current layer's values
+        df[layer] = df[column_name].apply(lambda x: (x >> total_shift) & mask)
 
-#     # Gather the results from the futures and convert them to DataFrames
-#     for layer_name, future in zonal_stats_futures.items():
-#         stats = future.result()
-
-#         # Convert the stats dictionary to a DataFrame for this layer
-#         df = pd.DataFrame(stats)
-#         df['layer'] = layer_name  # Add a column for the layer name
-
-#         # Append this DataFrame to the list
-#         all_layer_dfs.append(df)
-
-#     # Concatenate all DataFrames into one DataFrame
-#     final_df = pd.concat(all_layer_dfs)
-
-#     return final_df
+    return df
