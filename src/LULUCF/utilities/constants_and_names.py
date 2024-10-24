@@ -138,35 +138,11 @@ ifl_primary_pattern = "ifl_2000_primary_2001_merged"
 drivers_path = f"{full_bucket_prefix}/drivers_of_loss/1_km/processed/20241004/"
 drivers_pattern = "drivers_of_TCL_1_km_20241004"
 
-### Outputs
+
+
+##### Outputs
 
 outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs/"
-
-land_state_node_path_part = "land_state_node"
-
-AGC_density_path_part = "AGC_density_MgC_ha"
-BGC_density_path_part = "BGC_density_MgC_ha"
-deadwood_c_density_path_part = "deadwood_C_density_MgC_ha"
-litter_c_density_path_part = "litter_C_density_MgC_ha"
-
-AGC_flux_path_part = "AGC_flux_MgC_ha"
-BGC_flux_path_part = "BGC_flux_MgC_ha"
-deadwood_c_flux_path_part = "deadwood_C_flux_MgC_ha"
-litter_c_flux_path_part = "litter_C_flux_MgC_ha"
-
-carbon_pool_2000_date = "20240821"
-
-agc_2000_path = f"{outputs_path}{AGC_density_path_part}/2000/40000_pixels/{carbon_pool_2000_date}/"
-agc_2000_pattern = "AGC_density_MgC_ha_2000"
-
-bgc_2000_path = f"{outputs_path}{BGC_density_path_part}/2000/40000_pixels/{carbon_pool_2000_date}/"
-bgc_2000_pattern = "BGC_density_MgC_ha_2000"
-
-deadwood_c_2000_path = f"{outputs_path}{deadwood_c_density_path_part}/2000/40000_pixels/{carbon_pool_2000_date}/"
-deadwood_c_2000_pattern = "deadwood_C_density_MgC_ha_2000"
-
-litter_c_2000_path = f"{outputs_path}{litter_c_density_path_part}/2000/40000_pixels/{carbon_pool_2000_date}/"
-litter_c_2000_pattern = "litter_C_density_MgC_ha_2000"
 
 
 ### IPCC classes and change
@@ -175,48 +151,59 @@ IPCC_class_pattern = "IPCC_classes"
 IPCC_change_path = "IPCC_basic_change"
 IPCC_change_pattern = "IPCC_change"
 
-land_state_pattern = "land_state_node"
+land_state_node_path_part = "land_state_node"
 
+AGC_density_path_part = "AGC_density_MgC_ha"
+BGC_density_path_part = "BGC_density_MgC_ha"
+deadwood_c_density_path_part = "deadwood_C_density_MgC_ha"
+litter_c_density_path_part = "litter_C_density_MgC_ha"
+
+# Carbon density patterns
 agb_dens_pattern = "AGB_density_MgAGB_ha"
 agc_dens_pattern = "AGC_density_MgC_ha"
 bgc_dens_pattern = "BGC_density_MgC_ha"
 deadwood_c_dens_pattern = "deadwood_C_density_MgC_ha"
 litter_c_dens_pattern = "litter_C_density_MgC_ha"
-agc_flux_pattern = "AGC_flux_MgC_ha"
-bgc_flux_pattern = "BGC_flux_MgC_ha"
-deadwood_c_flux_pattern = "deadwood_C_flux_MgC_ha"
-litter_c_flux_pattern = "litter_C_flux_MgC_ha"
+soil_c_dens_pattern = "soil_c_MgC_ha"
 
-land_cover = "land_cover"
-vegetation_height = "vegetation_height"
+carbon_pool_2000_date = "20240821"
 
+agc_2000_path = f"{outputs_path}{AGC_density_path_part}/2000/40000_pixels/{carbon_pool_2000_date}/"
+agc_2000_pattern = f"{agc_dens_pattern}_2000"
 
-### Carbon pools
+bgc_2000_path = f"{outputs_path}{BGC_density_path_part}/2000/40000_pixels/{carbon_pool_2000_date}/"
+bgc_2000_pattern = f"{bgc_dens_pattern}_2000"
 
-agb_2000 = "agb_2000"
-mangrove_agb_2000 = "mangrove_agb_2000"
-agc_2000 = "agc_2000"
-bgc_2000 = "bgc_2000"
-deadwood_c_2000 = "deadwood_c_2000"
-litter_c_2000 = "litter_c_2000"
-soil_c_2000 = "soil_c_2000"
+deadwood_c_2000_path = f"{outputs_path}{deadwood_c_density_path_part}/2000/40000_pixels/{carbon_pool_2000_date}/"
+deadwood_c_2000_pattern = f"{deadwood_c_dens_pattern}_2000"
 
-r_s_ratio = "r_s_ratio"
+litter_c_2000_path = f"{outputs_path}{litter_c_density_path_part}/2000/40000_pixels/{carbon_pool_2000_date}/"
+litter_c_2000_pattern = f"{litter_c_dens_pattern}_2000"
 
+soil_c_2000_path = f"{full_bucket_prefix}/climate/carbon_model/carbon_pools/soil_carbon/intermediate_full_extent/standard/20231108/"
+soil_c_2000_pattern = "soil_C_full_extent_2000_Mg_C_ha"
 
+land_state_pattern = "land_state_node"
 
+gain_year_count_pattern = "gain_year_count"
 
-### Other inputs
+agc_rf_pattern = "AGC_removal_factor_UNITS_TBD" #TODO Specify RF units here
 
-burned_area = "burned_area"
-forest_disturbance = "forest_disturbance"
+# Gross and net fluxes
+agc_gross_emis_pattern = "AGC_gross_emis_MgC_ha"
+bgc_gross_emis_pattern = "BGC_gross_emis_MgC_ha"
+deadwood_c_gross_emis_pattern = "deadwood_C_gross_emis_MgC_ha"
+litter_c_gross_emis_pattern = "litter_C_gross_emis_MgC_ha"
 
-planted_forest_type_layer = "planted_forest_type"
-planted_forest_tree_crop_layer = "planted_forest_tree_crop"
+agc_gross_removals_pattern = "AGC_gross_removals_MgC_ha"
+bgc_gross_removals_pattern = "BGC_gross_removals_MgC_ha"
+deadwood_c_gross_removals_pattern = "deadwood_C_gross_removals_MgC_ha"
+litter_c_gross_removals_pattern = "litter_C_gross_removals_MgC_ha"
 
-elevation = "elevation"
-climate_domain = "climate_domain"
-precipitation = "precipitation"
-continent_ecozone = "continent_ecozone"
+agc_net_flux_pattern = "AGC_net_flux_MgC_ha"
+bgc_net_flux_pattern = "BGC_net_flux_MgC_ha"
+deadwood_c_net_flux_pattern = "deadwood_C_net_flux_MgC_ha"
+litter_c_net_flux_pattern = "litter_C_net_flux_MgC_ha"
 
-ifl_primary = "ifl_primary"
+ch4_flux_pattern = "CH4_flux_MgCO2e_ha"
+n2o_flux_pattern = "N2O_flux_MgCO2e_ha"
