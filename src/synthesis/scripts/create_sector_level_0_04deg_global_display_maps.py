@@ -394,7 +394,7 @@ def map_AFOLU_totals(net_all_gases_geotif_local,
         if key == 'organic_soil':
             additional_data_date = cn.organic_soil_model_version_underscore
         elif key == 'mineral_soil':
-            additional_data_date = cn.SOC_soil_model_version_underscore
+            additional_data_date = cn.SOC_model_version_underscore
         elif key == 'cropland':
             additional_data_date = re.search(r'/(\d{8})/', input_s3_path).group(1)
         elif key == 'livestock':
@@ -572,7 +572,7 @@ def map_AFOLU_totals(net_all_gases_geotif_local,
         non_veg_versions = f'{non_veg_versions}_organic_soil_v{cn.organic_soil_model_version_underscore}'
         full_slide_text_LULUCF = f'{full_slide_text_LULUCF}{cn.organic_soil_pres_text};'
     if mineral_soil_s3:
-        non_veg_versions = f'{non_veg_versions}_mineral_soil_v{cn.SOC_soil_model_version_underscore}'
+        non_veg_versions = f'{non_veg_versions}_mineral_soil_v{cn.SOC_model_version_underscore}'
         full_slide_text_LULUCF = f'{full_slide_text_LULUCF}{cn.mineral_soil_pres_text};'
     full_slide_text_LULUCF_with_disclaimer = f"{full_slide_text_LULUCF} \n {cn.legend_percentile_disclaimer}"
 

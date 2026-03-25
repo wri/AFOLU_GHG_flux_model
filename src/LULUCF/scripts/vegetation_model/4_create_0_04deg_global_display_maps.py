@@ -5,6 +5,10 @@ python -m src.LULUCF.scripts.vegetation_model.4_create_0_04deg_global_display_ma
 For Central Africa:
 python -m src.LULUCF.scripts.vegetation_model.4_create_0_04deg_global_display_maps -mt standard -mpd global --input_date YYYYMMDD --center_latitude 0 --center_longitude 20 --lat_height 20 -bbd central_Africa
 
+For Borneo/Sumatra:
+python -m src.LULUCF.scripts.vegetation_model.4_create_0_04deg_global_display_maps -mt standard -mpd global --input_date YYYYMMDD --center_latitude 1 --center_longitude 108 --lat_height 12 -bbd Borneo_Sumatra
+
+
 Run locally (not in Coiled)
 
 Defaults to global coverage but a zoomed in map can be created by supplying central lat-long arguments,

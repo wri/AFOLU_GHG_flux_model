@@ -34,6 +34,10 @@ Full run:
 python -m src.utilities.create_cluster -n 50 -m 64 -cn SOC_zonal_stats -od
 python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Zonal stats for vegetation model v1.0.5 (2016-2024)."
 -mcstn KEEP_definitive_runs/SOC_density/v1_0_0__2000_2022__20251224/soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx
+
+#TODO upload outputs to s3
+#TODO Add climate domain column to output tables
+#TODO Make a simplified version of output that is few enough rows to fit in Excel and export to Excel
 """
 
 import argparse
@@ -81,7 +85,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     main_logger, main_log_local_path, n_workers = lu.populate_main_log_header(client, cluster, log_note, run_local, model_type, stage)
 
     main_logger.info(f"Stage {stage} started at: {uu.timestr()}")
-    main_logger.info(f"Model version: {cn.SOC_soil_model_version}")
+    main_logger.info(f"Model version: {cn.SOC_model_version}")
     main_logger.info(f"Model path descriptor: {model_path_description}")
     main_logger.info(f"Zonal stats descriptor: {zonal_stats_description}")
     main_logger.info(f"Start year: 2000; end year: {cn.SOC_density_intervals[-1]}")
@@ -143,8 +147,8 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
 
     # The zarr path that's being used
     SOC_zarr_path = zu.create_zarr_path(cn.SOC_path_mega_zarr, source_zarr_chunk_size, 'N/A',
-                                         model_type, cn.SOC_soil_model_version_underscore, model_path_description,
-                                         input_date, main_logger)
+                                        model_type, cn.SOC_model_version_underscore, model_path_description,
+                                        input_date, main_logger)
     main_logger.info(f"Zonal stats from zarr ({source_zarr_chunk_size} pixel chunks): {SOC_zarr_path}")
 
     # # For land state node
@@ -487,7 +491,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
 
 
         main_logger.info(f"  Saving {tile_id} output table: {uu.timestr()}")
-        tile_df_name = f'SOC_zonal_stats_{tile_id}_v{cn.SOC_soil_model_version_underscore}_{zonal_stats_description}_{time.strftime('%Y%m%d_%H_%M_%S')}'
+        tile_df_name = f'SOC_zonal_stats_{tile_id}_v{cn.SOC_model_version_underscore}_{zonal_stats_description}_{time.strftime('%Y%m%d_%H_%M_%S')}'
         df.to_parquet(f"{local_zonal_stats_folder}/{tile_df_name}.parquet")
 
         # List of parquet files (to convert to csvs after cluster is downsized)
@@ -545,12 +549,13 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     main_logger.info(f"Rows in combined dataframe: {len(combined_df.index)}")
     main_logger.info(combined_df.head())
 
-    combined_df_name = f'SOC_zonal_stats_v{cn.veg_model_version_underscore}_{time.strftime('%Y%m%d_%H_%M_%S')}'
+    combined_df_name = f'SOC_zonal_stats_v{cn.SOC_model_version_underscore}_{time.strftime('%Y%m%d_%H_%M_%S')}'
     combined_df.to_parquet(f"{local_zonal_stats_folder}/{combined_df_name}.parquet")
     if len(combined_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
         combined_df.to_csv(f"{local_zonal_stats_folder}/{combined_df_name}.csv", index=False)
 
     #TODO upload outputs to s3
+    # TODO Make a simplified version of output that is few enough rows to fit in Excel and export to Excel
 
     end_time = time.time()
     main_logger.info(f"  Finished zonal stats, took {round(end_time - prep_start_time)} seconds: {uu.timestr()}")

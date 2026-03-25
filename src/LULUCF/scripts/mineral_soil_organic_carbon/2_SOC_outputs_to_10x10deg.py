@@ -77,7 +77,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
 
     start_time = uu.timestr() # Starting time for stage
     main_logger.info(f"Stage {stage} started at: {start_time}")
-    main_logger.info(f"Model version: {cn.SOC_soil_model_version}")
+    main_logger.info(f"Model version: {cn.SOC_model_version}")
     main_logger.info(f"Model path descriptor: {model_path_description}")
     main_logger.info(f"Start year: 2000; end year: {cn.SOC_density_intervals[-1]}")
     main_logger.info(f"Input date: {input_date}")
@@ -144,8 +144,8 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
 
     # The zarr path that's being used
     zarr_path = zu.create_zarr_path(cn.SOC_path_mega_zarr, source_zarr_chunk_size, 'N/A',
-                                         model_type, cn.SOC_soil_model_version_underscore, model_path_description,
-                                         input_date, main_logger)
+                                    model_type, cn.SOC_model_version_underscore, model_path_description,
+                                    input_date, main_logger)
     main_logger.info(f"Aggregating from zarr ({source_zarr_chunk_size} pixel chunks): {zarr_path}")
 
     output_base = f"{cn.SOC_outputs_path}PATTERN/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{input_date}/"
@@ -219,7 +219,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
 
             future = client.submit(zu.create_10x10_deg_geotif_from_zarr,
                                    var_name, year_idx, tile_id, zarr_path, output_base,
-                                   cn.SOC_soil_model_version_underscore, model_type, model_path_description, no_upload, False, retries=3)
+                                   cn.SOC_model_version_underscore, model_type, model_path_description, no_upload, False, retries=3)
             futures.append(future)
 
         # Results is a list of tuples, where each tuple is the per-ha and per-pixel chunk stats, each of which is a dictionary
@@ -339,7 +339,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
 
     # Other path replacements
     output_dir_list = [
-        path.replace(cn.model_version_type_description_placeholder, f"version_{cn.SOC_soil_model_version_underscore}__{model_type}__{model_path_description}")
+        path.replace(cn.model_version_type_description_placeholder, f"version_{cn.SOC_model_version_underscore}__{model_type}__{model_path_description}")
         for path in output_dir_list
     ]
     output_dir_list = [path.replace("RUN_DATE", input_date) for path in output_dir_list]

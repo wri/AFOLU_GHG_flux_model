@@ -330,7 +330,7 @@ def main(cluster_name, model_type,
 
     start_time = uu.timestr() # Starting time for stage
     main_logger.info(f"Stage {stage} started at: {start_time}")
-    main_logger.info(f"Model version: {cn.SOC_soil_model_version}")
+    main_logger.info(f"Model version: {cn.SOC_model_version}")
     main_logger.info(f"Model path descriptor: {model_path_description}")
     main_logger.info(f"Run date: {run_date}")
     main_logger.info(f"Batch size: {batch_size} chunks")
@@ -364,7 +364,7 @@ def main(cluster_name, model_type,
                         cn.SOC_density_min_soil_extent_dir, cn.SOC_change_min_soil_extent_dir]
     outputs_dir_list = [path.replace("CHUNK_SIZE_pixels", f"{chunk_size_pixels}_pixels") for path in outputs_dir_list]
     outputs_dir_list = [path.replace("RUN_DATE", run_date) for path in outputs_dir_list]
-    outputs_dir_list = [path.replace(cn.model_version_type_description_placeholder, f"version_{cn.SOC_soil_model_version_underscore}__{model_type}__{model_path_description}") for path in outputs_dir_list]
+    outputs_dir_list = [path.replace(cn.model_version_type_description_placeholder, f"version_{cn.SOC_model_version_underscore}__{model_type}__{model_path_description}") for path in outputs_dir_list]
     # print(outputs_dir_list)
 
     # List of output paths by interval in s3
@@ -405,8 +405,8 @@ def main(cluster_name, model_type,
 
         # Creates s3 paths for the raw mega-zarr
         zarr_path = zu.create_zarr_path(cn.SOC_path_mega_zarr, chunk_size_pixels, 'N/A',
-                                             model_type, cn.SOC_soil_model_version_underscore, model_path_description,
-                                             run_date, main_logger)
+                                        model_type, cn.SOC_model_version_underscore, model_path_description,
+                                        run_date, main_logger)
 
         # These variables are added to the mega-zarr
         # Adds the unit to the zarr variable names (uses re.sub to apply to end of string only so that these don't overwrite each other).

@@ -13,8 +13,8 @@ from src.utilities import universal_utilities as uu
 veg_model_version = "1.0.5"
 veg_model_version_underscore = veg_model_version.replace(".", "_")
 
-SOC_soil_model_version = "1.0.0"
-SOC_soil_model_version_underscore = SOC_soil_model_version.replace(".", "_")
+SOC_model_version = "1.0.0"
+SOC_model_version_underscore = SOC_model_version.replace(".", "_")
 
 organic_soil_model_version = "0.9.7"
 organic_soil_model_version_underscore = organic_soil_model_version.replace(".", "_")
@@ -1644,7 +1644,7 @@ managed_land_to_text = {
 }
 
 veg_local_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/vegetation_v{veg_model_version_underscore}_standard_global/"
-SOC_local_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/SOC_v{SOC_soil_model_version_underscore}_standard_global/"
+SOC_local_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/SOC_v{SOC_model_version_underscore}_standard_global/"
 
 
 
@@ -1657,7 +1657,7 @@ original_shapefile_path = "/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_m
 reprojected_shapefile_path = "/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/world-administrative-boundaries_simple__20250102_reproj.shp"
 
 local_jpeg_folder_vegetation = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/vegetation/v{veg_model_version_underscore}_standard_global/"
-local_jpeg_folder_LULUCF = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/LULUCF_totals/veg_v{veg_model_version_underscore}_standard_global__org_soil_v_{organic_soil_model_version_underscore}__min_soil_v_{SOC_soil_model_version_underscore}/"
+local_jpeg_folder_LULUCF = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/LULUCF_totals/veg_v{veg_model_version_underscore}_standard_global__org_soil_v_{organic_soil_model_version_underscore}__min_soil_v_{SOC_model_version_underscore}/"
 local_jpeg_folder_cropland = f"/mnt/c/GIS/AFOLU_flux_model/cropland_emissions/20250828/4x4km_aggregated_maps/"
 local_jpeg_folder_livestock = f"/mnt/c/GIS/AFOLU_flux_model/livestock_emissions/20251223/4x4km_aggregated_maps/"
 local_jpeg_folder_AFOLU = f"/mnt/c/GIS/AFOLU_flux_model/AFOLU_totals/4x4km_aggregated_maps/v{veg_model_version_underscore}__standard__global/"
@@ -1691,7 +1691,7 @@ emissions_colors_rgb = net_colors_rgb[5:]
 
 veg_pres_text = f"Vegetation fluxes: v{veg_model_version}, {interval_end_years_annual[0]}-{last_model_year_annual}"
 organic_soil_pres_text = f"Organic soil: v{organic_soil_model_version}, 2021-2024"
-mineral_soil_pres_text = f"Mineral soil: v{SOC_soil_model_version}, 2016-2022"
+mineral_soil_pres_text = f"Mineral soil: v{SOC_model_version}, 2016-2022"
 cropland_pres_text = f"Cropland: vYYYYMMDD, ca. 2020"
 livestock_pres_text = f"Livestock: vYYYYMMDD, ca. 2020"
 legend_percentile_disclaimer = f"Legend value range represents 1 and 99 percentiles of fluxes."

@@ -215,6 +215,8 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
         df_with_areas['continent'] = df_with_areas[cn.cont_eco_zstats_pattern].map(lambda x: cn.cont_eco_to_text.get(x, {}).get('continent'))
         df_with_areas['continent_ecozone'] = df_with_areas[cn.cont_eco_zstats_pattern].map(lambda x: cn.cont_eco_to_text.get(x, {}).get('ecozone'))
 
+    #TODO Add climate domain column
+
     # Maps watershed codes to names if the contextual layer is used
     if cn.watersheds_pattern in df_with_areas.columns:
         df_with_areas['watershed_name'] = df_with_areas[cn.watersheds_pattern].map(cn.watershed_to_text)

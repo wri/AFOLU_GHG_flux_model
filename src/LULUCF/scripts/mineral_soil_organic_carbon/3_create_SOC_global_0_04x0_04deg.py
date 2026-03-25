@@ -63,7 +63,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
 
     start_time = uu.timestr() # Starting time for stage
     main_logger.info(f"Stage {stage} started at: {start_time}")
-    main_logger.info(f"Model version: {cn.SOC_soil_model_version}")
+    main_logger.info(f"Model version: {cn.SOC_model_version}")
     main_logger.info(f"Model path descriptor: {model_path_description}")
     main_logger.info(f"Start year: 2000; end year: {cn.SOC_density_intervals[-1]}")
     main_logger.info(f"Input date: {input_date}")
@@ -128,7 +128,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
             # future = client.submit(uu.create_10x10_deg_geotif_from_zarr,
             future = client.submit(uu.mosaic_tiles_to_global,
                                    var_name, year_idx, first_tiles_to_process, base_path,
-                                   cn.SOC_soil_model_version_underscore, model_type, model_path_description,
+                                   cn.SOC_model_version_underscore, model_type, model_path_description,
                                    no_upload, is_large_run)
             futures_density.append(future)
 
@@ -147,7 +147,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
             # future = client.submit(uu.create_10x10_deg_geotif_from_zarr,
             future = client.submit(uu.mosaic_tiles_to_global,
                                    var_name, year_idx, first_tiles_to_process, base_path,
-                                   cn.SOC_soil_model_version_underscore, model_type, model_path_description,
+                                   cn.SOC_model_version_underscore, model_type, model_path_description,
                                    no_upload, is_large_run)
             futures_change.append(future)
 
