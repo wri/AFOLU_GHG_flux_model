@@ -14,9 +14,11 @@ A zoomed in map can be created by supplying central lat-long arguments, as well 
 The aspect ratio used in the global map of 2:1 (width:height) is maintained, and the east-west extent is determined
 from that information. That keeps all zoomed in maps in the same shape as the global map for simplicity.
 
-
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 Runs locally, not in Coiled.
+
+#TODO Make sure that I'm actually converting SOC change from Mg C/yr to Mg CO2/yr. Added below but haven't tested it (and make sure I'm not doing it somewhere else already).
+#TODO Make sure I'm switching the sign for change to negative for gain and positive for loss (to match vegetation)
 
 Global LULUCF:
 python -m src.synthesis.scripts.create_sector_level_0_04deg_global_display_maps
@@ -416,6 +418,10 @@ def map_AFOLU_totals(net_all_gases_geotif_local,
         if "soil" in unit_converted_path:
             with rasterio.open(unit_converted_path) as src:
                 data = src.read(1).astype('float32')
+                #TODO test these unit and sign changes
+                if "mineral_soil" in unit_converted_path:
+                    data = data * cn.C_to_CO2 # Converts mineral soil SOC change from Mg C/yr to Mg CO2/yr
+                    data = data * -1   # Converts mineral soil SOC change to positive for loss and negative for gain
                 total_across_LULUCF += data
 
         # Loads unit-converted raster and adds it to the running AFOLU total

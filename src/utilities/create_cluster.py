@@ -98,10 +98,17 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
         worker_options["nthreads"] = threads_per_worker
 
     # Uses on-demand workers for large jobs. Otherwise, prefers spot workers.
-    if n_workers > 110 or on_demand:
+    if n_workers > 120:
         purchase_option = "on-demand"
         use_best_zone = False  # Should allow workers to be split across different zones, to help obtain large requested amount of workers
-        allow_cross_zone = True  # Allows workers in different availability zones, to help obtain large requested amount of workers
+
+        # Allows workers in different availability zones, to help obtain large requested amount of workers.
+        # Has costs for transferring data between workers in different zones, which happens for zonal stats but not model runs.
+        # So, can't allow cross zone for zonal stats.
+        allow_cross_zone = True
+    elif on_demand:
+        purchase_option = "on-demand"
+        use_best_zone = False  # Should allow workers to be split across different zones, to help obtain large requested amount of workers
     else:
         purchase_option = "spot_with_fallback"
         use_best_zone=True

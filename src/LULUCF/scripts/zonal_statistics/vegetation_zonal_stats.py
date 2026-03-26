@@ -29,9 +29,8 @@ Full run:
 python -m src.utilities.create_cluster -n 50 -m 64 -cn vegetation_zonal_stats -od
 python -m src.LULUCF.scripts.zonal_statistics.vegetation_zonal_stats -cn vegetation_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Zonal stats for vegetation model v1.0.5 (2016-2024)."
 
-#TODO Add climate domain column to output tables
+#TODO Add climate domain column to output tables (use Unspecified instead of Other)
 #TODO upload outputs to s3
-#TODO Make a simplified version of output that is few enough rows to fit in Excel and export to Excel (follow LULUCF_figures__veg 105__SOC_100__20260323.ipynb: drop most analysis layers, reaggregate by subset of contextual layers)
 #TODO merge tall veg type into tile tables (done in graphing Jupyter notebook for now)
 """
 

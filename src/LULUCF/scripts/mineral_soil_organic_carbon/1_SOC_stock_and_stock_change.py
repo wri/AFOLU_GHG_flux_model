@@ -1,4 +1,7 @@
 """
+Calculates carbon densities (Mg C/ha) in 0-30 cm top-soil,
+and annual stock changes (Mg C/ha/yr, accounting for shorter interval length in the last interval)
+
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Local test:
@@ -18,6 +21,7 @@ python -m src.LULUCF.scripts.mineral_soil_organic_carbon.1_SOC_stock_and_stock_c
 
 Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/6877a34b-02cc-800a-88cc-a123cdc9ed1b
 
+#TODO make zarr layers include units (_ha for density and _ha_yr for density change)
 #TODO change NoData in change outputs to something besides 0 because 0 has a meaning here
 #TODO test that zarr layer names having units in them works okay
 #TODO change back var_per_ha in zu.create_10x10_deg_geotif_from_zarr
@@ -128,7 +132,7 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
         # Replace COG int16 NoData with 0
         interval_array_full_extent = np.where(interval_array_full_extent == nodata_val, 0, interval_array_full_extent)
 
-        # Convert units from kg/m³ * 10 -> Mg/ha
+        # Convert units from kg C/m³ * 10 -> Mg C/ha
         converted_array_full_extent = (interval_array_full_extent * SOC_CONVERSION_FACTOR).astype(np.float32)
 
         # print(f"\n--- Chunk {bounds_str} ---")

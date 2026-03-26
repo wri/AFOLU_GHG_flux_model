@@ -13,31 +13,32 @@ If no pixels, the tile is skipped to save time.
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Coiled small tests:
-python -m src.utilities.create_cluster -n 1 -m 64 -cn SOC_zonal_stats
+python -m src.utilities.create_cluster -n 1 -m 32 -cn SOC_zonal_stats
 python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stats -bb 10 49 11 50 -fv 2 -ft 2 -mt standard -mpd global --input_date YYYYMMDD -zd test_box  -mcstn KEEP_definitive_runs/SOC_density/v1_0_0__2000_2022__20251224/soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx
 
 Coiled 8-tile test (Central and East Africa):
-python -m src.utilities.create_cluster -n 50 -m 64 -cn SOC_zonal_stats
+python -m src.utilities.create_cluster -n 50 -m 32 -cn SOC_zonal_stats
 python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stats -bb 13 -14 44 -3 -fv 3 -ft 3 -mt standard -mpd global --input_date YYYYMMDD -zd Central_Africa_test  -mcstn KEEP_definitive_runs/SOC_density/v1_0_0__2000_2022__20251224/soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx
 
 Coiled Cerrado test (174 features):
-python -m src.utilities.create_cluster -n 50 -m 64 -cn SOC_zonal_stats
+python -m src.utilities.create_cluster -n 50 -m 32 -cn SOC_zonal_stats
 python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd Cerrado_test -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp
 -mcstn KEEP_definitive_runs/SOC_density/v1_0_0__2000_2022__20251224/soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx
 
 Coiled large shapefile test (1884 features):
-python -m src.utilities.create_cluster -n 50 -m 64 -cn SOC_zonal_stats -od
+python -m src.utilities.create_cluster -n 50 -m 32 -cn SOC_zonal_stats -od
 python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd 1884_chunk_test -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp
 -mcstn KEEP_definitive_runs/SOC_density/v1_0_0__2000_2022__20251224/soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx
 
 Full run:
-python -m src.utilities.create_cluster -n 50 -m 64 -cn SOC_zonal_stats -od
+python -m src.utilities.create_cluster -n 50 -m 32 -cn SOC_zonal_stats -od
 python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Zonal stats for vegetation model v1.0.5 (2016-2024)."
 -mcstn KEEP_definitive_runs/SOC_density/v1_0_0__2000_2022__20251224/soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx
 
 #TODO upload outputs to s3
-#TODO Add climate domain column to output tables
-#TODO Make a simplified version of output that is few enough rows to fit in Excel and export to Excel
+#TODO Add climate domain column to output tables (use Unspecified instead of Other)
+#TODO Convert stock changes from Mg C to Mg CO2 and change output names accordingly.
+#TODO Try running with 16GB workers. May be using little enough memory to run on that.
 """
 
 import argparse
@@ -51,8 +52,6 @@ import xarray as xr
 import numpy as np
 from flox.xarray import xarray_reduce
 from flox import ReindexArrayType, ReindexStrategy
-from io import BytesIO
-import requests
 
 # Project imports
 from src.utilities import constants_and_names as cn
