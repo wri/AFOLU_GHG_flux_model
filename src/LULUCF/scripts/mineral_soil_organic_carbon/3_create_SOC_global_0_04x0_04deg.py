@@ -1,6 +1,8 @@
 """
 Creates global outputs at 0.04x0.04 deg resolution (approximately 4x4 km at the equator) for specified inputs.
-Units are Mg CO2(e)/0.04x0.04 deg pixel/year for interval-level outputs.
+Units are Mg C/0.04x0.04 deg pixel/year for interval-level outputs.
+Not converted to Mg CO2.
+Positive is SOC gain and negative is SOC loss (opposite of signs for vegetation).
 These are for presentations and other static displays.
 They are not to be used for calculations or statistics.
 

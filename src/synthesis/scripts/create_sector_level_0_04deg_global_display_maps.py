@@ -1,9 +1,19 @@
 """
 Creates 4x4km maps of LULUCF and AFOLU, if cropland and livestock maps provided.
 User supplies locations for vegetation, organic soil, mineral soil, cropland, and livestock global geotifs.
-Vegetation, organic soil and mineral soil are added together for LULUCF.
+Average annual vegetation (average of 2016-2024), organic soil (average of 2016-2020 and 2021-2024 emissions)
+and mineral soil (average of 2011-2015 vs. 2016-2020 change and 2016-2020 vs. 2021-2022 change) are added together for LULUCF.
 All five are added together for AFOLU.
 Also, the four non-vegetation maps are added to vegetation pairwise for completeness.
+
+Command line arguments include the most recent year for organic and mineral soil.
+Those paths are used to find the second-most recent year in s3, which is averaged with the supplied most recent year
+to get the average over 2016 onwards.
+
+SOC is converted from Mg C/0.04 deg pixel/yr to Mg CO2/0.04deg pixel/yr
+and the sign is flipped (negative is gain, positive is loss-- to match vegetation) for this synthesis.
+
+Need to run the vegetation-only jpeg creation script before this to create global annual average jpegs for vegetation.
 
 Defaults to global coverage but a zoomed in map can be created by supplying central lat-long arguments,
 as well as a north-south extent for the map to include.
@@ -16,9 +26,6 @@ from that information. That keeps all zoomed in maps in the same shape as the gl
 
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 Runs locally, not in Coiled.
-
-#TODO Make sure that I'm actually converting SOC change from Mg C/yr to Mg CO2/yr. Added below but haven't tested it (and make sure I'm not doing it somewhere else already).
-#TODO Make sure I'm switching the sign for change to negative for gain and positive for loss (to match vegetation)
 
 Global LULUCF:
 python -m src.synthesis.scripts.create_sector_level_0_04deg_global_display_maps
@@ -55,6 +62,10 @@ python -m src.LULUCF.scripts.vegetation_model.create_sector_level_0_04deg_global
 With https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/67634e63-bbcc-800a-8267-004e88ced2e4
 Continued at https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/68d6d26f-b054-8323-98bb-731a86582e74
 This specific code at https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69778c22-2538-8325-a70e-1a2b70312505
+
+#TODO Average soil values for last two intervals instead of using just the most recent value.
+For mineral soil, I could calculate the annual density change for 2015 vs. 2022, rather than averaging the two change values.
+For organic soil, I'll have to average the two periods of emissions.
 """
 
 import argparse
@@ -160,29 +171,28 @@ def convert_kg_to_Mg(path_reproj, main_logger):
     return converted_path
 
 # Sums the vegetation net flux and other dataset
-def add_veg_and_other_data(output_sum_path, converted_path, net_all_gases_geotif_local, main_logger):
+def add_veg_and_other_data(output_sum_path, additional_data, net_all_gases_geotif_local, main_logger):
 
-    with rasterio.open(net_all_gases_geotif_local) as src_a, rasterio.open(converted_path) as src_b:
-        data_a = src_a.read(1)
-        data_b = src_b.read(1)
-
-        # Add rasters directly — no masking
-        data_sum = data_a + data_b
+    with rasterio.open(net_all_gases_geotif_local) as veg_flux_src:
+        veg_flux = veg_flux_src.read(1)
 
         # Copy metadata from one of the sources (assumed identical)
-        meta = src_a.meta.copy()
+        meta = veg_flux_src.meta.copy()
         meta.update(dtype='float32')
 
-        with rasterio.open(output_sum_path, 'w', **meta) as dst:
-            dst.write(data_sum.astype('float32'), 1)
+    # Add rasters directly — no masking
+    data_sum = veg_flux + additional_data
 
-        # All non-zero values (used for calculating legend values)
-        non_zero_values = data_sum[data_sum != 0]
+    with rasterio.open(output_sum_path, 'w', **meta) as dst:
+        dst.write(data_sum.astype('float32'), 1)
+
+    # All non-zero values (used for calculating legend values)
+    non_zero_values = data_sum[data_sum != 0]
 
     return non_zero_values
 
 
-def map_AFOLU_totals(net_all_gases_geotif_local,
+def map_AFOLU_totals(veg_net_all_gases_geotif_local,
                      organic_soil_local,
                      mineral_soil_s3,
                      cropland_geotif_s3,
@@ -235,35 +245,73 @@ def map_AFOLU_totals(net_all_gases_geotif_local,
     if livestock_geotif_s3:
         data_to_add['livestock'] = [livestock_geotif_s3, livestock_reproj_folder, cn.livestock_pres_text, AFOLU_local_jpeg_non_pres_folder, AFOLU_local_jpeg_pres_folder]
 
-    main_logger.info(f"Vegetation net flux: {net_all_gases_geotif_local}")
+    veg_gross_emis_all_gases_local = veg_net_all_gases_geotif_local.replace(cn.net_flux_all_C_pools_all_gases_pattern, cn.gross_emis_all_C_pools_all_gases_pattern)
+    veg_gross_remv_all_gases_local = veg_net_all_gases_geotif_local.replace(cn.net_flux_all_C_pools_all_gases_pattern, cn.gross_removals_all_C_pools_pattern)
+
+    main_logger.info(f"Vegetation net flux: {veg_net_all_gases_geotif_local}")
+    main_logger.info(f"Vegetation gross emissions: {veg_gross_emis_all_gases_local}")
+    main_logger.info(f"Vegetation gross removals: {veg_gross_remv_all_gases_local}")
     main_logger.info(f"Inputs to add to vegetation: {data_to_add}")
 
     veg_analysis_years = f"{cn.interval_end_years_annual[0]}_{cn.last_model_year_annual}"
 
     # Version of the vegetation model being used
-    veg_version = re.search(r'v\d+_\d+_\d+', net_all_gases_geotif_local).group(0)
+    veg_version = re.search(r'v\d+_\d+_\d+', veg_net_all_gases_geotif_local).group(0)
 
-    # Loads base vegetation raster once
-    with rasterio.open(net_all_gases_geotif_local) as src_veg:
-        veg_meta = src_veg.meta.copy()
-        total_across_LULUCF = src_veg.read(1).astype('float32')  # base raster to accumulate into for LULUCF total
-        total_across_AFOLU = src_veg.read(1).astype('float32')  # base raster to accumulate into for AFOLU total
+    # Loads base vegetation rasters once
+    # Net vegetation flux
+    with rasterio.open(veg_net_all_gases_geotif_local) as src_veg_net:
+        veg_meta = src_veg_net.meta.copy()
+        LULUCF_net = src_veg_net.read(1).astype('float32')  # base raster to accumulate into for LULUCF net
+        AFOLU_net = src_veg_net.read(1).astype('float32')  # base raster to accumulate into for AFOLU net
+        print("LULUCF_net.min:", LULUCF_net.min())
+        print("LULUCF_net.max:", LULUCF_net.max())
 
         if bounding_box_proj is not None:
             minx, miny, maxx, maxy = bounding_box_proj
 
-            window = from_bounds(minx, miny, maxx, maxy, src_veg.transform)
+            window = from_bounds(minx, miny, maxx, maxy, src_veg_net.transform)
 
-            mean_veg_data = src_veg.read(1, window=window)
+            mean_veg_net = src_veg_net.read(1, window=window)
 
             # Update extent from the window
-            left, bottom, right, top = rasterio.windows.bounds(window, src_veg.transform)
+            left, bottom, right, top = rasterio.windows.bounds(window, src_veg_net.transform)
             raster_extent = (left, right, bottom, top)
 
         else:
-            mean_veg_data = src_veg.read(1)
-            b = src_veg.bounds
+            mean_veg_net = src_veg_net.read(1)
+            b = src_veg_net.bounds
             raster_extent = (b.left, b.right, b.bottom, b.top)
+
+    # Gross vegetation emissions
+    with rasterio.open(veg_gross_emis_all_gases_local) as src_veg_emis:
+
+        LULUCF_emis = src_veg_emis.read(1).astype('float32')  # base raster to accumulate into for LULUCF emis
+
+        if bounding_box_proj is not None:
+            minx, miny, maxx, maxy = bounding_box_proj
+
+            window = from_bounds(minx, miny, maxx, maxy, src_veg_emis.transform)
+
+            mean_veg_emis = src_veg_emis.read(1, window=window)
+
+        else:
+            mean_veg_emis = src_veg_emis.read(1)
+
+    # Gross vegetation removals
+    with rasterio.open(veg_gross_remv_all_gases_local) as src_veg_remv:
+
+        LULUCF_remv = src_veg_remv.read(1).astype('float32')  # base raster to accumulate into for LULUCF emis
+
+        if bounding_box_proj is not None:
+            minx, miny, maxx, maxy = bounding_box_proj
+
+            window = from_bounds(minx, miny, maxx, maxy, src_veg_remv.transform)
+
+            mean_veg_remv = src_veg_remv.read(1, window=window)
+
+        else:
+            mean_veg_remv = src_veg_remv.read(1)
 
     # ### Part 1: Maps average annual vegetation net flux by itself (for completeness).
     # ### This should be equivalent to the full model period annual average output from the vegetation model,
@@ -278,7 +326,7 @@ def map_AFOLU_totals(net_all_gases_geotif_local,
     #
     # main_logger.info(f"  Plotting average annual vegetation net flux map")
     #
-    # percentile_0 = mu.percentile_for_0(mean_veg_data)
+    # percentile_0 = mu.percentile_for_0(mean_veg_net)
     # main_logger.info(f"  0 is at the {percentile_0}th percentile of the average annual net flux vegetation raster.")
     # percentiles = [percentile_0 * cn.net_percentiles[0], percentile_0 * cn.net_percentiles[1],
     #                percentile_0 * cn.net_percentiles[2],
@@ -300,10 +348,10 @@ def map_AFOLU_totals(net_all_gases_geotif_local,
     # cmap = LinearSegmentedColormap.from_list("custom_colormap", list(zip(percentiles_normalized, colors_matplotlib)))
     #
     # main_logger.info(f"  Masking raster for average annual net flux vegetation to non-0 values")
-    # masked_data = np.ma.masked_where(mean_veg_data == 0, mean_veg_data)
+    # masked_data = np.ma.masked_where(mean_veg_net == 0, mean_veg_net)
     #
     # percentile_for_saturation = 1
-    # breaks_all_yrs = np.percentile(mean_veg_data, [1, (100-percentile_for_saturation)])  # The min and max percentiles at which colors saturate
+    # breaks_all_yrs = np.percentile(mean_veg_net, [1, (100-percentile_for_saturation)])  # The min and max percentiles at which colors saturate
     #
     # lower_lim_all_yrs = breaks_all_yrs[0]
     # global_neutral = 0
@@ -379,6 +427,7 @@ def map_AFOLU_totals(net_all_gases_geotif_local,
     # out_jpeg_for_pres = mu.save_pres_non_pres_jpegs(ax, jpeg_path, jpeg_for_pres_path, "", cn.veg_pres_text, main_logger)
 
 
+    main_logger.info(f"\n---Combining individual datasets with vegetation net flux")
     ### Part 2: Maps average annual vegetation net flux + one other dataset at a time (pairwise)
 
     # Iterates through non-vegetation layers to combine them with vegetation individually
@@ -407,28 +456,37 @@ def map_AFOLU_totals(net_all_gases_geotif_local,
         value.append(additional_data_date)
 
         # Reprojects to match vegetation net flux (if not already reprojected)
-        path_reproj = reproject_to_vegetation(input_s3_path, local_reproj_folder, net_all_gases_geotif_local, main_logger)
+        path_reproj = reproject_to_vegetation(input_s3_path, local_reproj_folder, veg_net_all_gases_geotif_local, main_logger)
         # print("path_reproj:", path_reproj)
 
         # Converts from kg to Mg (if not already converted, like for cropland and livestock)
         unit_converted_path = convert_kg_to_Mg(path_reproj, main_logger)
         # print("unit_converted_path:", unit_converted_path)
 
-        # Loads unit-converted raster and adds it to the running LULUCF total
-        if "soil" in unit_converted_path:
-            with rasterio.open(unit_converted_path) as src:
-                data = src.read(1).astype('float32')
-                #TODO test these unit and sign changes
-                if "mineral_soil" in unit_converted_path:
-                    data = data * cn.C_to_CO2 # Converts mineral soil SOC change from Mg C/yr to Mg CO2/yr
-                    data = data * -1   # Converts mineral soil SOC change to positive for loss and negative for gain
-                total_across_LULUCF += data
-
-        # Loads unit-converted raster and adds it to the running AFOLU total
+        # Loads unit-converted raster
         with rasterio.open(unit_converted_path) as src:
-            data = src.read(1).astype('float32')
-            total_across_AFOLU += data
+            additional_data = src.read(1).astype('float32')
 
+        # Need to convert SOC change from Mg C/yr to Mg CO2/yr and make sign match vegetation (negative=removals, positive=emissions)
+        if "mineral_soil" in unit_converted_path:
+            print("Mineral soil data")
+            print("data.min:", additional_data.min())
+            print("data.max:", additional_data.max())
+            additional_data = additional_data * cn.C_to_CO2  # Converts mineral soil SOC change from Mg C/yr to Mg CO2/yr
+            additional_data = additional_data * -1  # Converts mineral soil SOC change to positive for loss and negative for gain
+            print("data.min:", additional_data.min())
+            print("data.max:", additional_data.max())
+
+        # Only adds soil data to running LULUCF total
+        if "soil" in unit_converted_path:
+            LULUCF_net += additional_data
+            print("LULUCF_net.min:", LULUCF_net.min())
+            print("LULUCF_net.max:", LULUCF_net.max())
+
+        # Adds all datasets to running AFOLU total
+        AFOLU_net += additional_data
+        print("AFOLU_net.min:", AFOLU_net.min())
+        print("AFOLU_net.max:", AFOLU_net.max())
 
         main_logger.info(f"Combining vegetation net flux and {key}")
         output_name = f"vegetation_net_flux_all_pools_all_gases_{veg_version}__{key}_{additional_data_date}__{veg_analysis_years}__kt_CO2e_yr"
@@ -436,7 +494,7 @@ def map_AFOLU_totals(net_all_gases_geotif_local,
         main_logger.info(f"Combined vegetation and {key} at {output_sum_path}")
 
         # Sums the vegetation net flux and other data
-        non_zero_values = add_veg_and_other_data(output_sum_path, unit_converted_path, net_all_gases_geotif_local, main_logger)
+        non_zero_values = add_veg_and_other_data(output_sum_path, additional_data, veg_net_all_gases_geotif_local, main_logger)
 
 
         main_logger.info(f"\n\n---Preparing legend")
@@ -567,9 +625,9 @@ def map_AFOLU_totals(net_all_gases_geotif_local,
         main_logger.info(f"vegetation+{key} {bounding_box_description} took {round(end_time - start_time)} seconds: {uu.timestr()}")
 
 
-    ### Part 3: Maps LULUCF
+    ### Part 3: Maps net LULUCF
 
-    main_logger.info("\n\n\n---Mapping LULUCF:")
+    main_logger.info("\n\n\n---Mapping net LULUCF:")
 
     # Iteratively collects the names and versions of non-vegetation datasets, and text for bottom-right of maps
     non_veg_versions = ''
@@ -588,9 +646,9 @@ def map_AFOLU_totals(net_all_gases_geotif_local,
     final_total_path = f"{cn.local_jpeg_folder_LULUCF}/{output_name}.tif"
     # print("final_total_path:", final_total_path)
     with rasterio.open(final_total_path, 'w', **veg_meta) as dst:
-        dst.write(total_across_LULUCF.astype('float32'), 1)
+        dst.write(LULUCF_net.astype('float32'), 1)
 
-    non_zero_values_LULUCF = total_across_LULUCF[total_across_LULUCF != 0]
+    non_zero_values_LULUCF = LULUCF_net[LULUCF_net != 0]
 
     main_logger.info(f"\n\n---Preparing LULUCF legend")
 
@@ -617,7 +675,7 @@ def map_AFOLU_totals(net_all_gases_geotif_local,
                    f"> {rounded_upper_lim_LULUCF:.0f}  (source)"]
     # print(tick_labels)
 
-    main_logger.info(f"\n\n---Generating LULUCF map:")
+    main_logger.info(f"\n\n---Generating net LULUCF map:")
 
     # Reads raster data
     with rasterio.open(final_total_path) as src:
@@ -665,7 +723,7 @@ def map_AFOLU_totals(net_all_gases_geotif_local,
         vmax=upper_lim_LULUCF
     )
 
-    main_logger.info(f"  Plotting LULUCF map")
+    main_logger.info(f"  Plotting net LULUCF map")
     ax, fig = mu.create_plot()
 
     # Sets the ocean color
@@ -717,6 +775,11 @@ def map_AFOLU_totals(net_all_gases_geotif_local,
     main_logger.info(f"LULUCF for {bounding_box_description} extent took {round(end_time - start_time)} seconds: {uu.timestr()}")
 
 
+    ### Part 4: Maps LULUCF gross emissions
+
+
+
+
     ### Part 4: Maps AFOLU
 
     main_logger.info("\n\n\n---Mapping AFOLU:")
@@ -740,9 +803,9 @@ def map_AFOLU_totals(net_all_gases_geotif_local,
     output_name = f"AFOLU__veg_{veg_version}_{non_veg_versions}__kt_CO2e_yr"
     final_total_path = f"{cn.local_jpeg_folder_AFOLU}/{output_name}.tif"
     with rasterio.open(final_total_path, 'w', **veg_meta) as dst:
-        dst.write(total_across_AFOLU.astype('float32'), 1)
+        dst.write(AFOLU_net.astype('float32'), 1)
 
-    non_zero_values_AFOLU = total_across_AFOLU[total_across_AFOLU != 0]
+    non_zero_values_AFOLU = AFOLU_net[AFOLU_net != 0]
 
     main_logger.info(f"\n\n---Preparing legend for AFOLU")
 
@@ -872,7 +935,7 @@ def map_AFOLU_totals(net_all_gases_geotif_local,
     main_logger.info(f"AFOLU for {bounding_box_description} extent took {round(end_time - start_time)} seconds: {uu.timestr()}")
 
 
-def main(net_all_gases_geotif_local,
+def main(veg_net_all_gases_geotif_local,
          organic_soil_local=None,
          mineral_soil_s3=None,
          cropland_geotif_s3=None,
@@ -906,8 +969,8 @@ def main(net_all_gases_geotif_local,
         bounding_box = None
         main_logger.info("No bounding box specified; using global extent.")
 
-    # Generates jpegs for net flux, gross emissions, and gross removals
-    map_AFOLU_totals(net_all_gases_geotif_local,
+    # Generates jpegs for LULUCF and AFOLU
+    map_AFOLU_totals(veg_net_all_gases_geotif_local,
                      organic_soil_local,
                      mineral_soil_s3,
                      cropland_geotif_s3,
@@ -924,7 +987,7 @@ if __name__ == '__main__':
     parser.add_argument('-lh', '--lat_height', type=float, help='Latitude to show around lat center (value is total north/south) (optional)')
     parser.add_argument('-bbd', '--bounding_box_description', default='global', help='Description of bounding box (if used) to include in output names.')
 
-    parser.add_argument('-veg', '--net_all_gases_geotif_local', help='Local vegetation net flux file to use')
+    parser.add_argument('-veg', '--veg_net_all_gases_geotif_local', help='Local vegetation net flux file to use')
     parser.add_argument('-os', '--organic_soil_local', help='Local organic soil emissions file (eventually should come from s3 but added drained and burned together locally')
     parser.add_argument('-ms', '--mineral_soil_s3', help='s3 path for mineral soil net flux')
     parser.add_argument('-cl', '--cropland_geotif_s3', help='s3 path for cropland management emissions')
@@ -937,13 +1000,13 @@ if __name__ == '__main__':
     lat_height = args.lat_height
     bounding_box_description = args.bounding_box_description
 
-    net_all_gases_geotif_local = args.net_all_gases_geotif_local
+    veg_net_all_gases_geotif_local = args.veg_net_all_gases_geotif_local
     organic_soil_local = args.organic_soil_local
     mineral_soil_s3 = args.mineral_soil_s3
     cropland_geotif_s3 = args.cropland_geotif_s3
     livestock_geotif_s3 = args.livestock_geotif_s3
 
-    main(net_all_gases_geotif_local,
+    main(veg_net_all_gases_geotif_local,
          organic_soil_local=organic_soil_local,  # Created by downloading and summing drainage and burning. Erin hasn't made a combined map yet.
          mineral_soil_s3=mineral_soil_s3,
          cropland_geotif_s3=cropland_geotif_s3,

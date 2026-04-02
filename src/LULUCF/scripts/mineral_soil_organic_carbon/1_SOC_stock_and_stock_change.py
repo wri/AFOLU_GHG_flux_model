@@ -1,6 +1,8 @@
 """
 Calculates carbon densities (Mg C/ha) in 0-30 cm top-soil,
-and annual stock changes (Mg C/ha/yr, accounting for shorter interval length in the last interval)
+and annual stock changes (Mg C/ha/yr, accounting for shorter interval length in the last interval).
+Neither change nor density converted to Mg CO2.
+Positive is SOC gain and negative is SOC loss (opposite of signs for vegetation).
 
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
@@ -20,6 +22,10 @@ python -m src.utilities.create_cluster -n 200 -t 1 -m 4 -cn mineral_soil
 python -m src.LULUCF.scripts.mineral_soil_organic_carbon.1_SOC_stock_and_stock_change -cn mineral_soil -mt standard -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive SOC timeseries creation for 2000-2022."
 
 Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/6877a34b-02cc-800a-88cc-a123cdc9ed1b
+
+#TODO MAJOR: The 20250224 run seems to have dropped full extent density values some sub-blocks (0.1x0.1 deg pieces), e.g., 2020 for 114_71_115_72 (80N_110E) and 2022 for 106_11_107_12 (20N_100E).
+#Maybe from using too many workers at once? Check density pixel count across years from chunk stats to confirm none dropped next time (all years should have same number of density pixels).
+#Could even have create_soil_C_density_and_change() check for equal pixel counts in chunk_stats and repeat task if it's not the same
 
 #TODO make zarr layers include units (_ha for density and _ha_yr for density change)
 #TODO change NoData in change outputs to something besides 0 because 0 has a meaning here

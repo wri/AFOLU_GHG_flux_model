@@ -3,6 +3,9 @@ Creates 10x10 deg per-hectare and per-pixel geotifs from global zarr for numeric
 It creates a task list for all datasets, years, and 10x10 deg tiles for the variables, years, and area of interest,
 then runs that giant task list in parallel in batches (as a safeguard against failure during a large task list).
 
+Unit numerator is Mg C, not Mg CO2
+Positive is SOC gain and negative is SOC loss (opposite of signs for vegetation).
+
 Providing a bounding box with -bb or a chunk shapefile limits the 10x10 deg creation
 to the 10x10 deg tiles that contain the bounding box or shapefile.
 The entire 10x10 deg tile that contains the selected chunks will be processed (not just the parts with the selected chunks).
