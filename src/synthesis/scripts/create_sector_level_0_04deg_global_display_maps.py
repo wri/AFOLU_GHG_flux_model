@@ -30,13 +30,13 @@ Runs locally, not in Coiled.
 Global LULUCF:
 python -m src.synthesis.scripts.create_sector_level_0_04deg_global_display_maps
 -ms s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_0__standard__global/SOC_change__mineral_soil_extent__0-30cm_MgC/2022/_0_04deg_yr/global/20251224/SOC_change__mineral_soil_extent__0-30cm_MgC_0_04deg_yr_v1_0_0_2022_global.tif
--os /mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/LULUCF_totals/veg_v1_0_5_standard_global__org_soil_v_0_9_7__min_soil_v_1_0_0/0_01deg_global__drained_burned_total_Mg_CO2e_pixel_yr_2021_2024.tif
+-os /mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/LULUCF_totals/veg_v1_0_5_standard_global__org_soil_v_0_9_7__min_soil_v_1_0_0/organic_soil_0_01deg_global__drained_burned_total_Mg_CO2e_pixel_yr_2021_2024.tif
 -veg /mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/vegetation/v1_0_5_standard_global_YYYYMMDD/net_flux__all_C_pools__all_gases__MgCO2e_0_04deg_yr_v1_0_5_2016_2024_mean_global_reproj.tif
 
 Global AFOLU:
 python -m src.synthesis.scripts.create_sector_level_0_04deg_global_display_maps
 -veg /mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/vegetation/v1_0_5_standard_global_YYYYMMDD/net_flux__all_C_pools__all_gases__MgCO2e_0_04deg_yr_v1_0_5_2016_2024_mean_global_reproj.tif
--os /mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/LULUCF_totals/veg_v1_0_5_standard_global__org_soil_v_0_9_7__min_soil_v_1_0_0/0_01deg_global__drained_burned_total_Mg_CO2e_pixel_yr_2021_2024.tif
+-os /mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/LULUCF_totals/veg_v1_0_5_standard_global__org_soil_v_0_9_7__min_soil_v_1_0_0/organic_soil_0_01deg_global__drained_burned_total_Mg_CO2e_pixel_yr_2021_2024.tif
 -ms s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_0__standard__global/SOC_change__mineral_soil_extent__0-30cm_MgC/2022/_0_04deg_yr/global/20251224/SOC_change__mineral_soil_extent__0-30cm_MgC_0_04deg_yr_v1_0_0_2022_global.tif
 -cl s3://gfw2-data/climate/AFOLU_flux_model/cropland_emissions/raw__from_Cornell/20250828/year_2020/all_sources/Global_grid_all_GHGs_cropland_total_amount_CO2eq_all_crops_NonPeatland_2019_kg_CO2.tif
 -ls s3://gfw2-data/climate/AFOLU_flux_model/livestock_emissions/raw__from_Cornell/20251223/Total_GHG_Emissions/Tot_CO2eq_kg_livestock_GHG_emissions.tif
@@ -44,7 +44,7 @@ python -m src.synthesis.scripts.create_sector_level_0_04deg_global_display_maps
 For Central Africa:
 python -m src.LULUCF.scripts.vegetation_model.create_sector_level_0_04deg_global_display_maps
 -veg /mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/vegetation/v1_0_5_standard_global_YYYYMMDD/net_flux__all_C_pools__all_gases__MgCO2e_0_04deg_yr_v1_0_5_2016_2024_mean_global_reproj.tif
--os /mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/LULUCF_totals/veg_v1_0_5_standard_global__org_soil_v_0_9_7__min_soil_v_1_0_0/0_01deg_global__drained_burned_total_Mg_CO2e_pixel_yr_2021_2024.tif
+-os /mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/LULUCF_totals/veg_v1_0_5_standard_global__org_soil_v_0_9_7__min_soil_v_1_0_0/organic_soil_0_01deg_global__drained_burned_total_Mg_CO2e_pixel_yr_2021_2024.tif
 -ms s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_0__standard__global/SOC_change__mineral_soil_extent__0-30cm_MgC/2022/_0_04deg_yr/global/20251224/SOC_change__mineral_soil_extent__0-30cm_MgC_0_04deg_yr_v1_0_0_2022_global.tif
 -cl s3://gfw2-data/climate/AFOLU_flux_model/cropland_emissions/raw__from_Cornell/20250828/year_2020/all_sources/Global_grid_all_GHGs_cropland_total_amount_CO2eq_all_crops_NonPeatland_2019_kg_CO2.tif
 -ls s3://gfw2-data/climate/AFOLU_flux_model/livestock_emissions/raw__from_Cornell/20251223/Total_GHG_Emissions/Tot_CO2eq_kg_livestock_GHG_emissions.tif
@@ -53,7 +53,7 @@ python -m src.LULUCF.scripts.vegetation_model.create_sector_level_0_04deg_global
 For Borneo/Sumatra:
 python -m src.LULUCF.scripts.vegetation_model.create_sector_level_0_04deg_global_display_maps
 -veg /mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/vegetation/v1_0_5_standard_global_YYYYMMDD/net_flux__all_C_pools__all_gases__MgCO2e_0_04deg_yr_v1_0_5_2016_2024_mean_global_reproj.tif
--os /mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/LULUCF_totals/veg_v1_0_5_standard_global__org_soil_v_0_9_7__min_soil_v_1_0_0/0_01deg_global__drained_burned_total_Mg_CO2e_pixel_yr_2021_2024.tif
+-os /mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/LULUCF_totals/veg_v1_0_5_standard_global__org_soil_v_0_9_7__min_soil_v_1_0_0/organic_soil_0_01deg_global__drained_burned_total_Mg_CO2e_pixel_yr_2021_2024.tif
 -ms s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_0__standard__global/SOC_change__mineral_soil_extent__0-30cm_MgC/2022/_0_04deg_yr/global/20251224/SOC_change__mineral_soil_extent__0-30cm_MgC_0_04deg_yr_v1_0_0_2022_global.tif
 -cl s3://gfw2-data/climate/AFOLU_flux_model/cropland_emissions/raw__from_Cornell/20250828/year_2020/all_sources/Global_grid_all_GHGs_cropland_total_amount_CO2eq_all_crops_NonPeatland_2019_kg_CO2.tif
 -ls s3://gfw2-data/climate/AFOLU_flux_model/livestock_emissions/raw__from_Cornell/20251223/Total_GHG_Emissions/Tot_CO2eq_kg_livestock_GHG_emissions.tif
@@ -267,51 +267,18 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
         print("LULUCF_net.min:", LULUCF_net.min())
         print("LULUCF_net.max:", LULUCF_net.max())
 
-        if bounding_box_proj is not None:
-            minx, miny, maxx, maxy = bounding_box_proj
-
-            window = from_bounds(minx, miny, maxx, maxy, src_veg_net.transform)
-
-            mean_veg_net = src_veg_net.read(1, window=window)
-
-            # Update extent from the window
-            left, bottom, right, top = rasterio.windows.bounds(window, src_veg_net.transform)
-            raster_extent = (left, right, bottom, top)
-
-        else:
-            mean_veg_net = src_veg_net.read(1)
-            b = src_veg_net.bounds
-            raster_extent = (b.left, b.right, b.bottom, b.top)
-
     # Gross vegetation emissions
     with rasterio.open(veg_gross_emis_all_gases_local) as src_veg_emis:
-
         LULUCF_emis = src_veg_emis.read(1).astype('float32')  # base raster to accumulate into for LULUCF emis
-
-        if bounding_box_proj is not None:
-            minx, miny, maxx, maxy = bounding_box_proj
-
-            window = from_bounds(minx, miny, maxx, maxy, src_veg_emis.transform)
-
-            mean_veg_emis = src_veg_emis.read(1, window=window)
-
-        else:
-            mean_veg_emis = src_veg_emis.read(1)
+        print("LULUCF_emis.min:", LULUCF_emis.min())
+        print("LULUCF_emis.max:", LULUCF_emis.max())
 
     # Gross vegetation removals
     with rasterio.open(veg_gross_remv_all_gases_local) as src_veg_remv:
-
         LULUCF_remv = src_veg_remv.read(1).astype('float32')  # base raster to accumulate into for LULUCF emis
+        print("LULUCF_remv.min:", LULUCF_remv.min())
+        print("LULUCF_remv.max:", LULUCF_remv.max())
 
-        if bounding_box_proj is not None:
-            minx, miny, maxx, maxy = bounding_box_proj
-
-            window = from_bounds(minx, miny, maxx, maxy, src_veg_remv.transform)
-
-            mean_veg_remv = src_veg_remv.read(1, window=window)
-
-        else:
-            mean_veg_remv = src_veg_remv.read(1)
 
     # ### Part 1: Maps average annual vegetation net flux by itself (for completeness).
     # ### This should be equivalent to the full model period annual average output from the vegetation model,
@@ -426,7 +393,6 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     # # Saves two versions of the map: without and with a source note in the bottom right
     # out_jpeg_for_pres = mu.save_pres_non_pres_jpegs(ax, jpeg_path, jpeg_for_pres_path, "", cn.veg_pres_text, main_logger)
 
-
     main_logger.info(f"\n---Combining individual datasets with vegetation net flux")
     ### Part 2: Maps average annual vegetation net flux + one other dataset at a time (pairwise)
 
@@ -467,17 +433,34 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
         with rasterio.open(unit_converted_path) as src:
             additional_data = src.read(1).astype('float32')
 
-        # Need to convert SOC change from Mg C/yr to Mg CO2/yr and make sign match vegetation (negative=removals, positive=emissions)
-        if "mineral_soil" in unit_converted_path:
+        # Need to convert SOC change from Mg C/yr to Mg CO2/yr and make its sign match vegetation (negative=removals, positive=emissions)
+        if key == "mineral_soil":
             print("Mineral soil data")
-            print("data.min:", additional_data.min())
-            print("data.max:", additional_data.max())
+            print("additional_data.min:", additional_data.min())
+            print("additional_data.max:", additional_data.max())
             additional_data = additional_data * cn.C_to_CO2  # Converts mineral soil SOC change from Mg C/yr to Mg CO2/yr
             additional_data = additional_data * -1  # Converts mineral soil SOC change to positive for loss and negative for gain
-            print("data.min:", additional_data.min())
-            print("data.max:", additional_data.max())
+            print("additional_data.min:", additional_data.min())
+            print("additional_data.max:", additional_data.max())
 
-        # Only adds soil data to running LULUCF total
+            # Splits mineral soil into separate loss and gain arrays
+            SOC_loss = np.where(additional_data > 0, additional_data, 0)
+            SOC_gain = np.where(additional_data < 0, additional_data, 0)
+            print("SOC_loss.min:", SOC_loss.min())
+            print("SOC_loss.max:", SOC_loss.max())
+            print("SOC_gain.min:", SOC_gain.min())
+            print("SOC_gain.max:", SOC_gain.max())
+
+            # Includes SOC loss with LULUCF emissions and SOC gain with LULUCF removals
+            LULUCF_emis += SOC_loss
+            LULUCF_remv += SOC_gain
+
+        # Adds emissions from organic soil to LULUCF gross emissions total
+        if key == "organic_soil":
+            print("Adding organic soil to emissions")
+            LULUCF_emis += additional_data
+
+        # Only adds soil data to running LULUCF net total
         if "soil" in unit_converted_path:
             LULUCF_net += additional_data
             print("LULUCF_net.min:", LULUCF_net.min())
@@ -777,7 +760,17 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
 
     ### Part 4: Maps LULUCF gross emissions
 
+    main_logger.info("\n\n\n---Mapping LULUCF gross emissions and removals:")
 
+    LULUCF_emis_name = "LULUCF_emis"
+    LULUCF_emis_path = f"{LULUCF_reproj_folder}/{LULUCF_emis_name}.tif"
+    with rasterio.open(LULUCF_emis_path, "w", **veg_meta) as dst:
+        dst.write(LULUCF_emis, 1)
+
+    LULUCF_remv_name = "LULUCF_remv"
+    LULUCF_remv_path = f"{LULUCF_reproj_folder}/{LULUCF_remv_name}.tif"
+    with rasterio.open(LULUCF_remv_path, "w", **veg_meta) as dst:
+        dst.write(LULUCF_remv, 1)
 
 
     ### Part 4: Maps AFOLU
