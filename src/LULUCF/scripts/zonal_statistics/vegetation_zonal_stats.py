@@ -32,6 +32,7 @@ python -m src.LULUCF.scripts.zonal_statistics.vegetation_zonal_stats -cn vegetat
 #TODO Add climate domain column to output tables (use Unspecified instead of Other)
 #TODO upload outputs to s3
 #TODO merge tall veg type into tile tables (done in graphing Jupyter notebook for now)
+#TODO Add column to df creation that says what gas is represented
 """
 
 import argparse

@@ -39,6 +39,7 @@ python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stat
 #TODO Add climate domain column to output tables (use Unspecified instead of Other)
 #TODO Convert stock changes from Mg C to Mg CO2 and change output names accordingly.
 #TODO Try running with 16GB workers. May be using little enough memory to run on that.
+#TODO Add column to df creation that says what gas is represented
 """
 
 import argparse
