@@ -719,7 +719,7 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
         ax.set_ylim(extent[2], extent[3])
 
     # Title
-    title_text = f"LULUCF net GHG flux (vegetation+soil)\nkt CO$_2$e yr$^{{-1}}$"
+    title_text = f"Net LULUCF flux\nkt CO$_2$e yr$^{{-1}}$"
 
     # Creates legend
     mu.create_divergent_legend_asymmetric(fig_LULUCF_net, rounded_lower_lim_LULUCF_net, rounded_upper_lim_LULUCF_net,
@@ -739,7 +739,7 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     out_jpeg_for_pres = mu.save_pres_non_pres_jpegs(ax, jpeg_path_LULUCF_net, jpeg_for_pres_path_LULUCF_net, "", full_slide_text_LULUCF_with_disclaimer, main_logger)
 
     end_time = time.time()
-    main_logger.info(f"LULUCF for {bounding_box_description} extent took {round(end_time - start_time)} seconds: {uu.timestr()}")
+    main_logger.info(f"LULUCF net for {bounding_box_description} extent took {round(end_time - start_time)} seconds: {uu.timestr()}")
 
 
     ### Part 4: Maps LULUCF gross emissions
@@ -748,9 +748,9 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
 
     # Gross LULUCF emissions
 
-    LULUCF_gross_emis_output_name = f"LULUCF_gross_emis__veg_{veg_version}__{non_veg_versions}__MgCO2e_yr"
-    # print("LULUCF_gross_emis_output_name:", LULUCF_gross_emis_output_name)
-    LULUCF_gross_emis_final_total_path = f"{cn.local_jpeg_folder_LULUCF}/{LULUCF_gross_emis_output_name}.tif"
+    LULUCF_emis_output_name = f"LULUCF_gross_emis__veg_{veg_version}__{non_veg_versions}__MgCO2e_yr"
+    # print("LULUCF_emis_output_name:", LULUCF_emis_output_name)
+    LULUCF_gross_emis_final_total_path = f"{cn.local_jpeg_folder_LULUCF}/{LULUCF_emis_output_name}.tif"
 
     with rasterio.open(LULUCF_gross_emis_final_total_path, "w", **veg_meta) as dst:
         dst.write(LULUCF_emis, 1)
@@ -791,7 +791,7 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
 
     # Legend labels depend on what exact input is displayed
     tick_labels_LULUCF_emis = [0, f"> {rounded_upper_lim_all_yrs_LULUCF_emis:.0f}"]
-    title_text_LULUCF_emis = f"Gross LULUCF emissions (vegetation + soil)\nkt CO$_2$e yr$^{{-1}}$"
+    title_text_LULUCF_emis = f"Gross LULUCF emissions\nkt CO$_2$e yr$^{{-1}}$"
     main_logger.info(f"tick labels {tick_labels_LULUCF_emis}")
 
     norm_LULUCF_emis = Normalize(vmin=lower_lim_all_yrs_LULUCF_emis, vmax=upper_lim_all_yrs_LULUCF_emis)
@@ -799,7 +799,6 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     # Masks data for emissions mapping (different from removing 0s for legend percentiles)
     masked_data_for_map_LULUCF_emis = np.ma.masked_where(LULUCF_emis <= 0, LULUCF_emis)
 
-    print(masked_data_for_legend_LULUCF_emis)
     img_LULUCF_emis = mu.plot_raster(ax, cmap_LULUCF_emis, extent, masked_data_for_map_LULUCF_emis, norm_LULUCF_emis)
     mu.plot_country_boundaries(ax, country_shapefile)
 
@@ -815,7 +814,6 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     mu.remove_ticks(ax)
 
     # Saves LULUCF gross emissions JPEG
-    LULUCF_emis_output_name = f"LULUCF_emissions__veg_{veg_version}__{non_veg_versions}__MgCO2e_yr"
     LULUCF_emis_output_name_kt = LULUCF_emis_output_name.replace("MgCO2", "ktCO2")
     core_jpeg_name_LULUCF_emis = f"{LULUCF_emis_output_name_kt}__{uu.timestr()[0:8]}"
     if bounding_box_description:  # Adds bounding box description to file name, if supplied
@@ -827,14 +825,14 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     out_jpeg_for_pres = mu.save_pres_non_pres_jpegs(ax, jpeg_path_LULUCF_emis, jpeg_for_pres_path_LULUCF_emis, "", full_slide_text_LULUCF_with_disclaimer, main_logger)
 
     end_time = time.time()
-    main_logger.info(f"LULUCF for {bounding_box_description} extent took {round(end_time - start_time)} seconds: {uu.timestr()}")
+    main_logger.info(f"LULUCF emissions for {bounding_box_description} extent took {round(end_time - start_time)} seconds: {uu.timestr()}")
 
 
     # Gross LULUCF removals
 
-    LULUCF_gross_remv_output_name = f"LULUCF_gross_remv__veg_{veg_version}__{non_veg_versions}__MgCO2e_yr"
-    # print("LULUCF_gross_remv_output_name:", LULUCF_gross_remv_output_name)
-    LULUCF_gross_remv_final_total_path = f"{cn.local_jpeg_folder_LULUCF}/{LULUCF_gross_remv_output_name}.tif"
+    LULUCF_remv_output_name = f"LULUCF_gross_remv__veg_{veg_version}__{non_veg_versions}__MgCO2e_yr"
+    # print("LULUCF_remv_output_name:", LULUCF_remv_output_name)
+    LULUCF_gross_remv_final_total_path = f"{cn.local_jpeg_folder_LULUCF}/{LULUCF_remv_output_name}.tif"
 
     with rasterio.open(LULUCF_gross_remv_final_total_path, "w", **veg_meta) as dst:
         dst.write(LULUCF_remv, 1)
@@ -876,7 +874,7 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
 
     # Legend labels depend on what exact input is displayed
     tick_labels_LULUCF_remv = [f"< {rounded_lower_lim_all_yrs_LULUCF_remv:.0f}", 0]
-    title_text_LULUCF_remv = f"Gross LULUCF removals (vegetation + soil)\nkt CO$_2$ yr$^{{-1}}$"
+    title_text_LULUCF_remv = f"Gross LULUCF removals\nkt CO$_2$ yr$^{{-1}}$"
     main_logger.info(f"tick labels {tick_labels_LULUCF_remv}")
 
     norm_LULUCF_remv = Normalize(vmin=lower_lim_all_yrs_LULUCF_remv, vmax=upper_lim_all_yrs_LULUCF_remv)
@@ -884,7 +882,6 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     # Masks data for removals mapping (different from removing 0s for legend percentiles)
     masked_data_for_map_LULUCF_remv = np.ma.masked_where(LULUCF_remv >= 0, LULUCF_remv)
 
-    print(masked_data_for_legend_LULUCF_remv)
     img_LULUCF_remv = mu.plot_raster(ax, cmap_LULUCF_remv, extent, masked_data_for_map_LULUCF_remv, norm_LULUCF_remv)
     mu.plot_country_boundaries(ax, country_shapefile)
 
@@ -900,7 +897,6 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     mu.remove_ticks(ax)
 
     # Saves LULUCF gross removals JPEG
-    LULUCF_remv_output_name = f"LULUCF_removals__veg_{veg_version}__{non_veg_versions}__MgCO2e_yr"
     LULUCF_remv_output_name_kt = LULUCF_remv_output_name.replace("MgCO2", "ktCO2")
     core_jpeg_name_LULUCF_remv = f"{LULUCF_remv_output_name_kt}__{uu.timestr()[0:8]}"
     if bounding_box_description:  # Adds bounding box description to file name, if supplied
@@ -912,10 +908,21 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     out_jpeg_for_pres = mu.save_pres_non_pres_jpegs(ax, jpeg_path_LULUCF_remv, jpeg_for_pres_path_LULUCF_remv, "", full_slide_text_LULUCF_with_disclaimer, main_logger)
 
     end_time = time.time()
-    main_logger.info(f"LULUCF for {bounding_box_description} extent took {round(end_time - start_time)} seconds: {uu.timestr()}")
+    main_logger.info(f"LULUCF removals for {bounding_box_description} extent took {round(end_time - start_time)} seconds: {uu.timestr()}")
 
 
-    ### Part 4: Maps AFOLU
+    ### Part 5: Three-panel map of LULUCF (gross emissions, gross removals, net flux)
+
+    # Saves LULUCF three-panel map JPEG
+    LULUCF_three_panel_output_name_kt = f"LULUCF_three_panel__veg_{veg_version}__{non_veg_versions}__ktCO2e_yr"
+    core_jpeg_name_LULUCF_three_panel = f"{LULUCF_three_panel_output_name_kt}__{uu.timestr()[0:8]}"
+    if bounding_box_description:  # Adds bounding box description to file name, if supplied
+        core_jpeg_name_LULUCF_three_panel = f"{core_jpeg_name_LULUCF_three_panel}_{bounding_box_description}"
+    jpeg_path_LULUCF_three_panel = f"{LULUCF_local_jpeg_non_pres_folder}/{core_jpeg_name_LULUCF_three_panel}.jpeg"
+    mu.create_three_panel_map(jpeg_path_LULUCF_three_panel, jpeg_path_LULUCF_emis, jpeg_path_LULUCF_remv, jpeg_path_LULUCF_net, "", main_logger)
+
+
+    ### Part 6: Maps AFOLU
 
     main_logger.info("\n\n\n---Mapping AFOLU:")
 

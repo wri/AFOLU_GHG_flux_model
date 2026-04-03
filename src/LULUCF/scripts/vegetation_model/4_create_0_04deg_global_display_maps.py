@@ -144,7 +144,7 @@ def main(input_date, model_type, model_path_description=None,
                  cn.removals_colors_rgb, main_logger, cn.removals_percentiles, country_shapefile, bounding_box, bounding_box_description)
 
     # # Generates three-panel map
-    # create_three_panel_map()
+    # mu.create_three_panel_map()
 
 
 if __name__ == '__main__':

@@ -23,6 +23,8 @@ python -m src.LULUCF.scripts.mineral_soil_organic_carbon.1_SOC_stock_and_stock_c
 
 Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/6877a34b-02cc-800a-88cc-a123cdc9ed1b
 
+#TODO MAJOR: Figure out if and how I can map gross loss and gain and net change by interval so that I also have gross changes.
+
 #TODO MAJOR: The 20250224 run seems to have dropped full extent density values some sub-blocks (0.1x0.1 deg pieces), e.g., 2020 for 114_71_115_72 (80N_110E) and 2022 for 106_11_107_12 (20N_100E).
 #Maybe from using too many workers at once? Check density pixel count across years from chunk stats to confirm none dropped next time (all years should have same number of density pixels).
 #Could even have create_soil_C_density_and_change() check for equal pixel counts in chunk_stats and repeat task if it's not the same

@@ -1093,11 +1093,11 @@ def map_gross(s3_folders, model_type, model_path_description,
     series_end_time = time.time()
     main_logger.info(f"{pattern_segment} took {round(series_end_time - series_start_time)} seconds: {uu.timestr()}")
 
-def create_three_panel_map():
+def create_three_panel_map(three_panel_jpeg, emissions_jpeg, removals_jpeg, net_jpeg, year, main_logger):
     """
     Creates a three-panel map showing emissions, removals, and net flux.
     """
-    print("Creating three-panel map")
+    main_logger.info("Creating three-panel map")
 
     # Loads individual panel images
     emissions_img = plt.imread(emissions_jpeg)
@@ -1125,6 +1125,6 @@ def create_three_panel_map():
                 ha="left", va="top", color="black")
 
     # Saves jpeg
-    save_jpeg(out_jpeg)
+    save_jpeg(three_panel_jpeg, year, main_logger)
     plt.close()
 
