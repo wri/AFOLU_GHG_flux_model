@@ -1691,7 +1691,7 @@ emissions_colors_rgb = net_colors_rgb[5:]
 
 veg_pres_text = f"Vegetation fluxes: v{veg_model_version}, {interval_end_years_annual[0]}-{last_model_year_annual}"
 organic_soil_pres_text = f"Organic soil: v{organic_soil_model_version}, 2021-2024"
-mineral_soil_pres_text = f"Mineral soil: v{SOC_model_version}, 2016-2022"
+mineral_soil_pres_text = f"Mineral soil: v{SOC_model_version}, 2021-2022"
 cropland_pres_text = f"Cropland: vYYYYMMDD, ca. 2020"
 livestock_pres_text = f"Livestock: vYYYYMMDD, ca. 2020"
 legend_percentile_disclaimer = f"Legend value range represents 1 and 99 percentiles of fluxes."
