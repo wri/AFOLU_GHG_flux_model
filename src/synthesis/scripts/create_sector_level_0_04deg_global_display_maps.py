@@ -681,15 +681,7 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     cmap_LULUCF_net = LinearSegmentedColormap.from_list("custom_colormap", list(zip(percentiles_normalized_LULUCF_net, colors_matplotlib)))
 
     main_logger.info(f"  Masking raster to non-0 values for net LULUCF")
-    print("data_LULUCF_net:", data_LULUCF_net)
-    print("data_LULUCF_net.min", data_LULUCF_net.min())
-    print("data_LULUCF_net.mean", data_LULUCF_net.mean())
-    print("data_LULUCF_net.max:", data_LULUCF_net.max())
     masked_data_LULUCF_net = np.ma.masked_where(data_LULUCF_net == 0, data_LULUCF_net)
-    print("masked_data_LULUCF_net:", masked_data_LULUCF_net)
-    print("masked_data_LULUCF_net.min", masked_data_LULUCF_net.min())
-    print("masked_data_LULUCF_net.mean", masked_data_LULUCF_net.mean())
-    print("masked_data_LULUCF_net.max:", masked_data_LULUCF_net.max())
 
     # For map (not legend)
     norm_LULUCF_net = TwoSlopeNorm(
@@ -754,6 +746,8 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
 
     main_logger.info("\n\n\n---Mapping LULUCF gross emissions and removals:")
 
+    # Gross LULUCF emissions
+
     LULUCF_gross_emis_output_name = f"LULUCF_gross_emis__veg_{veg_version}__{non_veg_versions}__MgCO2e_yr"
     # print("LULUCF_gross_emis_output_name:", LULUCF_gross_emis_output_name)
     LULUCF_gross_emis_final_total_path = f"{cn.local_jpeg_folder_LULUCF}/{LULUCF_gross_emis_output_name}.tif"
@@ -762,15 +756,7 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
         dst.write(LULUCF_emis, 1)
 
     main_logger.info(f"  Removing 0s from LULUCF emissions for legend breakpoints")
-    print("LULUCF_emis:", LULUCF_emis)
-    print("LULUCF_emis.min:", LULUCF_emis.min())
-    print("LULUCF_emis.mean:", LULUCF_emis.mean())
-    print("LULUCF_emis.max:", LULUCF_emis.max())
     masked_data_for_legend_LULUCF_emis = LULUCF_emis[LULUCF_emis != 0]  # Removes 0s but doesn't actually mask-- creates 1D array for legend breakpoints
-    print("masked_data_for_legend_LULUCF_emis:", masked_data_for_legend_LULUCF_emis)
-    print("masked_data_for_legend_LULUCF_emis.min:", masked_data_for_legend_LULUCF_emis.min())
-    print("masked_data_for_legend_LULUCF_emis.mean:", masked_data_for_legend_LULUCF_emis.mean())
-    print("masked_data_for_legend_LULUCF_emis.max:", masked_data_for_legend_LULUCF_emis.max())
 
     main_logger.info(f"\n\n---Preparing LULUCF emissions legend")
 
@@ -795,12 +781,9 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
 
     percentile_for_saturation = 1
     breaks_all_yrs_LULUCF_emis = np.percentile(masked_data_for_legend_LULUCF_emis, [1, (100 - percentile_for_saturation)])  # The min and max percentiles at which colors saturate
-    print("breaks_all_yrs_LULUCF_emis:", breaks_all_yrs_LULUCF_emis)
 
     lower_lim_all_yrs_LULUCF_emis = breaks_all_yrs_LULUCF_emis[0]
     upper_lim_all_yrs_LULUCF_emis = breaks_all_yrs_LULUCF_emis[-1]
-    print("lower_lim_all_yrs_LULUCF_emis:", lower_lim_all_yrs_LULUCF_emis)
-    print("upper_lim_all_yrs_LULUCF_emis:", upper_lim_all_yrs_LULUCF_emis)
 
     # Creates the legend in kt CO2e (converts legend units from Mg (t) to kt with 10**3-- data doesn't change).
     # Rounds data_min down and data_max up for legend.
@@ -808,7 +791,7 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
 
     # Legend labels depend on what exact input is displayed
     tick_labels_LULUCF_emis = [0, f"> {rounded_upper_lim_all_yrs_LULUCF_emis:.0f}"]
-    title_text_LULUCF_emis = f"Gross LULUCF emissions\nkt CO$_2$e yr$^{{-1}}$"
+    title_text_LULUCF_emis = f"Gross LULUCF emissions (vegetation + soil)\nkt CO$_2$e yr$^{{-1}}$"
     main_logger.info(f"tick labels {tick_labels_LULUCF_emis}")
 
     norm_LULUCF_emis = Normalize(vmin=lower_lim_all_yrs_LULUCF_emis, vmax=upper_lim_all_yrs_LULUCF_emis)
@@ -831,29 +814,105 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
 
     mu.remove_ticks(ax)
 
-    # # Saves LULUCF gross emissions JPEG
-    # core_jpeg_name_avg = f"veg_{pattern_segment_revised}__mean_{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}__v{cn.veg_model_version_underscore}__{uu.timestr()[0:8]}"
-    # if bounding_box_description:
-    #     core_jpeg_name_avg += f"_{bounding_box_description}"
-    #
-    # jpeg_path_avg = f"{local_jpeg_non_pres_folder}/{core_jpeg_name_avg}.jpeg"
-    # jpeg_for_pres_path_avg = f"{local_jpeg_pres_folder}/{core_jpeg_name_avg}__for_pres.jpeg"
-    # save_pres_non_pres_jpegs(ax, jpeg_path_avg, jpeg_for_pres_path_avg, f'{cn.interval_end_years_annual[0]}-{cn.interval_end_years_annual[-1]}',
-    #                          cn.veg_pres_text, main_logger)
-    #
-    # series_end_time = time.time()
-    # main_logger.info(f"{pattern_segment} took {round(series_end_time - series_start_time)} seconds: {uu.timestr()}")
+    # Saves LULUCF gross emissions JPEG
+    LULUCF_emis_output_name = f"LULUCF_emissions__veg_{veg_version}__{non_veg_versions}__MgCO2e_yr"
+    LULUCF_emis_output_name_kt = LULUCF_emis_output_name.replace("MgCO2", "ktCO2")
+    core_jpeg_name_LULUCF_emis = f"{LULUCF_emis_output_name_kt}__{uu.timestr()[0:8]}"
+    if bounding_box_description:  # Adds bounding box description to file name, if supplied
+        core_jpeg_name_LULUCF_emis = f"{core_jpeg_name_LULUCF_emis}_{bounding_box_description}"
+    jpeg_path_LULUCF_emis = f"{LULUCF_local_jpeg_non_pres_folder}/{core_jpeg_name_LULUCF_emis}.jpeg"
+    jpeg_for_pres_path_LULUCF_emis = f"{LULUCF_local_jpeg_pres_folder}/{core_jpeg_name_LULUCF_emis}__for_pres.jpeg"
+
+    # Saves two versions of the map: without and with a source note in the bottom right
+    out_jpeg_for_pres = mu.save_pres_non_pres_jpegs(ax, jpeg_path_LULUCF_emis, jpeg_for_pres_path_LULUCF_emis, "", full_slide_text_LULUCF_with_disclaimer, main_logger)
+
+    end_time = time.time()
+    main_logger.info(f"LULUCF for {bounding_box_description} extent took {round(end_time - start_time)} seconds: {uu.timestr()}")
 
 
+    # Gross LULUCF removals
 
-    # # Gross removals
-    #
-    # LULUCF_gross_remv_output_name = f"LULUCF_gross_remv__veg_{veg_version}__{non_veg_versions}__MgCO2e_yr"
-    # # print("LULUCF_gross_remv_output_name:", LULUCF_gross_remv_output_name)
-    # LULUCF_gross_remv_final_total_path = f"{cn.local_jpeg_folder_LULUCF}/{LULUCF_gross_remv_output_name}.tif"
-    #
-    # with rasterio.open(LULUCF_gross_remv_final_total_path, "w", **veg_meta) as dst:
-    #     dst.write(LULUCF_remv, 1)
+    LULUCF_gross_remv_output_name = f"LULUCF_gross_remv__veg_{veg_version}__{non_veg_versions}__MgCO2e_yr"
+    # print("LULUCF_gross_remv_output_name:", LULUCF_gross_remv_output_name)
+    LULUCF_gross_remv_final_total_path = f"{cn.local_jpeg_folder_LULUCF}/{LULUCF_gross_remv_output_name}.tif"
+
+    with rasterio.open(LULUCF_gross_remv_final_total_path, "w", **veg_meta) as dst:
+        dst.write(LULUCF_remv, 1)
+
+    main_logger.info(f"  Removing 0s from LULUCF removals for legend breakpoints")
+    masked_data_for_legend_LULUCF_remv = LULUCF_remv[LULUCF_remv != 0]  # Removes 0s but doesn't actually mask-- creates 1D array for legend breakpoints
+
+    main_logger.info(f"\n\n---Preparing LULUCF removals legend")
+
+    ax, fig_LULUCF_remv = mu.create_plot()
+    mu.set_ocean_color(ax)
+
+    mu.plot_country_polygons(ax, country_shapefile)
+    extent = list(raster_extent)  # Use the extent from last year (they should all match)
+
+    # Matches percentile breaks with colors.
+    # Normalizes percentiles to a 0-1 scale.
+    main_logger.info(f"  Calculating percentiles and breaks for LULUCF gross removals")
+
+    # Converts RGB color palette to matplotlib color palette
+    colors_matplotlib = mu.rgb_to_mpl_palette(cn.removals_colors_rgb)
+
+    # Matches percentile breaks with colors for the map.
+    # Normalizes percentiles to a 0-1 scale.
+    percentiles_normalized_LULUCF_remv = np.linspace(0, 1, len(cn.removals_percentiles))
+    # print("percentiles_normalized_LULUCF_remv:", percentiles_normalized_LULUCF_remv)
+    cmap_LULUCF_remv = LinearSegmentedColormap.from_list("custom_colormap", list(zip(percentiles_normalized_LULUCF_remv, colors_matplotlib)))
+
+    percentile_for_saturation = 1
+    breaks_all_yrs_LULUCF_remv = np.percentile(masked_data_for_legend_LULUCF_remv, [1, (100 - percentile_for_saturation)])  # The min and max percentiles at which colors saturate
+
+    lower_lim_all_yrs_LULUCF_remv = breaks_all_yrs_LULUCF_remv[0]
+    upper_lim_all_yrs_LULUCF_remv = breaks_all_yrs_LULUCF_remv[-1]
+
+    # Creates the legend in kt CO2e (converts legend units from Mg (t) to kt with 10**3-- data doesn't change).
+    # Rounds data_min down and data_max up for legend.
+    rounded_lower_lim_all_yrs_LULUCF_remv = math.ceil(lower_lim_all_yrs_LULUCF_remv / 10 ** 3 * 100) / 100  # Rounds up
+    rounded_upper_lim_all_yrs_LULUCF_remv = math.floor(upper_lim_all_yrs_LULUCF_remv / 10 ** 3 * 100) / 100  # Rounds down
+
+    # Legend labels depend on what exact input is displayed
+    tick_labels_LULUCF_remv = [f"< {rounded_lower_lim_all_yrs_LULUCF_remv:.0f}", 0]
+    title_text_LULUCF_remv = f"Gross LULUCF removals (vegetation + soil)\nkt CO$_2$ yr$^{{-1}}$"
+    main_logger.info(f"tick labels {tick_labels_LULUCF_remv}")
+
+    norm_LULUCF_remv = Normalize(vmin=lower_lim_all_yrs_LULUCF_remv, vmax=upper_lim_all_yrs_LULUCF_remv)
+
+    # Masks data for removals mapping (different from removing 0s for legend percentiles)
+    masked_data_for_map_LULUCF_remv = np.ma.masked_where(LULUCF_remv >= 0, LULUCF_remv)
+
+    print(masked_data_for_legend_LULUCF_remv)
+    img_LULUCF_remv = mu.plot_raster(ax, cmap_LULUCF_remv, extent, masked_data_for_map_LULUCF_remv, norm_LULUCF_remv)
+    mu.plot_country_boundaries(ax, country_shapefile)
+
+    if bounding_box_proj is not None:
+        ax.set_xlim(extent[0], extent[1])
+        ax.set_ylim(extent[2], extent[3])
+
+    # Legend for gross fluxes
+    mu.create_unidirection_legend(fig_LULUCF_remv, img_LULUCF_remv, lower_lim_all_yrs_LULUCF_remv, upper_lim_all_yrs_LULUCF_remv,
+                               title_text_LULUCF_remv, tick_labels_LULUCF_remv,
+                               'avg', cn.removals_colors_rgb, cn.removals_percentiles, main_logger)
+
+    mu.remove_ticks(ax)
+
+    # Saves LULUCF gross removals JPEG
+    LULUCF_remv_output_name = f"LULUCF_removals__veg_{veg_version}__{non_veg_versions}__MgCO2e_yr"
+    LULUCF_remv_output_name_kt = LULUCF_remv_output_name.replace("MgCO2", "ktCO2")
+    core_jpeg_name_LULUCF_remv = f"{LULUCF_remv_output_name_kt}__{uu.timestr()[0:8]}"
+    if bounding_box_description:  # Adds bounding box description to file name, if supplied
+        core_jpeg_name_LULUCF_remv = f"{core_jpeg_name_LULUCF_remv}_{bounding_box_description}"
+    jpeg_path_LULUCF_remv = f"{LULUCF_local_jpeg_non_pres_folder}/{core_jpeg_name_LULUCF_remv}.jpeg"
+    jpeg_for_pres_path_LULUCF_remv = f"{LULUCF_local_jpeg_pres_folder}/{core_jpeg_name_LULUCF_remv}__for_pres.jpeg"
+
+    # Saves two versions of the map: without and with a source note in the bottom right
+    out_jpeg_for_pres = mu.save_pres_non_pres_jpegs(ax, jpeg_path_LULUCF_remv, jpeg_for_pres_path_LULUCF_remv, "", full_slide_text_LULUCF_with_disclaimer, main_logger)
+
+    end_time = time.time()
+    main_logger.info(f"LULUCF for {bounding_box_description} extent took {round(end_time - start_time)} seconds: {uu.timestr()}")
 
 
     ### Part 4: Maps AFOLU
