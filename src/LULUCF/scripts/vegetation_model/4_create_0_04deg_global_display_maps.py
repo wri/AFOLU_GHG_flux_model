@@ -39,15 +39,6 @@ def main(input_date, model_type, model_path_description=None,
     # Creates the log for the main function and populates it with basic run information
     main_logger, main_log_local_path, n_workers = lu.populate_main_log_header("NA", "NA", log_note, True, "NA", stage)
 
-    # Defines desired percentiles for colors. Specifies where colors transition in the data.
-    # Setting neutral ends of sink and source is empirically based on the 0 value being around the 82nd percentile.
-    # From some experimentation, it's better not to encode a neutral percentile (or associated color) here or below.
-    # It dampens the colors around the neutral value (low emissions and removals) even more.
-    # net_percentiles = [5, 30, 60, 70, 81,   # Sink
-    #                    83, 88, 97, 94, 99]  # Source
-    removals_percentiles = [5, 25, 50, 75, 99]
-    emissions_percentiles = [5, 25, 50, 75, 99]
-
     # Datasets that need to be expanded to all output years
     basic_dirs_to_expand = [
         f"{cn.veg_outputs_path}{cn.gross_emis_all_C_pools_CO2_only_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
@@ -138,19 +129,19 @@ def main(input_date, model_type, model_path_description=None,
     #
     # mu.map_gross(gross_emis_CO2_only_input_folders_s3, model_type, model_path_description, local_reproj_folder,
     #                  local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,
-    #                  cn.emissions_colors_rgb, main_logger, emissions_percentiles, country_shapefile, bounding_box, bounding_box_description)
+    #                  cn.emissions_colors_rgb, main_logger, cn.emissions_percentiles, country_shapefile, bounding_box, bounding_box_description)
     #
     # mu.map_gross(gross_emis_non_CO2_input_folders_s3, model_type, model_path_description, local_reproj_folder,
     #                  local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,
-    #                  cn.emissions_colors_rgb, main_logger, emissions_percentiles, country_shapefile, bounding_box, bounding_box_description)
+    #                  cn.emissions_colors_rgb, main_logger, cn.emissions_percentiles, country_shapefile, bounding_box, bounding_box_description)
     #
     # mu.map_gross(gross_emis_all_gases_input_folders_s3, model_type, model_path_description, local_reproj_folder,
     #                  local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,
-    #                  cn.emissions_colors_rgb, main_logger, emissions_percentiles, country_shapefile, bounding_box, bounding_box_description)
+    #                  cn.emissions_colors_rgb, main_logger, cn.emissions_percentiles, country_shapefile, bounding_box, bounding_box_description)
     #
-    # mu.map_gross(gross_removals_input_folders_s3, model_type, model_path_description, local_reproj_folder,
-    #              local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,
-    #              cn.removals_colors_rgb, main_logger, removals_percentiles, country_shapefile, bounding_box, bounding_box_description)
+    mu.map_gross(gross_removals_input_folders_s3, model_type, model_path_description, local_reproj_folder,
+                 local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,
+                 cn.removals_colors_rgb, main_logger, cn.removals_percentiles, country_shapefile, bounding_box, bounding_box_description)
 
     # # Generates three-panel map
     # create_three_panel_map()

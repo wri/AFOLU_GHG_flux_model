@@ -287,32 +287,32 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     #
     # main_logger.info(f"  Plotting average annual vegetation net flux map")
     #
-    # percentile_0 = mu.percentile_for_0(mean_veg_net)
-    # main_logger.info(f"  0 is at the {percentile_0}th percentile of the average annual net flux vegetation raster.")
-    # percentiles = [percentile_0 * cn.net_percentiles[0], percentile_0 * cn.net_percentiles[1],
-    #                percentile_0 * cn.net_percentiles[2],
-    #                percentile_0 * cn.net_percentiles[3], percentile_0 * cn.net_percentiles[4],
-    #                percentile_0 * cn.net_percentiles[5], percentile_0 * cn.net_percentiles[6],
-    #                percentile_0 * cn.net_percentiles[7],
-    #                percentile_0 * cn.net_percentiles[8], percentile_0 * cn.net_percentiles[9]]
-    # # print("percentiles:", percentiles)
+    # percentile_0_LULUCF_net = mu.percentile_for_0(mean_veg_net)
+    # main_logger.info(f"  0 is at the {percentile_0_LULUCF_net}th percentile of the average annual net flux vegetation raster.")
+    # percentiles_LULUCF_net = [percentile_0_LULUCF_net * cn.net_percentiles[0], percentile_0_LULUCF_net * cn.net_percentiles[1],
+    #                percentile_0_LULUCF_net * cn.net_percentiles[2],
+    #                percentile_0_LULUCF_net * cn.net_percentiles[3], percentile_0_LULUCF_net * cn.net_percentiles[4],
+    #                percentile_0_LULUCF_net * cn.net_percentiles[5], percentile_0_LULUCF_net * cn.net_percentiles[6],
+    #                percentile_0_LULUCF_net * cn.net_percentiles[7],
+    #                percentile_0_LULUCF_net * cn.net_percentiles[8], percentile_0_LULUCF_net * cn.net_percentiles[9]]
+    # # print("percentiles_LULUCF_net:", percentiles_LULUCF_net)
     #
-    # main_logger.info(f"  Calculating percentiles and breaks for average annual net flux vegetation")
+    # main_logger.info(f"  Calculating percentiles_LULUCF_net and breaks for average annual net flux vegetation")
     #
     # # Converts RGB color palette to matplotlib color palette
     # colors_matplotlib = mu.rgb_to_mpl_palette(cn.net_colors_rgb)
     #
     # # Matches percentile breaks with colors for the map.
-    # # Normalizes percentiles to a 0-1 scale.
-    # percentiles_normalized = np.linspace(0, 1, len(percentiles))
-    # # print("percentiles_normalized:", percentiles_normalized)
-    # cmap = LinearSegmentedColormap.from_list("custom_colormap", list(zip(percentiles_normalized, colors_matplotlib)))
+    # # Normalizes percentiles_LULUCF_net to a 0-1 scale.
+    # percentiles_normalized_LULUCF_net = np.linspace(0, 1, len(percentiles_LULUCF_net))
+    # # print("percentiles_normalized_LULUCF_net:", percentiles_normalized_LULUCF_net)
+    # cmap_LULUCF_net = LinearSegmentedColormap.from_list("custom_colormap", list(zip(percentiles_normalized_LULUCF_net, colors_matplotlib)))
     #
     # main_logger.info(f"  Masking raster for average annual net flux vegetation to non-0 values")
-    # masked_data = np.ma.masked_where(mean_veg_net == 0, mean_veg_net)
+    # masked_data_LULUCF_net = np.ma.masked_where(mean_veg_net == 0, mean_veg_net)
     #
     # percentile_for_saturation = 1
-    # breaks_all_yrs = np.percentile(mean_veg_net, [1, (100-percentile_for_saturation)])  # The min and max percentiles at which colors saturate
+    # breaks_all_yrs = np.percentile(mean_veg_net, [1, (100-percentile_for_saturation)])  # The min and max percentiles_LULUCF_net at which colors saturate
     #
     # lower_lim_all_yrs = breaks_all_yrs[0]
     # global_neutral = 0
@@ -327,10 +327,10 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     # # Rounds data_min down and data_max up for legend.
     # rounded_lower_lim_all_yrs = math.ceil(lower_lim_all_yrs / 10 ** 3 * 100) / 100  # Rounds up
     # rounded_upper_lim_all_yrs = math.floor(upper_lim_all_yrs / 10 ** 3 * 100) / 100  # Rounds down
-    # tick_labels = [f"< {rounded_lower_lim_all_yrs:.0f}  (sink)",  # Spaces are to horizontally align the text explanations
+    # tick_labels_LULUCF_net = [f"< {rounded_lower_lim_all_yrs:.0f}  (sink)",  # Spaces are to horizontally align the text explanations
     #                f"{0}        (neutral)",
     #                f"> {rounded_upper_lim_all_yrs:.0f}  (source)"]
-    # print("tick_labels:", tick_labels)
+    # print("tick_labels_LULUCF_net:", tick_labels_LULUCF_net)
     #
     # # For map (not legend)
     # norm = TwoSlopeNorm(
@@ -357,7 +357,7 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     # extent = list(raster_extent)
     #
     # # Plots the raster next
-    # img = mu.plot_raster(ax, cmap, extent, masked_data, norm)
+    # img = mu.plot_raster(ax, cmap_LULUCF_net, extent, masked_data_LULUCF_net, norm)
     #
     # # Plots the country boundaries on top
     # mu.plot_country_boundaries(ax, country_shapefile)
@@ -371,21 +371,21 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     #
     # # Creates legend
     # mu.create_divergent_legend_asymmetric(fig, rounded_lower_lim_all_yrs, rounded_upper_lim_all_yrs,
-    #                                    title_text, tick_labels,
-    #                                    "", cn.net_colors_rgb, percentiles, percentile_0, main_logger)
+    #                                    title_text, tick_labels_LULUCF_net,
+    #                                    "", cn.net_colors_rgb, percentiles_LULUCF_net, percentile_0_LULUCF_net, main_logger)
     #
     # # Removes axis ticks and labels
     # mu.remove_ticks(ax)
     #
     #
-    # core_jpeg_name = f"vegetation_net_flux_all_pools_all_gases_{veg_version}__{veg_analysis_years}__kt_CO2e_yr__{uu.timestr()[0:8]}"
+    # core_jpeg_name_LULUCF_net = f"vegetation_net_flux_all_pools_all_gases_{veg_version}__{veg_analysis_years}__kt_CO2e_yr__{uu.timestr()[0:8]}"
     # if bounding_box_description:  # Adds bounding box description to file name, if supplied
-    #     core_jpeg_name = f"{core_jpeg_name}_{bounding_box_description}"
-    # jpeg_path = f"{LULUCF_local_jpeg_non_pres_folder}/{core_jpeg_name}.jpeg"
-    # jpeg_for_pres_path = f"{LULUCF_local_jpeg_pres_folder}/{core_jpeg_name}__for_pres.jpeg"
+    #     core_jpeg_name_LULUCF_net = f"{core_jpeg_name_LULUCF_net}_{bounding_box_description}"
+    # jpeg_path_LULUCF_net = f"{LULUCF_local_jpeg_non_pres_folder}/{core_jpeg_name_LULUCF_net}.jpeg"
+    # jpeg_for_pres_path_LULUCF_net = f"{LULUCF_local_jpeg_pres_folder}/{core_jpeg_name_LULUCF_net}__for_pres.jpeg"
     #
     # # Saves two versions of the map: without and with a source note in the bottom right
-    # out_jpeg_for_pres = mu.save_pres_non_pres_jpegs(ax, jpeg_path, jpeg_for_pres_path, "", cn.veg_pres_text, main_logger)
+    # out_jpeg_for_pres = mu.save_pres_non_pres_jpegs(ax, jpeg_path_LULUCF_net, jpeg_for_pres_path_LULUCF_net, "", cn.veg_pres_text, main_logger)
 
     main_logger.info(f"\n---Combining individual datasets with vegetation net flux")
     ### Part 2: Maps average annual vegetation net flux + one other dataset at a time (pairwise)
@@ -454,90 +454,90 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
         AFOLU_net += additional_data
 
         main_logger.info(f"Combining vegetation net flux and {key}")
-        output_name = f"vegetation_net_flux_all_pools_all_gases_{veg_version}__{key}_{additional_data_date}__{veg_analysis_years}__MgCO2e_yr"
-        output_sum_path = f"{local_reproj_folder}/{output_name}.tif"
-        main_logger.info(f"Combined vegetation and {key} at {output_sum_path}")
+        output_name_veg_pairwise = f"vegetation_net_flux_all_pools_all_gases_{veg_version}__{key}_{additional_data_date}__{veg_analysis_years}__MgCO2e_yr"
+        output_sum_path_veg_pairwise = f"{local_reproj_folder}/{output_name_veg_pairwise}.tif"
+        main_logger.info(f"Combined vegetation and {key} at {output_sum_path_veg_pairwise}")
 
         # Sums the vegetation net flux and other data
-        non_zero_values = add_veg_and_other_data(output_sum_path, additional_data, veg_net_all_gases_geotif_local, main_logger)
+        non_zero_values_veg_pairwise = add_veg_and_other_data(output_sum_path_veg_pairwise, additional_data, veg_net_all_gases_geotif_local, main_logger)
 
 
         main_logger.info(f"\n\n---Preparing legend")
 
         # Calculates min, center and max across all years
         percentile_for_saturation = 1
-        breaks_all_yrs = np.percentile(non_zero_values, [1, (100-percentile_for_saturation)])  # The min and max percentiles at which colors saturate
+        breaks_all_yrs_veg_pairwise = np.percentile(non_zero_values_veg_pairwise, [1, (100-percentile_for_saturation)])  # The min and max percentiles at which colors saturate
 
-        lower_lim_all_yrs = breaks_all_yrs[0]
-        global_neutral = 0
-        upper_lim_all_yrs = breaks_all_yrs[-1]
+        lower_lim_all_yrs_veg_pairwise = breaks_all_yrs_veg_pairwise[0]
+        global_neutral_veg_pairwise = 0
+        upper_lim_all_yrs_veg_pairwise = breaks_all_yrs_veg_pairwise[-1]
 
         main_logger.info(f"Across vegetation+{key}:")
-        main_logger.info(f"  lower limit ({percentile_for_saturation} percentile): {lower_lim_all_yrs}")
-        main_logger.info(f"  neutral: {global_neutral}")
-        main_logger.info(f"  upper limit ({(100-percentile_for_saturation)} percentile): {upper_lim_all_yrs}")
+        main_logger.info(f"  lower limit ({percentile_for_saturation} percentile): {lower_lim_all_yrs_veg_pairwise}")
+        main_logger.info(f"  neutral: {global_neutral_veg_pairwise}")
+        main_logger.info(f"  upper limit ({(100-percentile_for_saturation)} percentile): {upper_lim_all_yrs_veg_pairwise}")
 
         # Creates the min and max values for the legend in kt CO2e (converts legend units from Mg (t) to kt with 10**3-- data doesn't change).
         # Rounds data_min down and data_max up for legend.
-        rounded_lower_lim_all_yrs = math.ceil(lower_lim_all_yrs / 10 ** 3 * 100) / 100  # Rounds up
-        rounded_upper_lim_all_yrs = math.floor(upper_lim_all_yrs / 10 ** 3 * 100) / 100  # Rounds down
-        tick_labels = [f"< {rounded_lower_lim_all_yrs:.0f}  (sink)",  # Spaces are to horizontally align the text explanations
+        rounded_lower_lim_all_yrs_veg_pairwise = math.ceil(lower_lim_all_yrs_veg_pairwise / 10 ** 3 * 100) / 100  # Rounds up
+        rounded_upper_lim_all_yrs_veg_pairwise = math.floor(upper_lim_all_yrs_veg_pairwise / 10 ** 3 * 100) / 100  # Rounds down
+        tick_labels_veg_pairwise = [f"< {rounded_lower_lim_all_yrs_veg_pairwise:.0f}  (sink)",  # Spaces are to horizontally align the text explanations
                        "0        (neutral)",
-                       f"> {rounded_upper_lim_all_yrs:.0f}  (source)"]
-        output_name_kt = output_name.replace("MgCO2", "ktCO2")
-        # print(tick_labels)
+                       f"> {rounded_upper_lim_all_yrs_veg_pairwise:.0f}  (source)"]
+        output_name_kt_veg_pairwise = output_name_veg_pairwise.replace("MgCO2", "ktCO2")
+        # print(output_name_kt_veg_pairwise)
 
 
         main_logger.info(f"\n\n---Mapping vegetation + {key}")
 
         # Reads raster data
-        with rasterio.open(output_sum_path) as src:
+        with rasterio.open(output_sum_path_veg_pairwise) as src:
 
             if bounding_box_proj is not None:
                 minx, miny, maxx, maxy = bounding_box_proj
 
                 window = from_bounds(minx, miny, maxx, maxy, src.transform)
 
-                data = src.read(1, window=window)
+                data_veg_pairwise = src.read(1, window=window)
 
                 # Update extent from the window
                 left, bottom, right, top = rasterio.windows.bounds(window, src.transform)
                 raster_extent = (left, right, bottom, top)
 
             else:
-                data = src.read(1)
+                data_veg_pairwise = src.read(1)
                 b = src.bounds
                 raster_extent = (b.left, b.right, b.bottom, b.top)
 
         # Calculates the percentile for 0 for the year (neutral, no flux) for mapping
-        main_logger.info(f"  Calculating percentiles and breaks")
-        percentile_0 = mu.percentile_for_0(data)
-        main_logger.info(f"  0 is at the {percentile_0}th percentile of the raster.")
-        percentiles = [percentile_0 / 6, percentile_0 / 4, percentile_0 / 2, percentile_0 / 1.3, percentile_0 / 1.05,
-                       percentile_0 * 1.05, percentile_0 * 1.1, percentile_0 * 1.2, percentile_0 * 1.3, percentile_0 * 1.5]
-        # print("percentiles:", percentiles)
+        main_logger.info(f"  Calculating percentiles_veg_pairwise and breaks")
+        percentile_0_veg_pairwise = mu.percentile_for_0(data_veg_pairwise)
+        main_logger.info(f"  0 is at the {percentile_0_veg_pairwise}th percentile of the raster.")
+        percentiles_veg_pairwise = [percentile_0_veg_pairwise / 6, percentile_0_veg_pairwise / 4, percentile_0_veg_pairwise / 2, percentile_0_veg_pairwise / 1.3, percentile_0_veg_pairwise / 1.05,
+                       percentile_0_veg_pairwise * 1.05, percentile_0_veg_pairwise * 1.1, percentile_0_veg_pairwise * 1.2, percentile_0_veg_pairwise * 1.3, percentile_0_veg_pairwise * 1.5]
+        # print("percentiles_veg_pairwise:", percentiles_veg_pairwise)
 
         # Converts RGB color palette to matplotlib color palette
         colors_matplotlib = mu.rgb_to_mpl_palette(net_colors_rgb)
 
         # Matches percentile breaks with colors for the map.
-        # Normalizes percentiles to a 0-1 scale.
-        percentiles_normalized = np.linspace(0, 1, len(percentiles))
-        # print("percentiles_normalized:", percentiles_normalized)
-        cmap = LinearSegmentedColormap.from_list("custom_colormap", list(zip(percentiles_normalized, colors_matplotlib)))
+        # Normalizes percentiles_veg_pairwise to a 0-1 scale.
+        percentiles_normalized_veg_pairwise = np.linspace(0, 1, len(percentiles_veg_pairwise))
+        # print("percentiles_normalized_veg_pairwise:", percentiles_normalized_veg_pairwise)
+        cmap_veg_pairwise = LinearSegmentedColormap.from_list("custom_colormap", list(zip(percentiles_normalized_veg_pairwise, colors_matplotlib)))
 
         main_logger.info(f"  Masking raster to non-0 values")
-        masked_data = np.ma.masked_where(data == 0, data)
+        masked_data_veg_pairwise = np.ma.masked_where(data_veg_pairwise == 0, data_veg_pairwise)
 
         # For map (not legend)
-        norm = TwoSlopeNorm(
-            vmin=lower_lim_all_yrs,
-            vcenter=global_neutral,
-            vmax=upper_lim_all_yrs
+        norm_veg_pairwise = TwoSlopeNorm(
+            vmin=lower_lim_all_yrs_veg_pairwise,
+            vcenter=global_neutral_veg_pairwise,
+            vmax=upper_lim_all_yrs_veg_pairwise
         )
 
         main_logger.info(f"  Plotting map")
-        ax, fig = mu.create_plot()
+        ax, fig_veg_pairwise = mu.create_plot()
 
         # Sets the ocean color
         mu.set_ocean_color(ax)
@@ -554,7 +554,7 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
         extent = list(raster_extent)
 
         # Plots the raster next
-        img = mu.plot_raster(ax, cmap, extent, masked_data, norm)
+        img_veg_pairwise = mu.plot_raster(ax, cmap_veg_pairwise, extent, masked_data_veg_pairwise, norm_veg_pairwise)
 
         # Plots the country boundaries on top
         mu.plot_country_boundaries(ax, country_shapefile)
@@ -569,23 +569,23 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
         title_text = f"Vegetation and {legend_title}\nkt CO$_2$e yr$^{{-1}}$"
 
         # Creates legend
-        mu.create_divergent_legend_asymmetric(fig, rounded_lower_lim_all_yrs, rounded_upper_lim_all_yrs,
-                                              title_text, tick_labels,
-                                              veg_analysis_years, net_colors_rgb, percentiles, percentile_0, main_logger)
+        mu.create_divergent_legend_asymmetric(fig_veg_pairwise, rounded_lower_lim_all_yrs_veg_pairwise, rounded_upper_lim_all_yrs_veg_pairwise,
+                                              title_text, tick_labels_veg_pairwise,
+                                              veg_analysis_years, net_colors_rgb, percentiles_veg_pairwise, percentile_0_veg_pairwise, main_logger)
 
         # Removes axis ticks and labels
         mu.remove_ticks(ax)
 
-        core_jpeg_name = f"{output_name_kt}__{uu.timestr()[0:8]}"
+        core_jpeg_name_veg_pairwise = f"{output_name_kt_veg_pairwise}__{uu.timestr()[0:8]}"
         if bounding_box_description:  # Adds bounding box description to file name, if supplied
-            core_jpeg_name = f"{core_jpeg_name}_{bounding_box_description}"
-        jpeg_path = f"{non_pres_folder}/{core_jpeg_name}.jpeg"
-        jpeg_for_pres_path = f"{pres_folder}/{core_jpeg_name}__for_pres.jpeg"
+            core_jpeg_name_veg_pairwise = f"{core_jpeg_name_veg_pairwise}_{bounding_box_description}"
+        jpeg_path_veg_pairwise = f"{non_pres_folder}/{core_jpeg_name_veg_pairwise}.jpeg"
+        jpeg_for_pres_path_veg_pairwise = f"{pres_folder}/{core_jpeg_name_veg_pairwise}__for_pres.jpeg"
 
         # Saves two versions of the map: without and with a source note in the bottom right
         full_slide_text_LULUCF = f"{cn.veg_pres_text}; {presentation_slide_text} \n {cn.legend_percentile_disclaimer}"
         veg_addtl_pres_text = full_slide_text_LULUCF.replace("YYYYMMDD", additional_data_date)  # For livestock and cropland, whose versions are dates
-        out_jpeg_for_pres = mu.save_pres_non_pres_jpegs(ax, jpeg_path, jpeg_for_pres_path, "", veg_addtl_pres_text, main_logger)
+        out_jpeg_for_pres = mu.save_pres_non_pres_jpegs(ax, jpeg_path_veg_pairwise, jpeg_for_pres_path_veg_pairwise, "", veg_addtl_pres_text, main_logger)
 
         end_time = time.time()
         main_logger.info(f"vegetation+{key} {bounding_box_description} took {round(end_time - start_time)} seconds: {uu.timestr()}")
@@ -614,33 +614,33 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     with rasterio.open(LULUCF_net_final_total_path, 'w', **veg_meta) as dst:
         dst.write(LULUCF_net.astype('float32'), 1)
 
-    non_zero_values_LULUCF = LULUCF_net[LULUCF_net != 0]
+    non_zero_values_LULUCF_net = LULUCF_net[LULUCF_net != 0]
 
-    main_logger.info(f"\n\n---Preparing LULUCF legend")
+    main_logger.info(f"\n\n---Preparing net LULUCF legend")
 
     # Calculates min, center and max across all years
     percentile_for_saturation = 1
-    breaks_LULUCF = np.percentile(non_zero_values_LULUCF, [1, (100 - percentile_for_saturation)])  # The min and max percentiles at which colors saturate
+    breaks_LULUCF_net = np.percentile(non_zero_values_LULUCF_net, [1, (100 - percentile_for_saturation)])  # The min and max percentiles_LULUCF_net at which colors saturate
 
-    lower_lim_LULUCF = breaks_LULUCF[0]
-    global_neutral_LULUCF = 0
-    upper_lim_LULUCF = breaks_LULUCF[-1]
+    lower_lim_LULUCF_net = breaks_LULUCF_net[0]
+    global_neutral_LULUCF_net = 0
+    upper_lim_LULUCF_net = breaks_LULUCF_net[-1]
 
-    main_logger.info(f"Across LULUCF:")
-    main_logger.info(f"  lower limit ({percentile_for_saturation} percentile): {lower_lim_LULUCF}")
-    main_logger.info(f"  neutral: {global_neutral_LULUCF}")
-    main_logger.info(f"  upper limit ({(100 - percentile_for_saturation)} percentile): {upper_lim_LULUCF}")
+    main_logger.info(f"Across net LULUCF:")
+    main_logger.info(f"  lower limit ({percentile_for_saturation} percentile): {lower_lim_LULUCF_net}")
+    main_logger.info(f"  neutral: {global_neutral_LULUCF_net}")
+    main_logger.info(f"  upper limit ({(100 - percentile_for_saturation)} percentile): {upper_lim_LULUCF_net}")
 
     # Creates the min and max values for the legend in kt CO2e (converts legend units from Mg (t) to kt with 10**3-- data doesn't change).
     # Rounds data_min down and data_max up for legend.
-    rounded_lower_lim_LULUCF = math.ceil(lower_lim_LULUCF / 10 ** 3 * 100) / 100  # Rounds up
-    rounded_upper_lim_LULUCF = math.floor(upper_lim_LULUCF / 10 ** 3 * 100) / 100  # Rounds down
-    tick_labels = [f"< {rounded_lower_lim_LULUCF:.0f}  (sink)",
+    rounded_lower_lim_LULUCF_net = math.ceil(lower_lim_LULUCF_net / 10 ** 3 * 100) / 100  # Rounds up
+    rounded_upper_lim_LULUCF_net = math.floor(upper_lim_LULUCF_net / 10 ** 3 * 100) / 100  # Rounds down
+    tick_labels_LULUCF_net = [f"< {rounded_lower_lim_LULUCF_net:.0f}  (sink)",
                    # Spaces are to horizontally align the text explanations
                    "0        (neutral)",
-                   f"> {rounded_upper_lim_LULUCF:.0f}  (source)"]
+                   f"> {rounded_upper_lim_LULUCF_net:.0f}  (source)"]
     LULUCF_net_output_name_kt = LULUCF_net_output_name.replace("MgCO2", "ktCO2")
-    # print(tick_labels)
+    # print(tick_labels_LULUCF_net)
 
     main_logger.info(f"\n\n---Generating net LULUCF map:")
 
@@ -652,46 +652,54 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
 
             window = from_bounds(minx, miny, maxx, maxy, src.transform)
 
-            data = src.read(1, window=window)
+            data_LULUCF_net = src.read(1, window=window)
 
             # Update extent from the window
             left, bottom, right, top = rasterio.windows.bounds(window, src.transform)
             raster_extent = (left, right, bottom, top)
 
         else:
-            data = src.read(1)
+            data_LULUCF_net = src.read(1)
             b = src.bounds
             raster_extent = (b.left, b.right, b.bottom, b.top)
 
     # Calculates the percentile for 0 for the year (neutral, no flux) for mapping
-    main_logger.info(f"  Calculating percentiles and breaks for LULUCF")
-    percentile_0 = mu.percentile_for_0(data)
-    main_logger.info(f"  0 is at the {percentile_0}th percentile of the raster.")
-    percentiles = [percentile_0 / 6, percentile_0 / 4, percentile_0 / 2, percentile_0 / 1.3, percentile_0 / 1.05,
-                   percentile_0 * 1.05, percentile_0 * 1.1, percentile_0 * 1.2, percentile_0 * 1.3, percentile_0 * 1.5]
-    # print("percentiles:", percentiles)
+    main_logger.info(f"  Calculating percentiles and breaks for net LULUCF")
+    percentile_0_LULUCF_net = mu.percentile_for_0(data_LULUCF_net)
+    main_logger.info(f"  0 is at the {percentile_0_LULUCF_net}th percentile of the raster.")
+    percentiles_LULUCF_net = [percentile_0_LULUCF_net / 6, percentile_0_LULUCF_net / 4, percentile_0_LULUCF_net / 2, percentile_0_LULUCF_net / 1.3, percentile_0_LULUCF_net / 1.05,
+                   percentile_0_LULUCF_net * 1.05, percentile_0_LULUCF_net * 1.1, percentile_0_LULUCF_net * 1.2, percentile_0_LULUCF_net * 1.3, percentile_0_LULUCF_net * 1.5]
+    # print("percentiles_LULUCF_net:", percentiles_LULUCF_net)
 
     # Converts RGB color palette to matplotlib color palette
     colors_matplotlib = mu.rgb_to_mpl_palette(net_colors_rgb)
 
     # Matches percentile breaks with colors for the map.
-    # Normalizes percentiles to a 0-1 scale.
-    percentiles_normalized = np.linspace(0, 1, len(percentiles))
-    # print("percentiles_normalized:", percentiles_normalized)
-    cmap = LinearSegmentedColormap.from_list("custom_colormap", list(zip(percentiles_normalized, colors_matplotlib)))
+    # Normalizes percentiles_LULUCF_net to a 0-1 scale.
+    percentiles_normalized_LULUCF_net = np.linspace(0, 1, len(percentiles_LULUCF_net))
+    # print("percentiles_normalized_LULUCF_net:", percentiles_normalized_LULUCF_net)
+    cmap_LULUCF_net = LinearSegmentedColormap.from_list("custom_colormap", list(zip(percentiles_normalized_LULUCF_net, colors_matplotlib)))
 
-    main_logger.info(f"  Masking raster to non-0 values for LULUCF")
-    masked_data = np.ma.masked_where(data == 0, data)
+    main_logger.info(f"  Masking raster to non-0 values for net LULUCF")
+    print("data_LULUCF_net:", data_LULUCF_net)
+    print("data_LULUCF_net.min", data_LULUCF_net.min())
+    print("data_LULUCF_net.mean", data_LULUCF_net.mean())
+    print("data_LULUCF_net.max:", data_LULUCF_net.max())
+    masked_data_LULUCF_net = np.ma.masked_where(data_LULUCF_net == 0, data_LULUCF_net)
+    print("masked_data_LULUCF_net:", masked_data_LULUCF_net)
+    print("masked_data_LULUCF_net.min", masked_data_LULUCF_net.min())
+    print("masked_data_LULUCF_net.mean", masked_data_LULUCF_net.mean())
+    print("masked_data_LULUCF_net.max:", masked_data_LULUCF_net.max())
 
     # For map (not legend)
-    norm = TwoSlopeNorm(
-        vmin=lower_lim_LULUCF,
-        vcenter=global_neutral_LULUCF,
-        vmax=upper_lim_LULUCF
+    norm_LULUCF_net = TwoSlopeNorm(
+        vmin=lower_lim_LULUCF_net,
+        vcenter=global_neutral_LULUCF_net,
+        vmax=upper_lim_LULUCF_net
     )
 
     main_logger.info(f"  Plotting net LULUCF map")
-    ax, fig = mu.create_plot()
+    ax, fig_LULUCF_net = mu.create_plot()
 
     # Sets the ocean color
     mu.set_ocean_color(ax)
@@ -708,7 +716,7 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     extent = list(raster_extent)
 
     # Plots the raster next
-    img = mu.plot_raster(ax, cmap, extent, masked_data, norm)
+    img_LULUCF_net = mu.plot_raster(ax, cmap_LULUCF_net, extent, masked_data_LULUCF_net, norm_LULUCF_net)
 
     # Plots the country boundaries on top
     mu.plot_country_boundaries(ax, country_shapefile)
@@ -722,21 +730,21 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     title_text = f"LULUCF net GHG flux (vegetation+soil)\nkt CO$_2$e yr$^{{-1}}$"
 
     # Creates legend
-    mu.create_divergent_legend_asymmetric(fig, rounded_lower_lim_LULUCF, rounded_upper_lim_LULUCF,
-                                          title_text, tick_labels,
-                                          veg_analysis_years, net_colors_rgb, percentiles, percentile_0, main_logger)
+    mu.create_divergent_legend_asymmetric(fig_LULUCF_net, rounded_lower_lim_LULUCF_net, rounded_upper_lim_LULUCF_net,
+                                          title_text, tick_labels_LULUCF_net,
+                                          veg_analysis_years, net_colors_rgb, percentiles_LULUCF_net, percentile_0_LULUCF_net, main_logger)
 
     # Removes axis ticks and labels
     mu.remove_ticks(ax)
 
-    core_jpeg_name = f"{LULUCF_net_output_name_kt}__{uu.timestr()[0:8]}"
+    core_jpeg_name_LULUCF_net = f"{LULUCF_net_output_name_kt}__{uu.timestr()[0:8]}"
     if bounding_box_description:  # Adds bounding box description to file name, if supplied
-        core_jpeg_name = f"{core_jpeg_name}_{bounding_box_description}"
-    jpeg_path = f"{LULUCF_local_jpeg_non_pres_folder}/{core_jpeg_name}.jpeg"
-    jpeg_for_pres_path = f"{LULUCF_local_jpeg_pres_folder}/{core_jpeg_name}__for_pres.jpeg"
+        core_jpeg_name_LULUCF_net = f"{core_jpeg_name_LULUCF_net}_{bounding_box_description}"
+    jpeg_path_LULUCF_net = f"{LULUCF_local_jpeg_non_pres_folder}/{core_jpeg_name_LULUCF_net}.jpeg"
+    jpeg_for_pres_path_LULUCF_net = f"{LULUCF_local_jpeg_pres_folder}/{core_jpeg_name_LULUCF_net}__for_pres.jpeg"
 
     # Saves two versions of the map: without and with a source note in the bottom right
-    out_jpeg_for_pres = mu.save_pres_non_pres_jpegs(ax, jpeg_path, jpeg_for_pres_path, "", full_slide_text_LULUCF_with_disclaimer, main_logger)
+    out_jpeg_for_pres = mu.save_pres_non_pres_jpegs(ax, jpeg_path_LULUCF_net, jpeg_for_pres_path_LULUCF_net, "", full_slide_text_LULUCF_with_disclaimer, main_logger)
 
     end_time = time.time()
     main_logger.info(f"LULUCF for {bounding_box_description} extent took {round(end_time - start_time)} seconds: {uu.timestr()}")
@@ -746,8 +754,6 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
 
     main_logger.info("\n\n\n---Mapping LULUCF gross emissions and removals:")
 
-    # Gross emissions
-
     LULUCF_gross_emis_output_name = f"LULUCF_gross_emis__veg_{veg_version}__{non_veg_versions}__MgCO2e_yr"
     # print("LULUCF_gross_emis_output_name:", LULUCF_gross_emis_output_name)
     LULUCF_gross_emis_final_total_path = f"{cn.local_jpeg_folder_LULUCF}/{LULUCF_gross_emis_output_name}.tif"
@@ -755,14 +761,99 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     with rasterio.open(LULUCF_gross_emis_final_total_path, "w", **veg_meta) as dst:
         dst.write(LULUCF_emis, 1)
 
-    # Gross removals
+    main_logger.info(f"  Removing 0s from LULUCF emissions for legend breakpoints")
+    print("LULUCF_emis:", LULUCF_emis)
+    print("LULUCF_emis.min:", LULUCF_emis.min())
+    print("LULUCF_emis.mean:", LULUCF_emis.mean())
+    print("LULUCF_emis.max:", LULUCF_emis.max())
+    masked_data_for_legend_LULUCF_emis = LULUCF_emis[LULUCF_emis != 0]  # Removes 0s but doesn't actually mask-- creates 1D array for legend breakpoints
+    print("masked_data_for_legend_LULUCF_emis:", masked_data_for_legend_LULUCF_emis)
+    print("masked_data_for_legend_LULUCF_emis.min:", masked_data_for_legend_LULUCF_emis.min())
+    print("masked_data_for_legend_LULUCF_emis.mean:", masked_data_for_legend_LULUCF_emis.mean())
+    print("masked_data_for_legend_LULUCF_emis.max:", masked_data_for_legend_LULUCF_emis.max())
 
-    LULUCF_gross_remv_output_name = f"LULUCF_gross_remv__veg_{veg_version}__{non_veg_versions}__MgCO2e_yr"
-    # print("LULUCF_gross_remv_output_name:", LULUCF_gross_remv_output_name)
-    LULUCF_gross_remv_final_total_path = f"{cn.local_jpeg_folder_LULUCF}/{LULUCF_gross_remv_output_name}.tif"
+    main_logger.info(f"\n\n---Preparing LULUCF emissions legend")
 
-    with rasterio.open(LULUCF_gross_remv_final_total_path, "w", **veg_meta) as dst:
-        dst.write(LULUCF_remv, 1)
+    ax, fig_LULUCF_emis = mu.create_plot()
+    mu.set_ocean_color(ax)
+
+    mu.plot_country_polygons(ax, country_shapefile)
+    extent = list(raster_extent)  # Use the extent from last year (they should all match)
+
+    # Matches percentile breaks with colors.
+    # Normalizes percentiles to a 0-1 scale.
+    main_logger.info(f"  Calculating percentiles and breaks for LULUCF gross emissions")
+
+    # Converts RGB color palette to matplotlib color palette
+    colors_matplotlib = mu.rgb_to_mpl_palette(cn.emissions_colors_rgb)
+
+    # Matches percentile breaks with colors for the map.
+    # Normalizes percentiles to a 0-1 scale.
+    percentiles_normalized_LULUCF_emis = np.linspace(0, 1, len(cn.emissions_percentiles))
+    # print("percentiles_normalized_LULUCF_emis:", percentiles_normalized_LULUCF_emis)
+    cmap_LULUCF_emis = LinearSegmentedColormap.from_list("custom_colormap", list(zip(percentiles_normalized_LULUCF_emis, colors_matplotlib)))
+
+    percentile_for_saturation = 1
+    breaks_all_yrs_LULUCF_emis = np.percentile(masked_data_for_legend_LULUCF_emis, [1, (100 - percentile_for_saturation)])  # The min and max percentiles at which colors saturate
+    print("breaks_all_yrs_LULUCF_emis:", breaks_all_yrs_LULUCF_emis)
+
+    lower_lim_all_yrs_LULUCF_emis = breaks_all_yrs_LULUCF_emis[0]
+    upper_lim_all_yrs_LULUCF_emis = breaks_all_yrs_LULUCF_emis[-1]
+    print("lower_lim_all_yrs_LULUCF_emis:", lower_lim_all_yrs_LULUCF_emis)
+    print("upper_lim_all_yrs_LULUCF_emis:", upper_lim_all_yrs_LULUCF_emis)
+
+    # Creates the legend in kt CO2e (converts legend units from Mg (t) to kt with 10**3-- data doesn't change).
+    # Rounds data_min down and data_max up for legend.
+    rounded_upper_lim_all_yrs_LULUCF_emis = math.floor(upper_lim_all_yrs_LULUCF_emis / 10 ** 3 * 100) / 100  # Rounds down
+
+    # Legend labels depend on what exact input is displayed
+    tick_labels_LULUCF_emis = [0, f"> {rounded_upper_lim_all_yrs_LULUCF_emis:.0f}"]
+    title_text_LULUCF_emis = f"Gross LULUCF emissions\nkt CO$_2$e yr$^{{-1}}$"
+    main_logger.info(f"tick labels {tick_labels_LULUCF_emis}")
+
+    norm_LULUCF_emis = Normalize(vmin=lower_lim_all_yrs_LULUCF_emis, vmax=upper_lim_all_yrs_LULUCF_emis)
+
+    # Masks data for emissions mapping (different from removing 0s for legend percentiles)
+    masked_data_for_map_LULUCF_emis = np.ma.masked_where(LULUCF_emis <= 0, LULUCF_emis)
+
+    print(masked_data_for_legend_LULUCF_emis)
+    img_LULUCF_emis = mu.plot_raster(ax, cmap_LULUCF_emis, extent, masked_data_for_map_LULUCF_emis, norm_LULUCF_emis)
+    mu.plot_country_boundaries(ax, country_shapefile)
+
+    if bounding_box_proj is not None:
+        ax.set_xlim(extent[0], extent[1])
+        ax.set_ylim(extent[2], extent[3])
+
+    # Legend for gross fluxes
+    mu.create_unidirection_legend(fig_LULUCF_emis, img_LULUCF_emis, lower_lim_all_yrs_LULUCF_emis, upper_lim_all_yrs_LULUCF_emis,
+                               title_text_LULUCF_emis, tick_labels_LULUCF_emis,
+                               'avg', cn.emissions_colors_rgb, cn.emissions_percentiles, main_logger)
+
+    mu.remove_ticks(ax)
+
+    # # Saves LULUCF gross emissions JPEG
+    # core_jpeg_name_avg = f"veg_{pattern_segment_revised}__mean_{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}__v{cn.veg_model_version_underscore}__{uu.timestr()[0:8]}"
+    # if bounding_box_description:
+    #     core_jpeg_name_avg += f"_{bounding_box_description}"
+    #
+    # jpeg_path_avg = f"{local_jpeg_non_pres_folder}/{core_jpeg_name_avg}.jpeg"
+    # jpeg_for_pres_path_avg = f"{local_jpeg_pres_folder}/{core_jpeg_name_avg}__for_pres.jpeg"
+    # save_pres_non_pres_jpegs(ax, jpeg_path_avg, jpeg_for_pres_path_avg, f'{cn.interval_end_years_annual[0]}-{cn.interval_end_years_annual[-1]}',
+    #                          cn.veg_pres_text, main_logger)
+    #
+    # series_end_time = time.time()
+    # main_logger.info(f"{pattern_segment} took {round(series_end_time - series_start_time)} seconds: {uu.timestr()}")
+
+
+
+    # # Gross removals
+    #
+    # LULUCF_gross_remv_output_name = f"LULUCF_gross_remv__veg_{veg_version}__{non_veg_versions}__MgCO2e_yr"
+    # # print("LULUCF_gross_remv_output_name:", LULUCF_gross_remv_output_name)
+    # LULUCF_gross_remv_final_total_path = f"{cn.local_jpeg_folder_LULUCF}/{LULUCF_gross_remv_output_name}.tif"
+    #
+    # with rasterio.open(LULUCF_gross_remv_final_total_path, "w", **veg_meta) as dst:
+    #     dst.write(LULUCF_remv, 1)
 
 
     ### Part 4: Maps AFOLU
@@ -774,11 +865,11 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     if cropland_geotif_s3:
         cropland_date = re.search(r'/(\d{8})/', cropland_geotif_s3).group(1)
         non_veg_versions = f'{non_veg_versions}__cropland_v{cropland_date}'
-        full_slide_text_AFOLU = f'{full_slide_text_AFOLU}{cn.cropland_pres_text};'
+        full_slide_text_AFOLU = f'{full_slide_text_AFOLU}; {cn.cropland_pres_text}'
     if livestock_geotif_s3:
         livestock_date = re.search(r'/(\d{8})/', livestock_geotif_s3).group(1)
         non_veg_versions = f'{non_veg_versions}__livestock_v{livestock_date}'
-        full_slide_text_AFOLU = f'{full_slide_text_AFOLU}{cn.livestock_pres_text};'
+        full_slide_text_AFOLU = f'{full_slide_text_AFOLU}; {cn.livestock_pres_text}'
     if cropland_geotif_s3 == None and livestock_geotif_s3 == None:
         sys.exit("No Agriculture datasets supplied. Not creating total AFOLU maps.")
     full_slide_text_AFOLU_with_disclaimer = f"{full_slide_text_AFOLU} \n {cn.legend_percentile_disclaimer}"
@@ -796,7 +887,7 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
 
     # Calculates min, center and max across all years
     percentile_for_saturation = 1
-    breaks_AFOLU = np.percentile(non_zero_values_AFOLU, [1, (100 - percentile_for_saturation)])  # The min and max percentiles at which colors saturate
+    breaks_AFOLU = np.percentile(non_zero_values_AFOLU, [1, (100 - percentile_for_saturation)])  # The min and max percentiles_AFOLU at which colors saturate
 
     lower_lim_AFOLU = breaks_AFOLU[0]
     global_neutral_AFOLU = 0
@@ -811,12 +902,12 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     # Rounds data_min down and data_max up for legend.
     rounded_lower_lim_AFOLU = math.ceil(lower_lim_AFOLU / 10 ** 3 * 100) / 100  # Rounds up
     rounded_upper_lim_AFOLU = math.floor(upper_lim_AFOLU / 10 ** 3 * 100) / 100  # Rounds down
-    tick_labels = [f"< {rounded_lower_lim_AFOLU:.0f}  (sink)",
+    tick_labels_AFOLU = [f"< {rounded_lower_lim_AFOLU:.0f}  (sink)",
                    # Spaces are to horizontally align the text explanations
                    "0        (neutral)",
                    f"> {rounded_upper_lim_AFOLU:.0f}  (source)"]
     AFOLU_output_name_kt = AFOLU_output_name.replace("MgCO2", "ktCO2")
-    # print(tick_labels)
+    # print(tick_labels_AFOLU)
 
     main_logger.info(f"\n\n---Generating AFOLU map:")
 
@@ -828,36 +919,36 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
 
             window = from_bounds(minx, miny, maxx, maxy, src.transform)
 
-            data = src.read(1, window=window)
+            data_AFOLU = src.read(1, window=window)
 
             # Update extent from the window
             left, bottom, right, top = rasterio.windows.bounds(window, src.transform)
             raster_extent = (left, right, bottom, top)
 
         else:
-            data = src.read(1)
+            data_AFOLU = src.read(1)
             b = src.bounds
             raster_extent = (b.left, b.right, b.bottom, b.top)
 
     # Calculates the percentile for 0 for the year (neutral, no flux) for mapping
-    main_logger.info(f"  Calculating percentiles and breaks")
-    percentile_0 = mu.percentile_for_0(data)
-    main_logger.info(f"  0 is at the {percentile_0}th percentile of the raster.")
-    percentiles = [percentile_0 / 6, percentile_0 / 4, percentile_0 / 2, percentile_0 / 1.3, percentile_0 / 1.05,
-                   percentile_0 * 1.05, percentile_0 * 1.1, percentile_0 * 1.2, percentile_0 * 1.3, percentile_0 * 1.5]
-    # print("percentiles:", percentiles)
+    main_logger.info(f"  Calculating percentiles_AFOLU and breaks")
+    percentile_0_AFOLU = mu.percentile_for_0(data_AFOLU)
+    main_logger.info(f"  0 is at the {percentile_0_AFOLU}th percentile of the raster.")
+    percentiles_AFOLU = [percentile_0_AFOLU / 6, percentile_0_AFOLU / 4, percentile_0_AFOLU / 2, percentile_0_AFOLU / 1.3, percentile_0_AFOLU / 1.05,
+                   percentile_0_AFOLU * 1.05, percentile_0_AFOLU * 1.1, percentile_0_AFOLU * 1.2, percentile_0_AFOLU * 1.3, percentile_0_AFOLU * 1.5]
+    # print("percentiles_AFOLU:", percentiles_AFOLU)
 
     # Converts RGB color palette to matplotlib color palette
     colors_matplotlib = mu.rgb_to_mpl_palette(net_colors_rgb)
 
     # Matches percentile breaks with colors for the map.
-    # Normalizes percentiles to a 0-1 scale.
-    percentiles_normalized = np.linspace(0, 1, len(percentiles))
-    # print("percentiles_normalized:", percentiles_normalized)
-    cmap = LinearSegmentedColormap.from_list("custom_colormap", list(zip(percentiles_normalized, colors_matplotlib)))
+    # Normalizes percentiles_AFOLU to a 0-1 scale.
+    percentiles_normalized_AFOLU = np.linspace(0, 1, len(percentiles_AFOLU))
+    # print("percentiles_normalized_AFOLU:", percentiles_normalized_AFOLU)
+    cmap_AFOLU = LinearSegmentedColormap.from_list("custom_colormap", list(zip(percentiles_normalized_AFOLU, colors_matplotlib)))
 
     main_logger.info(f"  Masking raster to non-0 values for AFOLU")
-    masked_data = np.ma.masked_where(data == 0, data)
+    masked_data_AFOLU = np.ma.masked_where(data_AFOLU == 0, data_AFOLU)
 
     # For map (not legend)
     norm = TwoSlopeNorm(
@@ -884,7 +975,7 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     extent = list(raster_extent)
 
     # Plots the raster next
-    img = mu.plot_raster(ax, cmap, extent, masked_data, norm)
+    img = mu.plot_raster(ax, cmap_AFOLU, extent, masked_data_AFOLU, norm)
 
     # Plots the country boundaries on top
     mu.plot_country_boundaries(ax, country_shapefile)
@@ -899,23 +990,23 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
 
     # Creates legend
     mu.create_divergent_legend_asymmetric(fig, rounded_lower_lim_AFOLU, rounded_upper_lim_AFOLU,
-                                          title_text, tick_labels,
-                                          veg_analysis_years, net_colors_rgb, percentiles, percentile_0, main_logger)
+                                          title_text, tick_labels_AFOLU,
+                                          veg_analysis_years, net_colors_rgb, percentiles_AFOLU, percentile_0_AFOLU, main_logger)
 
     # Removes axis ticks and labels
     mu.remove_ticks(ax)
 
-    core_jpeg_name = f"{AFOLU_output_name_kt}__{uu.timestr()[0:8]}"
+    core_jpeg_name_AFOLU = f"{AFOLU_output_name_kt}__{uu.timestr()[0:8]}"
     if bounding_box_description:  # Adds bounding box description to file name, if supplied
-        core_jpeg_name = f"{core_jpeg_name}_{bounding_box_description}"
-    jpeg_path = f"{AFOLU_local_jpeg_non_pres_folder}/{core_jpeg_name}.jpeg"
-    jpeg_for_pres_path = f"{AFOLU_local_jpeg_pres_folder}/{core_jpeg_name}__for_pres.jpeg"
+        core_jpeg_name_AFOLU = f"{core_jpeg_name_AFOLU}_{bounding_box_description}"
+    jpeg_path_AFOLU = f"{AFOLU_local_jpeg_non_pres_folder}/{core_jpeg_name_AFOLU}.jpeg"
+    jpeg_for_pres_path_AFOLU = f"{AFOLU_local_jpeg_pres_folder}/{core_jpeg_name_AFOLU}__for_pres.jpeg"
 
     full_slide_text_AFOLU_with_disclaimer = full_slide_text_AFOLU_with_disclaimer.replace("Cropland: vYYYYMMDD", f"Cropland: v{cropland_date}")
     full_slide_text_AFOLU_with_disclaimer = full_slide_text_AFOLU_with_disclaimer.replace("Livestock: vYYYYMMDD", f"Livestock: v{livestock_date}")
 
     # Saves two versions of the map: without and with a source note in the bottom right
-    out_jpeg_for_pres = mu.save_pres_non_pres_jpegs(ax, jpeg_path, jpeg_for_pres_path, "", full_slide_text_AFOLU_with_disclaimer, main_logger)
+    out_jpeg_for_pres = mu.save_pres_non_pres_jpegs(ax, jpeg_path_AFOLU, jpeg_for_pres_path_AFOLU, "", full_slide_text_AFOLU_with_disclaimer, main_logger)
 
     end_time = time.time()
     main_logger.info(f"AFOLU for {bounding_box_description} extent took {round(end_time - start_time)} seconds: {uu.timestr()}")

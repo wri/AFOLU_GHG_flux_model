@@ -1684,8 +1684,14 @@ colorbar_dimensions = [0.12, 0.17, 0.02, 0.13] # [left, bottom, width, height]
 net_colors_rgb = [(0, 60, 48), (1, 102, 94), (53, 151, 143), (128, 205, 193), (199, 234, 229),  # Used for removals
                   (246, 232, 195), (223, 194, 125), (191, 129, 45), (140, 81, 10), (84, 48, 5)  # Used for emissions
                   ]
+# Defines desired percentiles for colors. Specifies where colors transition in the data.
+# Setting neutral ends of sink and source is empirically based on the 0 value being around the 82nd percentile.
+# From some experimentation, it's better not to encode a neutral percentile (or associated color) here or below.
+# It dampens the colors around the neutral value (low emissions and removals) even more.
 net_percentiles = [0.17, 0.25, 0.5, 0.77, 0.95,
                    1.05, 1.1, 1.2, 1.3, 1.5]
+removals_percentiles = [5, 25, 50, 75, 99]
+emissions_percentiles = [5, 25, 50, 75, 99]
 removals_colors_rgb = net_colors_rgb[0:5]
 emissions_colors_rgb = net_colors_rgb[5:]
 
