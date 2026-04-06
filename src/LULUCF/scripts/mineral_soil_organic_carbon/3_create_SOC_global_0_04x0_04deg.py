@@ -79,8 +79,8 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
     ]
 
     full_list_of_vars_change = [
-        cn.SOC_change_full_extent_pattern,
-        cn.SOC_change_min_soil_extent_pattern
+        cn.SOC_net_full_extent_pattern,
+        cn.SOC_net_min_soil_extent_pattern
     ]
 
     # Limits the processed variables to the supplied number (for testing)

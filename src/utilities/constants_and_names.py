@@ -955,23 +955,33 @@ SOC_density_intervals = [2005, 2010, 2015, 2020, 2022]
 # Value refers to the end year of the second OGH reporting block, e.g., 2010 is the comparison of 2000-2005 block vs. 2005-2010 block
 SOC_change_intervals = [2010, 2015, 2020, 2022]
 
-SOC_path_mega_zarr = f"{SOC_outputs_path}mega_zarr/CHUNK_SIZE_pixels/RUN_DATE/SOC_zarr.zarr"
+SOC_path_zarr = f"{SOC_outputs_path}zarr/CHUNK_SIZE_pixels/RUN_DATE/SOC_zarr.zarr"
 
 # Extent of raw COGs
 SOC_density_full_extent_pattern = "SOC_density__full_extent__0-30cm_MgC"
 SOC_density_full_extent_dir = f"{SOC_outputs_path}{SOC_density_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_change_full_extent_pattern = "SOC_change__full_extent__0-30cm_MgC"
-SOC_change_full_extent_dir = f"{SOC_outputs_path}{SOC_change_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+SOC_loss_full_extent_pattern = "SOC_loss__full_extent__0-30cm_MgC"
+SOC_loss_full_extent_dir = f"{SOC_outputs_path}{SOC_loss_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+SOC_gain_full_extent_pattern = "SOC_gain__full_extent__0-30cm_MgC"
+SOC_gain_full_extent_dir = f"{SOC_outputs_path}{SOC_gain_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+SOC_net_full_extent_pattern = "SOC_net__full_extent__0-30cm_MgC"
+SOC_net_full_extent_dir = f"{SOC_outputs_path}{SOC_net_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
 
 # Extent of mineral soil (excludes thresholded organic soil extent created by Erin Glen)
 SOC_density_min_soil_extent_pattern = "SOC_density__mineral_soil_extent__0-30cm_MgC"
 SOC_density_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_density_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_change_min_soil_extent_pattern = "SOC_change__mineral_soil_extent__0-30cm_MgC"
-SOC_change_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_change_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+SOC_loss_min_soil_extent_pattern = "SOC_loss__mineral_soil_extent__0-30cm_MgC"
+SOC_loss_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_loss_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+SOC_gain_min_soil_extent_pattern = "SOC_gain__mineral_soil_extent__0-30cm_MgC"
+SOC_gain_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_gain_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+SOC_net_min_soil_extent_pattern = "SOC_net__mineral_soil_extent__0-30cm_MgC"
+SOC_net_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_net_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
 
 SOC_outputs_to_zarr = [
-    SOC_density_full_extent_pattern, SOC_change_full_extent_pattern,
-    SOC_density_min_soil_extent_pattern, SOC_change_min_soil_extent_pattern
+    SOC_density_full_extent_pattern, SOC_density_min_soil_extent_pattern,
+    SOC_net_full_extent_pattern,  SOC_net_min_soil_extent_pattern,
+    SOC_loss_full_extent_pattern, SOC_loss_min_soil_extent_pattern,
+    SOC_gain_full_extent_pattern, SOC_gain_min_soil_extent_pattern
 ]
 
 

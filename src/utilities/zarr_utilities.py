@@ -108,6 +108,10 @@ def initialize_global_zarr(store_url, dataset_keys, n_years, chunk_size, main_lo
             dtype = 'float32'
         elif "net" in key:
             dtype = 'float32'
+        elif "loss" in key:
+            dtype = 'float32'
+        elif "gain" in key:
+            dtype = 'float32'
         elif cn.land_state_pattern in key:
             dtype = 'uint32'
         elif cn.composite_primary_forest in key:
@@ -412,6 +416,9 @@ def compare_dataset_year_chunk_stats(all_merged_tables, chunk_stats_variable_zar
     elif "net" in var_name:
         model_table = tables_to_compare_dict[cn.net_outputs_1x1]
         # year = year
+    elif ("loss" in var_name) or ("gain" in var_name):  # For SOC timeseries
+        model_table = tables_to_compare_dict[cn.other_outputs_1x1]
+        # year = year
     else:
         model_table = tables_to_compare_dict[cn.other_outputs_1x1]
         # For reasons I can't really trace back, the year datatype for C densities is object, not int.
@@ -428,13 +435,13 @@ def compare_dataset_year_chunk_stats(all_merged_tables, chunk_stats_variable_zar
     # print("zarr_df:", zarr_df)
 
     # Subsets model chunk stats to relevant pattern
-    subset_model_table = model_table[(model_table['pattern'].str.contains(var_name, na=False))]
+    subset_model_table = model_table[model_table['pattern'].str.contains(var_name, na=False)].copy()
 
     # For chunk stat comparisons of starting year data, the geotif chunk stats chunk_name has 'no year range'. Need to replace with the starting year.
     subset_model_table['chunk_name'] = subset_model_table['chunk_name'].str.replace('_no year range', f'_{cn.first_model_year_annual}', regex=False)
-    print("var_name:", var_name)
-    print("subset_model_table", subset_model_table)
-    print("subset_model_table chunk_name", subset_model_table['chunk_name'].iloc[0])
+    # print("var_name:", var_name)
+    # print("subset_model_table", subset_model_table)
+    # print("subset_model_table chunk_name", subset_model_table['chunk_name'].iloc[0])
 
     # Selects only the needed columns from rechunked_zarr_table
     # main_logger.info(f"    Subsetting zarr table to numeric columns for {var_name}: {uu.timestr()}")
@@ -614,6 +621,12 @@ def add_units_year_to_pattern(core_pattern, year):
         pattern_with_units = f"{core_pattern}_ha_yr"
         pattern_with_units_years = f"{core_pattern}_ha_yr_{year}"
     elif "removals" in core_pattern:
+        pattern_with_units = f"{core_pattern}_ha_yr"
+        pattern_with_units_years = f"{core_pattern}_ha_yr_{year}"
+    elif "loss" in core_pattern:
+        pattern_with_units = f"{core_pattern}_ha_yr"
+        pattern_with_units_years = f"{core_pattern}_ha_yr_{year}"
+    elif "gain" in core_pattern:
         pattern_with_units = f"{core_pattern}_ha_yr"
         pattern_with_units_years = f"{core_pattern}_ha_yr_{year}"
     elif "net" in core_pattern:

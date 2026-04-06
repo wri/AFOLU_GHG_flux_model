@@ -112,8 +112,8 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     ]
 
     full_list_of_vars_change = [
-        cn.SOC_change_full_extent_pattern,
-        cn.SOC_change_min_soil_extent_pattern
+        cn.SOC_net_full_extent_pattern,
+        cn.SOC_net_min_soil_extent_pattern
     ]
 
     # Limits the processed variables to the supplied number (for testing)
@@ -146,7 +146,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     source_zarr_chunk_size = cn.chunk_dims  #4000x4000
 
     # The zarr path that's being used
-    zarr_path = zu.create_zarr_path(cn.SOC_path_mega_zarr, source_zarr_chunk_size, 'N/A',
+    zarr_path = zu.create_zarr_path(cn.SOC_path_zarr, source_zarr_chunk_size, 'N/A',
                                     model_type, cn.SOC_model_version_underscore, model_path_description,
                                     input_date, main_logger)
     main_logger.info(f"Aggregating from zarr ({source_zarr_chunk_size} pixel chunks): {zarr_path}")
@@ -327,7 +327,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
 
     ### Step 6: Count output density change geotifs in s3 (not counting density geotifs for simplicity)
 
-    output_dir_list = [cn.SOC_change_full_extent_dir, cn.SOC_change_min_soil_extent_dir]
+    output_dir_list = [cn.SOC_net_full_extent_dir, cn.SOC_net_min_soil_extent_dir]
 
     # Expands the years to count
     # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69b0ba50-773c-832d-9da3-a23209319fd3

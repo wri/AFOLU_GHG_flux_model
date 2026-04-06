@@ -1,8 +1,10 @@
 """
 Calculates carbon densities (Mg C/ha) in 0-30 cm top-soil,
-and annual stock changes (Mg C/ha/yr, accounting for shorter interval length in the last interval).
+and annual gross gain, gross loss, and net stock changes (Mg C/ha/yr, accounting for shorter interval length in the last interval).
+All gross stock change values are positive (loss and gain).
+For net stock change, positive is SOC gain and negative is SOC loss (opposite of signs for vegetation).
 Neither change nor density converted to Mg CO2.
-Positive is SOC gain and negative is SOC loss (opposite of signs for vegetation).
+Calling gross values gain and loss instead of emissions and removals to differentiate them from vegetation emissions and removals (which are in CO2(e).)
 
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
@@ -10,25 +12,21 @@ Local test:
 python -m src.LULUCF.scripts.mineral_soil_organic_carbon.1_SOC_stock_and_stock_change -bb 110 -1 111 0 -cs 1 -mt standard -mpd test_box
 
 Coiled small test (1x1 deg):
-python -m src.utilities.create_cluster -n 1 -t 1 -m 4 -cn mineral_soil
+python -m src.utilities.create_cluster -n 1 -t 1 -m 8 -cn mineral_soil
 python -m src.LULUCF.scripts.mineral_soil_organic_carbon.1_SOC_stock_and_stock_change -cn mineral_soil -bb 110 -1 111 0 -cs 1 -mt standard -mpd test_box --create_zarr
 
 Coiled large shapefile test:
-python -m src.utilities.create_cluster -n 100 -t 1 -m 4 -cn mineral_soil
+python -m src.utilities.create_cluster -n 100 -t 1 -m 8 -cn mineral_soil
 python -m src.LULUCF.scripts.mineral_soil_organic_carbon.1_SOC_stock_and_stock_change -cn mineral_soil -mt standard -mpd 1884_features-cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp -ln "SOC timeseries for 1884-feature shapefile."
 
 Full run:
-python -m src.utilities.create_cluster -n 200 -t 1 -m 4 -cn mineral_soil
+python -m src.utilities.create_cluster -n 200 -t 1 -m 8 -cn mineral_soil
 python -m src.LULUCF.scripts.mineral_soil_organic_carbon.1_SOC_stock_and_stock_change -cn mineral_soil -mt standard -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive SOC timeseries creation for 2000-2022."
 
 Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/6877a34b-02cc-800a-88cc-a123cdc9ed1b
 
-#TODO MAJOR: Figure out if and how I can map gross loss and gain and net change by interval so that I also have gross changes.
-
 #TODO MAJOR: 0 should be a value for change, not the NoData value
 
-#TODO make zarr layers include units (_ha for density and _ha_yr for density change)
-#TODO test that zarr layer names having units in them works okay
 #TODO change back var_per_ha in zu.create_10x10_deg_geotif_from_zarr
 """
 
@@ -173,14 +171,26 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
 
         lu.print_and_log(f"Calculating SOC change for {end_year} to {start_year} for {bounds_str}: {uu.timestr()}", is_large_run, logger_worker)
 
-        delta_full_extent = (out_dict_full_extent_ordered[f"{cn.SOC_density_full_extent_pattern}{cn.C_density_pixel_meaning}_{end_year}"] -
+        net_full_extent = (out_dict_full_extent_ordered[f"{cn.SOC_density_full_extent_pattern}{cn.C_density_pixel_meaning}_{end_year}"] -
                              out_dict_full_extent_ordered[f"{cn.SOC_density_full_extent_pattern}{cn.C_density_pixel_meaning}_{start_year}"]) / year_diff  # Interval arrays must be unsigned so difference can be negative
-        delta_min_soil = (out_dict_min_soil_extent_ordered[f"{cn.SOC_density_min_soil_extent_pattern}{cn.C_density_pixel_meaning}_{end_year}"] -
+        net_min_soil = (out_dict_min_soil_extent_ordered[f"{cn.SOC_density_min_soil_extent_pattern}{cn.C_density_pixel_meaning}_{end_year}"] -
                           out_dict_min_soil_extent_ordered[f"{cn.SOC_density_min_soil_extent_pattern}{cn.C_density_pixel_meaning}_{start_year}"]) / year_diff  # Interval arrays must be unsigned so difference can be negative
 
+        SOC_loss_full_extent = np.where(net_full_extent < 0, net_full_extent, 0)*-1  # Values in loss arrays are positive
+        SOC_loss_min_soil = np.where(net_min_soil < 0, net_min_soil, 0)*-1    # Values in loss arrays are positive
+
+        SOC_gain_full_extent = np.where(net_full_extent > 0, net_full_extent, 0)
+        SOC_gain_min_soil = np.where(net_min_soil > 0, net_min_soil, 0)
+
         # Saves back to output dicts with the converted unit arrays
-        out_dict_full_extent_ordered[f"{cn.SOC_change_full_extent_pattern}{cn.flux_density_pixel_meaning}_{end_year}"] = delta_full_extent
-        out_dict_min_soil_extent_ordered[f"{cn.SOC_change_min_soil_extent_pattern}{cn.flux_density_pixel_meaning}_{end_year}"] = delta_min_soil
+        out_dict_full_extent_ordered[f"{cn.SOC_net_full_extent_pattern}{cn.flux_density_pixel_meaning}_{end_year}"] = net_full_extent
+        out_dict_min_soil_extent_ordered[f"{cn.SOC_net_min_soil_extent_pattern}{cn.flux_density_pixel_meaning}_{end_year}"] = net_min_soil
+
+        out_dict_full_extent_ordered[f"{cn.SOC_loss_full_extent_pattern}{cn.flux_density_pixel_meaning}_{end_year}"] = SOC_loss_full_extent
+        out_dict_min_soil_extent_ordered[f"{cn.SOC_loss_min_soil_extent_pattern}{cn.flux_density_pixel_meaning}_{end_year}"] = SOC_loss_min_soil
+
+        out_dict_full_extent_ordered[f"{cn.SOC_gain_full_extent_pattern}{cn.flux_density_pixel_meaning}_{end_year}"] = SOC_gain_full_extent
+        out_dict_min_soil_extent_ordered[f"{cn.SOC_gain_min_soil_extent_pattern}{cn.flux_density_pixel_meaning}_{end_year}"] = SOC_gain_min_soil
 
     calc_end = time.time()
     lu.print_and_log(f"After calculating deltas for {bounds_str}: {process.memory_info().rss / 1024 ** 2:.2f} MB",False, logger_worker)
@@ -263,6 +273,7 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
     ### Part 7: Saves numpy arrays as rasters and uploads to s3
 
     # Only saves arrays to geotifs and uploads them to s3 if enabled
+    # print("outputs_by_interval_dir_list:", outputs_by_interval_dir_list)
     if not no_upload:
 
         out_no_data_val = 0  # NoData value for output raster (optional) #TODO change NoData to something besides 0 because 0 has a meaning here
@@ -399,8 +410,8 @@ def main(cluster_name, model_type,
     main_logger.info(f"Create and populate global mega-zarr: {create_zarr}")
 
     # List of output paths in s3 before each interval is added, with placeholders replaced
-    outputs_dir_list = [cn.SOC_density_full_extent_dir, cn.SOC_change_full_extent_dir,
-                        cn.SOC_density_min_soil_extent_dir, cn.SOC_change_min_soil_extent_dir]
+    outputs_dir_list = [cn.SOC_density_full_extent_dir, cn.SOC_loss_full_extent_dir, cn.SOC_gain_full_extent_dir, cn.SOC_net_full_extent_dir,
+                        cn.SOC_density_min_soil_extent_dir, cn.SOC_loss_min_soil_extent_dir, cn.SOC_gain_min_soil_extent_dir, cn.SOC_net_min_soil_extent_dir]
     outputs_dir_list = [path.replace("CHUNK_SIZE_pixels", f"{chunk_size_pixels}_pixels") for path in outputs_dir_list]
     outputs_dir_list = [path.replace("RUN_DATE", run_date) for path in outputs_dir_list]
     outputs_dir_list = [path.replace(cn.model_version_type_description_placeholder, f"version_{cn.SOC_model_version_underscore}__{model_type}__{model_path_description}") for path in outputs_dir_list]
@@ -417,7 +428,7 @@ def main(cluster_name, model_type,
                 output_dir_interval = output_dir_interval.replace("PER_HA_OR_PIXEL", cn.C_density_pixel_meaning)
                 outputs_by_interval_dir_list = outputs_by_interval_dir_list + [output_dir_interval]
 
-        if "change" in output_dir:
+        if ("net" in output_dir) or ("loss" in output_dir) or ("gain" in output_dir):
             for SOC_change_interval in cn.SOC_change_intervals:
                 output_dir_interval = output_dir.replace("START_END", str(SOC_change_interval))
                 output_dir_interval = output_dir_interval.replace("PER_HA_OR_PIXEL", cn.flux_density_pixel_meaning)
@@ -443,7 +454,7 @@ def main(cluster_name, model_type,
     if create_zarr:
 
         # Creates s3 paths for the raw mega-zarr
-        zarr_path = zu.create_zarr_path(cn.SOC_path_mega_zarr, chunk_size_pixels, 'N/A',
+        zarr_path = zu.create_zarr_path(cn.SOC_path_zarr, chunk_size_pixels, 'N/A',
                                         model_type, cn.SOC_model_version_underscore, model_path_description,
                                         run_date, main_logger)
 
@@ -451,8 +462,16 @@ def main(cluster_name, model_type,
         # Adds the unit to the zarr variable names (uses re.sub to apply to end of string only so that these don't overwrite each other).
         outputs_to_zarr = cn.SOC_outputs_to_zarr
         outputs_to_zarr_with_unit = [
-            re.sub(r'^(SOC_change.*)$', r'\1_ha_yr', pattern)
+            re.sub(r'^(SOC_net.*)$', r'\1_ha_yr', pattern)
             for pattern in outputs_to_zarr
+        ]
+        outputs_to_zarr_with_unit = [
+            re.sub(r'^(SOC_loss.*)$', r'\1_ha_yr', pattern)
+            for pattern in outputs_to_zarr_with_unit
+        ]
+        outputs_to_zarr_with_unit = [
+            re.sub(r'^(SOC_gain.*)$', r'\1_ha_yr', pattern)
+            for pattern in outputs_to_zarr_with_unit
         ]
         outputs_to_zarr_with_unit = [
             re.sub(r'^(SOC_density.*)$', r'\1_ha', pattern)
