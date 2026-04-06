@@ -25,12 +25,9 @@ Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/6877a34b-02cc-800a
 
 #TODO MAJOR: Figure out if and how I can map gross loss and gain and net change by interval so that I also have gross changes.
 
-#TODO MAJOR: The 20250224 run seems to have dropped full extent density values some sub-blocks (0.1x0.1 deg pieces), e.g., 2020 for 114_71_115_72 (80N_110E) and 2022 for 106_11_107_12 (20N_100E).
-#Maybe from using too many workers at once? Check density pixel count across years from chunk stats to confirm none dropped next time (all years should have same number of density pixels).
-#Could even have create_soil_C_density_and_change() check for equal pixel counts in chunk_stats and repeat task if it's not the same
+#TODO MAJOR: 0 should be a value for change, not the NoData value
 
 #TODO make zarr layers include units (_ha for density and _ha_yr for density change)
-#TODO change NoData in change outputs to something besides 0 because 0 has a meaning here
 #TODO test that zarr layer names having units in them works okay
 #TODO change back var_per_ha in zu.create_10x10_deg_geotif_from_zarr
 """
@@ -65,7 +62,7 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
                                      mega_zarr_path=None, outputs_to_zarr=None):
 
     # Stores the min, mean, and max chunks for inputs and outputs for the chunk
-    chunk_stats = []
+    chunk_stats_combined = []
 
     process = psutil.Process(os.getpid())
 
@@ -223,14 +220,44 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
     # Worked on it in https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/681244d9-83dc-800a-b397-0706e79391c0
     # but never implemented the fix because the very slight rounding results in <0.01% difference.
 
+    # Lists of pixel counts for full extent and mineral soil extent for all years, to check if any pixels are being lost in any years.
+    # All years for density for a given extent should have the same number of pixels.
+    # I noticed in a global run on 2025-12-24 that some chunks dropped 0.1x0.1 deg areas for some years, maybe because I had too many workers.
+    # This would catch sub-chunks being dropped from individual years.
+    full_extent_density_pixel_count_list = []
+    mineral_extent_density_pixel_count_list = []
+
     for key, array_per_ha in out_dict_combined.items():
 
         # Converts per hectare values to per pixel values for the output numpy array
         output_per_pixel = array_per_ha * pixel_area_chunk * cn.m2_to_ha
 
-        chunk_stats.append(uu.calculate_stats(array_per_ha, key, bounds_str, tile_id, 'output_layer', output_per_pixel))
+        chunk_stats = uu.calculate_stats(array_per_ha, key, bounds_str, tile_id, 'output_layer', output_per_pixel)
+
+        # Populates lists of pixel counts for each chunk across years to make sure they're the same
+        if chunk_stats['pattern'] == f"{cn.SOC_density_full_extent_pattern}_ha":
+            full_extent_density_pixel_count_list.append(chunk_stats['count_value'])
+        if chunk_stats['pattern'] == f"{cn.SOC_density_min_soil_extent_pattern}_ha":
+            mineral_extent_density_pixel_count_list.append(chunk_stats['count_value'])
+
+        chunk_stats_combined.append(chunk_stats)
+
+    all_same_full_extent = len(set(full_extent_density_pixel_count_list)) <= 1
+    all_same_mineral = len(set(mineral_extent_density_pixel_count_list)) <= 1
+    lu.print_and_log(f"Pixel count in full extent chunk for {bounds_str} in {tile_id}: {full_extent_density_pixel_count_list}. All are the same: {all_same_full_extent}.", is_large_run, logger_worker)
+    lu.print_and_log(f"Pixel count in mineral soil extent chunk for {bounds_str} in {tile_id}: {mineral_extent_density_pixel_count_list}. All are the same: {all_same_mineral}.", is_large_run, logger_worker)
 
     lu.print_and_log(f"Populated chunk stats for outputs in {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
+
+    if not all_same_full_extent or not all_same_mineral:
+        msg = (
+            f"Pixel count mismatch in chunk {bounds_str} ({tile_id}). "
+            f"Full extent counts: {full_extent_density_pixel_count_list}, "
+            f"Mineral extent counts: {mineral_extent_density_pixel_count_list}"
+        )
+        lu.print_and_log(msg, False, logger_worker)
+
+        raise RuntimeError(msg)
 
 
     ### Part 7: Saves numpy arrays as rasters and uploads to s3
@@ -302,7 +329,7 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
     lu.print_and_log(f"Peak memory for {bounds_str} in {tile_id}: {peak_gb:.2f} GB", False, logger_worker)
 
     # return return_message  # Return both the success message and the statistics
-    return return_message, chunk_stats  # Return both the success message and the statistics
+    return return_message, chunk_stats_combined  # Return both the success message and the statistics
 
 
 def main(cluster_name, model_type,
@@ -422,7 +449,6 @@ def main(cluster_name, model_type,
 
         # These variables are added to the mega-zarr
         # Adds the unit to the zarr variable names (uses re.sub to apply to end of string only so that these don't overwrite each other).
-        #TODO Need to test this
         outputs_to_zarr = cn.SOC_outputs_to_zarr
         outputs_to_zarr_with_unit = [
             re.sub(r'^(SOC_change.*)$', r'\1_ha_yr', pattern)
