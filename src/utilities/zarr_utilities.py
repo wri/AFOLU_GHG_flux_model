@@ -495,7 +495,8 @@ def compare_dataset_year_chunk_stats(all_merged_tables, chunk_stats_variable_zar
 
     # From those valid rows, counts how many have no zarr stats
     chunks_without_zarr_stats = merged_table[valid_count_mask]['count_value_diff'].isna().sum().item()
-    main_logger.info(f"    {chunks_without_zarr_stats} rows with data without pixel count comparison")
+    chunks_with_zarr_stats = merged_table[valid_count_mask]['count_value_diff'].sum().item()
+    main_logger.info(f"    {chunks_without_zarr_stats} rows with data without pixel count comparison out of {chunks_with_zarr_stats} rows")
 
     # Applies the mask to filter those rows
     differences_exceeding_tolerance = merged_table[mask]

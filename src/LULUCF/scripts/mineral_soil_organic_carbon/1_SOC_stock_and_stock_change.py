@@ -355,7 +355,7 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
     lu.print_and_log(f"Peak memory for {bounds_str} in {tile_id}: {peak_gb:.2f} GB", False, logger_worker)
 
     # return return_message  # Return both the success message and the statistics
-    return return_message, chunk_stats_combined  # Return both the success message and the statistics
+    return return_message, chunk_stats_combined, pixel_counts_same  # Return both the success message and the statistics
 
 
 def main(cluster_name, model_type,
@@ -511,7 +511,7 @@ def main(cluster_name, model_type,
         outputs_to_zarr = False
 
 
-    ### Step 3: Create outputs
+    ### Step 3: Create 1x1 deg outputs
 
     # Creates list of tasks to run (1 task = 1 chunk)
     main_logger.info("Workers' logs to be appended after main function log"+ "\n")
@@ -592,35 +592,27 @@ def main(cluster_name, model_type,
         uu.stage_duration(start_time, uu.timestr(), f"{stage}, batch {i}", main_logger)
 
 
-    ### Step 4: Counts files in output folders, chunk stats for 1x1 degree outputs, aggregates logs
+    ### Step 4: Gather worker logs (preliminary, just in case later step goes awry)
 
-    # Resizes cluster down for all subsequent steps (chunk stats, zarr stats comparison, and log aggregation)
+    # Collects worker logs before moving to processing that doesn't need the cluster
     if not run_local:
-        workers = client.scheduler_info()["workers"]
-        n_workers = len(workers)
 
-        # Reduces number of workers in the cluster if there are more than 10
-        if n_workers > 10:
-            main_logger.info("Downsizing cluster.")
-            resize_cluster.resize_coiled_cluster(cluster_name, n_workers/3)
+        # Creates combined log from all workers if not deactivated
+        worker_log_local_path_prelim = lu.compile_worker_logs(no_log, cluster, stage, start_time, main_logger)
+        uu.stage_duration(start_time, uu.timestr(), f"{stage} with preliminary worker log compilation", main_logger)
 
-    # Iterates through output folders and counts the number of output rasters (only if uploads enabled)
-    if not no_upload and is_large_run:
-        for output_folder in outputs_by_interval_dir_list:
-            geotiff_files, file_count = uu.list_raster_full_paths_in_s3_folder_and_count(output_folder)
-            main_logger.info(f"Output rasters in {output_folder}: {file_count}")
-            # print(geotiff_files)
 
-    # Prepares 1x1 deg chunk stats spreadsheet: min, mean, max, and sum for all input and output chunks,
+    ### Step 5: Consolidate chunk stats and export
+
+    # Prepares chunk stats spreadsheet: min, mean, max, and sum for all input and output chunks,
     # and min and max values across all chunks for all inputs and outputs
-    # only if not suppressed by the --no_stats flag and at least one chunk was successfully (wasn't skipped).
+    # only if not suppressed by the --no_stats flag and at least one chunk was successful (wasn't skipped).
     if (not no_stats) and (success_count > 0):
         model_chunk_stats_path = uu.compile_1x1_chunk_stats(all_stats, chunk_shapefile_uri, stage, no_upload, main_logger)
-
         uu.stage_duration(start_time, uu.timestr(), f"{stage} with tile stats", main_logger)
 
 
-    ### Step 5: Compares model output chunk stats to zarr chunk stats for each variable-year (only if chunk stats created)
+    ### Step 6: Compares model output chunk stats to zarr chunk stats for each variable-year (only if chunk stats created)
 
     if (not no_stats) and create_zarr:
 
@@ -688,24 +680,52 @@ def main(cluster_name, model_type,
                                               stage, start_time, zarr_comparison_stats_name, zarr_comparison_stats_path)
 
 
-    ### Step 6: Aggregates logs
+    ### Step 7: Gather worker logs
 
-    # Worker logs are not aggregated if doing a local run (since there are no workers)
+    # Collects worker logs before moving to processing that doesn't need the cluster
     if not run_local:
 
-        # Resizes down to 1 worker if it's a large run
-        if is_large_run:
+        # Creates combined log from all workers if not deactivated
+        worker_log_local_path = lu.compile_worker_logs(no_log, cluster, stage, start_time, main_logger)
+        uu.stage_duration(start_time, uu.timestr(), f"{stage} with worker log compilation", main_logger)
 
+
+    ### Step 8: Resize cluster down to 1 worker for remaining steps since they only need a minimal remainder of the
+    ### cluster, not all the workers.
+
+    if not run_local:
+        workers = client.scheduler_info()["workers"]
+        n_workers = len(workers)
+
+        # Reduces number of workers in the cluster down to 1 if there is more than 10
+        if n_workers > 10:
             main_logger.info("Resizing cluster to 1 worker")
+
             resize_cluster.resize_coiled_cluster(cluster_name, 1)
 
-        # # Creates combined log from all workers if not deactivated
-        worker_log_local_path = lu.compile_worker_logs(no_log, cluster, stage, start_time, main_logger)
+
+    ### Step 9: Count output geotifs in s3
+    # Iterates through select output folders and counts the number of output rasters (only if uploads enabled and a large run (to save console space))
+
+    main_logger.info(f"Counting geotifs in select output folders. Expecting {len(chunk_list)} in each: {uu.timestr()}")
+
+    if not no_upload and is_large_run:
+        for output_folder in outputs_by_interval_dir_list:
+            geotiff_files, file_count = uu.list_raster_full_paths_in_s3_folder_and_count(output_folder)
+            main_logger.info(f"Output rasters in {output_folder}: {file_count}")
+            if file_count != len(chunk_list):
+                main_logger.warning(f"WARNING: Output file count in {output_folder} does not match expectations!")
+            # print(geotiff_files)
+
+    uu.stage_duration(start_time, uu.timestr(), f"{stage} with output counts", main_logger)
+
+
+    ### Step 10: Merge compiled worker log and main log
+    if not run_local:
 
         # Adds the workers' logs to the main log and uploads to s3
         lu.merge_main_and_worker_upload_logs(no_log, main_log_local_path, worker_log_local_path, stage)
 
-        uu.stage_duration(start_time, uu.timestr(), f"{stage} with tile stats, zarr comparison, and worker log compilation", main_logger)
 
     # Closes the Dask client if not running locally
     if not run_local:

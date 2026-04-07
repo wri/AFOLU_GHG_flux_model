@@ -2606,7 +2606,7 @@ def main(cluster_name, year_range, model_type,
         uu.stage_duration(start_time, uu.timestr(), f"{stage} with preliminary worker log compilation", main_logger)
 
 
-    ### Step 4: Consolidate chunk stats and export
+    ### Step 5: Consolidate chunk stats and export
 
     # Prepares chunk stats spreadsheet: min, mean, max, and sum for all input and output chunks,
     # and min and max values across all chunks for all inputs and outputs
@@ -2616,7 +2616,7 @@ def main(cluster_name, year_range, model_type,
         uu.stage_duration(start_time, uu.timestr(), f"{stage} with tile stats", main_logger)
 
 
-    ### Step 5: Compare model output chunk stats to zarr chunk stats for each variable (only if chunk stats and zarr created)
+    ### Step 6: Compare model output chunk stats to zarr chunk stats for each variable (only if chunk stats and zarr created)
 
     # Prepares chunk stats spreadsheet: min, mean, max, and sum for all input and output chunks,
     # and min and max values across all chunks for all inputs and outputs
@@ -2695,7 +2695,7 @@ def main(cluster_name, year_range, model_type,
                                               stage, start_time, zarr_comparison_stats_name, zarr_comparison_stats_path)
 
 
-    ### Step 6: Gather worker logs
+    ### Step 7: Gather worker logs
 
     # Collects worker logs before moving to processing that doesn't need the cluster
     if not run_local:
@@ -2705,7 +2705,7 @@ def main(cluster_name, year_range, model_type,
         uu.stage_duration(start_time, uu.timestr(), f"{stage} with worker log compilation", main_logger)
 
 
-    ### Step 7: Resize cluster down to 1 worker for remaining steps since they only need a minimal remainder of the
+    ### Step 8: Resize cluster down to 1 worker for remaining steps since they only need a minimal remainder of the
     ### cluster, not all the workers.
 
     if not run_local:
@@ -2719,8 +2719,9 @@ def main(cluster_name, year_range, model_type,
             resize_cluster.resize_coiled_cluster(cluster_name, 1)
 
 
-    ### Step 8: Count output geotifs in s3
+    ### Step 9: Count output geotifs in s3
     # Iterates through select output folders and counts the number of output rasters (only if uploads enabled and a large run (to save console space))
+
     main_logger.info(f"Counting geotifs in select output folders. Expecting {len(chunk_list)} in each: {uu.timestr()}")
     keywords = ["gross", "net", "state"]
     output_dir_list_to_count = [
@@ -2738,7 +2739,7 @@ def main(cluster_name, year_range, model_type,
     uu.stage_duration(start_time, uu.timestr(), f"{stage} with output counts", main_logger)
 
 
-    ### Step 9: Merge compiled worker log and main log
+    ### Step 10: Merge compiled worker log and main log
     if not run_local:
 
         # Adds the workers' logs to the main log and uploads to s3
