@@ -936,7 +936,11 @@ veg_summative_for_LULUCF_output_dirs = [
 ]
 
 ### Soil organic carbon (SOC) timeseries from OpenGeoHub (OGH) (URIs from https://github.com/openlandmap/soildb/blob/main/tables/OpenLandMap_soildb_COGS.csv)
-# From Hengl et al. under review (https://essd.copernicus.org/preprints/essd-2025-336/)
+
+# Threshold probabiltiy for counting pixel as organic soil (per Erin Glen via Slack 2026-04-07)
+organic_soil_prob_threshold = 10
+
+# From Hengl et al. 2026 (https://essd.copernicus.org/articles/18/989/2026/)
 # Confirmed to be up-to-date by Tom Hengl on 2025-12-19 via email.
 # Units of raw global COGs are kg C/m^3 for 0-30 cm, multiplied by 10 (rescale factor) to make COGs ints.
 # Values in dict need to be lists (even with just 1 element) because of how uu.prepare_to_download_chunk works.

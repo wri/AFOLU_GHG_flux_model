@@ -713,8 +713,7 @@ def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_b
         per_ha_units = cn.C_density_pixel_meaning
         per_pixel_units = cn.C_per_pixel_pixel_meaning
         coarse_units = cn.C_density_aggreg_pixel_meaning
-        # var_per_ha = f"{var}{per_ha_units}" #TODO
-        var_per_ha = var  # using this for SOC 10x10 creation because zarr layers don't have units at end (added later). Delete for next OGH soil version.
+        var_per_ha = f"{var}{per_ha_units}"
     elif "emis" in var:
         per_ha_units = cn.flux_density_pixel_meaning
         per_pixel_units = cn.flux_per_pixel_pixel_meaning
@@ -739,8 +738,17 @@ def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_b
         per_ha_units = cn.flux_density_pixel_meaning
         per_pixel_units = cn.flux_per_pixel_pixel_meaning
         coarse_units = cn.flux_aggreg_pixel_meaning
-        # var_per_ha = f"{var}{per_ha_units}" #TODO
-        var_per_ha = var  # using this for SOC 10x10 creation because zarr layers don't have units at end (added later). Delete for next OGH soil version.
+        var_per_ha = f"{var}{per_ha_units}"
+    elif "loss" in var:  # For SOC change
+        per_ha_units = cn.flux_density_pixel_meaning
+        per_pixel_units = cn.flux_per_pixel_pixel_meaning
+        coarse_units = cn.flux_aggreg_pixel_meaning
+        var_per_ha = f"{var}{per_ha_units}"
+    elif "gain" in var:  # For SOC change
+        per_ha_units = cn.flux_density_pixel_meaning
+        per_pixel_units = cn.flux_per_pixel_pixel_meaning
+        coarse_units = cn.flux_aggreg_pixel_meaning
+        var_per_ha = f"{var}{per_ha_units}"
     else:
         per_ha_units = ""
         per_pixel_units = ""

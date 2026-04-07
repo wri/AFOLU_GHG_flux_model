@@ -6,6 +6,12 @@ For net stock change, positive is SOC gain and negative is SOC loss (opposite of
 Neither change nor density converted to Mg CO2.
 Calling gross values gain and loss instead of emissions and removals to differentiate them from vegetation emissions and removals (which are in CO2(e).)
 
+NoData value is np.nan.
+NoData used for: density- pixels without a value; net change- pixels without a value;
+loss and gain- pixels without a value in the relevant direction (i.e. a loss pixel with gain gets NaN)
+0 is reserved for net, loss, and gain pixels that had no change in density.
+Thus, when consecutive densities are the same, net, loss, and gain will all have 0s.
+
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Local test:
@@ -24,10 +30,6 @@ python -m src.utilities.create_cluster -n 200 -t 1 -m 8 -cn mineral_soil
 python -m src.LULUCF.scripts.mineral_soil_organic_carbon.1_SOC_stock_and_stock_change -cn mineral_soil -mt standard -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive SOC timeseries creation for 2000-2022."
 
 Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/6877a34b-02cc-800a-88cc-a123cdc9ed1b
-
-#TODO MAJOR: 0 should be a value for change, not the NoData value
-
-#TODO change back var_per_ha in zu.create_10x10_deg_geotif_from_zarr
 """
 
 import argparse
@@ -132,8 +134,8 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
     for end_year in list(layers.keys()):
         interval_array_full_extent = layers[end_year]
 
-        # Replace COG int16 NoData with 0
-        interval_array_full_extent = np.where(interval_array_full_extent == nodata_val, 0, interval_array_full_extent)
+        # Replace COG int16 NoData with nan
+        interval_array_full_extent = np.where(interval_array_full_extent == nodata_val, np.nan, interval_array_full_extent)
 
         # Convert units from kg C/m³ * 10 -> Mg C/ha
         converted_array_full_extent = (interval_array_full_extent * SOC_CONVERSION_FACTOR).astype(np.float32)
@@ -143,7 +145,7 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
         # print(f"Organic soil mask shape for {bounds_str} for {end_year}: {organic_soil_mask.shape}")
 
         # Masks extent to just mineral soil (excludes pixels with high chance of being organic soil, per OpenGeoHub analysis)
-        converted_array_min_soil_extent = np.where(organic_soil_mask <= 10, converted_array_full_extent, 0)
+        converted_array_min_soil_extent = np.where(organic_soil_mask <= cn.organic_soil_prob_threshold, converted_array_full_extent, np.nan)
 
         # Save back to output dicts with the converted unit arrays
         out_dict_full_extent[f"{cn.SOC_density_full_extent_pattern}{cn.C_density_pixel_meaning}_{end_year}"] = converted_array_full_extent
@@ -176,11 +178,24 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
         net_min_soil = (out_dict_min_soil_extent_ordered[f"{cn.SOC_density_min_soil_extent_pattern}{cn.C_density_pixel_meaning}_{end_year}"] -
                           out_dict_min_soil_extent_ordered[f"{cn.SOC_density_min_soil_extent_pattern}{cn.C_density_pixel_meaning}_{start_year}"]) / year_diff  # Interval arrays must be unsigned so difference can be negative
 
-        SOC_loss_full_extent = np.where(net_full_extent < 0, net_full_extent, 0)*-1  # Values in loss arrays are positive
-        SOC_loss_min_soil = np.where(net_min_soil < 0, net_min_soil, 0)*-1    # Values in loss arrays are positive
+        # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69d50592-48b8-8329-b529-2babe02f7f27
+        # Loss
+        SOC_loss_full_extent = np.full_like(net_full_extent, np.nan, dtype=np.float32)
+        SOC_loss_full_extent[net_full_extent < 0] = -net_full_extent[net_full_extent < 0]
+        SOC_loss_full_extent[net_full_extent == 0] = 0
 
-        SOC_gain_full_extent = np.where(net_full_extent > 0, net_full_extent, 0)
-        SOC_gain_min_soil = np.where(net_min_soil > 0, net_min_soil, 0)
+        SOC_loss_min_soil = np.full_like(net_min_soil, np.nan, dtype=np.float32)
+        SOC_loss_min_soil[net_min_soil < 0] = -net_min_soil[net_min_soil < 0]
+        SOC_loss_min_soil[net_min_soil == 0] = 0
+
+        # Gain
+        SOC_gain_full_extent = np.full_like(net_full_extent, np.nan, dtype=np.float32)
+        SOC_gain_full_extent[net_full_extent > 0] = net_full_extent[net_full_extent > 0]
+        SOC_gain_full_extent[net_full_extent == 0] = 0
+
+        SOC_gain_min_soil = np.full_like(net_min_soil, np.nan, dtype=np.float32)
+        SOC_gain_min_soil[net_min_soil > 0] = net_min_soil[net_min_soil > 0]
+        SOC_gain_min_soil[net_min_soil == 0] = 0
 
         # Saves back to output dicts with the converted unit arrays
         out_dict_full_extent_ordered[f"{cn.SOC_net_full_extent_pattern}{cn.flux_density_pixel_meaning}_{end_year}"] = net_full_extent
@@ -276,7 +291,7 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
     # print("outputs_by_interval_dir_list:", outputs_by_interval_dir_list)
     if not no_upload:
 
-        out_no_data_val = 0  # NoData value for output raster (optional) #TODO change NoData to something besides 0 because 0 has a meaning here
+        out_no_data_val = np.nan  # NoData value for output raster (optional) #TODO change NoData to something besides 0 because 0 has a meaning here
         upload_start_time = time.time()
 
         # Adds metadata used for uploading outputs to s3 to the dictionary
