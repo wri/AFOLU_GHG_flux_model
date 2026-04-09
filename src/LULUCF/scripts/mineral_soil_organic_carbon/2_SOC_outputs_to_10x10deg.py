@@ -4,7 +4,11 @@ It creates a task list for all datasets, years, and 10x10 deg tiles for the vari
 then runs that giant task list in parallel in batches (as a safeguard against failure during a large task list).
 
 Unit numerator is Mg C, not Mg CO2
-Positive is SOC gain and negative is SOC loss (opposite of signs for vegetation).
+
+All gross stock change values are positive (loss and gain).
+For net stock change, positive is SOC gain and negative is SOC loss (opposite of signs for vegetation).
+Neither change nor density converted to Mg CO2.
+Calling gross values gain and loss instead of emissions and removals to differentiate them from vegetation emissions and removals (which are in CO2(e).)
 
 Providing a bounding box with -bb or a chunk shapefile limits the 10x10 deg creation
 to the 10x10 deg tiles that contain the bounding box or shapefile.
@@ -17,23 +21,23 @@ creation.
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Local test (Dask part does not work because of client.submit()):
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -bb 10 49 11 50 --run_local --no_upload -mt standard -mpd global -fy 1 -fv 1 -ft 1 --input_date YYYYMMDD
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -bb 10 49 11 50 --run_local --no_upload -mt standard -mpd test_box -fy 1 -fv 1 -ft 1 --input_date YYYYMMDD
 
 Coiled small tests (needs 32 GB because of per-ha and per-pixel outputs):
 python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -bb 10 49 11 50 -fy 2 -fv 2 -ft 2 -mt standard -mpd global -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx  --input_date YYYYMMDD
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -bb 10 49 11 50 -fy 2 -fv 2 -ft 2 -mt standard -mpd test_box -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx  --input_date YYYYMMDD
 
 Coiled small tests:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -bb -64 -22 -63 -21 -fy 3 -fv 3 -ft 3 -mt standard -mpd global -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx --input_date YYYYMMDD
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -bb -64 -22 -63 -21 -fy 3 -fv 3 -ft 3 -mt standard -mpd test_box -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx --input_date YYYYMMDD
 
 Coiled Cerrado test (174 features):
 python -m src.utilities.create_cluster -n 20 -t 1 -m 32 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -mt standard -mpd global -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp --input_date YYYYMMDD
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -mt standard -mpd Cerrado -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp --input_date YYYYMMDD
 
 Coiled large shapefile test (1884 features):
 python -m src.utilities.create_cluster -n 100 -t 1 -m 32 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -mt standard -mpd global -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp --input_date YYYYMMDD
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -mt standard -mpd 1884_features -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp --input_date YYYYMMDD
 
 Full run:
 python -m src.utilities.create_cluster -n 200 -t 1 -m 32 -cn mineral_soil
@@ -45,6 +49,7 @@ Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/690a21cd-2ea0-8333
 import argparse
 import pandas as pd
 import os
+import numpy as np
 from dask.distributed import print
 
 # Project imports
@@ -113,7 +118,11 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
 
     full_list_of_vars_change = [
         cn.SOC_net_full_extent_pattern,
-        cn.SOC_net_min_soil_extent_pattern
+        cn.SOC_net_min_soil_extent_pattern,
+        cn.SOC_gain_full_extent_pattern,
+        cn.SOC_gain_min_soil_extent_pattern,
+        cn.SOC_loss_full_extent_pattern,
+        cn.SOC_loss_min_soil_extent_pattern
     ]
 
     # Limits the processed variables to the supplied number (for testing)
@@ -222,7 +231,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
 
             future = client.submit(zu.create_10x10_deg_geotif_from_zarr,
                                    var_name, year_idx, tile_id, zarr_path, output_base,
-                                   cn.SOC_model_version_underscore, model_type, model_path_description, no_upload, False, retries=3)
+                                   cn.SOC_model_version_underscore, model_type, model_path_description, no_upload, False, np.nan, retries=3)
             futures.append(future)
 
         # Results is a list of tuples, where each tuple is the per-ha and per-pixel chunk stats, each of which is a dictionary
@@ -327,7 +336,9 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
 
     ### Step 6: Count output density change geotifs in s3 (not counting density geotifs for simplicity)
 
-    output_dir_list = [cn.SOC_net_full_extent_dir, cn.SOC_net_min_soil_extent_dir]
+    output_dir_list = [cn.SOC_net_full_extent_dir, cn.SOC_net_min_soil_extent_dir,
+                       cn.SOC_gain_full_extent_dir, cn.SOC_gain_min_soil_extent_dir,
+                       cn.SOC_loss_full_extent_dir, cn.SOC_loss_min_soil_extent_dir]
 
     # Expands the years to count
     # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69b0ba50-773c-832d-9da3-a23209319fd3

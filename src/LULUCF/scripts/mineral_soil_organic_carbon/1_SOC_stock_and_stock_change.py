@@ -46,6 +46,7 @@ import xarray as xr
 import resource
 import time
 import re
+import zarr
 from dask.distributed import print
 from dask import config
 from concurrent.futures import ThreadPoolExecutor
@@ -269,8 +270,8 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
 
     all_same_full_extent = len(set(full_extent_density_pixel_count_list)) <= 1
     all_same_mineral = len(set(mineral_extent_density_pixel_count_list)) <= 1
-    lu.print_and_log(f"Pixel count in full extent chunk for {bounds_str} in {tile_id}: {full_extent_density_pixel_count_list}. All are the same: {all_same_full_extent}.", is_large_run, logger_worker)
-    lu.print_and_log(f"Pixel count in mineral soil extent chunk for {bounds_str} in {tile_id}: {mineral_extent_density_pixel_count_list}. All are the same: {all_same_mineral}.", is_large_run, logger_worker)
+    lu.print_and_log(f"Pixel count in full extent chunk for {bounds_str} in {tile_id}: {full_extent_density_pixel_count_list}. All are the same: {all_same_full_extent}.", False, logger_worker)
+    lu.print_and_log(f"Pixel count in mineral soil extent chunk for {bounds_str} in {tile_id}: {mineral_extent_density_pixel_count_list}. All are the same: {all_same_mineral}.", False, logger_worker)
 
     lu.print_and_log(f"Populated chunk stats for outputs in {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
 
@@ -291,7 +292,7 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
     # print("outputs_by_interval_dir_list:", outputs_by_interval_dir_list)
     if not no_upload:
 
-        out_no_data_val = np.nan  # NoData value for output raster (optional) #TODO change NoData to something besides 0 because 0 has a meaning here
+        out_no_data_val = np.nan  # NoData value for output raster (optional)
         upload_start_time = time.time()
 
         # Adds metadata used for uploading outputs to s3 to the dictionary
@@ -355,7 +356,7 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
     lu.print_and_log(f"Peak memory for {bounds_str} in {tile_id}: {peak_gb:.2f} GB", False, logger_worker)
 
     # return return_message  # Return both the success message and the statistics
-    return return_message, chunk_stats_combined, pixel_counts_same  # Return both the success message and the statistics
+    return return_message, chunk_stats_combined  # Return both the success message and the statistics
 
 
 def main(cluster_name, model_type,
@@ -497,14 +498,16 @@ def main(cluster_name, model_type,
         zu.initialize_global_zarr(zarr_path, outputs_to_zarr_with_unit, len(cn.SOC_density_intervals),
                                   ((len(cn.interval_end_years_annual)), chunk_size_pixels, chunk_size_pixels), main_logger)
 
-        # Checks the zarr coordinates and extent
         fs = fsspec.filesystem("s3", anon=False)
         mapper = fs.get_mapper(zarr_path)
-        ds = xr.open_zarr(mapper, consolidated=False)
-        main_logger.info(f"mega-zarr coords: {ds.coords}")
-        main_logger.info(f"y range: {ds.y.values.min()}, {ds.y.values.max()}")
-        main_logger.info(f"x range: {ds.x.values.min()}, {ds.x.values.max()}")
-        main_logger.info(f"mega-zarr chunk size (years, y, x): {ds.chunksizes}")
+        z = zarr.open_group(mapper, mode="r")
+        test_var_name = list(z.array_keys())[0]  # Chooses first dataset just to check properties
+        arr = z[test_var_name]
+        main_logger.info(f"Inspecting variable: {test_var_name}")
+        main_logger.info(f"Zarr dtype: {arr.dtype}")
+        main_logger.info(f"Zarr fill_value: {arr.fill_value}")
+        main_logger.info(f"Zarr shape: {arr.shape}")
+        main_logger.info(f"Zarr chunks: {arr.chunks}")
 
     else:
         zarr_path = None
@@ -638,16 +641,16 @@ def main(cluster_name, model_type,
         chunks_without_zarr_stats_total = 0
 
         # Iterates through variables/datasets.
-        for var_name in outputs_to_zarr:
+        for test_var_name in outputs_to_zarr:
 
-            main_logger.info(f"Starting {var_name}: {uu.timestr()}")
+            main_logger.info(f"Starting {test_var_name}: {uu.timestr()}")
             var_start_time = time.time()
 
             # Runs chunk stats for a dataset (all years) in the zarr in parallel
             chunk_stats_variable_year_zarr = zu.run_parallel_stats(
                 client=client,
                 chunk_list=chunk_list,
-                var=var_name,
+                var=test_var_name,
                 zarr_path=zarr_path,
                 interval_end_years=cn.SOC_density_intervals
             )
@@ -663,7 +666,7 @@ def main(cluster_name, model_type,
                                                                    chunk_stats_variable_year_zarr,
                                                                    main_logger,
                                                                    tables_to_compare_dict,
-                                                                   var_name,
+                                                                   test_var_name,
                                                                    zarr_comparison_stats_path)
 
             # Total number of chunks that have differences in metrics between the model and zarr
@@ -672,7 +675,7 @@ def main(cluster_name, model_type,
             chunks_without_zarr_stats_total += chunks_without_zarr_stats
 
             var_end_time = time.time()
-            main_logger.info(f"  Processed {var_name} in {round(var_end_time - var_start_time)} seconds: {uu.timestr()}")
+            main_logger.info(f"  Processed {test_var_name} in {round(var_end_time - var_start_time)} seconds: {uu.timestr()}")
 
         # Counts up chunks that had differences exceeding the tolerance and uploads chunk stats comparisons.
         zu.upload_zarr_chunk_stat_comparisons(chunks_count_exceeding_total, chunks_without_zarr_stats_total,

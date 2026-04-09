@@ -8,6 +8,9 @@ python -m src.LULUCF.scripts.vegetation_model.4_create_0_04deg_global_display_ma
 For Borneo/Sumatra:
 python -m src.LULUCF.scripts.vegetation_model.4_create_0_04deg_global_display_maps -mt standard -mpd global --input_date YYYYMMDD --center_latitude 1 --center_longitude 108 --lat_height 12 -bbd Borneo_Sumatra
 
+For LatAm (Wilpa workshop):
+python -m src.LULUCF.scripts.vegetation_model.4_create_0_04deg_global_display_maps -mt standard -mpd global --input_date YYYYMMDD --center_latitude 3.5 --center_longitude -76.5 --lat_height 28 -bbd Latin_America
+
 
 Run locally (not in Coiled)
 
@@ -121,27 +124,27 @@ def main(input_date, model_type, model_path_description=None,
     # Generates jpegs for net flux, gross emissions, and gross removals
     mu.map_net_flux(net_all_gases_input_folders_s3, model_type, model_path_description, local_reproj_folder,
                  local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,
-                 cn.net_colors_rgb, main_logger, country_shapefile, bounding_box, bounding_box_description)
+                 cn.net_colors_rgb, country_shapefile, main_logger, bounding_box, bounding_box_description)
 
     # mu.map_net_flux(net_CO2_only_input_folders_s3, model_type, model_path_description, local_reproj_folder,
     #              local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,
-    #              cn.net_colors_rgb, main_logger, country_shapefile, bounding_box, bounding_box_description)
+    #              cn.net_colors_rgb, country_shapefile, main_logger, bounding_box, bounding_box_description)
     #
     # mu.map_gross(gross_emis_CO2_only_input_folders_s3, model_type, model_path_description, local_reproj_folder,
     #                  local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,
-    #                  cn.emissions_colors_rgb, main_logger, cn.emissions_percentiles, country_shapefile, bounding_box, bounding_box_description)
+    #                  cn.emissions_colors_rgb, cn.emissions_percentiles, main_logger, country_shapefile, bounding_box, bounding_box_description)
     #
     # mu.map_gross(gross_emis_non_CO2_input_folders_s3, model_type, model_path_description, local_reproj_folder,
     #                  local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,
-    #                  cn.emissions_colors_rgb, main_logger, cn.emissions_percentiles, country_shapefile, bounding_box, bounding_box_description)
+    #                  cn.emissions_colors_rgb, cn.emissions_percentiles, main_logger, country_shapefile, bounding_box, bounding_box_description)
     #
-    # mu.map_gross(gross_emis_all_gases_input_folders_s3, model_type, model_path_description, local_reproj_folder,
-    #                  local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,
-    #                  cn.emissions_colors_rgb, main_logger, cn.emissions_percentiles, country_shapefile, bounding_box, bounding_box_description)
-    #
+    mu.map_gross(gross_emis_all_gases_input_folders_s3, model_type, model_path_description, local_reproj_folder,
+                     local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,
+                     cn.emissions_colors_rgb, cn.emissions_percentiles, main_logger, country_shapefile, bounding_box, bounding_box_description)
+
     mu.map_gross(gross_removals_input_folders_s3, model_type, model_path_description, local_reproj_folder,
                  local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,
-                 cn.removals_colors_rgb, main_logger, cn.removals_percentiles, country_shapefile, bounding_box, bounding_box_description)
+                 cn.removals_colors_rgb, cn.removals_percentiles, main_logger, country_shapefile, bounding_box, bounding_box_description)
 
     # # Generates three-panel map
     # mu.create_three_panel_map()

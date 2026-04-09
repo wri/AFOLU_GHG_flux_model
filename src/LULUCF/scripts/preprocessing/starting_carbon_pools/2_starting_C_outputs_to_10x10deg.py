@@ -187,7 +187,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
 
             future = client.submit(zu.create_10x10_deg_geotif_from_zarr,
                                    var_name, 0, tile_id, mega_zarr_path, output_base,
-                                   cn.esa_AGB_v, model_type, model_path_description, no_upload, True)
+                                   cn.esa_AGB_v, model_type, model_path_description, no_upload, True, 0)
             futures.append(future)
 
     main_logger.info(f"There are {len(futures)} tiles to aggregate ({len(tile_ids_to_process)} tiles x {len(vars_to_process)} variables)")

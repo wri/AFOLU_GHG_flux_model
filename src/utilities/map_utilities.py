@@ -502,7 +502,7 @@ def save_mean_annual_geotif(local_reproj_folder, pattern_segment, year_path_repr
 # Makes jpegs and gifs of net fluxes
 def map_net_flux(s3_folders, model_type, model_path_description,
                  local_reproj_folder, local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,
-                 colors_rgb, main_logger, country_shapefile, bounding_box=None, bounding_box_description=None):
+                 colors_rgb, country_shapefile, main_logger, bounding_box=None, bounding_box_description=None):
 
     series_start_time = time.time()
 
@@ -552,18 +552,21 @@ def map_net_flux(s3_folders, model_type, model_path_description,
     for i, year in enumerate(cn.interval_end_years_annual[0:]):
     # for i, year in enumerate(cn.interval_end_years_annual[2:3]):
 
-        # print(f"Scanning {year}")
+        print(f"Scanning {year}")
         s3_folder = s3_folders[i]
         parts = s3_folder.strip('/').split('/')
 
         pattern_idx = parts.index(f"version_{cn.veg_model_version_underscore}__{model_type}__{model_path_description}")
         pattern_segment = parts[pattern_idx + 1]
+        print("pattern_segment:", pattern_segment)
 
         interval_idx = parts.index("annual_intervals")
         interval_segment = parts[interval_idx + 1]
+        print("interval_segment:", interval_segment)
 
         year_file = f"{pattern_segment}{cn.flux_aggreg_pixel_meaning}_v{cn.veg_model_version_underscore}_{interval_segment}_global"
         year_path_reproj = f"{local_reproj_folder}/{year_file}_reproj.tif"
+        print("year_path_reproj:", year_path_reproj)
 
         with rasterio.open(year_path_reproj) as src:
             if bounding_box_proj is not None:

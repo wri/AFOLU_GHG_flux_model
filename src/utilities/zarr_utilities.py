@@ -54,7 +54,9 @@ def latlon_to_global_zarr_indices(lat, lon, resolution):
 # In addition to x and y dimensions, there is also a time dimension (intervals), which uses an index (not the actual year).
 # This zarr-related code from https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/68f984c6-9aa0-8327-a910-5ad9a8d170fc
 # and maybe some later chats, too.
-def initialize_global_zarr(store_url, dataset_keys, n_years, chunk_size, main_logger, fill_value= np.nan):
+# The assignment of NoData values is done in
+# https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69d50592-48b8-8329-b529-2babe02f7f27
+def initialize_global_zarr(store_url, dataset_keys, n_years, chunk_size, main_logger, fill_value=np.nan):
 
     fs = fsspec.filesystem("s3", anon=False)
 
@@ -121,9 +123,23 @@ def initialize_global_zarr(store_url, dataset_keys, n_years, chunk_size, main_lo
         else:
             sys.exit(f"Dataset {key} not assigned a data type for addition to global zarr")
 
+        # Should make the fill value/NoData value be NaN instead of 0.
+        # https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69d50592-48b8-8329-b529-2babe02f7f27
+        if dtype == "float32":
+            array_fill_value = np.float32(np.nan)
+            encoding[key] = {
+                "compressors": compressor,
+                "fill_value": array_fill_value,
+            }
+        else:
+            array_fill_value = fill_value
+            encoding[key] = {
+                "compressors": compressor,
+            }
+
         dask_data = da.full(
             (n_years, lat_size, lon_size),
-            fill_value,
+            array_fill_value,
             dtype=dtype,
             chunks=chunk_size
         )
@@ -135,11 +151,6 @@ def initialize_global_zarr(store_url, dataset_keys, n_years, chunk_size, main_lo
             name=key,
             attrs={"grid_mapping": "spatial_ref"},
         )
-
-        # Define encoding (compression, dtype, and chunks)
-        encoding[key] = {
-            "compressors": compressor,
-         }
 
     # Constructs dataset
     main_logger.info(f"Constructing megazarr dataset with metadata only: {uu.timestr()}")
@@ -174,25 +185,6 @@ def initialize_global_zarr(store_url, dataset_keys, n_years, chunk_size, main_lo
 
     z = zarr.open_group(mapper, mode="r")
     main_logger.info(f"Mega-zarr group info: {z.info}: {uu.timestr()}")
-
-    # Clean _FillValue in populated zarr
-    # Need to remove _FillValue attribute in zarr because it's being encoded in some way that is incompatible with xarray while using zarr v3,
-    # per https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/68f984c6-9aa0-8327-a910-5ad9a8d170fc.
-    # There doesn't seem to be a way to create the zarr with a correctly encoded _FillValue in the first place,
-    # hence this fix after the fact.
-    main_logger.info(f"Cleaning zarr _FillValue from each dataset: {uu.timestr()}")
-
-    # Open Zarr group in read/write mode
-    z = zarr.open_group(store=mapper, mode="r+")
-
-    # Loop through all arrays
-    for key in z.array_keys():
-        arr = z[key]
-        if "_FillValue" in arr.attrs:
-            main_logger.info(f"Removing _FillValue from {key}: {uu.timestr()}")
-            del arr.attrs["_FillValue"]
-
-    main_logger.info(f"Cleaned _FillValue from Zarr metadata: {uu.timestr()}")
 
     end_time = time.time()
     main_logger.info(f"Initialized spatial mega-zarr metadata at {store_url} in {round(end_time-start_time)} seconds: {uu.timestr()}")
@@ -493,10 +485,13 @@ def compare_dataset_year_chunk_stats(all_merged_tables, chunk_stats_variable_zar
     # Coerces to numeric and check for valid values.
     valid_count_mask = pd.to_numeric(merged_table['count_value'], errors='coerce').notna()
 
-    # From those valid rows, counts how many have no zarr stats
-    chunks_without_zarr_stats = merged_table[valid_count_mask]['count_value_diff'].isna().sum().item()
-    chunks_with_zarr_stats = merged_table[valid_count_mask]['count_value_diff'].sum().item()
-    main_logger.info(f"    {chunks_without_zarr_stats} rows with data without pixel count comparison out of {chunks_with_zarr_stats} rows")
+    # Total comparable rows
+    comparable_row_count = valid_count_mask.sum()
+
+    # Of those, how many are missing zarr stats?
+    chunks_without_zarr_stats = merged_table.loc[valid_count_mask, 'count_value_diff'].isna().sum()
+
+    main_logger.info(f"    {chunks_without_zarr_stats}/{comparable_row_count} rows with data without pixel count comparison.")
 
     # Applies the mask to filter those rows
     differences_exceeding_tolerance = merged_table[mask]
@@ -518,7 +513,7 @@ def compare_dataset_year_chunk_stats(all_merged_tables, chunk_stats_variable_zar
         main_logger.warning(differences_exceeding_tolerance[cols_to_print])
 
     else:
-        main_logger.info(f"    0 rows in {var_name} have metrics with differences exceeding the tolerance.")
+        main_logger.info(f"    0/{comparable_row_count} rows in {var_name} have metrics with differences exceeding the tolerance.")
 
     # Adds df for this dataset-year combination to the list of all the dataset-year dfs
     all_merged_tables.append(merged_table)
@@ -700,7 +695,7 @@ def upload_zarr_chunk_stat_comparisons(chunks_count_exceeding_total, chunks_with
 
 # Extracts a 10x10° tile from a Zarr store and writes to GeoTIFF on S3
 def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_base,
-                                      model_version, model_type, model_path_description, no_upload, use_start_year):
+                                      model_version, model_type, model_path_description, no_upload, use_start_year, no_data_val):
 
     process = psutil.Process(os.getpid())
 
@@ -725,7 +720,7 @@ def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_b
         per_pixel_units = cn.flux_per_pixel_pixel_meaning
         coarse_units = cn.flux_aggreg_pixel_meaning
         var_per_ha = f"{var}{per_ha_units}"
-    elif "net" in var:
+    elif "net" in var:  # For SOC and vegetation
         per_ha_units = cn.flux_density_pixel_meaning
         per_pixel_units = cn.flux_per_pixel_pixel_meaning
         coarse_units = cn.flux_aggreg_pixel_meaning
@@ -735,11 +730,6 @@ def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_b
         per_pixel_units = ""
         coarse_units = ""
         var_per_ha = var
-    elif "change" in var:  # For SOC change
-        per_ha_units = cn.flux_density_pixel_meaning
-        per_pixel_units = cn.flux_per_pixel_pixel_meaning
-        coarse_units = cn.flux_aggreg_pixel_meaning
-        var_per_ha = f"{var}{per_ha_units}"
     elif "loss" in var:  # For SOC change
         per_ha_units = cn.flux_density_pixel_meaning
         per_pixel_units = cn.flux_per_pixel_pixel_meaning
@@ -764,7 +754,11 @@ def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_b
     else:      # For timeseries data, uses specified output years (e.g., vegetation, SOC density, SOC change)
         if "SOC_density" in var:
             year = cn.SOC_density_intervals[year_idx]
-        elif "SOC_change" in var:
+        elif "SOC_net" in var:
+            year = cn.SOC_change_intervals[year_idx]
+        elif "SOC_loss" in var:
+            year = cn.SOC_change_intervals[year_idx]
+        elif "SOC_gain" in var:
             year = cn.SOC_change_intervals[year_idx]
         else:  # Vegetation timeseries
             year = cn.interval_end_years_annual[year_idx]
@@ -798,9 +792,10 @@ def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_b
     extract_start_time = time.time()
 
     # Loads model output data block
-    if "SOC_change" in var:
-        # SOC change has no data in the zarr for the first time slice because it has one fewer year than SOC density,
-        # so change intervals are actually shifted back by 1 year compared to SOC density
+    if ("SOC_net" in var) or ("SOC_loss" in var) or ("SOC_gain" in var):
+        # SOC net, loss, and gain has no data in the zarr for the first time slice because it has one fewer year than SOC density,
+        # so change intervals are actually shifted back by 1 year compared to SOC density to account for having one fewer year.
+        # All outputs from the vegetation model have the same number of years, so no offsetting is needed.
         data_per_ha = model_zarr_store[var_with_unit][year_idx+1, y0_model:y1_model, x0_model:x1_model]
     else:
         data_per_ha = model_zarr_store[var_with_unit][year_idx, y0_model:y1_model, x0_model:x1_model]
@@ -838,7 +833,8 @@ def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_b
     del pixel_area
 
     # Creates 0.04x0.04 deg geotif in Mg CO2(e)/0.04x0.04deg pixel/yr
-    # per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6941b3f0-30c8-8332-ab19-9b154c0a2b43
+    # per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c/c/69d50592-48b8-8329-b529-2babe02f7f27
+    # Should write NaN when there are no valid pixels.
 
     # Trims fine grid so it splits evenly into coarse blocks
     ny, nx = data_per_pixel.shape
@@ -846,16 +842,20 @@ def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_b
     nx_trim = nx - (nx % cn.global_aggregation_factor)
     data_fine_trim = data_per_pixel[:ny_trim, :nx_trim]
 
-    # Reshapes and sums over each block
-    # Deals with NaNs-- otherwise, individual aggregated pixels with NaN might get dropped.
-    # per https://chatgpt.com/c/6941b3f0-30c8-8332-ab19-9b154c0a2b43
-    coarse_agg = np.nansum(
-        data_fine_trim.reshape(
-            ny_trim // cn.global_aggregation_factor, cn.global_aggregation_factor,
-            nx_trim // cn.global_aggregation_factor, cn.global_aggregation_factor
-        ),
-        axis=(1, 3)
+    # Reshape into coarse blocks
+    reshaped = data_fine_trim.reshape(
+        ny_trim // cn.global_aggregation_factor, cn.global_aggregation_factor,
+        nx_trim // cn.global_aggregation_factor, cn.global_aggregation_factor
     )
+
+    # Sum valid values within each coarse block
+    coarse_agg = np.nansum(reshaped, axis=(1, 3)).astype(np.float32)
+
+    # Count how many valid fine pixels contributed to each coarse block
+    valid_counts = np.sum(~np.isnan(reshaped), axis=(1, 3))
+
+    # If no fine pixels contributed, restore NoData
+    coarse_agg[valid_counts == 0] = np.nan
 
     # Warning if there are no valid aggregated pixels
     if not np.isfinite(coarse_agg).any():
@@ -900,18 +900,14 @@ def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_b
         coarse_transform = from_origin(min_x, max_y, cn.global_geotif_resolution, cn.global_geotif_resolution)
 
         # Writes per-ha geotif to S3
-        valid_pixel_count_per_ha = uu.write_single_geotiff_to_s3(var, year, tile_id, data_per_ha, transform, s3_filename_per_ha, logger_worker)
+        valid_pixel_count_per_ha = uu.write_single_geotiff_to_s3(var, year, tile_id, data_per_ha, no_data_val, transform, s3_filename_per_ha, logger_worker)
 
         # Conditionally writes per-pixel output and 0.04x0.04 res output (only if dataset is float32, i.e. numeric output from model).
         if model_zarr_store[var_with_unit].dtype == np.float32:
-            valid_pixel_count_per_pixel = uu.write_single_geotiff_to_s3(
-                var, year, tile_id, data_per_pixel, transform, s3_filename_per_pixel, logger_worker
-            )
+            valid_pixel_count_per_pixel = uu.write_single_geotiff_to_s3(var, year, tile_id, data_per_pixel, no_data_val, transform, s3_filename_per_pixel, logger_worker)
 
             # valid_pixel_count_coarse not used. Not doing anything with stats from the aggregated output
-            valid_pixel_count_coarse = uu.write_single_geotiff_to_s3(
-                var, year, tile_id, coarse_agg, coarse_transform, s3_filename_coarse, logger_worker
-            )
+            valid_pixel_count_coarse = uu.write_single_geotiff_to_s3(var, year, tile_id, coarse_agg, no_data_val, coarse_transform, s3_filename_coarse, logger_worker)
         else:
             valid_pixel_count_per_pixel = None
             valid_pixel_count_coarse = None
@@ -999,7 +995,7 @@ def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_b
     # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6949a74e-1388-832d-8f8e-5e9bf084ecb8
     peak_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     peak_gb = peak_kb / 1024 ** 2
-    lu.print_and_log(f"Peak memory for {tile_id}: {peak_gb:.2f} GB", False, logger_worker)
+    lu.print_and_log(f"  Peak memory for {tile_id}: {peak_gb:.2f} GB", False, logger_worker)
 
     return chunk_stats_per_ha, chunk_stats_per_pixel
 

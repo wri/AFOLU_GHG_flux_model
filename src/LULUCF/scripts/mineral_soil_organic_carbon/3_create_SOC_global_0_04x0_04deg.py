@@ -127,7 +127,6 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
 
         for year_idx in range(years_to_process_density):
 
-            # future = client.submit(uu.create_10x10_deg_geotif_from_zarr,
             future = client.submit(uu.mosaic_tiles_to_global,
                                    var_name, year_idx, first_tiles_to_process, base_path,
                                    cn.SOC_model_version_underscore, model_type, model_path_description,
@@ -146,7 +145,6 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
 
         for year_idx in range(years_to_process_change):
 
-            # future = client.submit(uu.create_10x10_deg_geotif_from_zarr,
             future = client.submit(uu.mosaic_tiles_to_global,
                                    var_name, year_idx, first_tiles_to_process, base_path,
                                    cn.SOC_model_version_underscore, model_type, model_path_description,
