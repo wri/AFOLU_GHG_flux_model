@@ -144,32 +144,6 @@ def initialize_global_zarr(store_url, dataset_keys, n_years, chunk_size, main_lo
             chunks=chunk_size
         )
 
-
-        # # Original version
-        #
-        # dask_data = da.full(
-        #     (n_years, lat_size, lon_size),
-        #     fill_value,
-        #     dtype=dtype,
-        #     chunks=chunk_size
-        # )
-        #
-        # data_vars[key] = xr.DataArray(
-        #     dask_data,
-        #     dims=("year", "y", "x"),
-        #     coords={"year": year_index, "y": lats, "x": lons},
-        #     name=key,
-        #     attrs={"grid_mapping": "spatial_ref"},
-        # )
-        #
-        # # Define encoding (compression, dtype, and chunks)
-        # encoding[key] = {
-        #     "compressors": compressor,
-        #  }
-
-
-
-
         data_vars[key] = xr.DataArray(
             dask_data,
             dims=("year", "y", "x"),

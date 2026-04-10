@@ -442,25 +442,6 @@ def connect_to_Coiled_cluster(cluster_name, run_local, fallback_to_local_on_fail
                 print(f"Connecting to running cluster '{cluster_name}'.")
                 cluster = coiled.Cluster(name=cluster_name)
                 client = Client(cluster)
-
-                # # Pins zarr to 3.1.3 on all workers (including autoscaled ones) before any user
-                # # code runs. Coiled's package sync uses ~= semantics which resolves zarr=3.1.3
-                # # upward to the latest 3.1.x (currently 3.1.6), which has an AsyncArray.config
-                # # regression. Downgrading after worker startup works because zarr is not imported
-                # # by Dask infrastructure -- only by user computation code.
-                # from distributed import WorkerPlugin
-                #
-                # class PinZarr(WorkerPlugin):
-                #     name = "pin_zarr"
-                #
-                #     def setup(self, worker):
-                #         import subprocess
-                #         subprocess.run(["pip", "install", "zarr==3.1.3", "--quiet"], check=True)
-                #         print("Changing zarr version")
-                #
-                # client.register_plugin(PinZarr())
-                # print("Changed zarr version")
-
                 return cluster, client, run_local
 
         if fallback_to_local_on_failure:

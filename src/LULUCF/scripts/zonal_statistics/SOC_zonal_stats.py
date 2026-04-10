@@ -10,6 +10,10 @@ If a bounding box is supplied:
 Model chunk stats are used to determine if each 10x10 deg tile has any pixels in it (per the 1x1_counts_in_10x10 tab).
 If no pixels, the tile is skipped to save time.
 
+Requires zarr v3.1.3 on workers, which is set up using a pre-uploaded software package.
+Usage of that is triggered with the --zonal_stats flag.
+Without --zonal_stats, Coiled will use zarr v3.1.6, which will either not let the zarr be read or fail during compute.
+
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Coiled small tests:
@@ -40,7 +44,7 @@ python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stat
 #TODO Convert stock changes from Mg C to Mg CO2 and change output names accordingly.
 #TODO Try running with 16GB workers. May be using little enough memory to run on that.
 #TODO Add column to df creation that says what gas is represented
-# TODO Make a simplified version of output that is few enough rows to fit in Excel and export to Excel
+#TODO Make a simplified version of output that is few enough rows to fit in Excel and export to Excel
 """
 
 import argparse
@@ -54,10 +58,6 @@ import xarray as xr
 import numpy as np
 from flox.xarray import xarray_reduce
 from flox import ReindexArrayType, ReindexStrategy
-
-import zarr
-import dask.array as da
-import fsspec
 
 # Project imports
 from src.utilities import constants_and_names as cn
@@ -123,15 +123,15 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
 
     # Outputs to performs zonal stats on
     full_list_of_vars = [
-                        cn.SOC_density_full_extent_pattern, # cn.SOC_net_full_extent_pattern,
-                        cn.SOC_density_min_soil_extent_pattern, # cn.SOC_net_min_soil_extent_pattern
+                        cn.SOC_density_full_extent_pattern, cn.SOC_net_full_extent_pattern,
+                        cn.SOC_density_min_soil_extent_pattern, cn.SOC_net_min_soil_extent_pattern
                         ]
 
+    # Adds units to patterns because variables in zarr have units
     full_list_of_vars_with_units = [
         zu.add_units_year_to_pattern(var_name, 9999)[0]  # Dummy year since we don't need the year to access the datasets in the zarr, just add the units
         for var_name in full_list_of_vars
     ]
-    # full_list_of_vars_with_units=full_list_of_vars
 
     # Limits the processed variables to the supplied number (for testing)
     if first_variables_to_process:

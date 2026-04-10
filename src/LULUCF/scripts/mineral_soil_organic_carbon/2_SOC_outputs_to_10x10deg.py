@@ -47,6 +47,8 @@ Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/690a21cd-2ea0-8333
 """
 
 import argparse
+import sys
+
 import pandas as pd
 import os
 import numpy as np
@@ -161,7 +163,9 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
                                     input_date, main_logger)
     fs = fsspec.filesystem("s3")
     main_logger.info(f"Aggregating from zarr ({source_zarr_chunk_size} pixel chunks): {zarr_path}")
-    main_logger.info(f"Zarr exists:{fs.exists(zarr_path)}")
+    main_logger.info(f"Zarr exists: {fs.exists(zarr_path)}")
+    if not fs.exists(zarr_path):
+        sys.exit(f"{zarr_path} does not exist")
 
     output_base = f"{cn.SOC_outputs_path}PATTERN/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{input_date}/"
     main_logger.info(f"Core output path for aggregation: {output_base}")

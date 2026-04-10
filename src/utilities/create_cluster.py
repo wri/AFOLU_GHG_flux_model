@@ -97,6 +97,7 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
     if threads_per_worker is not None:
         worker_options["nthreads"] = threads_per_worker
 
+    # Special settings for zonal stats clusters: can't have workers across zones (to prevent inter-zone data transfer), and need to set zarr version
     if zonal_stats or ("zonal" in cluster_name) or ("stats" in cluster_name):
         print("Using zonal stats worker configuration")
         purchase_option = "on-demand"
@@ -104,6 +105,7 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
         allow_cross_zone = False
         software = "afolu-env_coiled_20251119"  # pins zarr==3.1.3 for xr.open_zarr compatibility
     else:
+        print("Not using zonal stats workder configuration")
         software = None  # use default package sync (uploads local src wheel)
         # Uses on-demand workers for large jobs. Otherwise, prefers spot workers.
         if n_workers > 120:
@@ -117,11 +119,11 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
         elif on_demand:
             purchase_option = "on-demand"
             use_best_zone = False
-            allow_cross_zone = False
+            allow_cross_zone = True
         else:
             purchase_option = "spot_with_fallback"
             use_best_zone = True
-            allow_cross_zone = False
+            allow_cross_zone = True
 
     # If gcp flag is initialized, pass in local GOOGLE_CLOUD_PROJECT and GOOGLE_APPLICATION_CREDENTIALS to all workers
     env = {}
@@ -159,9 +161,7 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
         scheduler_vm_types = scheduler_vm_type,
         worker_vm_types = worker_vm_type,
         worker_options = worker_options,
-        # package_sync=True,  # also upload local src package as wheel to workers
         environ=env,  # pass env vars to scheduler/workers
-        # send_dask_config = True
         **({'software': software} if software else {})
     )
 
