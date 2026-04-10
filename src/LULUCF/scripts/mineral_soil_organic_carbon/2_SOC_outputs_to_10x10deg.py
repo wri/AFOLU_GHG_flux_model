@@ -51,6 +51,7 @@ import pandas as pd
 import os
 import numpy as np
 from dask.distributed import print
+import fsspec
 
 # Project imports
 from src.utilities import constants_and_names as cn
@@ -158,7 +159,9 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     zarr_path = zu.create_zarr_path(cn.SOC_path_zarr, source_zarr_chunk_size, 'N/A',
                                     model_type, cn.SOC_model_version_underscore, model_path_description,
                                     input_date, main_logger)
+    fs = fsspec.filesystem("s3")
     main_logger.info(f"Aggregating from zarr ({source_zarr_chunk_size} pixel chunks): {zarr_path}")
+    main_logger.info(f"Zarr exists:{fs.exists(zarr_path)}")
 
     output_base = f"{cn.SOC_outputs_path}PATTERN/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{input_date}/"
     main_logger.info(f"Core output path for aggregation: {output_base}")

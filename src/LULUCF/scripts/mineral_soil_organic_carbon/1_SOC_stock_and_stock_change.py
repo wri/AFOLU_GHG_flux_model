@@ -270,8 +270,8 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
 
     all_same_full_extent = len(set(full_extent_density_pixel_count_list)) <= 1
     all_same_mineral = len(set(mineral_extent_density_pixel_count_list)) <= 1
-    lu.print_and_log(f"Pixel count in full extent chunk for {bounds_str} in {tile_id}: {full_extent_density_pixel_count_list}. All are the same: {all_same_full_extent}.", False, logger_worker)
-    lu.print_and_log(f"Pixel count in mineral soil extent chunk for {bounds_str} in {tile_id}: {mineral_extent_density_pixel_count_list}. All are the same: {all_same_mineral}.", False, logger_worker)
+    lu.print_and_log(f"Pixel count in full extent chunk for {bounds_str} in {tile_id}: {full_extent_density_pixel_count_list}. All the same: {all_same_full_extent}.", False, logger_worker)
+    lu.print_and_log(f"Pixel count in mineral soil extent chunk for {bounds_str} in {tile_id}: {mineral_extent_density_pixel_count_list}. All the same: {all_same_mineral}.", False, logger_worker)
 
     lu.print_and_log(f"Populated chunk stats for outputs in {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
 

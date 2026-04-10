@@ -123,49 +123,49 @@ def initialize_global_zarr(store_url, dataset_keys, n_years, chunk_size, main_lo
         else:
             sys.exit(f"Dataset {key} not assigned a data type for addition to global zarr")
 
-        # # Should make the fill value/NoData value be NaN instead of 0.
-        # # https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69d50592-48b8-8329-b529-2babe02f7f27
-        # if dtype == "float32":
-        #     array_fill_value = np.float32(np.nan)
-        #     encoding[key] = {
-        #         "compressors": compressor,
-        #         # "fill_value": array_fill_value,
-        #     }
-        # else:
-        #     array_fill_value = fill_value
-        #     encoding[key] = {
-        #         "compressors": compressor,
-        #     }
-        #
-        # dask_data = da.full(
-        #     (n_years, lat_size, lon_size),
-        #     array_fill_value,
-        #     dtype=dtype,
-        #     chunks=chunk_size
-        # )
-
-
-        # Original version
+        # Should make the fill value/NoData value be NaN instead of 0.
+        # https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69d50592-48b8-8329-b529-2babe02f7f27
+        if dtype == "float32":
+            array_fill_value = np.float32(np.nan)
+            encoding[key] = {
+                "compressors": compressor,
+                "fill_value": array_fill_value,
+            }
+        else:
+            array_fill_value = fill_value
+            encoding[key] = {
+                "compressors": compressor,
+            }
 
         dask_data = da.full(
             (n_years, lat_size, lon_size),
-            fill_value,
+            array_fill_value,
             dtype=dtype,
             chunks=chunk_size
         )
 
-        data_vars[key] = xr.DataArray(
-            dask_data,
-            dims=("year", "y", "x"),
-            coords={"year": year_index, "y": lats, "x": lons},
-            name=key,
-            attrs={"grid_mapping": "spatial_ref"},
-        )
 
-        # Define encoding (compression, dtype, and chunks)
-        encoding[key] = {
-            "compressors": compressor,
-         }
+        # # Original version
+        #
+        # dask_data = da.full(
+        #     (n_years, lat_size, lon_size),
+        #     fill_value,
+        #     dtype=dtype,
+        #     chunks=chunk_size
+        # )
+        #
+        # data_vars[key] = xr.DataArray(
+        #     dask_data,
+        #     dims=("year", "y", "x"),
+        #     coords={"year": year_index, "y": lats, "x": lons},
+        #     name=key,
+        #     attrs={"grid_mapping": "spatial_ref"},
+        # )
+        #
+        # # Define encoding (compression, dtype, and chunks)
+        # encoding[key] = {
+        #     "compressors": compressor,
+        #  }
 
 
 

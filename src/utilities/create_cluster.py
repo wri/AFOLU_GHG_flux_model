@@ -34,7 +34,7 @@ def write_gcp_creds():
     return destination, os.path.exists(destination)
 
 
-def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=None, on_demand=False, gcp=None):
+def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=None, on_demand=False, zonal_stats=False, gcp=None):
 
     # Converts worker_memory from an integer to the required format (e.g., 8 to "8GiB")
     worker_memory_str = f"{worker_memory}GiB"
@@ -97,22 +97,30 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
     if threads_per_worker is not None:
         worker_options["nthreads"] = threads_per_worker
 
-    # Uses on-demand workers for large jobs. Otherwise, prefers spot workers.
-    if n_workers > 120:
+    if zonal_stats:
         purchase_option = "on-demand"
-        use_best_zone = False  # Should allow workers to be split across different zones, to help obtain large requested amount of workers
-
-        # Allows workers in different availability zones, to help obtain large requested amount of workers.
-        # Has costs for transferring data between workers in different zones, which happens for zonal stats but not model runs.
-        # So, can't allow cross zone for zonal stats.
-        allow_cross_zone = True
-    elif on_demand:
-        purchase_option = "on-demand"
-        use_best_zone = False  # Should allow workers to be split across different zones, to help obtain large requested amount of workers
-    else:
-        purchase_option = "spot_with_fallback"
-        use_best_zone=True
+        use_best_zone = False
         allow_cross_zone = False
+        software_environment = "afolu-env_202512222"  # pins zarr==3.1.3 for xr.open_zarr compatibility
+    else:
+        software_environment = None  # use default package sync (uploads local src wheel)
+        # Uses on-demand workers for large jobs. Otherwise, prefers spot workers.
+        if n_workers > 120:
+            purchase_option = "on-demand"
+            use_best_zone = False  # Should allow workers to be split across different zones, to help obtain large requested amount of workers
+
+            # Allows workers in different availability zones, to help obtain large requested amount of workers.
+            # Has costs for transferring data between workers in different zones, which happens for zonal stats but not model runs.
+            # So, can't allow cross zone for zonal stats.
+            allow_cross_zone = True
+        elif on_demand:
+            purchase_option = "on-demand"
+            use_best_zone = False
+            allow_cross_zone = False
+        else:
+            purchase_option = "spot_with_fallback"
+            use_best_zone = True
+            allow_cross_zone = False
 
     # If gcp flag is initialized, pass in local GOOGLE_CLOUD_PROJECT and GOOGLE_APPLICATION_CREDENTIALS to all workers
     env = {}
@@ -150,6 +158,8 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
         scheduler_vm_types = scheduler_vm_type,
         worker_vm_types = worker_vm_type,
         worker_options = worker_options,
+        # software="afolu-env_coiled_20251119",  # Specifies all the Python package versions
+        # package_sync=True,  # also upload local src package as wheel to workers
         environ=env  # pass env vars to scheduler/workers
         # send_dask_config = True
     )
@@ -184,6 +194,7 @@ if __name__ == "__main__":
     parser.add_argument('-m', '--worker_memory', type=int, help='Memory per worker')
     parser.add_argument('-t', '--threads_per_worker', type=int, help='Number of threads/worker')
     parser.add_argument('-od', '--on_demand', action='store_true', help='Use on-demand workers (not spot workers)')
+    parser.add_argument('-zs', '--zonal_stats', action='store_true', help='Use zonal stats worker configuration')
 
     args = parser.parse_args()
 
@@ -192,9 +203,10 @@ if __name__ == "__main__":
     worker_memory = args.worker_memory
     threads_per_worker = args.threads_per_worker
     on_demand = args.on_demand
+    zonal_stats = args.zonal_stats
 
     # Create the cluster with command line arguments
-    cluster = create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker, on_demand=on_demand)
+    cluster = create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker, on_demand=on_demand, zonal_stats=zonal_stats)
 
     # client = Client(cluster)
     # print(client.run(check_worker_memory_config))

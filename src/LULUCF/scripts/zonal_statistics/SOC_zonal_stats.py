@@ -40,6 +40,7 @@ python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stat
 #TODO Convert stock changes from Mg C to Mg CO2 and change output names accordingly.
 #TODO Try running with 16GB workers. May be using little enough memory to run on that.
 #TODO Add column to df creation that says what gas is represented
+# TODO Make a simplified version of output that is few enough rows to fit in Excel and export to Excel
 """
 
 import argparse
@@ -122,14 +123,15 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
 
     # Outputs to performs zonal stats on
     full_list_of_vars = [
-                        cn.SOC_density_full_extent_pattern, cn.SOC_net_full_extent_pattern,
-                        cn.SOC_density_min_soil_extent_pattern, cn.SOC_net_min_soil_extent_pattern
+                        cn.SOC_density_full_extent_pattern, # cn.SOC_net_full_extent_pattern,
+                        cn.SOC_density_min_soil_extent_pattern, # cn.SOC_net_min_soil_extent_pattern
                         ]
 
     full_list_of_vars_with_units = [
         zu.add_units_year_to_pattern(var_name, 9999)[0]  # Dummy year since we don't need the year to access the datasets in the zarr, just add the units
         for var_name in full_list_of_vars
     ]
+    # full_list_of_vars_with_units=full_list_of_vars
 
     # Limits the processed variables to the supplied number (for testing)
     if first_variables_to_process:
@@ -510,8 +512,11 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
 
     all_tiles_end_time = time.time()
     main_logger.info(f"Finished tile analyses, took {round(all_tiles_end_time - prep_start_time)} seconds: {uu.timestr()}")
-    average_time = (all_tiles_end_time - prep_start_time)/tiles_processed
-    main_logger.info(f"Average time per tile (excluding skipped tiles): {round(average_time)} seconds (for {tiles_processed} tiles)")
+    if tiles_processed > 0:
+        average_time = (all_tiles_end_time - prep_start_time)/tiles_processed
+        main_logger.info(f"Average time per tile (excluding skipped tiles): {round(average_time)} seconds (for {tiles_processed} tiles)")
+    else:
+        main_logger.info("No tiles processed")
 
     workers = client.scheduler_info()["workers"]
     n_workers = len(workers)
@@ -554,9 +559,6 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     combined_df.to_parquet(f"{local_zonal_stats_folder}/{combined_df_name}.parquet")
     if len(combined_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
         combined_df.to_csv(f"{local_zonal_stats_folder}/{combined_df_name}.csv", index=False)
-
-    #TODO upload outputs to s3
-    # TODO Make a simplified version of output that is few enough rows to fit in Excel and export to Excel
 
     end_time = time.time()
     main_logger.info(f"  Finished zonal stats, took {round(end_time - prep_start_time)} seconds: {uu.timestr()}")
