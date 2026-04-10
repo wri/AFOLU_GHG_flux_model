@@ -97,13 +97,14 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
     if threads_per_worker is not None:
         worker_options["nthreads"] = threads_per_worker
 
-    if zonal_stats:
+    if zonal_stats or ("zonal" in cluster_name) or ("stats" in cluster_name):
+        print("Using zonal stats worker configuration")
         purchase_option = "on-demand"
         use_best_zone = False
         allow_cross_zone = False
-        software_environment = "afolu-env_202512222"  # pins zarr==3.1.3 for xr.open_zarr compatibility
+        software = "afolu-env_coiled_20251119"  # pins zarr==3.1.3 for xr.open_zarr compatibility
     else:
-        software_environment = None  # use default package sync (uploads local src wheel)
+        software = None  # use default package sync (uploads local src wheel)
         # Uses on-demand workers for large jobs. Otherwise, prefers spot workers.
         if n_workers > 120:
             purchase_option = "on-demand"
@@ -158,10 +159,10 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
         scheduler_vm_types = scheduler_vm_type,
         worker_vm_types = worker_vm_type,
         worker_options = worker_options,
-        # software="afolu-env_coiled_20251119",  # Specifies all the Python package versions
         # package_sync=True,  # also upload local src package as wheel to workers
-        environ=env  # pass env vars to scheduler/workers
+        environ=env,  # pass env vars to scheduler/workers
         # send_dask_config = True
+        **({'software': software} if software else {})
     )
 
     client = Client(cluster)
