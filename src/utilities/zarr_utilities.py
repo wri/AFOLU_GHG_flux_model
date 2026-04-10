@@ -129,7 +129,7 @@ def initialize_global_zarr(store_url, dataset_keys, n_years, chunk_size, main_lo
             array_fill_value = np.float32(np.nan)
             encoding[key] = {
                 "compressors": compressor,
-                "fill_value": array_fill_value,
+                # "fill_value": array_fill_value,
             }
         else:
             array_fill_value = fill_value
@@ -185,6 +185,25 @@ def initialize_global_zarr(store_url, dataset_keys, n_years, chunk_size, main_lo
 
     z = zarr.open_group(mapper, mode="r")
     main_logger.info(f"Mega-zarr group info: {z.info}: {uu.timestr()}")
+
+    # Clean _FillValue in populated zarr
+    # Need to remove _FillValue attribute in zarr because it's being encoded in some way that is incompatible with xarray while using zarr v3,
+    # per https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/68f984c6-9aa0-8327-a910-5ad9a8d170fc.
+    # There doesn't seem to be a way to create the zarr with a correctly encoded _FillValue in the first place,
+    # hence this fix after the fact.
+    main_logger.info(f"Cleaning zarr _FillValue from each dataset: {uu.timestr()}")
+
+    # Open Zarr group in read/write mode
+    z = zarr.open_group(store=mapper, mode="r+")
+
+    # Loop through all arrays
+    for key in z.array_keys():
+        arr = z[key]
+        if "_FillValue" in arr.attrs:
+            main_logger.info(f"Removing _FillValue from {key}: {uu.timestr()}")
+            del arr.attrs["_FillValue"]
+
+    main_logger.info(f"Cleaned _FillValue from Zarr metadata: {uu.timestr()}")
 
     end_time = time.time()
     main_logger.info(f"Initialized spatial mega-zarr metadata at {store_url} in {round(end_time-start_time)} seconds: {uu.timestr()}")

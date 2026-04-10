@@ -44,6 +44,8 @@ python -m src.LULUCF.scripts.vegetation_model.2_veg_outputs_to_10x10deg -cn vege
 python -m src.LULUCF.scripts.vegetation_model.2_veg_outputs_to_10x10deg -cn vegetation_postprocessing -mt standard -mpd global -mcstn parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --input_date YYYYMMDD --log_note "10x10 deg tile creation for vegetation model v1.0.5 (2016-2024)."
 
 Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/690a21cd-2ea0-8333-9c7f-7091f8016fb3
+
+#TODO change NoData in flux outputs to something besides 0 because 0 has a meaning for fluxes
 """
 
 import argparse
@@ -90,6 +92,8 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     main_logger.info(f"Input date: {input_date}")
     main_logger.info(f"no_upload: {no_upload}")
     main_logger.info(f"Batch size: {batch_size} tasks")
+
+    no_data_val = 0
 
     # Calculates the interval type, difference between start and end years of intervals, and the model output years
     # for the model run
@@ -208,7 +212,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
             future = client.submit(zu.create_10x10_deg_geotif_from_zarr,
                                    var_name, year_idx, tile_id, zarr_path, output_base,
                                    cn.veg_model_version_underscore, model_type, model_path_description,
-                                   no_upload, False, 0, retries=3)
+                                   no_upload, False, no_data_val, retries=3)
             futures.append(future)
 
         # Results is a list of tuples, where each tuple is the per-ha and per-pixel chunk stats, each of which is a dictionary

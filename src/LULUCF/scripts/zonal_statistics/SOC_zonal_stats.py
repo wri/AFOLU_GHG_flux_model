@@ -54,6 +54,10 @@ import numpy as np
 from flox.xarray import xarray_reduce
 from flox import ReindexArrayType, ReindexStrategy
 
+import zarr
+import dask.array as da
+import fsspec
+
 # Project imports
 from src.utilities import constants_and_names as cn
 from src.utilities import log_utilities as lu
@@ -122,12 +126,10 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
                         cn.SOC_density_min_soil_extent_pattern, cn.SOC_net_min_soil_extent_pattern
                         ]
 
-    # TODO Add this when I rerun SOC and the zarr layers have units
-    # full_list_of_vars_with_units = [
-    #     zu.add_units_year_to_pattern(var_name, 9999)[0]  # Dummy year since we don't need the year to access the datasets in the zarr, just add the units
-    #     for var_name in full_list_of_vars
-    # ]
-    full_list_of_vars_with_units = full_list_of_vars
+    full_list_of_vars_with_units = [
+        zu.add_units_year_to_pattern(var_name, 9999)[0]  # Dummy year since we don't need the year to access the datasets in the zarr, just add the units
+        for var_name in full_list_of_vars
+    ]
 
     # Limits the processed variables to the supplied number (for testing)
     if first_variables_to_process:
@@ -194,7 +196,6 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     managed_land_USA_xr = xr.open_zarr(cn.managed_land_USA_zarr_path, consolidated=False).rename_vars(band_data=cn.managed_land_USA_pattern)
 
     ds = xr.open_zarr(SOC_zarr_path, consolidated=False)
-
     ds_selected_analysis_vars = ds[vars_to_process]
 
     main_logger.info(f"Rounding coordinates: {uu.timestr()}")
