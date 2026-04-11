@@ -39,12 +39,9 @@ python -m src.utilities.create_cluster -n 50 -m 32 -cn SOC_zonal_stats --zonal_s
 python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Zonal stats for vegetation model v1.0.5 (2016-2024)."
 -mcstn KEEP_definitive_runs/SOC_density/v1_0_0__2000_2022__20251224/soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx
 
-#TODO upload outputs to s3
-#TODO Add climate domain column to output tables (use Unspecified instead of Other)
-#TODO Convert stock changes from Mg C to Mg CO2 and change output names accordingly.
+#TODO upload outputs to s3 if more than a certain number
 #TODO Try running with 16GB workers. May be using little enough memory to run on that.
-#TODO Add column to df creation that says what gas is represented
-#TODO Make a simplified version of output that is few enough rows to fit in Excel and export to Excel
+#TODO MAYBE Convert stock changes from Mg C to Mg CO2 and change output names accordingly.
 """
 
 import argparse
@@ -123,8 +120,10 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
 
     # Outputs to performs zonal stats on
     full_list_of_vars = [
-                        cn.SOC_density_full_extent_pattern, cn.SOC_net_full_extent_pattern,
-                        cn.SOC_density_min_soil_extent_pattern, cn.SOC_net_min_soil_extent_pattern
+                        cn.SOC_density_full_extent_pattern, cn.SOC_density_min_soil_extent_pattern,
+                        cn.SOC_net_full_extent_pattern, cn.SOC_net_min_soil_extent_pattern,
+                        cn.SOC_loss_full_extent_pattern, cn.SOC_loss_min_soil_extent_pattern,
+                        cn.SOC_gain_full_extent_pattern, cn.SOC_gain_min_soil_extent_pattern
                         ]
 
     # Adds units to patterns because variables in zarr have units
@@ -559,6 +558,24 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     combined_df.to_parquet(f"{local_zonal_stats_folder}/{combined_df_name}.parquet")
     if len(combined_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
         combined_df.to_csv(f"{local_zonal_stats_folder}/{combined_df_name}.csv", index=False)
+
+    # Uploads output tables to s3 if it's a larger run where I might plausibly want to save the results
+    if tiles_processed > 15:
+        s3_zonal_stats_folder = cn.SOC_outputs_path.replace(cn.model_version_type_description_placeholder,
+            f"version_{cn.SOC_model_version_underscore}__{model_type}__{model_path_description}") + f"zonal_statistics/{input_date}/"
+
+        files_to_upload = [
+            str(f) for f in local_zonal_stats_folder.iterdir()
+            if f.suffix in ('.parquet', '.csv')
+        ]
+
+        main_logger.info(f"Uploading {len(files_to_upload)} files to {s3_zonal_stats_folder}")
+        for local_file in files_to_upload:
+            filename = os.path.basename(local_file)
+            s3_dest = s3_zonal_stats_folder + filename
+            main_logger.info(f"  Uploading {filename} to {s3_dest}")
+            uu.upload_s3_file(s3_dest, local_file)
+        main_logger.info("Upload complete")
 
     end_time = time.time()
     main_logger.info(f"  Finished zonal stats, took {round(end_time - prep_start_time)} seconds: {uu.timestr()}")

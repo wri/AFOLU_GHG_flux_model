@@ -99,6 +99,27 @@ def add_all_summative_rows(df_other: pd.DataFrame, composites: dict[str, list[st
     return pd.concat([df_other, summed], ignore_index=True)
 
 
+# Assigns climate domain column
+def assign_climate_domain(df):
+
+    cont_eco = df["continent_ecozone"]
+
+    df["climate_domain"] = np.select(
+        [
+            cont_eco.str.contains("boreal", case=False, na=False) | cont_eco.str.contains("polar", case=False, na=False),
+            cont_eco.str.contains("temperate", case=False, na=False),
+            cont_eco.str.contains("tropical", case=False, na=False) | cont_eco.str.contains("subtropical", case=False, na=False),
+        ],
+        [
+            "Boreal",
+            "Temperate",
+            "Subtropical/tropical",
+        ],
+        default="Unassigned"
+    )
+
+    return df
+
 # Converts flox output to dataframe and does some processing of it:
 # replaces the numeric flux type with the name
 # classifies specific flux types to larger groupings
@@ -185,6 +206,15 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
               how='left')
     # print("merged:", df_with_areas)
 
+    # Column with the GHGs represented in that row
+    df_with_areas["gas"] = "unassigned"
+    df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("CH4", na=False), "gas"] = "CH4"
+    df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("N2O", na=False), "gas"] = "N2O"
+    df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("CO2_only", na=False), "gas"] = "CO2"
+    df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("non_CO2", na=False), "gas"] = "non-CO2"
+    df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("all_gases", na=False), "gas"] = "all gases"
+    df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("SOC", na=False), "gas"] = "CO2"
+
     # Replaces the year index with the actual reporting year (differs for vegetation and SOC)
     if flux_type == "vegetation":
         df_with_areas['year'] = df_with_areas['year'] + cn.interval_end_years_annual[0]
@@ -215,7 +245,17 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
         df_with_areas['continent'] = df_with_areas[cn.cont_eco_zstats_pattern].map(lambda x: cn.cont_eco_to_text.get(x, {}).get('continent'))
         df_with_areas['continent_ecozone'] = df_with_areas[cn.cont_eco_zstats_pattern].map(lambda x: cn.cont_eco_to_text.get(x, {}).get('ecozone'))
 
-    #TODO Add climate domain column
+        # Assigns climate domain
+        df_with_areas = assign_climate_domain(df_with_areas)
+
+    if "country_name" in df_with_areas.columns:
+        # Renames some countries with long names
+        df_with_areas["country_name"] = df_with_areas["country_name"].replace({
+            "United Kingdom of Great Britain and Northern Ireland": "United Kingdom",
+            "Russian Federation": "Russia",
+            "Democratic Republic of the Congo": "DR Congo",
+            "United States of America (the)": "USA"
+        })
 
     # Maps watershed codes to names if the contextual layer is used
     if cn.watersheds_pattern in df_with_areas.columns:
