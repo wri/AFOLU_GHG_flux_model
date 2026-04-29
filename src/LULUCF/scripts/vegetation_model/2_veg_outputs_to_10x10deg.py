@@ -93,6 +93,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     main_logger.info(f"no_upload: {no_upload}")
     main_logger.info(f"Batch size: {batch_size} tasks")
 
+    #TODO hopefully change NoData for veg model in next run
     no_data_val = 0
 
     # Calculates the interval type, difference between start and end years of intervals, and the model output years

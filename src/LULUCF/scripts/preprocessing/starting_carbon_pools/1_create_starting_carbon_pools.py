@@ -25,6 +25,8 @@ python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starti
 To create a vrt of the 10x10 deg outputs, do:
 aws s3 ls s3://gfw2-data/climate/ESA_CCI_biomass/v5_01/2015/year_2015_derived_carbon_pools/litter_C_density_MgC_ha/40000_pixels/ --recursive | grep .tif$ | awk '{print "/vsis3/gfw2-data/"$4}' > litter_C_2015_file_list.txt
 gdalbuildvrt -input_file_list litter_C_2015_file_list.txt deadwood_C2015_mosaic.vrt
+
+TODO Correct starting BGC, deadwood C and litter C for oil palm. Those are currently using natural forest ratios but should use oil palm specifically (Mokany et al for BGC, 0 for deadwood and litter). Make sure veg flux calcs are consistent with this.
 """
 
 import argparse
@@ -294,7 +296,7 @@ def create_starting_C_densities(in_dict_uint8, in_dict_uint16, in_dict_int16,
                     deadwood_c_LC_masked_out_cell = agc_LC_masked_out_cell * deadwood_c_ratio
                     litter_c_LC_masked_out_cell = agc_LC_masked_out_cell * litter_c_ratio
 
-                # When there is repeat loss during the model, starting carbon densities are set to 0.
+                # When there is repeat loss during the model (2016 onwards), starting carbon densities are set to 0.
                 # Rationale is that this is shifting cultivation or some rapid cycle harvest area and
                 # whatever high ESA CCI starting value there is, is likely much too high.
                 elif loss_count_cell >= 2:
@@ -304,7 +306,7 @@ def create_starting_C_densities(in_dict_uint8, in_dict_uint16, in_dict_int16,
                     litter_c_LC_masked_out_cell = 0
                     LC_masked_state = 6
 
-                # No TCL- uses raw tall veg carbon densities
+                # No TCL before 2015 or repeat loss during the model- uses raw tall veg carbon densities
                 else:
                     agc_LC_masked_out_cell = agc_raw_out_cell
                     bgc_LC_masked_out_cell = bgc_raw_out_cell

@@ -207,7 +207,7 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
     # print("merged:", df_with_areas)
 
     # Column with the GHGs represented in that row
-    df_with_areas["gas"] = "unassigned"
+    df_with_areas["gas"] = "Unassigned"
     df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("CH4", na=False), "gas"] = "CH4"
     df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("N2O", na=False), "gas"] = "N2O"
     df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("CO2_only", na=False), "gas"] = "CO2"
@@ -239,6 +239,19 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
         df_with_areas['country_name'] = df_with_areas[cn.adm0_pattern].map(cn.iso_to_country)
         df_with_areas['region'] = df_with_areas[cn.adm0_pattern].map(cn.iso_to_region)
 
+        # Because some rows for contextual layers may be blank
+        df_with_areas[cn.adm0_pattern] = df_with_areas[cn.adm0_pattern].fillna("Unassigned")
+        df_with_areas['country_name'] = df_with_areas['country_name'].fillna("Unassigned")
+        df_with_areas['region'] = df_with_areas['region'].fillna("Unassigned")
+
+        # Renames some countries with long names
+        df_with_areas["country_name"] = df_with_areas["country_name"].replace({
+            "United Kingdom of Great Britain and Northern Ireland": "United Kingdom",
+            "Russian Federation": "Russia",
+            "Democratic Republic of the Congo": "DR Congo",
+            "United States of America (the)": "USA"
+        })
+
     # Maps cont_eco to continent and ecozone-continent if the contextual layer is used
     # From https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/698a53aa-8674-832c-b734-4bd8afc6a6df
     if cn.cont_eco_zstats_pattern in df_with_areas.columns:
@@ -248,18 +261,14 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
         # Assigns climate domain
         df_with_areas = assign_climate_domain(df_with_areas)
 
-    if "country_name" in df_with_areas.columns:
-        # Renames some countries with long names
-        df_with_areas["country_name"] = df_with_areas["country_name"].replace({
-            "United Kingdom of Great Britain and Northern Ireland": "United Kingdom",
-            "Russian Federation": "Russia",
-            "Democratic Republic of the Congo": "DR Congo",
-            "United States of America (the)": "USA"
-        })
+        # Because some rows for contextual layers may be blank
+        df_with_areas["continent"] = df_with_areas["continent"].fillna("Unassigned")
+        df_with_areas["continent_ecozone"] = df_with_areas["continent_ecozone"].fillna("Unassigned")
 
     # Maps watershed codes to names if the contextual layer is used
     if cn.watersheds_pattern in df_with_areas.columns:
         df_with_areas['watershed_name'] = df_with_areas[cn.watersheds_pattern].map(cn.watershed_to_text)
+        df_with_areas["watershed_name"] = df_with_areas["watershed_name"].fillna("Unassigned")
 
     # Maps WDPA codes to names if the contextual layer is used
     if cn.WDPA_pattern in df_with_areas.columns:

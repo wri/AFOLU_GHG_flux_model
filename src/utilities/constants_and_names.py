@@ -109,7 +109,7 @@ IPCC_removal_factor_table_tab = "natrl fores gain, for std model"
 mangrove_rate_ratio_tab = 'mang gain and Cratios,for model'
 
 # Emission factors for partial disturbances (by 1km driver)
-partial_disturbance_emission_factor_table_name = "partial_disturbance_emission_factors_LULUCF_model__20260128.xlsx"
+partial_disturbance_emission_factor_table_name = "partial_disturbance_emission_factors_LULUCF_model__20260424.xlsx"
 partial_disturbance_emission_factor_table_full_path = f"{EF_RF_C_ratio_spreadsheet_URL}{partial_disturbance_emission_factor_table_name}"
 partial_disturbance_emission_factor_table_tab = "EF_combined"
 
@@ -133,7 +133,7 @@ gwp_n2o = 273 # AR6 WG1 Table 7.15
 
 # Combustion factor for trees that had fire but no height reduction or other sign of disturbance
 # (i.e. undisturbed trees remaining trees).
-# From IPCC 2019, Table 2.6, "Boreal forest- ground fire" (applied globally, though boreal)
+# From IPCC 2019, Table 2.6, "Boreal forest- surface fire" (applied globally, though boreal)
 Cf_forest_undisturbed = 0.15
 
 other_landcover_node = 7
