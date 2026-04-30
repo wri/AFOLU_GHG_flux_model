@@ -397,7 +397,7 @@ def zarr_1x1_deg_stats(bounds, var_name, zarr_path, interval_end_years):
     return zarr_stats_raw_all_years
 
 
-# Parallelizes stats calculation in 1x1 deg chunks in raw and rechunked zarrs for a given dataset-year
+# Parallelizes stats calculation in 1x1 deg chunks in zarr for a given dataset-year
 def run_parallel_stats(client, chunk_list, var, zarr_path, interval_end_years):
 
     futures = []

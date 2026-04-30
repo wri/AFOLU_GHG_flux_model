@@ -10,12 +10,23 @@ Created by Claude Code desktop
 
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model/
 
-python -m src.utilities.create_cluster -n 50 -m 4 -cn add_dataset_to_zarr
-python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds removal_factor__AGC__MgC -mpd global -id 20260130
+Coiled small test:
+python -m src.utilities.create_cluster -n 1 -m 4 -cn add_dataset_to_zarr
+python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds removal_factor__AGC__MgC -mpd global -id 20260130 -bb 10 49 11 50 -mcstn parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5
+
+Coiled shapefile test:
+python -m src.utilities.create_cluster -n 25 -m 4 -cn add_dataset_to_zarr
+python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds removal_factor__AGC__MgC -mpd global -id 20260130 -mcstn parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -f 10
+
+Global run:
+python -m src.utilities.create_cluster -n 200 -m 4 -cn add_dataset_to_zarr
+python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds removal_factor__AGC__MgC -mpd global -id 20260130 -mcstn parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "Adding removal factor dataset to the zarr."
+
+
 """
 
 import argparse
-import gc
+import dask
 import os
 import re
 import traceback as tb
@@ -32,22 +43,7 @@ import src.utilities.log_utilities as lu
 import src.utilities.zarr_utilities as zu
 
 
-# ── Worker functions (module-level for Dask/Coiled serialisation) ─────────────
-
-def safe_task_wrapper(bounds_str, tile_paths, zarr_store_url, interval_end_years, zarr_key, resolution):
-    """Wraps _populate_one_bounds so failures are returned as dicts rather than raised."""
-    try:
-        return populate_one_bounds(bounds_str, tile_paths, zarr_store_url, interval_end_years, zarr_key, resolution)
-    except Exception as e:
-        return {
-            "status": "failed",
-            "bounds_str": bounds_str,
-            "error": str(e),
-            "traceback": tb.format_exc(),
-        }
-
-
-def populate_one_bounds(bounds_str, tile_paths, zarr_store_url, interval_end_years, zarr_key, resolution):
+def populate_one_chunk(bounds_str, tile_paths, zarr_store_url, interval_end_years, zarr_key, resolution, unit):
     """
     Reads all per-year tile TIFFs for one spatial bounds, stacks them into a
     (n_years, height, width) block, and writes it to the correct zarr slice.
@@ -56,7 +52,7 @@ def populate_one_bounds(bounds_str, tile_paths, zarr_store_url, interval_end_yea
     # Map year integer → tile S3 path
     year_to_path = {}
     for path in tile_paths:
-        m = re.search(r"_ha_yr_(\d{4})\.tif$", path)
+        m = re.search(rf"{unit}_(\d{{4}})\.tif$", path)
         if m:
             year_to_path[int(m.group(1))] = path
 
@@ -76,9 +72,9 @@ def populate_one_bounds(bounds_str, tile_paths, zarr_store_url, interval_end_yea
     lat_end   = lat_start + tile_height
     lon_end   = lon_start + tile_width
 
-    # Build a (n_years, height, width) block; leave years with no tile as NaN
+    # Build a (n_years, height, width) block; leave years with no chunk as NaN
     n_years = len(interval_end_years)
-    block = np.full((n_years, tile_height, tile_width), np.float32(np.nan), dtype="float32")
+    block = np.full((n_years, tile_height, tile_width), 0, dtype="float32")
     years_written = []
     for i, year in enumerate(interval_end_years):
         if year in year_to_path:
@@ -89,7 +85,7 @@ def populate_one_bounds(bounds_str, tile_paths, zarr_store_url, interval_end_yea
     # Write the full time block for this spatial chunk
     fs = fsspec.filesystem("s3", anon=False)
     mapper = fs.get_mapper(zarr_store_url)
-    z = zarr.open_group(mapper, mode="r+")
+    z = zarr.open_group(mapper, mode="r+", use_consolidated=False)
     z[zarr_key][0:n_years, lat_start:lat_end, lon_start:lon_end] = block
 
     return {"status": "success", "bounds_str": bounds_str, "years_written": years_written}
@@ -97,7 +93,7 @@ def populate_one_bounds(bounds_str, tile_paths, zarr_store_url, interval_end_yea
 
 def main(cluster_name, input_date, dataset, model_type, no_log=False, chunk_shapefile_uri=False,
          bounding_box=None, first_chunks=None,
-         model_path_description=None, log_note=None):
+         model_path_description=None, model_chunk_stats_table_name=None, log_note=None):
 
     ### Step 1: Preparation
 
@@ -132,7 +128,7 @@ def main(cluster_name, input_date, dataset, model_type, no_log=False, chunk_shap
 
     # Creates the list of chunks to process, depending on the approach: shapefile attribute table or a bounding box
     chunk_size_deg = 1   # Chunk size for geotifs is set at 1x1 deg
-    chunk_list, chunk_size_pixels = uu.create_chunk_list(bounding_box, chunk_shapefile_uri, chunk_size_deg, None, fishnet_iso_df, main_logger)
+    chunk_list, chunk_size_pixels = uu.create_chunk_list(bounding_box, chunk_shapefile_uri, chunk_size_deg, first_chunks, fishnet_iso_df, main_logger)
 
     # The zarr path that's being used
     zarr_path = zu.create_zarr_path(cn.veg_outputs_path_mega_zarr, cn.chunk_dims, 'annual',
@@ -140,7 +136,8 @@ def main(cluster_name, input_date, dataset, model_type, no_log=False, chunk_shap
                                          input_date, main_logger)
 
     # Dataset name to add to zarr, e.g., "removal_factor__AGC__MgC_ha_yr". Assumes that the unit is _ha_yr for now.
-    zarr_key = f"{dataset}{cn.flux_density_pixel_meaning}"
+    unit = cn.flux_density_pixel_meaning
+    zarr_key = f"{dataset}{unit}"
 
     # Chunk folder to ingest into zarr
     chunk_dir = f"{cn.veg_outputs_path}{dataset}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
@@ -164,8 +161,10 @@ def main(cluster_name, input_date, dataset, model_type, no_log=False, chunk_shap
     lat_size = int(180 / cn.resolution)
     lon_size = int(360 / cn.resolution)
 
-    if zarr_key not in z:
-        main_logger.info(f"Creating array '{zarr_key}' in zarr: {uu.timestr()}")
+    # Checks for the json of the new dataset, to see if it's already been created
+    array_exists = fs.exists(f"{zarr_path}/{zarr_key}/zarr.json")
+
+    if not array_exists:
         new_arr = z.create_array(
             zarr_key,
             shape=(n_years, lat_size, lon_size),
@@ -175,20 +174,19 @@ def main(cluster_name, input_date, dataset, model_type, no_log=False, chunk_shap
             compressors={"name": "zstd", "configuration": {"level": 3}},
             dimension_names=["year", "y", "x"],
         )
-        # xarray needs dimension_names to know which zarr axes map to which named dims (other datasets in zarr call it dimension_names)
         new_arr.attrs["grid_mapping"] = "spatial_ref"
         main_logger.info(f"Created '{zarr_key}': shape={new_arr.shape}, dtype={new_arr.dtype}: {uu.timestr()}")
     else:
-        main_logger.info(f"Array '{zarr_key}' already exists — populated slices will be overwritten: {uu.timestr()}")
+        main_logger.info(f"Array '{zarr_key}' already exists — skipping creation, will populate slices: {uu.timestr()}")
 
-    sys.quit()
 
     ### Step 3: List tile files and group by spatial bounds
-    print(f"Listing tile files: {uu.timestr()}")
-    # fsspec.glob expects the path without the s3:// scheme prefix
-    tiles_dir_no_prefix = chunk_dir.replace("s3://", "")
+
+    main_logger.info(f"Listing chunks for single year: {uu.timestr()}")
+
+    tiles_dir_no_prefix = chunk_dir.replace("s3://", "") # fsspec.glob expects the path without the s3:// scheme prefix
     all_tile_paths = fs.glob(f"{tiles_dir_no_prefix}*.tif")
-    print(f"Found {len(all_tile_paths)} tile files: {uu.timestr()}")
+    main_logger.info(f"Found {len(all_tile_paths)} chunks: {uu.timestr()}")
 
     # Group files by bounds_str so each task processes one spatial chunk across all years.
     # Filename format: {tile_id}__{bounds_str}__{pattern}_{year}.tif
@@ -201,44 +199,69 @@ def main(cluster_name, input_date, dataset, model_type, no_log=False, chunk_shap
             bounds_to_files[bounds_str].append(f"s3://{path}")
 
     bounds_groups = list(bounds_to_files.items())  # [(bounds_str, [s3_paths, ...]), ...]
-    print(f"Found {len(bounds_groups)} unique spatial chunks: {uu.timestr()}")
-
-    # ── Step 3: Connect to Coiled cluster ─────────────────────────────────────
-    cluster, client, run_local = uu.connect_to_Coiled_cluster(cluster_name, run_local=False)
-
-    # ── Step 4: Submit tasks in batches ───────────────────────────────────────
-
-    total_success = 0
-    total_failed  = 0
+    main_logger.info(f"Found {len(bounds_groups)} unique chunks for single year: {uu.timestr()}")
 
 
-    futures = [
-        client.submit(
-            safe_task_wrapper,
-            bounds_str, tile_paths,
-            zarr_path, interval_end_years, zarr_key, cn.resolution,
-            key=f"rf-zarr-{bounds_str}",   # prevents duplicate submissions on retry
-        )
-    ]
+    ### Step 4: Submit tasks through Coiled
 
-    results = client.gather(futures)
+    main_logger.info(f"Submitting {len(chunk_list)} tasks: {uu.timestr()}")
 
+    # Builds a tile_paths lookup from bounds_to_files for each chunk in chunk_list
+    delayed_results = [dask.delayed(populate_one_chunk)(
+        uu.boundstr(chunk),
+        bounds_to_files.get(uu.boundstr(chunk), []),
+        zarr_path, interval_end_years, zarr_key, cn.resolution, unit
+    ) for chunk in chunk_list]
+
+    results = dask.compute(*delayed_results)
+
+    total_success = sum(1 for r in results if isinstance(r, dict) and r.get("status") == "success")
+    total_skipped = sum(1 for r in results if isinstance(r, dict) and r.get("status") == "skipped")
     failed = [r for r in results if isinstance(r, dict) and r.get("status") == "failed"]
     for f in failed:
-        print(f"  FAILED {f['bounds_str']}: {f['error']}\n{f.get('traceback', '')}")
+        main_logger.error(f"FAILED {f['bounds_str']}: {f['error']}\n{f.get('traceback', '')}")
+
+    main_logger.info(
+        f"Tasks complete: {total_success} succeeded, {total_skipped} skipped, {len(failed)} failed: {uu.timestr()}")
 
 
-    # ── Step 5: Verify ────────────────────────────────────────────────────────
-    z2 = zarr.open_group(mapper, mode="r")
-    print(f"\nVerification:")
-    print(f"  '{zarr_key}' in zarr: {zarr_key in z2}")
-    arr = z2[zarr_key]
-    print(f"  Shape: {arr.shape}, dtype: {arr.dtype}")
-    # Sample a known-forested pixel in the Amazon (~lat -5, lon -60)
-    lat_i = int(round((90.0 - (-5.0)) / cn.resolution))
-    lon_i = int(round((-60.0 + 180.0) / cn.resolution))
-    sample = arr[:, lat_i, lon_i]
-    print(f"  Sample values at lat=-5 / lon=-60 across years: {sample}")
+    ### Step 5: Compare zarr chunk stats to geotif chunk stats for the new dataset
+
+    main_logger.info(f"Starting zarr chunk stats for {zarr_key}: {uu.timestr()}")
+
+    comparison_insert = "_zarr_comparison"
+
+    tables_to_compare_dict, zarr_comparison_stats_name, zarr_comparison_stats_path = zu.get_table_names_for_zarr_stats_comparison(
+        comparison_insert, main_logger, model_chunk_stats_table_name)
+
+    all_merged_tables = []
+    chunks_count_exceeding_total = 0
+    chunks_without_zarr_stats_total = 0
+
+    chunk_stats_variable_year_zarr = zu.run_parallel_stats(
+        client=client,
+        chunk_list=chunk_list,
+        var=dataset,
+        zarr_path=zarr_path,
+        interval_end_years=interval_end_years
+    )
+    print(chunk_stats_variable_year_zarr)
+
+    chunks_count_exceeding, chunks_without_zarr_stats = zu.compare_dataset_year_chunk_stats(
+        all_merged_tables,
+        chunk_stats_variable_year_zarr,
+        main_logger,
+        tables_to_compare_dict,
+        dataset,
+        zarr_comparison_stats_path
+    )
+
+    chunks_count_exceeding_total += chunks_count_exceeding
+    chunks_without_zarr_stats_total += chunks_without_zarr_stats
+
+    zu.upload_zarr_chunk_stat_comparisons(chunks_count_exceeding_total, chunks_without_zarr_stats_total,
+                                          main_logger, model_chunk_stats_table_name,
+                                          stage, start_time, zarr_comparison_stats_name, zarr_comparison_stats_path)
 
 
 if __name__ == "__main__":
@@ -249,6 +272,7 @@ if __name__ == "__main__":
     parser.add_argument('-bb', '--bounding_box', nargs=4, type=float, help='W, S, E, N (degrees)')
     parser.add_argument('-cshp', '--chunk_shapefile_uri', help='s3 location for shapefile of 1x1 deg chunk footprints')
     parser.add_argument('-f', '--first_chunks', type=int, help='Number of chunks to process from shapefile')
+    parser.add_argument('-mcstn', '--model_chunk_stats_table_name', required=True, help='model chunk stats table that will be compared with zarr chunk stats')
     parser.add_argument('-mt', '--model_type', default='standard', help='Type of model run (e.g., standard).')
     parser.add_argument('-mpd', '--model_path_description', help='Description of model run (e.g., global, test, X_area).')
     parser.add_argument('-ds', '--dataset', help='Dataset to add (using pattern in constants_and_names)')
@@ -263,6 +287,7 @@ if __name__ == "__main__":
     bounding_box = args.bounding_box
     chunk_shapefile_uri = args.chunk_shapefile_uri
     first_chunks = args.first_chunks
+    model_chunk_stats_table_name = args.model_chunk_stats_table_name
     model_type = args.model_type
     model_path_description = args.model_path_description
     dataset = args.dataset
@@ -270,8 +295,8 @@ if __name__ == "__main__":
 
     no_log = args.no_log
 
-
     # Create the cluster with command line arguments
     main(cluster_name, input_date, dataset, model_type, no_log, chunk_shapefile_uri,
          bounding_box=bounding_box, first_chunks=first_chunks,
-         model_path_description=model_path_description, log_note=log_note)
+         model_path_description=model_path_description, model_chunk_stats_table_name=model_chunk_stats_table_name,
+         log_note=log_note)
