@@ -12,25 +12,20 @@ Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model/
 
 Coiled small test:
 python -m src.utilities.create_cluster -n 1 -m 4 -cn add_dataset_to_zarr
-python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds removal_factor__AGC__MgC -mpd global -id 20260130 -bb 10 49 11 50 -mcstn parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5
+python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds removal_factor__AGC__MgC -mpd global -id 20260130 -bb 10 49 11 50 -mcstn chunk_stats/parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5
 
 Coiled shapefile test:
 python -m src.utilities.create_cluster -n 25 -m 4 -cn add_dataset_to_zarr
-python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds removal_factor__AGC__MgC -mpd global -id 20260130 -mcstn parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -f 10
+python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds removal_factor__AGC__MgC -mpd global -id 20260130 -mcstn chunk_stats/parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -f 10
 
 Global run:
 python -m src.utilities.create_cluster -n 200 -m 4 -cn add_dataset_to_zarr
-python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds removal_factor__AGC__MgC -mpd global -id 20260130 -mcstn parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "Adding removal factor dataset to the zarr."
-
+python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds removal_factor__AGC__MgC -mpd global -id 20260130 -mcstn chunk_stats/parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "Adding removal factor dataset to the zarr."
 
 """
 
 import argparse
 import dask
-import os
-import re
-import traceback as tb
-from collections import defaultdict
 from dask.distributed import print
 
 import rasterio
@@ -43,30 +38,31 @@ import src.utilities.universal_utilities as uu
 import src.utilities.log_utilities as lu
 import src.utilities.zarr_utilities as zu
 
-def populate_one_chunk(chunk, tile_paths, zarr_store_url, interval_end_years,
-                       var_name_units, var_name_no_units, unit, resolution, main_logger):
+def populate_one_zarr_chunk(chunk, var_dir_no_year, zarr_store_url, interval_end_years,
+                            var_name_units, var_name_no_units, resolution, main_logger):
     """
-    Reads all per-year tile TIFFs for one spatial bounds, stacks them into a
-    (n_years, height, width) block, writes it to the correct zarr slice,
-    and returns chunk stats for verification.
+    For one spatial chunk, constructs the expected tile path for each year directly,
+    stacks them into a (n_years, height, width) block, writes it to the correct zarr
+    slice, and returns chunk stats for verification.
     """
 
     main_logger.info(f"Adding {chunk} to zarr: {uu.timestr()}")
 
     bounds_str = uu.boundstr(chunk)
+    tile_id = uu.xy_to_tile_id(chunk[0], chunk[3])
 
-    # Parse year from filename and map year integer → tile S3 path
-    year_to_path = {}
-    for path in tile_paths:
-        m = re.search(rf"{unit}_(\d{{4}})\.tif$", path)
-        if m:
-            year_to_path[int(m.group(1))] = path
+    # Read one existing tile to get spatial extent and raster dimensions
+    sample_path = None
+    for year in interval_end_years:
+        candidate = f"{var_dir_no_year.replace('START_END', str(year))}{tile_id}__{bounds_str}__{var_name_units}_{year}.tif"
+        fs = fsspec.filesystem("s3", anon=False)
+        if fs.exists(candidate.replace("s3://", "")):
+            sample_path = candidate
+            break
 
-    if not year_to_path:
-        return {"status": "skipped", "bounds_str": bounds_str, "reason": "no year-matched files", "chunk_stats": []}
+    if sample_path is None:
+        return {"status": "skipped", "bounds_str": bounds_str, "reason": "no tile files found", "chunk_stats": []}
 
-    # Read one tile to get spatial extent and raster dimensions
-    sample_path = next(iter(sorted(year_to_path.values())))
     with rasterio.open(sample_path) as src:
         b = src.bounds
         tile_height = src.height
@@ -82,16 +78,19 @@ def populate_one_chunk(chunk, tile_paths, zarr_store_url, interval_end_years,
     n_years = len(interval_end_years)
     block = np.full((n_years, tile_height, tile_width), np.float32(np.nan), dtype="float32")
 
-    # Populates the numpy array with all the years of data
+    # Populate the array year by year, constructing each tile path directly
     years_written = []
     for i, year in enumerate(interval_end_years):
-        if year in year_to_path:
-            with rasterio.open(year_to_path[year]) as src:
+        tile_path = f"{var_dir_no_year.replace('START_END', str(year))}{tile_id}__{bounds_str}__{var_name_units}_{year}.tif"
+        try:
+            with rasterio.open(tile_path) as src:
                 data = src.read(1).astype("float32")
                 if src.nodata is not None:
                     data[data == src.nodata] = np.nan   # Writes NaN rather than 0 for NoData
                 block[i] = data
             years_written.append(year)
+        except Exception:
+            pass  # Leave year slice as NaN if tile is missing
 
     # Write the full time block for this chunk to the zarr
     fs = fsspec.filesystem("s3", anon=False)
@@ -114,7 +113,7 @@ def main(cluster_name, input_date, var_name_no_units, model_type, no_log=False, 
     ### Step 1: Preparation
 
     # Model stage being run
-    stage = 'add_dataset_to_zarr'
+    stage = f'add_{var_name_no_units}_to_zarr'
 
     # Connects to Coiled cluster if not running locally and the named cluster exists
     cluster, client, run_local = uu.connect_to_Coiled_cluster(cluster_name, False)
@@ -156,17 +155,18 @@ def main(cluster_name, input_date, var_name_no_units, model_type, no_log=False, 
     var_name_units = f"{var_name_no_units}{unit}"
 
     # Chunk folder to ingest into zarr
-    chunk_dir = f"{cn.veg_outputs_path}{var_name_no_units}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-    chunk_dir = chunk_dir.replace(cn.model_version_type_description_placeholder,f"version_{cn.veg_model_version_underscore}__{model_type}__{model_path_description}")
-    chunk_dir = chunk_dir.replace("MODEL_INTERVAL_TYPE", interval_type)
-    chunk_dir = chunk_dir.replace("RUN_DATE", input_date)
-    chunk_dir = chunk_dir.replace("CHUNK_SIZE", str(chunk_size_pixels))
-    chunk_dir = chunk_dir.replace("CHUNK_SIZE_pixels", f"{cn.full_raster_dims}_pixels")
-    chunk_dir = chunk_dir.replace("PER_HA_OR_PIXEL", cn.flux_density_pixel_meaning)
-    main_logger.info(f"Chunk folder to ingest into zarr: {chunk_dir}")
+    var_dir_no_year = f"{cn.veg_outputs_path}{var_name_no_units}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+    var_dir_no_year = var_dir_no_year.replace(cn.model_version_type_description_placeholder,f"version_{cn.veg_model_version_underscore}__{model_type}__{model_path_description}")
+    var_dir_no_year = var_dir_no_year.replace("MODEL_INTERVAL_TYPE", interval_type)
+    var_dir_no_year = var_dir_no_year.replace("RUN_DATE", input_date)
+    var_dir_no_year = var_dir_no_year.replace("CHUNK_SIZE", str(chunk_size_pixels))
+    var_dir_no_year = var_dir_no_year.replace("CHUNK_SIZE_pixels", f"{cn.full_raster_dims}_pixels")
+    var_dir_no_year = var_dir_no_year.replace("PER_HA_OR_PIXEL", cn.flux_density_pixel_meaning)
+    main_logger.info(f"Geotif folder to ingest into zarr: {var_dir_no_year}")
 
 
     ### Step 2: Add the new array to the zarr
+
     fs = fsspec.filesystem("s3", anon=False)
     mapper = fs.get_mapper(zarr_path)
 
@@ -199,62 +199,28 @@ def main(cluster_name, input_date, var_name_no_units, model_type, no_log=False, 
         main_logger.info(f"Array '{var_name_units}' already exists — skipping creation, will populate slices: {uu.timestr()}")
 
 
-    ### Step 3: List tile files and group by spatial bounds
-
-    main_logger.info(f"Listing chunks for single year: {uu.timestr()}")
-
-    chunk_dir = chunk_dir.replace("s3://", "") # fsspec.glob expects the path without the s3:// scheme prefix
-
-    # Glob each year's subdirectory and collect all tile paths across all years
-    all_tile_paths = []
-    for year in interval_end_years:
-        year_dir = chunk_dir.replace("START_END", str(year))
-        year_paths = fs.glob(f"{year_dir}*.tif")
-        all_tile_paths.extend(year_paths)
-        main_logger.info(f"Found {len(year_paths)} tiles for {year}: {uu.timestr()}")
-
-    main_logger.info(f"Found {len(all_tile_paths)} total tile files across all years: {uu.timestr()}")
-
-    # Group files by bounds_str so each task processes one spatial chunk across all years.
-    # Filename format: {tile_id}__{bounds_str}__{pattern}_{year}.tif
-    bounds_to_files = defaultdict(list)
-    for path in all_tile_paths:
-        fname = os.path.basename(path)
-        parts = fname.split("__")
-        if len(parts) >= 2:
-            bounds_str = parts[1]
-            bounds_to_files[bounds_str].append(f"s3://{path}")
-
-    bounds_groups = list(bounds_to_files.items())  # [(bounds_str, [s3_paths, ...]), ...]
-    main_logger.info(f"Found {len(bounds_groups)} unique chunks for single year: {uu.timestr()}")
-
-
-    ### Step 4: Submit tasks through Coiled
+    ### Step 3: Submit tasks through Coiled
 
     main_logger.info(f"Submitting {len(chunk_list)} tasks: {uu.timestr()}")
 
     # Builds a tile_paths lookup from bounds_to_files for each chunk in chunk_list
-    delayed_results = [dask.delayed(populate_one_chunk)(
-        chunk, bounds_to_files.get(uu.boundstr(chunk), []),
-        zarr_path, interval_end_years, var_name_units, var_name_no_units, unit, cn.resolution, main_logger
+    delayed_results = [dask.delayed(populate_one_zarr_chunk)(
+        chunk, var_dir_no_year,
+        zarr_path, interval_end_years, var_name_units, var_name_no_units, cn.resolution, main_logger
     ) for chunk in chunk_list]
 
     results = dask.compute(*delayed_results)
 
     total_success = sum(1 for r in results if isinstance(r, dict) and r.get("status") == "success")
     total_skipped = sum(1 for r in results if isinstance(r, dict) and r.get("status") == "skipped")
-    failed = [r for r in results if isinstance(r, dict) and r.get("status") == "failed"]
-    for f in failed:
-        main_logger.error(f"FAILED {f['bounds_str']}: {f['error']}\n{f.get('traceback', '')}")
 
-    chunk_stats_variable_year_zarr = [stat for r in results if r.get("status") == "success" for stat in r["chunk_stats"]]
+    chunk_stats_variable_year_zarr = [[stat for r in results for stat in r["chunk_stats"]]] # Needs extract brackets to make it a list, which is what is expected for comparison below
     print(chunk_stats_variable_year_zarr)
 
-    main_logger.info(f"Tasks complete: {total_success} succeeded, {total_skipped} skipped, {len(failed)} failed: {uu.timestr()}")
+    main_logger.info(f"Ingestion to zarr complete: {total_success} succeeded, {total_skipped} skipped: {uu.timestr()}")
 
-    sys.quit()
 
-    ### Step 5: Compare zarr chunk stats to geotif chunk stats for the new dataset
+    ### Step 4: Compare zarr chunk stats to geotif chunk stats for the new dataset
 
     main_logger.info(f"Starting zarr chunk stats for {var_name_units}: {uu.timestr()}")
 
@@ -267,14 +233,14 @@ def main(cluster_name, input_date, var_name_no_units, model_type, no_log=False, 
     chunks_count_exceeding_total = 0
     chunks_without_zarr_stats_total = 0
 
-    chunk_stats_variable_year_zarr = zu.run_parallel_stats(
-        client=client,
-        chunk_list=chunk_list,
-        var=var_name_no_units,
-        zarr_path=zarr_path,
-        interval_end_years=interval_end_years
-    )
-    print(chunk_stats_variable_year_zarr)
+    # chunk_stats_variable_year_zarr = zu.run_parallel_stats(
+    #     client=client,
+    #     chunk_list=chunk_list,
+    #     var=var_name_no_units,
+    #     zarr_path=zarr_path,
+    #     interval_end_years=interval_end_years
+    # )
+    # print(chunk_stats_variable_year_zarr)
 
     chunks_count_exceeding, chunks_without_zarr_stats = zu.compare_dataset_year_chunk_stats(
         all_merged_tables,
