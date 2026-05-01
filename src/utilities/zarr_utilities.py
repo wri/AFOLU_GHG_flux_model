@@ -369,7 +369,7 @@ def zarr_1x1_deg_stats(bounds, var_name, zarr_path, interval_end_years):
     # print(f"Getting mapper for {bounds_str}")
     zarr_mapper = fs.get_mapper(zarr_path)
     # print(f"Opening zarr for {bounds_str}")
-    zarr_group = zarr.open(zarr_mapper, mode="r")
+    zarr_group = zarr.open(zarr_mapper, mode="r", use_consolidated=False)
     # print(f"Getting array for {bounds_str}")
     zarr_chunk_array = zarr_group[pattern_with_units][:, lat0:lat1, lon0:lon1]
 
@@ -636,6 +636,9 @@ def add_units_year_to_pattern(core_pattern, year):
         pattern_with_units = f"{core_pattern}_ha_yr"
         pattern_with_units_years = f"{core_pattern}_ha_yr_{year}"
     elif "removals" in core_pattern:
+        pattern_with_units = f"{core_pattern}_ha_yr"
+        pattern_with_units_years = f"{core_pattern}_ha_yr_{year}"
+    elif "removal" in core_pattern:
         pattern_with_units = f"{core_pattern}_ha_yr"
         pattern_with_units_years = f"{core_pattern}_ha_yr_{year}"
     elif "loss" in core_pattern:
