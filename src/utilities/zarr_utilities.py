@@ -497,6 +497,7 @@ def compare_dataset_year_chunk_stats(all_merged_tables, chunk_stats_variable_zar
 
     # Identifies rows (chunks) which have stats that differ between model and zarr
     mask = merged_table['maximum_diff_value'] > cn.zarr_difference_tolerance
+    # print("mask:", mask)
 
     # Number of rows from model output without matching zarr pixel counts
 
@@ -514,6 +515,7 @@ def compare_dataset_year_chunk_stats(all_merged_tables, chunk_stats_variable_zar
 
     # Applies the mask to filter those rows
     differences_exceeding_tolerance = merged_table[mask]
+    # print("differences_exceeding_tolerance:", differences_exceeding_tolerance)
 
     # Prints rows that exceed the tolerance for difference between original and zarr chunk stats
     if len(differences_exceeding_tolerance) > 0:
@@ -541,6 +543,7 @@ def compare_dataset_year_chunk_stats(all_merged_tables, chunk_stats_variable_zar
 
     # Concatenates all merged dataset-year tables into a single DataFrame
     final_merged_table = pd.concat(all_merged_tables, ignore_index=True)
+    # print("final_merged_table:", final_merged_table)
 
     # Splits output rows based on 'layer_name' containing 'flux', 'gross', or 'net'
     gross_flux_1x1_outputs = final_merged_table[final_merged_table['layer_name'].str.contains('gross', case=False, na=False)]
@@ -548,6 +551,7 @@ def compare_dataset_year_chunk_stats(all_merged_tables, chunk_stats_variable_zar
 
     # Puts output rows that don't contain 'flux|gross|net' in a separate table
     other_1x1_outputs = final_merged_table[~final_merged_table['layer_name'].str.contains('flux|gross|net', case=False, na=False)]
+    # print("other_1x1_outputs:", other_1x1_outputs)
 
     # Saves output to three tabs in Excel
     if "xlsx" in zarr_comparison_stats_path:
@@ -561,6 +565,7 @@ def compare_dataset_year_chunk_stats(all_merged_tables, chunk_stats_variable_zar
     # Saves output to three parquet tables.
     # These must be written in the same order as the file names are created in zu.get_table_names_for_zarr_stats_comparison()
     elif "parquet" in zarr_comparison_stats_path[0]:
+        print("zarr_comparison_stats_path[0]:", zarr_comparison_stats_path[0])
         gross_flux_1x1_outputs.to_parquet(zarr_comparison_stats_path[0], index=False)
         net_flux_1x1_outputs.to_parquet(zarr_comparison_stats_path[1], index=False)
         other_1x1_outputs.to_parquet(zarr_comparison_stats_path[2], index=False)
@@ -605,11 +610,11 @@ def get_table_names_for_zarr_stats_comparison(comparison_insert, main_logger, mo
 
         # Names of output parquet tables with chunk stats comparisons
         zarr_comparison_stats_gross_name = f"{model_chunk_stats_path}__{cn.gross_outputs_1x1}_{comparison_insert}_{uu.timestr()}.parquet"
-        zarr_comparison_stats_other_name = f"{model_chunk_stats_path}__{cn.other_outputs_1x1}_{comparison_insert}_{uu.timestr()}.parquet"
         zarr_comparison_stats_net_name = f"{model_chunk_stats_path}__{cn.net_outputs_1x1}_{comparison_insert}_{uu.timestr()}.parquet"
+        zarr_comparison_stats_other_name = f"{model_chunk_stats_path}__{cn.other_outputs_1x1}_{comparison_insert}_{uu.timestr()}.parquet"
         zarr_comparison_stats_1x1_in_10x10_name = f"{model_chunk_stats_path}__{cn.counts_1x1_in_10x10}_{comparison_insert}_{uu.timestr()}.parquet"
-        zarr_comparison_stats_path = [zarr_comparison_stats_gross_name, zarr_comparison_stats_other_name,
-                                      zarr_comparison_stats_net_name, zarr_comparison_stats_1x1_in_10x10_name]
+        zarr_comparison_stats_path = [zarr_comparison_stats_gross_name, zarr_comparison_stats_net_name,
+                                      zarr_comparison_stats_other_name, zarr_comparison_stats_1x1_in_10x10_name]
         zarr_comparison_stats_name = [os.path.basename(stats_path) for stats_path in zarr_comparison_stats_path]
         # print(zarr_comparison_stats_path)
         # print(zarr_comparison_stats_name)

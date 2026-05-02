@@ -36,7 +36,7 @@ which is the situation for large analyses, obviously.
 https://app.asana.com/1/25496124013636/task/1206230383901961/comment/1210641504248464?focus=true
 
 #TODO change NoData in flux outputs to something besides 0 because 0 has a meaning for fluxes
-#TODO add removal factors to zarr output (for use in zonal statistics)
+#TODO add AGC removal factor and AGC emission fraction to zarr output (for use in zonal statistics for uncertainty analysis)
 #TODO Check for changes to zarr creation and usage (including 10x10 creation and zonal stats) from working on SOC
 #TODO potential change to 3112/3119
 #TODO potentially add branches for loss of primary forest (currently just have primary forest remaining primary forest)

@@ -19,7 +19,7 @@ python -m src.utilities.create_cluster -n 25 -m 4 -cn add_dataset_to_zarr
 python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds removal_factor__AGC__MgC -mpd global -id 20260130 -mcstn chunk_stats/parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -f 10
 
 Global run:
-python -m src.utilities.create_cluster -n 200 -m 4 -cn add_dataset_to_zarr
+python -m src.utilities.create_cluster -n 150 -m 4 -cn add_dataset_to_zarr
 python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds removal_factor__AGC__MgC -mpd global -id 20260130 -mcstn chunk_stats/parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "Adding removal factor dataset to the zarr."
 
 """
@@ -27,8 +27,9 @@ python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds removal_
 import argparse
 import dask
 from dask.distributed import print
-
+import time
 import rasterio
+import resource
 import fsspec
 import numpy as np
 import zarr
@@ -46,7 +47,10 @@ def populate_one_zarr_chunk(chunk, var_dir_no_year, zarr_store_url, interval_end
     slice, and returns chunk stats for verification.
     """
 
-    main_logger.info(f"Adding {chunk} to zarr: {uu.timestr()}")
+    logger_worker = lu.setup_logging_worker()
+
+    lu.print_and_log(f"Adding {chunk} to zarr: {uu.timestr()}", False, logger_worker)
+    chunk_start_time = time.time()
 
     bounds_str = uu.boundstr(chunk)
     tile_id = uu.xy_to_tile_id(chunk[0], chunk[3])
@@ -98,10 +102,19 @@ def populate_one_zarr_chunk(chunk, var_dir_no_year, zarr_store_url, interval_end
     z = zarr.open_group(mapper, mode="r+", use_consolidated=False)
     z[var_name_units][0:n_years, lat_start:lat_end, lon_start:lon_end] = block
 
-    main_logger.info(f"Added {chunk} to zarr: {uu.timestr()}")
+    lu.print_and_log(f"Added {chunk} to zarr: {uu.timestr()}", False, logger_worker)
 
     # Calculate chunk stats from the zarr for verification
     chunk_stats = zu.zarr_1x1_deg_stats(chunk, var_name_no_units, zarr_store_url, interval_end_years)
+
+    chunk_end_time = time.time()
+    lu.print_and_log(f"Total chunk processing for {bounds_str} in {round(chunk_end_time - chunk_start_time)} seconds: {uu.timestr()}", False, logger_worker)
+
+    # To track peak memory usage
+    # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6949a74e-1388-832d-8f8e-5e9bf084ecb8
+    peak_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    peak_gb = peak_kb / 1024 ** 2
+    lu.print_and_log(f"Peak memory for {bounds_str} in {tile_id}: {peak_gb:.2f} GB", False, logger_worker)
 
     return {"status": "success", "bounds_str": bounds_str, "years_written": years_written, "chunk_stats": chunk_stats}
 
@@ -214,8 +227,9 @@ def main(cluster_name, input_date, var_name_no_units, model_type, no_log=False, 
     total_success = sum(1 for r in results if isinstance(r, dict) and r.get("status") == "success")
     total_skipped = sum(1 for r in results if isinstance(r, dict) and r.get("status") == "skipped")
 
-    chunk_stats_variable_year_zarr = [[stat for r in results for stat in r["chunk_stats"]]] # Needs extract brackets to make it a list, which is what is expected for comparison below
-    print(chunk_stats_variable_year_zarr)
+    # List of chunk stats (each chunk a dictionary)
+    chunk_stats_variable_year_zarr = [[stat for r in results for stat in r["chunk_stats"]]] # Needs extra brackets to make it a list, which is what is expected for comparison below
+    # print(chunk_stats_variable_year_zarr)
 
     main_logger.info(f"Ingestion to zarr complete: {total_success} succeeded, {total_skipped} skipped: {uu.timestr()}")
 
@@ -224,23 +238,12 @@ def main(cluster_name, input_date, var_name_no_units, model_type, no_log=False, 
 
     main_logger.info(f"Starting zarr chunk stats for {var_name_units}: {uu.timestr()}")
 
-    comparison_insert = "_zarr_comparison"
+    comparison_insert = f"{dataset_no_units}_zarr_comparison"
 
     tables_to_compare_dict, zarr_comparison_stats_name, zarr_comparison_stats_path = zu.get_table_names_for_zarr_stats_comparison(
         comparison_insert, main_logger, model_chunk_stats_table_name)
 
     all_merged_tables = []
-    chunks_count_exceeding_total = 0
-    chunks_without_zarr_stats_total = 0
-
-    # chunk_stats_variable_year_zarr = zu.run_parallel_stats(
-    #     client=client,
-    #     chunk_list=chunk_list,
-    #     var=var_name_no_units,
-    #     zarr_path=zarr_path,
-    #     interval_end_years=interval_end_years
-    # )
-    # print(chunk_stats_variable_year_zarr)
 
     chunks_count_exceeding, chunks_without_zarr_stats = zu.compare_dataset_year_chunk_stats(
         all_merged_tables,
@@ -251,12 +254,21 @@ def main(cluster_name, input_date, var_name_no_units, model_type, no_log=False, 
         zarr_comparison_stats_path
     )
 
-    chunks_count_exceeding_total += chunks_count_exceeding
-    chunks_without_zarr_stats_total += chunks_without_zarr_stats
+    chunks_count_exceeding_total = chunks_count_exceeding
+    chunks_without_zarr_stats_total = chunks_without_zarr_stats
 
     zu.upload_zarr_chunk_stat_comparisons(chunks_count_exceeding_total, chunks_without_zarr_stats_total,
                                           main_logger, model_chunk_stats_table_name,
                                           stage, start_time, zarr_comparison_stats_name, zarr_comparison_stats_path)
+
+
+    ### Step 5: Gather worker logs and merge with main log
+
+    if not run_local:
+
+        # Creates combined log from all workers if not deactivated
+        worker_log_local_path = lu.compile_worker_logs(no_log, cluster, stage, start_time, main_logger)
+        lu.merge_main_and_worker_upload_logs(no_log, main_log_local_path, worker_log_local_path, stage)
 
 
 if __name__ == "__main__":
