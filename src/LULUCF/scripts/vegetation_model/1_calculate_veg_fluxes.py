@@ -37,6 +37,7 @@ https://app.asana.com/1/25496124013636/task/1206230383901961/comment/12106415042
 
 #TODO change NoData in flux outputs to something besides 0 because 0 has a meaning for fluxes
 #TODO add AGC removal factor and AGC emission fraction to zarr output (for use in zonal statistics for uncertainty analysis)
+#TODO make all outputs have a unit where /PER_HA_OR_PIXEL/ currently is-- change it to /UNIT/ so that non-flux/density outputs have a unit, too
 #TODO Check for changes to zarr creation and usage (including 10x10 creation and zonal stats) from working on SOC
 #TODO potential change to 3112/3119
 #TODO potentially add branches for loss of primary forest (currently just have primary forest remaining primary forest)

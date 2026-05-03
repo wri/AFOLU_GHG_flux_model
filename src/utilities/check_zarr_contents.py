@@ -4,7 +4,7 @@ Adapted from zu.zarr_1x1_deg_stats
 
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
-python -m src.LULUCF.test_code.check_zarr_contents
+python -m src.utilities.check_zarr_contents
 """
 
 import sys
@@ -38,12 +38,12 @@ from src.utilities.constants_and_names import intervals_annual
 # var_name = 'SOC_density__full_extent__0-30cm_MgC'
 # interval_end_years = cn.SOC_density_intervals
 
-# For carbon density change timeseries
-bounds = [10, 49, 11, 50]
-# bounds = [23, -4, 24, -3]
-zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_0__standard__test_box/mega_zarr/4000_pixels/20260310/SOC_zarr.zarr'
-var_name = 'SOC_change__full_extent__0-30cm_MgC_ha_yr'
-interval_end_years = cn.SOC_change_intervals
+# # For carbon density change timeseries
+# bounds = [10, 49, 11, 50]
+# # bounds = [23, -4, 24, -3]
+# zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_0__standard__test_box/mega_zarr/4000_pixels/20260310/SOC_zarr.zarr'
+# var_name = 'SOC_change__full_extent__0-30cm_MgC_ha_yr'
+# interval_end_years = cn.SOC_change_intervals
 
 # # For starting carbon density
 # bounds = [114, -4, 115, -3]
@@ -56,6 +56,12 @@ interval_end_years = cn.SOC_change_intervals
 # zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/LULUCF/starting_composite_primary_forest/2015/zarr/4000_pixels/20260210/starting_composite_primary_forest.zarr'
 # var_name = 'starting_composite_primary_forest'
 # interval_end_years = [2015]
+
+# For AGC RF (added to vegetation zarr later)
+bounds = [10, 48, 11, 49]
+zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/mega_zarr/annual_intervals/4000_pixels/20260130/vegetation_zarr.zarr'
+var_name = 'removal_factor__AGC__MgC_ha_yr'
+interval_end_years = [2024]
 
 # # For flox contextual layers
 # bounds = [119, -6, 120, -5]  # For continent-ecozone: mix of 0, 4018 and 4020, with 4020 in upper right (00N_110E)

@@ -565,7 +565,7 @@ def compare_dataset_year_chunk_stats(all_merged_tables, chunk_stats_variable_zar
     # Saves output to three parquet tables.
     # These must be written in the same order as the file names are created in zu.get_table_names_for_zarr_stats_comparison()
     elif "parquet" in zarr_comparison_stats_path[0]:
-        print("zarr_comparison_stats_path[0]:", zarr_comparison_stats_path[0])
+        # print("zarr_comparison_stats_path[0]:", zarr_comparison_stats_path[0])
         gross_flux_1x1_outputs.to_parquet(zarr_comparison_stats_path[0], index=False)
         net_flux_1x1_outputs.to_parquet(zarr_comparison_stats_path[1], index=False)
         other_1x1_outputs.to_parquet(zarr_comparison_stats_path[2], index=False)
@@ -631,7 +631,10 @@ def get_table_names_for_zarr_stats_comparison(comparison_insert, main_logger, mo
 
 # Adds units and year specifications to core pattern
 def add_units_year_to_pattern(core_pattern, year):
-    if "density" in core_pattern:
+    if "emission_factor" in core_pattern:
+        pattern_with_units = f"{core_pattern}"
+        pattern_with_units_years = f"{core_pattern}_{year}"
+    elif "density" in core_pattern:
         pattern_with_units = f"{core_pattern}_ha"
         pattern_with_units_years = f"{core_pattern}_ha_{year}"
     elif "change" in core_pattern:

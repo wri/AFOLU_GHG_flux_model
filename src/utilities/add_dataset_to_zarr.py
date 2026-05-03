@@ -1,26 +1,28 @@
 """
-Standalone backfill script: adds removal_factor__AGC__MgC_ha_yr to an existing vegetation
-mega-zarr and populates it from already-computed tile TIFFs on S3.
+Standalone script: adds user-supplied dataset to an existing vegetation
+zarr and populates it from already-computed tile TIFFs on S3.
 
-Background: the vegetation model computes and saves removal-factor tiles per interval but the
-pattern was never added to core_veg_outputs_to_zarr, so the array is absent from the mega-zarr.
-This script repairs that without rerunning the model.
+This allows datasets that were created as geotif outputs from the vegetation model but not included in the original
+vegetation zarr to be retrospectively added to the zarr without rerunning the vegetation model.
 
-Created by Claude Code desktop
+Created with Claude Code desktop
 
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model/
 
 Coiled small test:
 python -m src.utilities.create_cluster -n 1 -m 4 -cn add_dataset_to_zarr
 python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds removal_factor__AGC__MgC -mpd global -id 20260130 -bb 10 49 11 50 -mcstn chunk_stats/parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5
+python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds AGC_emission_factor_CO2_only__fraction -mpd global -id 20260130 -bb 10 49 11 50 -mcstn chunk_stats/parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5
 
 Coiled shapefile test:
 python -m src.utilities.create_cluster -n 25 -m 4 -cn add_dataset_to_zarr
 python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds removal_factor__AGC__MgC -mpd global -id 20260130 -mcstn chunk_stats/parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -f 10
+python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds AGC_emission_factor_CO2_only__fraction -mpd global -id 20260130 -mcstn chunk_stats/parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -f 10
 
 Global run:
 python -m src.utilities.create_cluster -n 150 -m 4 -cn add_dataset_to_zarr
 python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds removal_factor__AGC__MgC -mpd global -id 20260130 -mcstn chunk_stats/parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "Adding removal factor dataset to the zarr."
+python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds AGC_emission_factor_CO2_only__fraction -mpd global -id 20260130 -mcstn chunk_stats/parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "Adding emission fraction dataset to the zarr."
 
 """
 
@@ -32,6 +34,7 @@ import rasterio
 import resource
 import fsspec
 import numpy as np
+import sys
 import zarr
 
 import src.utilities.constants_and_names as cn
@@ -163,12 +166,19 @@ def main(cluster_name, input_date, var_name_no_units, model_type, no_log=False, 
                                          model_type, cn.veg_model_version_underscore, model_path_description,
                                          input_date, main_logger)
 
-    # Dataset name to add to zarr, e.g., "removal_factor__AGC__MgC_ha_yr". Assumes that the unit is _ha_yr for now.
-    unit = cn.flux_density_pixel_meaning
+    # Dataset name to add to zarr with unit.
+    # Currently, non-flux/density outputs don't have a PER_HA_OR_PIXEL part of output path, so they need different input paths
+    if var_name_no_units == cn.agc_rf_pre_dist_pattern:
+        unit = cn.flux_density_pixel_meaning
+        var_dir_no_year = f"{cn.veg_outputs_path}{var_name_no_units}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+    elif var_name_no_units == cn.agc_emission_factor:
+        unit = ""
+        var_dir_no_year = f"{cn.veg_outputs_path}{var_name_no_units}/MODEL_INTERVAL_TYPE_intervals/START_END/CHUNK_SIZE_pixels/RUN_DATE/"
+    else:
+        sys.exit("Specify unit")
     var_name_units = f"{var_name_no_units}{unit}"
 
-    # Chunk folder to ingest into zarr
-    var_dir_no_year = f"{cn.veg_outputs_path}{var_name_no_units}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+    # Fill in placeholders in chunk folder
     var_dir_no_year = var_dir_no_year.replace(cn.model_version_type_description_placeholder,f"version_{cn.veg_model_version_underscore}__{model_type}__{model_path_description}")
     var_dir_no_year = var_dir_no_year.replace("MODEL_INTERVAL_TYPE", interval_type)
     var_dir_no_year = var_dir_no_year.replace("RUN_DATE", input_date)
@@ -236,30 +246,33 @@ def main(cluster_name, input_date, var_name_no_units, model_type, no_log=False, 
 
     ### Step 4: Compare zarr chunk stats to geotif chunk stats for the new dataset
 
-    main_logger.info(f"Starting zarr chunk stats for {var_name_units}: {uu.timestr()}")
+    if not chunk_stats_variable_year_zarr:
+        main_logger.warning(f"No zarr chunk stats returned — skipping comparison: {uu.timestr()}")
+    else:
+        main_logger.info(f"Starting zarr chunk stats for {var_name_units}: {uu.timestr()}")
 
-    comparison_insert = f"{dataset_no_units}_zarr_comparison"
+        comparison_insert = f"{dataset_no_units}_zarr_comparison"
 
-    tables_to_compare_dict, zarr_comparison_stats_name, zarr_comparison_stats_path = zu.get_table_names_for_zarr_stats_comparison(
-        comparison_insert, main_logger, model_chunk_stats_table_name)
+        tables_to_compare_dict, zarr_comparison_stats_name, zarr_comparison_stats_path = zu.get_table_names_for_zarr_stats_comparison(
+            comparison_insert, main_logger, model_chunk_stats_table_name)
 
-    all_merged_tables = []
+        all_merged_tables = []
 
-    chunks_count_exceeding, chunks_without_zarr_stats = zu.compare_dataset_year_chunk_stats(
-        all_merged_tables,
-        chunk_stats_variable_year_zarr,
-        main_logger,
-        tables_to_compare_dict,
-        var_name_no_units,
-        zarr_comparison_stats_path
-    )
+        chunks_count_exceeding, chunks_without_zarr_stats = zu.compare_dataset_year_chunk_stats(
+            all_merged_tables,
+            chunk_stats_variable_year_zarr,
+            main_logger,
+            tables_to_compare_dict,
+            var_name_no_units,
+            zarr_comparison_stats_path
+        )
 
-    chunks_count_exceeding_total = chunks_count_exceeding
-    chunks_without_zarr_stats_total = chunks_without_zarr_stats
+        chunks_count_exceeding_total = chunks_count_exceeding
+        chunks_without_zarr_stats_total = chunks_without_zarr_stats
 
-    zu.upload_zarr_chunk_stat_comparisons(chunks_count_exceeding_total, chunks_without_zarr_stats_total,
-                                          main_logger, model_chunk_stats_table_name,
-                                          stage, start_time, zarr_comparison_stats_name, zarr_comparison_stats_path)
+        zu.upload_zarr_chunk_stat_comparisons(chunks_count_exceeding_total, chunks_without_zarr_stats_total,
+                                              main_logger, model_chunk_stats_table_name,
+                                              stage, start_time, zarr_comparison_stats_name, zarr_comparison_stats_path)
 
 
     ### Step 5: Gather worker logs and merge with main log

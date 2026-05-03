@@ -105,7 +105,7 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
         allow_cross_zone = False
         software = "afolu-env_coiled_20251119"  # pins zarr==3.1.3 for xr.open_zarr compatibility
     else:
-        print("Not using zonal stats workder configuration")
+        print("Not using zonal stats worker configuration")
         software = None  # use default package sync (uploads local src wheel)
         # Uses on-demand workers for large jobs. Otherwise, prefers spot workers.
         if n_workers > 120:
