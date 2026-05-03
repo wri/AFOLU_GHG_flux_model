@@ -1,5 +1,5 @@
 """
-Script to create WWF GEE assets:
+Script to create GEE assets:
 1) uploads data from s3 storage to GCS bucket directly (with option to filter which tiles to upload, passed in as a .txt file)
 2) ingest data into GEE as ee asset (each dataset x year is its own ee.Image asset)
 
@@ -8,25 +8,24 @@ earthengine authenticate
 
 run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 Run locally to create assets (filtered to tile_IDs):
-python -m src.LULUCF.scripts.postprocessing.GEE.WWF_GEE_asset_ingestion -d net_flux -b lulucf -f WWF -r users/melrose/ -t /mnt/c/GIS/rasters/AFOLU_cogs/operational_landscapes_1x1_tile_ids.txt --skip_existing
+python -m src.LULUCF.scripts.postprocessing.GEE.GEE_asset_ingestion -d emissions removals net_flux mineral_soil -b lulucf -f WWF -r users/melrose/ -t /mnt/c/GIS/rasters/AFOLU/updated_extent_1x1_tile_ids.txt --skip_existing
 
 Run locally after QC to delete tiles from GCS + make assets public:
-python -m src.LULUCF.scripts.postprocessing.GEE.WWF_GEE_asset_ingestion -d net_flux -b lulucf -f WWF -r users/melrose/ -t /mnt/c/GIS/rasters/AFOLU_cogs/operational_landscapes_1x1_tile_ids.txt --skip_existing --clean_gcs --make_public
-python -m src.LULUCF.scripts.postprocessing.GEE.WWF_GEE_asset_ingestion -d emissions -b lulucf -f WWF -r users/melrose/ -t /mnt/c/GIS/rasters/AFOLU_cogs/operational_landscapes_1x1_tile_ids.txt --skip_existing --clean_gcs --make_public
-python -m src.LULUCF.scripts.postprocessing.GEE.WWF_GEE_asset_ingestion -d mineral_soil -b lulucf -f WWF -r projects/wri-datalab/global_afolu/ -t /mnt/c/GIS/rasters/AFOLU_cogs/operational_landscapes_1x1_tile_ids.txt --skip_existing --clean_gcs --make_public
+python -m src.LULUCF.scripts.postprocessing.GEE.GEE_asset_ingestion -d emissions removals net_flux mineral_soil -b lulucf -f WWF -r users/melrose/ -t /mnt/c/GIS/rasters/AFOLU/updated_extent_1x1_tile_ids.txt --skip_existing --clean_gcs --make_public
 
 To run in coiled:
-python -m src.utilities.create_cluster -cn GEE_net_flux_2016 -n 10 -m 4 --gcp
-python -m src.LULUCF.scripts.postprocessing.GEE.WWF_GEE_asset_ingestion -cn GEE_net_flux_2016 -d net_flux -y 2016 -b lulucf -f WWF -r users/melrose/ -t /mnt/c/GIS/rasters/AFOLU_cogs/operational_landscapes_1x1_tile_ids.txt --skip_existing
-*repeated on different clusters for 2016-2024 to run in parallel
+python -m src.utilities.create_cluster -cn mexico_emissions -n 10 -m 4 --gcp
+python -m src.LULUCF.scripts.postprocessing.GEE.GEE_asset_ingestion -cn mexico_emissions -d emissions -b lulucf -f Mexico -r projects/wri-datalab/global_afolu/ -t /mnt/c/GIS/rasters/AFOLU_cogs/mexico_1x1_tile_ids.txt
+-----------------------------------------------------------------------------------
+python -m src.utilities.create_cluster -cn mexico_removals -n 10 -m 4 --gcp
+python -m src.LULUCF.scripts.postprocessing.GEE.GEE_asset_ingestion -cn mexico_removals -d removals -b lulucf -f Mexico -r projects/wri-datalab/global_afolu/ -t /mnt/c/GIS/rasters/AFOLU_cogs/mexico_1x1_tile_ids.txt
+-----------------------------------------------------------------------------------
+python -m src.utilities.create_cluster -cn mexico_net_flux -n 10 -m 4 --gcp
+python -m src.LULUCF.scripts.postprocessing.GEE.GEE_asset_ingestion -cn mexico_net_flux -d net_flux -b lulucf -f Mexico -r projects/wri-datalab/global_afolu/ -t /mnt/c/GIS/rasters/AFOLU_cogs/mexico_1x1_tile_ids.txt
+-----------------------------------------------------------------------------------
+python -m src.utilities.create_cluster -cn mexico_mineral_soil -n 10 -m 4 --gcp
+python -m src.LULUCF.scripts.postprocessing.GEE.GEE_asset_ingestion -cn mexico_mineral_soil -d mineral_soil -b lulucf -f Mexico -r projects/wri-datalab/global_afolu/ -t /mnt/c/GIS/rasters/AFOLU_cogs/mexico_1x1_tile_ids.txt
 
-python -m src.utilities.create_cluster -cn GEE_mineral_soils_2010 -n 10 -m 4 --gcp
-python -m src.LULUCF.scripts.postprocessing.GEE.WWF_GEE_asset_ingestion -cn GEE_mineral_soils_2010 -d mineral_soil -y 2010 -b lulucf -f WWF -r projects/wri-datalab/global_afolu/ -t /mnt/c/GIS/rasters/AFOLU_cogs/operational_landscapes_1x1_tile_ids.txt --skip_existing
-*repeated on different clusters for 2010, 2015, 2020, and 2022 to run in parallel
-
-python -m src.utilities.create_cluster -cn GEE_emissions_2016 -n 10 -m 4 --gcp
-python -m src.LULUCF.scripts.postprocessing.GEE.WWF_GEE_asset_ingestion -cn GEE_emissions_2016 -d emissions -y 2016 -b lulucf -f WWF -r users/melrose/ -t /mnt/c/GIS/rasters/AFOLU_cogs/operational_landscapes_1x1_tile_ids.txt --skip_existing
-*repeated on different clusters for 2016-2024 to run in parallel
 
 Notes:
     - It took ~40 minutes to upload 378 1x1 tiles (tiles that overlap with WWF project sites) for 2010 mineral soils locally
@@ -319,20 +318,20 @@ def main(cluster_name, datasets, gcs_bucket, gcs_folder, gee_repo, years, tile_i
     main_logger, main_log_local_path, n_workers= lu.populate_main_log_header(client, cluster, "GEE asset creation", run_local, 'standard', 'GEE asset creation')
 
     #TODO: This branch is behind the current model (v1.0.5). Remove these and update to cn after merging.
-    wwf_emissions_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/gross_emissions__all_C_pools__all_gases__MgCO2e/annual_intervals/YYYY/_ha_yr/4000_pixels/20260130/"
-    wwf_removals_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/gross_removals__all_C_pools__MgCO2/annual_intervals/YYYY/_ha_yr/4000_pixels/20260130/"
-    wwf_net_flux_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/net_flux__all_C_pools__all_gases__MgCO2e/annual_intervals/YYYY/_ha_yr/4000_pixels/20260130/"
-    wwf_mineral_soil_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_0__standard__global/SOC_change__mineral_soil_extent__0-30cm_MgC/YYYY/_ha_yr/4000_pixels/20251224/"
+    emissions_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/gross_emissions__all_C_pools__all_gases__MgCO2e/annual_intervals/YYYY/_ha_yr/4000_pixels/20260130/"
+    removals_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/gross_removals__all_C_pools__MgCO2/annual_intervals/YYYY/_ha_yr/4000_pixels/20260130/"
+    net_flux_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/net_flux__all_C_pools__all_gases__MgCO2e/annual_intervals/YYYY/_ha_yr/4000_pixels/20260130/"
+    mineral_soil_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_0__standard__global/SOC_change__mineral_soil_extent__0-30cm_MgC/YYYY/_ha_yr/4000_pixels/20251224/"
 
-    wwf_emissions_gee_folder = "WWF_annual_emissions"
-    wwf_removals_gee_folder = "WWF_annual_removals"
-    wwf_net_flux_gee_folder = "WWF_annual_net_flux"
-    wwf_mineral_soil_gee_folder = "WWF_mineral_soils"
+    emissions_gee_folder = "annual_emissions"
+    removals_gee_folder = "annual_removals"
+    net_flux_gee_folder = "annual_net_flux"
+    mineral_soil_gee_folder = "mineral_soils"
 
-    wwf_emissions_gee_pattern = "emissions__all_C_pools__all_gases__MgCO2e_per_hectare_per_year"
-    wwf_removals_gee_pattern = "removals__all_C_pools__MgCO2_per_hectare_per_year"
-    wwf_net_flux_gee_pattern = "net_flux__all_C_pools__all_gases__MgCO2e_per_hectare_per_year"
-    wwf_mineral_soil_gee_pattern = "SOC_change__mineral_soil_extent__0-30cm_MgC_per_hectare_per_year"
+    emissions_gee_pattern = "emissions__all_C_pools__all_gases__MgCO2e_per_hectare_per_year"
+    removals_gee_pattern = "removals__all_C_pools__MgCO2_per_hectare_per_year"
+    net_flux_gee_pattern = "net_flux__all_C_pools__all_gases__MgCO2e_per_hectare_per_year"
+    mineral_soil_gee_pattern = "SOC_change__mineral_soil_extent__0-30cm_MgC_per_hectare_per_year"
 
     # ------------------------------------------------------------------------------------------------------------------
 
@@ -360,21 +359,21 @@ def main(cluster_name, datasets, gcs_bucket, gcs_folder, gee_repo, years, tile_i
 
         for year in ds_years:
             if dataset == "emissions":
-                s3_dir = wwf_emissions_path.replace("YYYY", str(year))
-                gee_dir = wwf_emissions_gee_folder
-                gee_pattern = wwf_emissions_gee_pattern
+                s3_dir = emissions_path.replace("YYYY", str(year))
+                gee_dir = emissions_gee_folder
+                gee_pattern = emissions_gee_pattern
             elif dataset == "removals":
-                s3_dir = wwf_removals_path.replace("YYYY", str(year))
-                gee_dir = wwf_removals_gee_folder
-                gee_pattern = wwf_removals_gee_pattern
+                s3_dir = removals_path.replace("YYYY", str(year))
+                gee_dir = removals_gee_folder
+                gee_pattern = removals_gee_pattern
             elif dataset == "net_flux":
-                s3_dir = wwf_net_flux_path.replace("YYYY", str(year))
-                gee_dir = wwf_net_flux_gee_folder
-                gee_pattern = wwf_net_flux_gee_pattern
+                s3_dir = net_flux_path.replace("YYYY", str(year))
+                gee_dir = net_flux_gee_folder
+                gee_pattern = net_flux_gee_pattern
             elif dataset == "mineral_soil":
-                s3_dir = wwf_mineral_soil_path.replace("YYYY", str(year))
-                gee_dir = wwf_mineral_soil_gee_folder
-                gee_pattern = wwf_mineral_soil_gee_pattern
+                s3_dir = mineral_soil_path.replace("YYYY", str(year))
+                gee_dir = mineral_soil_gee_folder
+                gee_pattern = mineral_soil_gee_pattern
             else:
                 raise ValueError(f"Unknown dataset: {dataset}")
 

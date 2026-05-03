@@ -7,6 +7,12 @@ run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 python -m src.utilities.create_cluster -cn WWF_2016_emissions_cog -n 1 -m 32 --on_demand
 python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs -cn WWF_2016_emissions_cog -d emissions -y 2016 -t /mnt/c/GIS/rasters/AFOLU_cogs/operational_landscapes_10x10_tile_ids.txt
 
+python -m src.utilities.create_cluster -cn tclf_2025_cog -n 1 -m 32 --on_demand
+python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs -cn tclf_2025_cog -d tclf
+
+python -m src.utilities.create_cluster -cn hansen_pixel_area_cog -n 1 -m 32 --on_demand
+python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs -cn hansen_pixel_area_cog -d pixel_area
+
 python -m src.utilities.create_cluster -cn WWF_2016_removals_cog -t 1 -n 1 -m 64 -d 300 --on_demand
 python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs -cn WWF_2016_removals_cog -d removals -y 2016 -t /mnt/c/GIS/rasters/AFOLU_cogs/operational_landscapes_10x10_tile_ids.txt --skip_existing
 
@@ -111,7 +117,8 @@ def list_s3_tiles_from_tile_ids(s3_path, tile_ids):
 # From Michelle: tile_size=2048 for global 30m datasets
 # From GEE documentation: COPY_SRC_OVERVIEWS=YES, TILED=YES, BLOCKXSIZE=512, BLOCKYSIZE=512, COMPRESS=ZSTD, ZSTD_LEVEL=22, INTERLEAVE=BAND, NUM_THREADS=ALL_CPUS
 # From OpenGeoHub GPW: GDAL_CACHEMAX 10240, BLOCKSIZE=2048, BIGTIFF=YES, COMPRESS=DEFLATE, PREDICTOR=2,
-def gdal_translate_cog(vrt, cog, build_overviews=False, resample=None, nodata=None):
+#TODO: Resample should be mode for categorical
+def gdal_translate_cog(vrt, cog, build_overviews=True, resample=None, nodata=None):
 
     logger_worker = lu.setup_logging_worker()
     lu.print_and_log(f"Translating COG: {vrt} -> {cog}", False, logger_worker)
@@ -121,7 +128,7 @@ def gdal_translate_cog(vrt, cog, build_overviews=False, resample=None, nodata=No
             "COMPRESS=DEFLATE",
             "BLOCKSIZE=2048",
             "PREDICTOR=2",
-            "BIGTIFF=YES",
+            "BIGTIFF=IF_SAFER",
             "NUM_THREADS=ALL_CPUS",
             "SPARSE_OK=TRUE",
         ]
@@ -164,7 +171,7 @@ def create_cog_from_vrt(vrt_s3_path, tmp_cog_path, output_cog_s3_path):
     # Build COG via GDAL Python
     vrt = vrt_s3_path.replace("s3://", "/vsis3/")
     try:
-        gdal_translate_cog(vrt, tmp_cog_path, build_overviews=False)
+        gdal_translate_cog(vrt, tmp_cog_path, build_overviews=True)
     except Exception as e:
         lu.print_and_log(f"COG build failed for {vrt}: {e}", False, logger_worker)
         raise
@@ -198,12 +205,14 @@ def main(cluster_name, datasets, years, tile_ids, skip_existing):
     net_flux_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/net_flux__all_C_pools__all_gases__MgCO2e/annual_intervals/YYYY/_pixel_yr/40000_pixels/20260130/"
     mineral_soil_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_0__standard__global/SOC_change__mineral_soil_extent__0-30cm_MgC/YYYY/_ha_yr/4000_pixels/20251224/"
     pixel_area_path = "s3://gfw2-data/analyses/area_28m/"
+    tclf_path = "s3://gfw2-data/climate/carbon_model/other_emissions_inputs/tree_cover_loss_fires/20260316/processed/"
 
     emissions_pattern = "gross_emissions__all_C_pools__all_gases__MgCO2e_pixel_yr"
     removals_pattern = "gross_removals__all_C_pools__MgCO2_pixel_yr"
     net_flux_pattern = "net_flux__all_C_pools__all_gases__MgCO2e_pixel_yr"
     mineral_soil_pattern = "SOC_change__mineral_soil_extent__0-30cm_MgC_ha_yr"
     pixel_area_pattern = "hansen_pixel_area"
+    tclf_pattern = "tree_cover_loss_fire_processed"
 
     # ------------------------------------------------------------------------------------------------------------------
 
@@ -217,7 +226,8 @@ def main(cluster_name, datasets, years, tile_ids, skip_existing):
             "removals": cn.interval_end_years_annual,
             "net_flux": cn.interval_end_years_annual,
             "mineral_soil": cn.SOC_change_intervals,
-            "pixel_area": [2013]
+            "pixel_area": [2013],
+            "tclf": [2025]
         }
 
     # Datasets to pass in arguments for tile upload + GEE asset creation
@@ -244,10 +254,13 @@ def main(cluster_name, datasets, years, tile_ids, skip_existing):
             elif dataset == "pixel_area":
                 s3_dir = pixel_area_path
                 pattern = pixel_area_pattern
+            elif dataset == "tclf":
+                s3_dir = tclf_path
+                pattern = tclf_pattern
             else:
                 raise ValueError(f"Unknown dataset: {dataset}")
 
-            if dataset != "pixel_area":
+            if dataset not in ("pixel_area", "tclf"):
                 download_upload_dictionary[f"{dataset}_{year}"] = {
                     "dataset": dataset,
                     "year": year,
@@ -256,7 +269,7 @@ def main(cluster_name, datasets, years, tile_ids, skip_existing):
                     'vrt': f"/tmp/{pattern}_{year}.vrt",
                     'cog': f"/tmp/{pattern}_{year}.tif"
                 }
-            else:
+            elif dataset == "pixel_area":
                 download_upload_dictionary[f"{dataset}"] = {
                     "dataset": dataset,
                     "s3_dir": s3_dir.rstrip("/") + "/",
@@ -264,7 +277,17 @@ def main(cluster_name, datasets, years, tile_ids, skip_existing):
                     'vrt': f"/tmp/{pattern}.vrt",
                     'cog': f"/tmp/{pattern}.tif"
                 }
-            #TODO: delete pixel area logic after running globally
+            elif dataset == "tclf":
+                download_upload_dictionary[f"{dataset}"] = {
+                    "dataset": dataset,
+                    "s3_dir": s3_dir.rstrip("/") + "/",
+                    "vrt_dir": s3_dir.replace("processed", "cog").rstrip("/") + "/",
+                    'vrt': f"/tmp/{pattern}.vrt",
+                    'cog': f"/tmp/{pattern}.tif"
+                }
+            else:
+                raise ValueError(f"Unknown dataset: {dataset}")
+            #TODO: delete pixel area and tclf logic after running globally
 
     # -------------------------------------------------------------------------------------------------------------------
 
