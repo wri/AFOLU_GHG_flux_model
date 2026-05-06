@@ -102,7 +102,7 @@ def add_all_summative_rows(df_other: pd.DataFrame, composites: dict[str, list[st
 # Assigns climate domain column
 def assign_climate_domain(df):
 
-    cont_eco = df["continent_ecozone"]
+    cont_eco = df["continent_ecozone"].astype("string")
 
     df["climate_domain"] = np.select(
         [
