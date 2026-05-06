@@ -3,15 +3,30 @@ Script to create GEE assets:
 1) uploads data from s3 storage to GCS bucket directly (with option to filter which tiles to upload, passed in as a .txt file)
 2) ingest data into GEE as ee asset (each dataset x year is its own ee.Image asset)
 
+Run these before running the script:
+export GOOGLE_CLOUD_PROJECT=forma-250 (only if changing which project to use)
 gcloud auth application-default login
 earthengine authenticate
 
+// Note: authenticated differently for forma-250
+import ee
+import google.auth
+credentials, _ = google.auth.default(
+    scopes=[
+        "https://www.googleapis.com/auth/earthengine",
+        "https://www.googleapis.com/auth/cloud-platform",
+    ]
+)
+
+ee.Initialize(credentials=credentials, project="forma-250")
+
+
 run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 Run locally to create assets (filtered to tile_IDs):
-python -m src.LULUCF.scripts.postprocessing.GEE.GEE_asset_ingestion -d emissions removals net_flux mineral_soil -b lulucf -f WWF -r users/melrose/ -t /mnt/c/GIS/rasters/AFOLU/updated_extent_1x1_tile_ids.txt --skip_existing
+python -m src.LULUCF.scripts.postprocessing.GEE.GEE_asset_ingestion -d organic_soil -b gfw_gee_export_staging -f costa_rica -r projects/wri-datalab/global_afolu/ -t /mnt/c/GIS/rasters/AFOLU/costa_rica_1x1_tile_ids.txt --skip_existing
 
 Run locally after QC to delete tiles from GCS + make assets public:
-python -m src.LULUCF.scripts.postprocessing.GEE.GEE_asset_ingestion -d emissions removals net_flux mineral_soil -b lulucf -f WWF -r users/melrose/ -t /mnt/c/GIS/rasters/AFOLU/updated_extent_1x1_tile_ids.txt --skip_existing --clean_gcs --make_public
+python -m src.LULUCF.scripts.postprocessing.GEE.GEE_asset_ingestion -d organic_soil -b gfw_gee_export_staging -f costa_rica -r projects/wri-datalab/global_afolu/ -t /mnt/c/GIS/rasters/AFOLU/costa_rica_1x1_tile_ids.txt --skip_existing --clean_gcs --make_public
 
 To run in coiled:
 python -m src.utilities.create_cluster -cn mexico_emissions -n 10 -m 4 --gcp
@@ -322,16 +337,24 @@ def main(cluster_name, datasets, gcs_bucket, gcs_folder, gee_repo, years, tile_i
     removals_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/gross_removals__all_C_pools__MgCO2/annual_intervals/YYYY/_ha_yr/4000_pixels/20260130/"
     net_flux_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/net_flux__all_C_pools__all_gases__MgCO2e/annual_intervals/YYYY/_ha_yr/4000_pixels/20260130/"
     mineral_soil_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_0__standard__global/SOC_change__mineral_soil_extent__0-30cm_MgC/YYYY/_ha_yr/4000_pixels/20251224/"
+    drained_organic_soil_path = "s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/outputs/version_0_9_7/drained_total_Mg_CO2e_ha_yr/ogh_sensitivity_500m_10/five_year_intervals/YYYY_YYYY/4000_pixels/20251118/"
+    burned_organic_soil_path =  "s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/outputs/version_0_9_7/burned_total_Mg_CO2e_ha_yr/ogh_sensitivity_500m_10/five_year_intervals/YYYY_YYYY/4000_pixels/20251118/"
 
     emissions_gee_folder = "annual_emissions"
     removals_gee_folder = "annual_removals"
     net_flux_gee_folder = "annual_net_flux"
     mineral_soil_gee_folder = "mineral_soils"
+    drained_organic_soil_gee_folder = "organic_soils_drained"
+    burned_organic_soil_gee_folder = "organic_soils_burned"
 
     emissions_gee_pattern = "emissions__all_C_pools__all_gases__MgCO2e_per_hectare_per_year"
     removals_gee_pattern = "removals__all_C_pools__MgCO2_per_hectare_per_year"
     net_flux_gee_pattern = "net_flux__all_C_pools__all_gases__MgCO2e_per_hectare_per_year"
     mineral_soil_gee_pattern = "SOC_change__mineral_soil_extent__0-30cm_MgC_per_hectare_per_year"
+    drained_organic_soil_gee_pattern = "drained_organic_soil_emissions_MgCO2e_per_hectare_per_year"
+    burned_organic_soil_gee_pattern = "burned_organic_soil_emissions_MgCO2e_per_hectare_per_year"
+
+    organic_soil_intervals = ["2001_2005", "2006_2010", "2011_2015", "2016_2020", "2021_2024"]
 
     # ------------------------------------------------------------------------------------------------------------------
 
@@ -347,6 +370,8 @@ def main(cluster_name, datasets, gcs_bucket, gcs_folder, gee_repo, years, tile_i
             "removals": cn.interval_end_years_annual,
             "net_flux": cn.interval_end_years_annual,
             "mineral_soil": cn.SOC_change_intervals,
+            "drained_organic_soil": organic_soil_intervals,
+            "burned_organic_soil": organic_soil_intervals,
         }
 
     # Datasets to pass in arguments for tile upload + GEE asset creation
@@ -374,6 +399,14 @@ def main(cluster_name, datasets, gcs_bucket, gcs_folder, gee_repo, years, tile_i
                 s3_dir = mineral_soil_path.replace("YYYY", str(year))
                 gee_dir = mineral_soil_gee_folder
                 gee_pattern = mineral_soil_gee_pattern
+            elif dataset == "drained_organic_soil":
+                s3_dir = drained_organic_soil_path.replace("YYYY_YYYY", str(year))
+                gee_dir = drained_organic_soil_gee_folder
+                gee_pattern = drained_organic_soil_gee_pattern
+            elif dataset == "burned_organic_soil":
+                s3_dir = burned_organic_soil_path.replace("YYYY_YYYY", str(year))
+                gee_dir = burned_organic_soil_gee_folder
+                gee_pattern = burned_organic_soil_gee_pattern
             else:
                 raise ValueError(f"Unknown dataset: {dataset}")
 
@@ -523,7 +556,7 @@ def main(cluster_name, datasets, gcs_bucket, gcs_folder, gee_repo, years, tile_i
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="S3 -> GCS upload --> GEE asset ingestion")
     parser.add_argument('-cn', '--cluster_name', help='Coiled cluster name')
-    parser.add_argument('-d', '--datasets', required=True, nargs='+', help='What datasets do you want to ingest as GEE assets? Options: emissions, removals, net_flux, mineral_soil')
+    parser.add_argument('-d', '--datasets', required=True, nargs='+', help='What datasets do you want to ingest as GEE assets? Options: emissions, removals, net_flux, mineral_soil, organic_soil')
     parser.add_argument('-b', '--gcs_bucket', required=True, help="GCS bucket name (ex: my-bucket)")
     parser.add_argument('-f', '--gcs_folder',  help="Folder in GCS bucket (ex: wwf)")
     parser.add_argument('-r', '--gee_repo', help="GEE repo to ingest asset to (ex: my-asset-repo)")
@@ -544,5 +577,9 @@ if __name__ == "__main__":
     skip_existing = args.skip_existing
     clean_gcs = args.clean_gcs
     make_public = args.make_public
+
+    if "organic_soil" in datasets:
+        datasets.remove("organic_soil")
+        datasets.extend(["drained_organic_soil", "burned_organic_soil"])
 
     main(cluster_name, datasets, gcs_bucket, gcs_folder, gee_repo, years, tile_ids, skip_existing, clean_gcs, make_public)
