@@ -1,5 +1,5 @@
 """
-Zonal stats for vegetation.
+Zonal stats for AGC emission and removal factors only (against the same contextual layers as used in the full analysis).
 
 Area to analyze can be specified with a shapefile or a bounding box.
 If a shapefile is supplied, all 10x10 deg tiles that intersect the shapefile are analyzed iteratively.
@@ -19,23 +19,25 @@ Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Coiled small tests:
 python -m src.utilities.create_cluster -n 1 -m 64 -cn vegetation_zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.vegetation_zonal_stats -cn vegetation_zonal_stats -bb 10 49 11 50 -fv 2 -ft 2 -mt standard -mpd global --input_date YYYYMMDD -zd test_box
+python -m src.LULUCF.scripts.zonal_statistics.vegetation__removal_emission_factor__zonal_stats -cn vegetation_zonal_stats -bb 10 49 11 50 -fv 2 -ft 2 -mt standard -mpd global --input_date YYYYMMDD -zd test_box
 
 Coiled 8-tile test (Central and East Africa):
 python -m src.utilities.create_cluster -n 50 -m 64 -cn vegetation_zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.vegetation_zonal_stats -cn vegetation_zonal_stats -bb 13 -14 44 -3 -fv 3 -ft 3 -mt standard -mpd global --input_date YYYYMMDD -zd Central_Africa_test
+python -m src.LULUCF.scripts.zonal_statistics.vegetation__removal_emission_factor__zonal_stats -cn vegetation_zonal_stats -bb 13 -14 44 -3 -fv 3 -ft 3 -mt standard -mpd global --input_date YYYYMMDD -zd Central_Africa_test
 
 Coiled Cerrado test (174 features):
 python -m src.utilities.create_cluster -n 50 -m 64 -cn vegetation_zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.vegetation_zonal_stats -cn vegetation_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd Cerrado_test -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp
+python -m src.LULUCF.scripts.zonal_statistics.vegetation__removal_emission_factor__zonal_stats -cn vegetation_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd Cerrado_test -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp
 
 Coiled large shapefile test (1884 features):
 python -m src.utilities.create_cluster -n 50 -m 64 -cn vegetation_zonal_stats -od
-python -m src.LULUCF.scripts.zonal_statistics.vegetation_zonal_stats -cn vegetation_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd 1884_chunk_test -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp
+python -m src.LULUCF.scripts.zonal_statistics.vegetation__removal_emission_factor__zonal_stats -cn vegetation_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd 1884_chunk_test -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp
 
 Full run:
 python -m src.utilities.create_cluster -n 50 -m 64 -cn vegetation_zonal_stats -od
-python -m src.LULUCF.scripts.zonal_statistics.vegetation_zonal_stats -cn vegetation_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Zonal stats for vegetation model v1.0.5 (2016-2024)."
+python -m src.LULUCF.scripts.zonal_statistics.vegetation__removal_emission_factor__zonal_stats -cn vegetation_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Zonal stats for vegetation model v1.0.5 (2016-2024)."
+
+#TODO check what worker size is needed. 64GB is probably excessive with only two analysis layers.
 """
 
 import argparse
@@ -117,13 +119,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     unique_tile_ids = sorted(list(set(tile_ids)))
 
     # Outputs to performs zonal stats on
-    full_list_of_vars = [
-                         cn.agc_gross_emis_pattern, cn.bgc_gross_emis_pattern, cn.deadwood_c_gross_emis_pattern, cn.litter_c_gross_emis_pattern,
-                         cn.ch4_gross_emis_pattern, cn.n2o_gross_emis_pattern,
-                         cn.agc_gross_removals_pattern, cn.bgc_gross_removals_pattern, cn.deadwood_c_gross_removals_pattern, cn.litter_c_gross_removals_pattern,
-                         cn.net_flux_all_C_pools_CO2_only_pattern, cn.net_flux_all_C_pools_all_gases_pattern,
-                         cn.non_soil_c_modeled_dens_pattern
-                         ]
+    full_list_of_vars = [cn.agc_emission_factor, cn.agc_rf_pre_dist_pattern]
 
     full_list_of_vars_with_units = [
         zu.add_units_year_to_pattern(var_name, 9999)[0]  # Dummy year since we don't need the year to access the datasets in the zarr, just add the units
@@ -298,7 +294,6 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
         # If the bounding box is less than 6x6 deg, the exact bounding box is used (to enable small tests)
         if sub_tile_test == True:
             west, south, east, north = bounding_box[0], bounding_box[1], bounding_box[2], bounding_box[3]
-            main_logger.info("  Running test area")
         else: # Otherwise, the tiles that intersect the bounding box or shapefile are used
             west, south, east, north = uu.get_10x10_tile_bounds(tile_id)
 
@@ -484,7 +479,6 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
         coord_dict = zsu.convert_to_coord_dict(results, tile_id, main_logger)
         df = zsu.create_df(coord_dict, state_node_df, contextual_layers, tile_id, 'vegetation', main_logger)
         main_logger.info(f"  Rows in {tile_id} dataframe: {len(df.index)}: {uu.timestr()}")
-
 
         main_logger.info(f"  Saving {tile_id} output table: {uu.timestr()}")
         tile_df_name = f'veg_model_zonal_stats_{tile_id}_v{cn.veg_model_version_underscore}_{zonal_stats_description}_{time.strftime('%Y%m%d_%H_%M_%S')}'

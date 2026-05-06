@@ -20,7 +20,7 @@ python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds removal_
 python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds AGC_emission_factor_CO2_only__fraction -mpd global -id 20260130 -mcstn chunk_stats/parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -f 10
 
 Global run:
-python -m src.utilities.create_cluster -n 150 -m 4 -cn add_dataset_to_zarr
+python -m src.utilities.create_cluster -n 125 -m 4 -cn add_dataset_to_zarr
 python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds removal_factor__AGC__MgC -mpd global -id 20260130 -mcstn chunk_stats/parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "Adding removal factor dataset to the zarr."
 python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds AGC_emission_factor_CO2_only__fraction -mpd global -id 20260130 -mcstn chunk_stats/parquet_20260131_10_37_46__KEEP/vegetation_fluxes_20260131_10_37_28__v1_0_5 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "Adding emission fraction dataset to the zarr."
 
@@ -29,11 +29,7 @@ python -m src.utilities.add_dataset_to_zarr -cn add_dataset_to_zarr -ds AGC_emis
 import argparse
 import dask
 from dask.distributed import print
-import time
-import rasterio
-import resource
 import fsspec
-import numpy as np
 import sys
 import zarr
 
@@ -41,85 +37,6 @@ import src.utilities.constants_and_names as cn
 import src.utilities.universal_utilities as uu
 import src.utilities.log_utilities as lu
 import src.utilities.zarr_utilities as zu
-
-def populate_one_zarr_chunk(chunk, var_dir_no_year, zarr_store_url, interval_end_years,
-                            var_name_units, var_name_no_units, resolution, main_logger):
-    """
-    For one spatial chunk, constructs the expected tile path for each year directly,
-    stacks them into a (n_years, height, width) block, writes it to the correct zarr
-    slice, and returns chunk stats for verification.
-    """
-
-    logger_worker = lu.setup_logging_worker()
-
-    lu.print_and_log(f"Adding {chunk} to zarr: {uu.timestr()}", False, logger_worker)
-    chunk_start_time = time.time()
-
-    bounds_str = uu.boundstr(chunk)
-    tile_id = uu.xy_to_tile_id(chunk[0], chunk[3])
-
-    # Read one existing tile to get spatial extent and raster dimensions
-    sample_path = None
-    for year in interval_end_years:
-        candidate = f"{var_dir_no_year.replace('START_END', str(year))}{tile_id}__{bounds_str}__{var_name_units}_{year}.tif"
-        fs = fsspec.filesystem("s3", anon=False)
-        if fs.exists(candidate.replace("s3://", "")):
-            sample_path = candidate
-            break
-
-    if sample_path is None:
-        return {"status": "skipped", "bounds_str": bounds_str, "reason": "no tile files found", "chunk_stats": []}
-
-    with rasterio.open(sample_path) as src:
-        b = src.bounds
-        tile_height = src.height
-        tile_width  = src.width
-
-    # Compute the slice into the global zarr
-    lat_start = int(round((90.0 - b.top)  / resolution))
-    lon_start = int(round((b.left + 180.0) / resolution))
-    lat_end   = lat_start + tile_height
-    lon_end   = lon_start + tile_width
-
-    # Build an empty (n_years, height, width) numpy array
-    n_years = len(interval_end_years)
-    block = np.full((n_years, tile_height, tile_width), np.float32(np.nan), dtype="float32")
-
-    # Populate the array year by year, constructing each tile path directly
-    years_written = []
-    for i, year in enumerate(interval_end_years):
-        tile_path = f"{var_dir_no_year.replace('START_END', str(year))}{tile_id}__{bounds_str}__{var_name_units}_{year}.tif"
-        try:
-            with rasterio.open(tile_path) as src:
-                data = src.read(1).astype("float32")
-                if src.nodata is not None:
-                    data[data == src.nodata] = np.nan   # Writes NaN rather than 0 for NoData
-                block[i] = data
-            years_written.append(year)
-        except Exception:
-            pass  # Leave year slice as NaN if tile is missing
-
-    # Write the full time block for this chunk to the zarr
-    fs = fsspec.filesystem("s3", anon=False)
-    mapper = fs.get_mapper(zarr_store_url)
-    z = zarr.open_group(mapper, mode="r+", use_consolidated=False)
-    z[var_name_units][0:n_years, lat_start:lat_end, lon_start:lon_end] = block
-
-    lu.print_and_log(f"Added {chunk} to zarr: {uu.timestr()}", False, logger_worker)
-
-    # Calculate chunk stats from the zarr for verification
-    chunk_stats = zu.zarr_1x1_deg_stats(chunk, var_name_no_units, zarr_store_url, interval_end_years)
-
-    chunk_end_time = time.time()
-    lu.print_and_log(f"Total chunk processing for {bounds_str} in {round(chunk_end_time - chunk_start_time)} seconds: {uu.timestr()}", False, logger_worker)
-
-    # To track peak memory usage
-    # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6949a74e-1388-832d-8f8e-5e9bf084ecb8
-    peak_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    peak_gb = peak_kb / 1024 ** 2
-    lu.print_and_log(f"Peak memory for {bounds_str} in {tile_id}: {peak_gb:.2f} GB", False, logger_worker)
-
-    return {"status": "success", "bounds_str": bounds_str, "years_written": years_written, "chunk_stats": chunk_stats}
 
 
 def main(cluster_name, input_date, var_name_no_units, model_type, no_log=False, chunk_shapefile_uri=False,
@@ -156,6 +73,8 @@ def main(cluster_name, input_date, var_name_no_units, model_type, no_log=False, 
     # chunk_ids for making chunk list if shapefile is supplied in command line.
     # chunk_ids and iso code used for chunk stats.
     fishnet_iso_df = uu.fishnet_with_GADM_iso(chunk_shapefile_uri)
+
+    print("Here")
 
     # Creates the list of chunks to process, depending on the approach: shapefile attribute table or a bounding box
     chunk_size_deg = 1   # Chunk size for geotifs is set at 1x1 deg
@@ -227,7 +146,7 @@ def main(cluster_name, input_date, var_name_no_units, model_type, no_log=False, 
     main_logger.info(f"Submitting {len(chunk_list)} tasks: {uu.timestr()}")
 
     # Builds a tile_paths lookup from bounds_to_files for each chunk in chunk_list
-    delayed_results = [dask.delayed(populate_one_zarr_chunk)(
+    delayed_results = [dask.delayed(zu.populate_one_zarr_chunk)(
         chunk, var_dir_no_year,
         zarr_path, interval_end_years, var_name_units, var_name_no_units, cn.resolution, main_logger
     ) for chunk in chunk_list]

@@ -13,6 +13,7 @@ If no pixels, the tile is skipped to save time.
 Requires zarr v3.1.3 on workers, which is set up using a pre-uploaded software package.
 Usage of that is triggered with the --zonal_stats flag.
 Without --zonal_stats, Coiled will use zarr v3.1.6, which will either not let the zarr be read or fail during compute.
+Warnings about mismatches being client and worker/cluster versions for some packages are expected but doesn't seem to be a problem.
 
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
@@ -39,7 +40,6 @@ python -m src.utilities.create_cluster -n 50 -m 32 -cn SOC_zonal_stats --zonal_s
 python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Zonal stats for vegetation model v1.0.5 (2016-2024)."
 -mcstn KEEP_definitive_runs/SOC_density/v1_0_0__2000_2022__20251224/soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx
 
-#TODO upload outputs to s3 if more than a certain number
 #TODO Try running with 16GB workers. May be using little enough memory to run on that.
 #TODO MAYBE Convert stock changes from Mg C to Mg CO2 and change output names accordingly.
 """
@@ -79,6 +79,14 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     # Connects to Coiled cluster if not running locally and the named cluster exists
     cluster, client, run_local = uu.connect_to_Coiled_cluster(cluster_name, False)
 
+    # If an area smaller than 6x6 deg is given (for testing), the sub_tile_test flag is activated
+    # and the analysis extent changes further down
+    print(not chunk_shapefile_uri)
+    if (not chunk_shapefile_uri) and ((abs(bounding_box[0]-bounding_box[2]) < 6) and (abs(bounding_box[1]-bounding_box[3]) < 6)):
+        sub_tile_test = True
+    else:
+        sub_tile_test = False
+
     # Shapefile of chunk footprints to use if none is supplied on the command line
     if not chunk_shapefile_uri:
         chunk_shapefile_uri = cn.fishnet_1x1deg_uri
@@ -93,13 +101,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     main_logger.info(f"Start year: 2000; end year: {cn.SOC_density_intervals[-1]}")
     main_logger.info(f"Input date: {input_date}")
     main_logger.info(f"no_upload: {no_upload}")
-
-    # If an area smaller than 6x6 deg is given (for testing), the sub_tile_test flag is activated
-    # and the analysis extent changes further down
-    if (not chunk_shapefile_uri) and ((abs(bounding_box[0]-bounding_box[2]) < 6) and (abs(bounding_box[1]-bounding_box[3]) < 6)):
-        sub_tile_test = True
-    else:
-        sub_tile_test = False
+    main_logger.info(f"Running sub-tile test area: {sub_tile_test}")
 
     # Returns a dataframe of chunk_id and ISO for the GADM4.1 1x1 deg fishnet.
     # chunk_ids for making chunk list if shapefile is supplied in command line.

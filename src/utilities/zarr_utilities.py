@@ -8,6 +8,7 @@ import dask.array as da
 import xarray as xr
 import gc
 import numpy as np
+import rasterio
 from rasterio.transform import from_origin
 import resource
 import psutil
@@ -1042,3 +1043,84 @@ def get_index_range(coords, min_val, max_val, descending=False):
         i0 = bisect_left(coords, min_val)
         i1 = bisect_right(coords, max_val)
         return i0, i1
+
+
+def populate_one_zarr_chunk(chunk, var_dir_no_year, zarr_store_url, interval_end_years,
+                            var_name_units, var_name_no_units, resolution, main_logger):
+    """
+    For one spatial chunk, constructs the expected tile path for each year directly,
+    stacks them into a (n_years, height, width) block, writes it to the correct zarr
+    slice, and returns chunk stats for verification.
+    From Claude Code
+    """
+
+    logger_worker = lu.setup_logging_worker()
+
+    lu.print_and_log(f"Adding {chunk} to zarr: {uu.timestr()}", False, logger_worker)
+    chunk_start_time = time.time()
+
+    bounds_str = uu.boundstr(chunk)
+    tile_id = uu.xy_to_tile_id(chunk[0], chunk[3])
+
+    # Read one existing tile to get spatial extent and raster dimensions
+    sample_path = None
+    for year in interval_end_years:
+        candidate = f"{var_dir_no_year.replace('START_END', str(year))}{tile_id}__{bounds_str}__{var_name_units}_{year}.tif"
+        fs = fsspec.filesystem("s3", anon=False)
+        if fs.exists(candidate.replace("s3://", "")):
+            sample_path = candidate
+            break
+
+    if sample_path is None:
+        return {"status": "skipped", "bounds_str": bounds_str, "reason": "no tile files found", "chunk_stats": []}
+
+    with rasterio.open(sample_path) as src:
+        b = src.bounds
+        tile_height = src.height
+        tile_width  = src.width
+
+    # Compute the slice into the global zarr
+    lat_start = int(round((90.0 - b.top)  / resolution))
+    lon_start = int(round((b.left + 180.0) / resolution))
+    lat_end   = lat_start + tile_height
+    lon_end   = lon_start + tile_width
+
+    # Build an empty (n_years, height, width) numpy array
+    n_years = len(interval_end_years)
+    block = np.full((n_years, tile_height, tile_width), np.float32(np.nan), dtype="float32")
+
+    # Populate the array year by year, constructing each tile path directly
+    years_written = []
+    for i, year in enumerate(interval_end_years):
+        tile_path = f"{var_dir_no_year.replace('START_END', str(year))}{tile_id}__{bounds_str}__{var_name_units}_{year}.tif"
+        try:
+            with rasterio.open(tile_path) as src:
+                data = src.read(1).astype("float32")
+                if src.nodata is not None:
+                    data[data == src.nodata] = np.nan   # Writes NaN rather than 0 for NoData
+                block[i] = data
+            years_written.append(year)
+        except Exception:
+            pass  # Leave year slice as NaN if tile is missing
+
+    # Write the full time block for this chunk to the zarr
+    fs = fsspec.filesystem("s3", anon=False)
+    mapper = fs.get_mapper(zarr_store_url)
+    z = zarr.open_group(mapper, mode="r+", use_consolidated=False)
+    z[var_name_units][0:n_years, lat_start:lat_end, lon_start:lon_end] = block
+
+    lu.print_and_log(f"Added {chunk} to zarr: {uu.timestr()}", False, logger_worker)
+
+    # Calculate chunk stats from the zarr for verification
+    chunk_stats = zarr_1x1_deg_stats(chunk, var_name_no_units, zarr_store_url, interval_end_years)
+
+    chunk_end_time = time.time()
+    lu.print_and_log(f"Total chunk processing for {bounds_str} in {round(chunk_end_time - chunk_start_time)} seconds: {uu.timestr()}", False, logger_worker)
+
+    # To track peak memory usage
+    # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6949a74e-1388-832d-8f8e-5e9bf084ecb8
+    peak_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    peak_gb = peak_kb / 1024 ** 2
+    lu.print_and_log(f"Peak memory for {bounds_str} in {tile_id}: {peak_gb:.2f} GB", False, logger_worker)
+
+    return {"status": "success", "bounds_str": bounds_str, "years_written": years_written, "chunk_stats": chunk_stats}
