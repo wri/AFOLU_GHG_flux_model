@@ -1207,6 +1207,8 @@ watershed_codes = np.array([0,
     8001, 8002, 8003, 8004, 8005, 8006, 8007, 8008, 8009
 ], dtype=np.uint16)
 
+drivers_codes = np.array([0, 1, 2, 3, 4, 5, 6, 7], dtype=np.uint8)
+
 managed_land_codes = np.array([0, 1, 2], dtype=np.uint8)
 
 # Converts numeric ISO values to ISO codes
@@ -1631,6 +1633,16 @@ watershed_to_text = {
     8008: "New Zealand",
     8009: "Tasmania"
 }
+drivers_to_text = {
+    1: "permanent agriculture",
+    2: "hard_commodities",
+    3: "shifting_cultivation",
+    4: "forest_management",
+    5: "wildfire",
+    6: "settlements_and_infrastruct",
+    7: "other_natural_disturbances"
+}
+
 
 # Converts the WDPA code to type
 WDPA_to_text = {

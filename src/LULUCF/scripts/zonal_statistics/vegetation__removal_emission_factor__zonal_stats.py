@@ -499,8 +499,11 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
 
     all_tiles_end_time = time.time()
     main_logger.info(f"Finished tile analyses, took {round(all_tiles_end_time - prep_start_time)} seconds: {uu.timestr()}")
-    average_time = (all_tiles_end_time - prep_start_time)/len(tile_ids_to_process) #TODO have this not count the tiles skipped because they have no data. Adapt from SOC_zonal_stats
-    main_logger.info(f"Average time per tile (including skipped tiles): {round(average_time)} seconds (for {len(tile_ids_to_process)} tiles)")
+    if tiles_processed > 0:
+        average_time = (all_tiles_end_time - prep_start_time)/tiles_processed
+        main_logger.info(f"Average time per tile (excluding skipped tiles): {round(average_time)} seconds (for {tiles_processed} tiles)")
+    else:
+        main_logger.info("No tiles processed")
 
     workers = client.scheduler_info()["workers"]
     n_workers = len(workers)
