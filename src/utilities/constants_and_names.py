@@ -607,7 +607,7 @@ From Radost Stanimirova via Slack 2024-10-18:
 //2: Hard commodities
 //3: Shifting cultivation
 //4: Forest management
-//5: "Wildfire
+//5: Wildfire
 //6: Settlements & Infrastructure
 //7: Other natural disturbances
 '''
@@ -1105,8 +1105,16 @@ managed_land_USA_zarr_date = '20260219'
 managed_land_USA_zarr_dtype = 'uint8'  # 1=managed, 2=unmanaged
 managed_land_USA_geotif_path = "s3://gfw2-data/climate/jrc_managed_land_usa__from_gfw-data-lake/v20260218/raster/epsg-4326/10/40000/managed_land_extent/geotiff/"
 managed_land_USA_zarr_path = f"{contextual_zarr_path}jrc_managed_land_USA/v20260218/{managed_land_USA_zarr_date}_fillValue_removed/jrc_managed_land_USA_{managed_land_USA_zarr_date}.zarr"
-managed_USA_test_chunk = [-143, 61, -142, 62]  # 1 (managed) in top right, 2 (unmanaged) in other corners. Should have full coverage. (70N_150W)
+managed_land_USA_test_chunk = [-143, 61, -142, 62]  # 1 (managed) in top right, 2 (unmanaged) in other corners. Should have full coverage. (70N_150W)
 managed_land_USA_pattern = 'managed_land_USA'
+
+drivers_of_loss_zarr_date = '20260507'
+drivers_of_loss_zarr_dtype = 'uint8'
+drivers_of_loss_geotif_path = drivers_processed_dir
+drivers_of_loss_zarr_path = f"{contextual_zarr_path}drivers_of_TCL_1_km/v{drivers_run_date}/update2023_20241218__run_{drivers_of_loss_zarr_date}_fillValue_removed/drivers_of_TCL_1_km_{drivers_of_loss_zarr_date}.zarr"
+drivers_of_loss_test_chunk = [27, -9, 28, -8]  # 7 in top-left, 3 in top-right, 1 in bottom-right, NoData in bottom-left
+drivers_of_loss_pattern = 'drivers_of_TCL_1_km'
+
 
 ### Value options for contextual layer values.
 ### Every contextual layer needs to have all possible values listed here.
