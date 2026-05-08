@@ -542,10 +542,19 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     main_logger.info(f"Rows in combined dataframe: {len(combined_df.index)}")
     main_logger.info(combined_df.head())
 
-    combined_df_name = f'veg_model_zonal_stats_v{cn.veg_model_version_underscore}_{time.strftime('%Y%m%d_%H_%M_%S')}'
+    combined_df_name = f'veg_model_zonal_stats_v{cn.veg_model_version_underscore}__EF_RF__{time.strftime('%Y%m%d_%H_%M_%S')}'
     combined_df.to_parquet(f"{local_zonal_stats_folder}/{combined_df_name}.parquet")
     if len(combined_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
         combined_df.to_csv(f"{local_zonal_stats_folder}/{combined_df_name}.csv", index=False)
+
+    # Converts from long to wide df
+    combined_wide_df = zsu.create_wide_df(combined_df, main_logger)
+
+    combined_wide_df_name = f'veg_model_zonal_stats_v{cn.veg_model_version_underscore}__EF_RF__wide_{time.strftime('%Y%m%d_%H_%M_%S')}'
+    combined_wide_df.to_parquet(f"{local_zonal_stats_folder}/{combined_wide_df_name}.parquet")
+    if len(combined_wide_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
+        combined_wide_df.to_csv(f"{local_zonal_stats_folder}/{combined_wide_df_name}.csv", index=False)
+
 
     # Uploads output tables to s3 if it's a larger run where I might plausibly want to save the results
     if tiles_processed > 15:

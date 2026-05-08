@@ -131,7 +131,8 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
     main_logger.info(f"  Creating {tile_id} data frame: {uu.timestr()}")
 
     df = pd.DataFrame(coord_dict)
-    # print(df)
+    # print("df:", df)
+    # print("df.columns:", df.columns)
 
     # Adds column with tile_id
     df['tile_id'] = str(tile_id)
@@ -280,6 +281,10 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
         df_with_areas.loc[df_with_areas["WDPA_type"] == "NA", "WDPA_high_protection"] = "Not protected"
         df_with_areas.loc[df_with_areas["WDPA_type"].isin(["Cateogry Ia", "Category Ib", "Category II", "Category III"]), "WDPA_high_protection"] = "High protection"
 
+    # Maps driver of loss codes to names if the contextual layer is used
+    if cn.drivers_of_loss_pattern in df_with_areas.columns:
+        df_with_areas['driver_1km_text'] = df_with_areas[cn.drivers_of_loss_pattern].map(cn.drivers_to_text)
+        df_with_areas['driver_1km_text'] = df_with_areas['driver_1km_text'].fillna("Unassigned")
 
     # Replaces managed land numeric values with managed/unmanaged if the contextual layer is used
     if cn.managed_land_CAN_pattern in df_with_areas.columns:
@@ -296,3 +301,39 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
     df_with_areas = df_with_areas.rename(columns={'pixel_area_ha': 'area_ha'})
 
     return df_with_areas
+
+# Converts long-format df to wide-format df
+# Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69fe3161-edb8-832e-a90d-d9e75e4012d3
+def create_wide_df(combined_df, main_logger):
+
+    main_logger.info(f"Converting table from long to wide: {uu.timestr()}")
+
+    # Columns to use and to not use as contextual layers. Drops gas because it's implicit in analysis_layer.
+    id_cols = [
+        c for c in combined_df.columns
+        if c not in ["analysis_layer", "value", "density__Mg_ha", "area_ha", "gas"]
+    ]
+
+    # Reshapes from long to wide, with value and area_ha for each analysis_layer.
+    # ChatGPT says this is safer for giant tables than using pivot_table
+    wide = (
+        combined_df
+        .groupby(id_cols + ["analysis_layer"], observed=True, sort=False)[["value", "area_ha"]]
+        .sum()
+        .unstack("analysis_layer")
+    )
+
+    # Appends __value or __area_ha to each analysis layer
+    wide.columns = [
+        f"{analysis_layer}__{measure}"
+        for measure, analysis_layer in wide.columns
+    ]
+    wide = wide.reset_index()
+
+    # Reorders columns so that __value fields are before __area_ha fields
+    value_cols = sorted([c for c in wide.columns if c.endswith("__value")])
+    area_cols = sorted([c for c in wide.columns if c.endswith("__area_ha")])
+    wide = wide[id_cols + value_cols + area_cols]
+    combined_wide_df = wide.reset_index(drop=True)
+
+    return combined_wide_df

@@ -1634,15 +1634,14 @@ watershed_to_text = {
     8009: "Tasmania"
 }
 drivers_to_text = {
-    1: "permanent agriculture",
-    2: "hard_commodities",
-    3: "shifting_cultivation",
-    4: "forest_management",
-    5: "wildfire",
-    6: "settlements_and_infrastruct",
-    7: "other_natural_disturbances"
+    1: "Permanent agriculture",
+    2: "Hard commodities",
+    3: "Shifting cultivation",
+    4: "Logging",
+    5: "Wildfire",
+    6: "Settlements and infrastructure",
+    7: "Other natural disturbances"
 }
-
 
 # Converts the WDPA code to type
 WDPA_to_text = {
