@@ -1087,7 +1087,8 @@ KBA_zarr_path = f"{contextual_zarr_path}KBA/v20240903/{KBA_zarr_date}_fillValue_
 KBA_test_chunk = [29, -1, 30, 0]  # 1 in upper right; roughly 1/3-1/2 of chunk is KBA (00N_020E)
 KBA_pattern = 'KBA'
 
-watersheds_zarr_date = '20260213'
+# watersheds_zarr_date = '20260213'
+watersheds_zarr_date = '20260508'
 watersheds_zarr_dtype = 'uint16'
 watersheds_geotif_path = "s3://gfw2-data/water/mapbox_river_basins__from_gfw-data-lake/v2018/raster/epsg-4326/10/40000/id/gdal-geotiff/"
 watersheds_zarr_path = f"{contextual_zarr_path}river_basins/v2018/{watersheds_zarr_date}_fillValue_removed/river_basins_{watersheds_zarr_date}.zarr"
@@ -1112,7 +1113,7 @@ drivers_of_loss_zarr_date = '20260507'
 drivers_of_loss_zarr_dtype = 'uint8'
 drivers_of_loss_geotif_path = drivers_processed_dir
 drivers_of_loss_zarr_path = f"{contextual_zarr_path}drivers_of_TCL_1_km/v{drivers_run_date}/update2023_20241218__run_{drivers_of_loss_zarr_date}_fillValue_removed/drivers_of_TCL_1_km_{drivers_of_loss_zarr_date}.zarr"
-drivers_of_loss_test_chunk = [27, -9, 28, -8]  # 7 in top-left, 3 in top-right, 1 in bottom-right, NoData in bottom-left
+drivers_of_loss_test_chunk = [27, -9, 28, -8]  # 7 in top-left, 3 in top-right, 1 in bottom-right, NoData in bottom-left (00N_020E)
 drivers_of_loss_pattern = 'drivers_of_TCL_1_km'
 
 
