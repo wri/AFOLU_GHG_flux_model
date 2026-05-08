@@ -1,6 +1,8 @@
 import pandas as pd
 from dask.distributed import print
 import xarray as xr
+import os
+from datetime import date
 import numpy as np
 from io import BytesIO
 import requests
@@ -337,3 +339,29 @@ def create_wide_df(combined_df, main_logger):
     combined_wide_df = wide.reset_index(drop=True)
 
     return combined_wide_df
+
+
+# Uploads output tables (parquet and csv) if the run is large enough
+def upload_zstats_to_s3(stage, local_zonal_stats_folder, main_logger, model_path_description, model_type,
+                        model_version, tiles_processed):
+
+    run_date = date.today().strftime("%Y%m%d")
+
+    # Uploads output tables to s3 if it's a larger run where I might plausibly want to save the results
+    if tiles_processed > 3:
+        s3_zonal_stats_folder = cn.veg_outputs_path.replace(cn.model_version_type_description_placeholder,
+                                                            f"version_{model_version}__{model_type}__{model_path_description}") + f"zonal_statistics/{run_date}_{stage}/"
+
+        files_to_upload = [
+            str(f) for f in local_zonal_stats_folder.iterdir()
+            if f.suffix in ('.parquet', '.csv')
+        ]
+
+        main_logger.info(f"Uploading {len(files_to_upload)} files to {s3_zonal_stats_folder}")
+        for local_file in files_to_upload:
+            filename = os.path.basename(local_file)
+            s3_dest = s3_zonal_stats_folder + filename
+            main_logger.info(f"  Uploading {filename} to {s3_dest}")
+            uu.upload_s3_file(s3_dest, local_file)
+
+        main_logger.info("Upload complete")

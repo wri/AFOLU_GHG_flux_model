@@ -562,34 +562,19 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
         combined_df.to_csv(f"{local_zonal_stats_folder}/{combined_df_name}.csv", index=False)
 
     # Converts from long to wide df
-    combined_wide_df = zsu.create_wide_df(combined_df)
+    combined_wide_df = zsu.create_wide_df(combined_df, main_logger)
 
     combined_wide_df_name = f'SOC_model_zonal_stats_v{cn.SOC_model_version_underscore}_wide_{time.strftime('%Y%m%d_%H_%M_%S')}'
     combined_wide_df.to_parquet(f"{local_zonal_stats_folder}/{combined_wide_df_name}.parquet")
     if len(combined_wide_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
         combined_wide_df.to_csv(f"{local_zonal_stats_folder}/{combined_wide_df_name}.csv", index=False)
 
-
-    # Uploads output tables to s3 if it's a larger run where I might plausibly want to save the results
-    if tiles_processed > 15:
-        s3_zonal_stats_folder = cn.SOC_outputs_path.replace(cn.model_version_type_description_placeholder,
-            f"version_{cn.SOC_model_version_underscore}__{model_type}__{model_path_description}") + f"zonal_statistics/{input_date}/"
-
-        files_to_upload = [
-            str(f) for f in local_zonal_stats_folder.iterdir()
-            if f.suffix in ('.parquet', '.csv')
-        ]
-
-        main_logger.info(f"Uploading {len(files_to_upload)} files to {s3_zonal_stats_folder}")
-        for local_file in files_to_upload:
-            filename = os.path.basename(local_file)
-            s3_dest = s3_zonal_stats_folder + filename
-            main_logger.info(f"  Uploading {filename} to {s3_dest}")
-            uu.upload_s3_file(s3_dest, local_file)
-        main_logger.info("Upload complete")
+    # Uploads outputs to s3 if the run is large enough
+    zsu.upload_zstats_to_s3(stage, local_zonal_stats_folder, main_logger,
+                        model_path_description, model_type, cn.SOC_model_version_underscore, tiles_processed)
 
     end_time = time.time()
-    main_logger.info(f"  Finished zonal stats, took {round(end_time - prep_start_time)} seconds: {uu.timestr()}")
+    main_logger.info(f"Finished zonal stats, took {round(end_time - prep_start_time)} seconds: {uu.timestr()}")
 
 
 
