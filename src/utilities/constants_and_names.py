@@ -13,7 +13,7 @@ from src.utilities import universal_utilities as uu
 veg_model_version = "1.0.5"
 veg_model_version_underscore = veg_model_version.replace(".", "_")
 
-SOC_model_version = "1.0.0"
+SOC_model_version = "1.0.1"
 SOC_model_version_underscore = SOC_model_version.replace(".", "_")
 
 organic_soil_model_version = "1.0.0"

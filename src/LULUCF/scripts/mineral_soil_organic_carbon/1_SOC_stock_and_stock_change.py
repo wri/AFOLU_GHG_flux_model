@@ -1,13 +1,16 @@
 """
-Calculates carbon densities (Mg C/ha) in 0-30 cm top-soil,
-and annual gross gain, gross loss, and net stock changes (Mg C/ha/yr, accounting for shorter interval length in the last interval).
-All gross stock change values are positive (loss and gain).
-For net stock change, positive is SOC gain and negative is SOC loss (opposite of signs for vegetation).
+Calculates carbon densities (Mg C/ha) and annual gross gain, gross loss, and net stock changes (Mg C/ha/yr,
+accounting for shorter interval length in the last interval) in 0-30 cm topsoil.
+Like for vegetation, gross and net loss (emissions) is positive and gross and net gain (removals) is negative.
+
 Neither change nor density converted to Mg CO2.
+
 Calling gross values gain and loss instead of emissions and removals to differentiate them from vegetation emissions and removals (which are in CO2(e).)
 
 NoData value is np.nan.
-NoData used for: density- pixels without a value; net change- pixels without a value;
+NoData used for:
+density- pixels without a value;
+net change- pixels without a value;
 loss and gain- pixels without a value in the relevant direction (i.e. a loss pixel with gain gets NaN)
 0 is reserved for net, loss, and gain pixels that had no change in density.
 Thus, when consecutive densities are the same, net, loss, and gain will all have 0s.
@@ -152,7 +155,7 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
         out_dict_full_extent[f"{cn.SOC_density_full_extent_pattern}{cn.C_density_pixel_meaning}_{end_year}"] = converted_array_full_extent
         out_dict_min_soil_extent[f"{cn.SOC_density_min_soil_extent_pattern}{cn.C_density_pixel_meaning}_{end_year}"] = converted_array_min_soil_extent
 
-        lu.print_and_log(f"After calculating densities for {bounds_str}: {process.memory_info().rss / 1024 ** 2:.2f} MB",False, logger_worker)
+    lu.print_and_log(f"After calculating densities for {bounds_str}: {process.memory_info().rss / 1024 ** 2:.2f} MB",False, logger_worker)
 
     # Need to put the SOC layers in chronological order so they can be differenced later for full extent and mineral soil extent
     out_dict_full_extent_ordered = dict(sorted(out_dict_full_extent.items()))
@@ -174,28 +177,33 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
 
         lu.print_and_log(f"Calculating SOC change for {end_year} to {start_year} for {bounds_str}: {uu.timestr()}", is_large_run, logger_worker)
 
+        # Multiplies difference by -1 to make net loss positive and net gain negative (as for vegetation)
         net_full_extent = (out_dict_full_extent_ordered[f"{cn.SOC_density_full_extent_pattern}{cn.C_density_pixel_meaning}_{end_year}"] -
-                             out_dict_full_extent_ordered[f"{cn.SOC_density_full_extent_pattern}{cn.C_density_pixel_meaning}_{start_year}"]) / year_diff  # Interval arrays must be unsigned so difference can be negative
+                             out_dict_full_extent_ordered[f"{cn.SOC_density_full_extent_pattern}{cn.C_density_pixel_meaning}_{start_year}"]) / year_diff * -1  # Interval arrays must be unsigned so difference can be negative
         net_min_soil = (out_dict_min_soil_extent_ordered[f"{cn.SOC_density_min_soil_extent_pattern}{cn.C_density_pixel_meaning}_{end_year}"] -
-                          out_dict_min_soil_extent_ordered[f"{cn.SOC_density_min_soil_extent_pattern}{cn.C_density_pixel_meaning}_{start_year}"]) / year_diff  # Interval arrays must be unsigned so difference can be negative
+                          out_dict_min_soil_extent_ordered[f"{cn.SOC_density_min_soil_extent_pattern}{cn.C_density_pixel_meaning}_{start_year}"]) / year_diff * -1  # Interval arrays must be unsigned so difference can be negative
+
+        # Multiplying by -1 creates -0s, so need to force all -0s back to 0. Per Claude.
+        net_full_extent[net_full_extent == 0] = np.float32(0)
+        net_min_soil[net_min_soil == 0] = np.float32(0)
 
         # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69d50592-48b8-8329-b529-2babe02f7f27
-        # Loss
+        # Gross loss (positive, like for vegetation)
         SOC_loss_full_extent = np.full_like(net_full_extent, np.nan, dtype=np.float32)
-        SOC_loss_full_extent[net_full_extent < 0] = -net_full_extent[net_full_extent < 0]
+        SOC_loss_full_extent[net_full_extent > 0] = net_full_extent[net_full_extent > 0]
         SOC_loss_full_extent[net_full_extent == 0] = 0
 
         SOC_loss_min_soil = np.full_like(net_min_soil, np.nan, dtype=np.float32)
-        SOC_loss_min_soil[net_min_soil < 0] = -net_min_soil[net_min_soil < 0]
+        SOC_loss_min_soil[net_min_soil > 0] = net_min_soil[net_min_soil > 0]
         SOC_loss_min_soil[net_min_soil == 0] = 0
 
-        # Gain
+        # Gross gain (negative, like for vegetation)
         SOC_gain_full_extent = np.full_like(net_full_extent, np.nan, dtype=np.float32)
-        SOC_gain_full_extent[net_full_extent > 0] = net_full_extent[net_full_extent > 0]
+        SOC_gain_full_extent[net_full_extent < 0] = net_full_extent[net_full_extent < 0]
         SOC_gain_full_extent[net_full_extent == 0] = 0
 
         SOC_gain_min_soil = np.full_like(net_min_soil, np.nan, dtype=np.float32)
-        SOC_gain_min_soil[net_min_soil > 0] = net_min_soil[net_min_soil > 0]
+        SOC_gain_min_soil[net_min_soil < 0] = net_min_soil[net_min_soil < 0]
         SOC_gain_min_soil[net_min_soil == 0] = 0
 
         # Saves back to output dicts with the converted unit arrays
@@ -209,7 +217,7 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
         out_dict_min_soil_extent_ordered[f"{cn.SOC_gain_min_soil_extent_pattern}{cn.flux_density_pixel_meaning}_{end_year}"] = SOC_gain_min_soil
 
     calc_end = time.time()
-    lu.print_and_log(f"After calculating deltas for {bounds_str}: {process.memory_info().rss / 1024 ** 2:.2f} MB",False, logger_worker)
+    lu.print_and_log(f"After calculating SOC change for {bounds_str}: {process.memory_info().rss / 1024 ** 2:.2f} MB",False, logger_worker)
     lu.print_and_log(f"Calculated {bounds_str} in {tile_id} in {round(calc_end-calc_start)} seconds: {uu.timestr()}", False, logger_worker)
 
     # print("out_dict_full_extent_ordered:", out_dict_full_extent_ordered)
@@ -273,8 +281,6 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
     lu.print_and_log(f"Pixel count in full extent chunk for {bounds_str} in {tile_id}: {full_extent_density_pixel_count_list}. All the same: {all_same_full_extent}.", False, logger_worker)
     lu.print_and_log(f"Pixel count in mineral soil extent chunk for {bounds_str} in {tile_id}: {mineral_extent_density_pixel_count_list}. All the same: {all_same_mineral}.", False, logger_worker)
 
-    lu.print_and_log(f"Populated chunk stats for outputs in {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
-
     if not all_same_full_extent or not all_same_mineral:
         msg = (
             f"Pixel count mismatch in chunk {bounds_str} ({tile_id}). "
@@ -284,6 +290,8 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
         lu.print_and_log(msg, False, logger_worker)
 
         raise RuntimeError(msg)
+
+    lu.print_and_log(f"Populated chunk stats for outputs in {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
 
 
     ### Part 7: Saves numpy arrays as rasters and uploads to s3
