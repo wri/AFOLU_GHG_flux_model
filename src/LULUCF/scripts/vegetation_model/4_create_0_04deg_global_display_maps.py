@@ -126,17 +126,17 @@ def main(input_date, model_type, model_path_description=None,
                  local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,
                  cn.net_colors_rgb, country_shapefile, main_logger, bounding_box, bounding_box_description)
 
-    # mu.map_net_flux(net_CO2_only_input_folders_s3, model_type, model_path_description, local_reproj_folder,
-    #              local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,
-    #              cn.net_colors_rgb, country_shapefile, main_logger, bounding_box, bounding_box_description)
-    #
-    # mu.map_gross(gross_emis_CO2_only_input_folders_s3, model_type, model_path_description, local_reproj_folder,
-    #                  local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,
-    #                  cn.emissions_colors_rgb, cn.emissions_percentiles, main_logger, country_shapefile, bounding_box, bounding_box_description)
-    #
-    # mu.map_gross(gross_emis_non_CO2_input_folders_s3, model_type, model_path_description, local_reproj_folder,
-    #                  local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,
-    #                  cn.emissions_colors_rgb, cn.emissions_percentiles, main_logger, country_shapefile, bounding_box, bounding_box_description)
+    mu.map_net_flux(net_CO2_only_input_folders_s3, model_type, model_path_description, local_reproj_folder,
+                 local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,
+                 cn.net_colors_rgb, country_shapefile, main_logger, bounding_box, bounding_box_description)
+
+    mu.map_gross(gross_emis_CO2_only_input_folders_s3, model_type, model_path_description, local_reproj_folder,
+                     local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,
+                     cn.emissions_colors_rgb, cn.emissions_percentiles, main_logger, country_shapefile, bounding_box, bounding_box_description)
+
+    mu.map_gross(gross_emis_non_CO2_input_folders_s3, model_type, model_path_description, local_reproj_folder,
+                     local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,
+                     cn.emissions_colors_rgb, cn.emissions_percentiles, main_logger, country_shapefile, bounding_box, bounding_box_description)
     #
     mu.map_gross(gross_emis_all_gases_input_folders_s3, model_type, model_path_description, local_reproj_folder,
                      local_jpeg_non_pres_folder, local_jpeg_pres_folder, local_gif_folder,

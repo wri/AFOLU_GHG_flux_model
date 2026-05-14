@@ -41,6 +41,8 @@ python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stat
 -mcstn KEEP_definitive_runs/SOC_density/v1_0_0__2000_2022__20251224/soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx
 
 #TODO Try running with 16GB workers. May be using little enough memory to run on that.
+#TODO Add 1km TCL drivers as contextual layer (from vegetation__drivers_primary_land_state__zonal_stats)
+#TODO Add forest age classes in 20-year increments (or at least <20 and >20) as contextual layer. Not sure how to do that, though.
 #TODO MAYBE Convert stock changes from Mg C to Mg CO2 and change output names accordingly.
 """
 
@@ -280,7 +282,6 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     # Part 3: Do zonal stats tile by tile
 
     main_logger.info(f"Starting zonal stats: {uu.timestr()}")
-    parquet_outputs = []
     tiles_processed = 0  # The number of tiles actually processed (since some are skipped)
 
     for i, tile_id in enumerate(tile_ids_to_process):
@@ -498,9 +499,6 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
         tile_df_name = f'SOC_zonal_stats_{tile_id}_v{cn.SOC_model_version_underscore}_{zonal_stats_description}_{time.strftime('%Y%m%d_%H_%M_%S')}'
         df.to_parquet(f"{local_zonal_stats_folder}/{tile_df_name}.parquet")
 
-        # List of parquet files (to convert to csvs after cluster is downsized)
-        parquet_outputs.append(f"{local_zonal_stats_folder}/{tile_df_name}.parquet")
-
         # Clean up at end of tile
         # del results, coord_dict, df, flux_cube_subset
         gc.collect()
@@ -532,7 +530,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     parquet_files = sorted(
         str(local_zonal_stats_folder / f)
         for f in os.listdir(local_zonal_stats_folder)
-        if f.endswith(".parquet") and "SOC_zonal_stats_" in f
+        if f.endswith(".parquet") and "zonal_stats_" in f
     )
 
     if not parquet_files:
@@ -544,13 +542,15 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
 
     # Converts parquets to csvs, and makes a list of all the dataframes to combine them into one giant table.
     # Does it here with 1 worker because writing csvs is slow and not a good use of a full cluster
-    for parquet_output in parquet_outputs:
+    main_logger.info(f"Converting parquet files to csvs: {uu.timestr()}")
+    for parquet_output in parquet_files:
         df = pd.read_parquet(parquet_output)
         csv_output = parquet_output.replace('parquet', 'csv')
         df.to_csv(csv_output, index=False)
         df_list.append(df)
 
     # Combines all the tile-level df_list in the list into a single df
+    main_logger.info(f"Combining dataframes: {uu.timestr()}")
     combined_df = pd.concat(df_list, axis=0, ignore_index=True)
 
     main_logger.info(f"Rows in combined dataframe: {len(combined_df.index)}")

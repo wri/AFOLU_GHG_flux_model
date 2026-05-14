@@ -308,7 +308,7 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
 # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69fe3161-edb8-832e-a90d-d9e75e4012d3
 def create_wide_df(combined_df, main_logger):
 
-    main_logger.info(f"Converting table from long to wide: {uu.timestr()}")
+    main_logger.info(f"Converting combined table from long to wide: {uu.timestr()}")
 
     # Columns to use and to not use as contextual layers. Drops gas because it's implicit in analysis_layer.
     id_cols = [

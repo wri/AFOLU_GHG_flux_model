@@ -898,8 +898,8 @@ def map_gross(s3_folders, model_type, model_path_description,
     upper_lim_all_yrs = breaks_all_yrs[-1]
 
     main_logger.info("Across all years:")
-    main_logger.info(f"  lower limit ({percentile_for_saturation} percentile):", lower_lim_all_yrs)
-    main_logger.info(f"  upper limit ({(100 - percentile_for_saturation)} percentile):", upper_lim_all_yrs)
+    main_logger.info(f"  lower limit ({percentile_for_saturation} percentile): {lower_lim_all_yrs}")
+    main_logger.info(f"  upper limit ({(100 - percentile_for_saturation)} percentile): {upper_lim_all_yrs}")
 
     # Creates the legend in kt CO2e (converts legend units from Mg (t) to kt with 10**3-- data doesn't change).
     # Rounds data_min down and data_max up for legend.
@@ -1035,7 +1035,7 @@ def map_gross(s3_folders, model_type, model_path_description,
         # Removes axis ticks and labels
         remove_ticks(ax)
 
-        pattern_segment_revised = pattern_segment.replace("MgCO2", "ktCO2_yr")  # Replaces Mg with the mapped unit of kt
+        pattern_segment_revised = pattern_segment.replace("MgCO2", "ktCO2")  # Replaces Mg with the mapped unit of kt
         core_jpeg_name = f"veg_{pattern_segment_revised}_yr__{year}__v{cn.veg_model_version_underscore}__{uu.timestr()[0:8]}"
         jpeg_path = f"{local_jpeg_non_pres_folder}/{core_jpeg_name}.jpeg"
         jpeg_for_pres_path = f"{local_jpeg_pres_folder}/{core_jpeg_name}__for_pres.jpeg"
