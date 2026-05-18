@@ -7,6 +7,8 @@ from pathlib import Path
 from PIL import Image
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize, TwoSlopeNorm, LinearSegmentedColormap, BoundaryNorm, ListedColormap
+from matplotlib.patches import Patch
 import time
 import warnings
 
@@ -304,6 +306,33 @@ def create_unidirection_legend(fig, img, lower_lim_all_yrs, upper_lim_all_yrs, t
         va="bottom",  # Vertically align the text
         transform=cbar_ax.transAxes  # Use axes coordinates for positioning
     )
+
+
+# Creates legend for categorical map of fraction of gross emissions from LULUCF components
+def create_categorical_fraction_legend(fig, img, title_text, boundaries, class_labels, main_logger):
+    main_logger.info(f"  Creating categorical fraction legend")
+
+    cbar_ax = fig.add_axes([
+        cn.colorbar_dimensions[0] + cn.colorbar_dimensions[2],
+        cn.colorbar_dimensions[1],
+        cn.colorbar_dimensions[2],
+        cn.colorbar_dimensions[3]
+    ])
+    cb = plt.colorbar(img, cax=cbar_ax, orientation="vertical")
+
+    midpoints = [(boundaries[i] + boundaries[i+1]) / 2 for i in range(len(boundaries) - 1)]
+    cb.set_ticks(midpoints)
+    cb.set_ticklabels(class_labels, fontsize=cn.legend_fontsize)
+
+    cbar_ax.text(
+        0, 1.1,
+        title_text,
+        fontsize=cn.legend_fontsize,
+        ha="left",
+        va="bottom",
+        transform=cbar_ax.transAxes
+    )
+
 
 def rgb_to_mpl_palette(rgb_palette):
     """

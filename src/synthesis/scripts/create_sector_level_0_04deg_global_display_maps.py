@@ -81,7 +81,7 @@ import numpy as np
 import re
 from rasterio.windows import from_bounds
 from rasterio.warp import reproject, Resampling, calculate_default_transform
-from matplotlib.colors import Normalize, TwoSlopeNorm, LinearSegmentedColormap
+from matplotlib.colors import Normalize, TwoSlopeNorm, LinearSegmentedColormap, BoundaryNorm, ListedColormap
 from shapely.geometry import Polygon, MultiPolygon, box, mapping
 from scipy.stats import percentileofscore
 from pyproj import Transformer
@@ -952,23 +952,77 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     #TODO Mineral soil is the residual of veg and organic soil for now but I want to calculate it on its own once I have corrected mineral soil
     LULUCF_emis_fract_min_soil =  1 - LULUCF_emis_fract_veg - LULUCF_emis_fract_org_soil
 
+    # Saves fraction rasters as GeoTIFFs
     LULUCF_emis_fract_veg_output_name = f"LULUCF_emis_fract_veg_{veg_version}__{non_veg_versions}"
     LULUCF_emis_fract_veg_path = f"{cn.local_jpeg_folder_LULUCF}/{LULUCF_emis_fract_veg_output_name}.tif"
-
     with rasterio.open(LULUCF_emis_fract_veg_path, "w", **veg_meta) as dst:
         dst.write(LULUCF_emis_fract_veg, 1)
 
     LULUCF_emis_fract_org_soil_output_name = f"LULUCF_emis_fract_org_soil_{veg_version}__{non_veg_versions}"
     LULUCF_emis_fract_org_soil_path = f"{cn.local_jpeg_folder_LULUCF}/{LULUCF_emis_fract_org_soil_output_name}.tif"
-
     with rasterio.open(LULUCF_emis_fract_org_soil_path, "w", **veg_meta) as dst:
         dst.write(LULUCF_emis_fract_org_soil, 1)
 
     LULUCF_emis_fract_min_soil_output_name = f"LULUCF_emis_fract_min_soil_{veg_version}__{non_veg_versions}"
     LULUCF_emis_fract_min_soil_path = f"{cn.local_jpeg_folder_LULUCF}/{LULUCF_emis_fract_min_soil_output_name}.tif"
-
     with rasterio.open(LULUCF_emis_fract_min_soil_path, "w", **veg_meta) as dst:
         dst.write(LULUCF_emis_fract_min_soil, 1)
+
+    # Map creation with Claude
+    # Categorical colormap: 5 equal-interval classes (0–1), black for out-of-range (<0)
+    fract_cmap = ListedColormap(mu.rgb_to_mpl_palette(cn.fraction_colors_rgb))
+    fract_cmap.set_under('black')
+    fract_boundaries = [0, 0.2, 0.4, 0.6, 0.8, 1.0]
+    fract_norm = BoundaryNorm(fract_boundaries, fract_cmap.N)
+    fract_class_labels = (
+            [f">0–{int(fract_boundaries[1] * 100)}%"] +
+            [f"{int(fract_boundaries[i] * 100)}–{int(fract_boundaries[i + 1] * 100)}%"
+             for i in range(1, len(fract_boundaries) - 1)]
+    )
+
+    # Raster, output jpeg name, and legend title for each map
+    fract_maps = [
+        (LULUCF_emis_fract_veg, LULUCF_emis_fract_veg_output_name, "Fraction gross LULUCF emissions: \nVegetation"),
+        (LULUCF_emis_fract_org_soil, LULUCF_emis_fract_org_soil_output_name,
+         "Fraction gross LULUCF emissions: \nOrganic soil"),
+        (LULUCF_emis_fract_min_soil, LULUCF_emis_fract_min_soil_output_name,
+         "Fraction gross LULUCF emissions: \nMineral soil"),
+    ]
+
+    # Iterates through LULUCF components
+    for fract_data, output_name, legend_title in fract_maps:
+
+        main_logger.info(f"\n  Creating fraction map: {output_name}")
+
+        # Mask pixels where LULUCF_emis is 0 (no emissions, fraction undefined) or non-finite.
+        # Pixels with no emissions from this component are transparent and use the underlying land color
+        masked_fract = np.ma.masked_where(
+            (LULUCF_emis <= 0) | ~np.isfinite(fract_data) | (fract_data == 0),
+            fract_data
+        )
+
+        ax, fig_fract = mu.create_plot()
+        mu.set_ocean_color(ax)
+        mu.plot_country_polygons(ax, country_shapefile)
+
+        img_fract = mu.plot_raster(ax, fract_cmap, list(raster_extent), masked_fract, fract_norm)
+        mu.plot_country_boundaries(ax, country_shapefile)
+
+        if bounding_box_proj is not None:
+            ax.set_xlim(raster_extent[0], raster_extent[1])
+            ax.set_ylim(raster_extent[2], raster_extent[3])
+
+        mu.create_categorical_fraction_legend(fig_fract, img_fract, legend_title, fract_boundaries, fract_class_labels, main_logger)
+        mu.remove_ticks(ax)
+
+        core_jpeg_name_fract = f"{output_name}__{uu.timestr()[0:8]}"
+        if bounding_box_description:
+            core_jpeg_name_fract = f"{core_jpeg_name_fract}_{bounding_box_description}"
+        jpeg_path_fract = f"{LULUCF_local_jpeg_non_pres_folder}/{core_jpeg_name_fract}.jpeg"
+        jpeg_for_pres_path_fract = f"{LULUCF_local_jpeg_pres_folder}/{core_jpeg_name_fract}__for_pres.jpeg"
+
+        mu.save_pres_non_pres_jpegs(ax, jpeg_path_fract, jpeg_for_pres_path_fract, "",
+                                    full_slide_text_LULUCF, main_logger)
 
 
 
