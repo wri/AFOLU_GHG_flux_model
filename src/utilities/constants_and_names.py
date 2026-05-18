@@ -13,7 +13,7 @@ from src.utilities import universal_utilities as uu
 veg_model_version = "1.0.5"
 veg_model_version_underscore = veg_model_version.replace(".", "_")
 
-SOC_model_version = "1.0.1"
+SOC_model_version = "1.0.0"
 SOC_model_version_underscore = SOC_model_version.replace(".", "_")
 
 organic_soil_model_version = "1.0.0"
@@ -1122,7 +1122,7 @@ drivers_of_loss_pattern = 'drivers_of_TCL_1_km'
 
 state_node_lookup_table_local = "/mnt/c/GIS/git/AFOLU_GHG_flux_model/src/LULUCF/LULUCF_state_node_lookup_table.xlsx"
 state_node_lookup_table_s3 = "http://gfw2-data.s3.amazonaws.com/climate/AFOLU_flux_model/LULUCF/state_node_lookup_tables/LULUCF_state_node_lookup_table.xlsx"
-sheet = "v102_20251027"
+sheet = "v105_20260518"
 
 primary_forest_IFL_codes = np.array([0, 1], dtype=np.uint8)
 

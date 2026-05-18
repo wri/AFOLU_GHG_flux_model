@@ -313,16 +313,17 @@ def create_wide_df(combined_df, main_logger):
     # Columns to use and to not use as contextual layers. Drops gas because it's implicit in analysis_layer.
     id_cols = [
         c for c in combined_df.columns
-        if c not in ["analysis_layer", "value", "density__Mg_ha", "area_ha", "gas"]
+        if c not in ["analysis_layer", "value", "density__Mg_ha", "area_ha", "gas", "LULUCF_component"]
     ]
 
     # Reshapes from long to wide, with value and area_ha for each analysis_layer.
     # ChatGPT says this is safer for giant tables than using pivot_table
     wide = (
         combined_df
-        .groupby(id_cols + ["analysis_layer"], observed=True, sort=False)[["value", "area_ha"]]
+        .groupby(id_cols + ["analysis_layer"], observed=True, sort=False, dropna=False)[["value", "area_ha"]]
         .sum()
         .unstack("analysis_layer")
+        .fillna(0)
     )
 
     # Appends __value or __area_ha to each analysis layer
