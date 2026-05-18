@@ -16,7 +16,8 @@ veg_model_version_underscore = veg_model_version.replace(".", "_")
 SOC_model_version = "1.0.0"
 SOC_model_version_underscore = SOC_model_version.replace(".", "_")
 
-organic_soil_model_version = "1.0.0"
+organic_soil_model_version = "0.9.7"
+# organic_soil_model_version = "1.0.0"
 organic_soil_model_version_underscore = organic_soil_model_version.replace(".", "_")
 
 
