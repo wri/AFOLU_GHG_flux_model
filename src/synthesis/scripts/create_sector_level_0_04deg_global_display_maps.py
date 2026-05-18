@@ -990,14 +990,13 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     ]
 
     # Iterates through LULUCF components, collecting JPEG paths for the three-panel map
+    jpeg_paths_fract_no_legend = []
     jpeg_paths_fract = []
 
     for i, (fract_data, output_name, legend_title) in enumerate(fract_maps):
 
         main_logger.info(f"\n  Creating fraction map: {output_name}")
 
-        # Mask pixels where LULUCF_emis is 0 (no emissions, fraction undefined) or non-finite.
-        # Pixels with no emissions from this component are transparent and use the underlying land color
         masked_fract = np.ma.masked_where(
             (LULUCF_emis <= 0) | ~np.isfinite(fract_data) | (fract_data == 0),
             fract_data
@@ -1014,24 +1013,27 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
             ax.set_xlim(raster_extent[0], raster_extent[1])
             ax.set_ylim(raster_extent[2], raster_extent[3])
 
-        # Only the bottom panel (mineral soil) gets the legend
-        if i == len(fract_maps) - 1:
-            mu.create_categorical_fraction_legend(fig_fract, img_fract, legend_title, fract_boundaries, fract_class_labels, main_logger)
-
         mu.remove_ticks(ax)
 
         core_jpeg_name_fract = f"{output_name}__{uu.timestr()[0:8]}"
         if bounding_box_description:
             core_jpeg_name_fract = f"{core_jpeg_name_fract}_{bounding_box_description}"
+        jpeg_path_fract_no_legend = f"{LULUCF_local_jpeg_non_pres_folder}/{core_jpeg_name_fract}__no_legend.jpeg"
         jpeg_path_fract = f"{LULUCF_local_jpeg_non_pres_folder}/{core_jpeg_name_fract}.jpeg"
         jpeg_for_pres_path_fract = f"{LULUCF_local_jpeg_pres_folder}/{core_jpeg_name_fract}__for_pres.jpeg"
 
+        # Save without legend as source for three-panel top/middle panels
+        mu.save_jpeg(jpeg_path_fract_no_legend, "", main_logger)
+
+        # Add legend and save individual map
+        mu.create_categorical_fraction_legend(fig_fract, img_fract, legend_title, fract_boundaries, fract_class_labels, main_logger)
         mu.save_pres_non_pres_jpegs(ax, jpeg_path_fract, jpeg_for_pres_path_fract, "",
                                     full_slide_text_LULUCF, main_logger)
 
+        jpeg_paths_fract_no_legend.append(jpeg_path_fract_no_legend)
         jpeg_paths_fract.append(jpeg_path_fract)
 
-    # Three-panel map of fraction of LULUCF gross emissions by component
+    # Three-panel map: no-legend versions for top two panels, with-legend for bottom
     LULUCF_fract_three_panel_output_name = f"LULUCF_emis_fract_three_panel_{veg_version}__{non_veg_versions}"
     core_jpeg_name_fract_three_panel = f"{LULUCF_fract_three_panel_output_name}__{uu.timestr()[0:8]}"
     if bounding_box_description:
@@ -1040,7 +1042,7 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
 
     mu.create_three_panel_map(
         jpeg_path_fract_three_panel,
-        jpeg_paths_fract[0], jpeg_paths_fract[1], jpeg_paths_fract[2],
+        jpeg_paths_fract_no_legend[0], jpeg_paths_fract_no_legend[1], jpeg_paths_fract[2],
         "",
         main_logger,
         panel_labels=["a  Vegetation", "b  Organic soil", "c  Mineral soil"]
