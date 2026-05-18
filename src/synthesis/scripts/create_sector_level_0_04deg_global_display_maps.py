@@ -81,6 +81,7 @@ import numpy as np
 import re
 from rasterio.windows import from_bounds
 from rasterio.warp import reproject, Resampling, calculate_default_transform
+from matplotlib import cm
 from matplotlib.colors import Normalize, TwoSlopeNorm, LinearSegmentedColormap, BoundaryNorm, ListedColormap
 from shapely.geometry import Polygon, MultiPolygon, box, mapping
 from scipy.stats import percentileofscore
@@ -969,28 +970,29 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
         dst.write(LULUCF_emis_fract_min_soil, 1)
 
     # Map creation with Claude
-    # Categorical colormap: 5 equal-interval classes (0–1), black for out-of-range (<0)
-    fract_cmap = ListedColormap(mu.rgb_to_mpl_palette(cn.fraction_colors_rgb))
+    # Categorical colormap: equal-interval classes (0–1), black for out-of-range (<0)
+    fract_boundaries = [0, 0.3, 0.5, 0.7, 0.85, 0.95, 1.0]
+    n_classes = len(fract_boundaries) - 1
+    fract_cmap = cm.get_cmap(cn.fraction_base_cmap, n_classes).copy()  # Claude notes that .copy() is important
     fract_cmap.set_under('black')
-    fract_boundaries = [0, 0.2, 0.4, 0.6, 0.8, 1.0]
     fract_norm = BoundaryNorm(fract_boundaries, fract_cmap.N)
     fract_class_labels = (
-            [f">0–{int(fract_boundaries[1] * 100)}%"] +
-            [f"{int(fract_boundaries[i] * 100)}–{int(fract_boundaries[i + 1] * 100)}%"
-             for i in range(1, len(fract_boundaries) - 1)]
+        [f">0–{int(fract_boundaries[1] * 100)}%"] +
+        [f"{int(fract_boundaries[i] * 100)}–{int(fract_boundaries[i + 1] * 100)}%"
+         for i in range(1, len(fract_boundaries) - 1)]
     )
 
     # Raster, output jpeg name, and legend title for each map
     fract_maps = [
         (LULUCF_emis_fract_veg, LULUCF_emis_fract_veg_output_name, "Fraction gross LULUCF emissions: \nVegetation"),
-        (LULUCF_emis_fract_org_soil, LULUCF_emis_fract_org_soil_output_name,
-         "Fraction gross LULUCF emissions: \nOrganic soil"),
-        (LULUCF_emis_fract_min_soil, LULUCF_emis_fract_min_soil_output_name,
-         "Fraction gross LULUCF emissions: \nMineral soil"),
+        (LULUCF_emis_fract_org_soil, LULUCF_emis_fract_org_soil_output_name, "Fraction gross LULUCF emissions: \nOrganic soil"),
+        (LULUCF_emis_fract_min_soil, LULUCF_emis_fract_min_soil_output_name, "Fraction gross LULUCF emissions: \nMineral soil"),
     ]
 
-    # Iterates through LULUCF components
-    for fract_data, output_name, legend_title in fract_maps:
+    # Iterates through LULUCF components, collecting JPEG paths for the three-panel map
+    jpeg_paths_fract = []
+
+    for i, (fract_data, output_name, legend_title) in enumerate(fract_maps):
 
         main_logger.info(f"\n  Creating fraction map: {output_name}")
 
@@ -1012,7 +1014,10 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
             ax.set_xlim(raster_extent[0], raster_extent[1])
             ax.set_ylim(raster_extent[2], raster_extent[3])
 
-        mu.create_categorical_fraction_legend(fig_fract, img_fract, legend_title, fract_boundaries, fract_class_labels, main_logger)
+        # Only the bottom panel (mineral soil) gets the legend
+        if i == len(fract_maps) - 1:
+            mu.create_categorical_fraction_legend(fig_fract, img_fract, legend_title, fract_boundaries, fract_class_labels, main_logger)
+
         mu.remove_ticks(ax)
 
         core_jpeg_name_fract = f"{output_name}__{uu.timestr()[0:8]}"
@@ -1023,6 +1028,23 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
 
         mu.save_pres_non_pres_jpegs(ax, jpeg_path_fract, jpeg_for_pres_path_fract, "",
                                     full_slide_text_LULUCF, main_logger)
+
+        jpeg_paths_fract.append(jpeg_path_fract)
+
+    # Three-panel map of fraction of LULUCF gross emissions by component
+    LULUCF_fract_three_panel_output_name = f"LULUCF_emis_fract_three_panel_{veg_version}__{non_veg_versions}"
+    core_jpeg_name_fract_three_panel = f"{LULUCF_fract_three_panel_output_name}__{uu.timestr()[0:8]}"
+    if bounding_box_description:
+        core_jpeg_name_fract_three_panel = f"{core_jpeg_name_fract_three_panel}_{bounding_box_description}"
+    jpeg_path_fract_three_panel = f"{LULUCF_local_jpeg_non_pres_folder}/{core_jpeg_name_fract_three_panel}.jpeg"
+
+    mu.create_three_panel_map(
+        jpeg_path_fract_three_panel,
+        jpeg_paths_fract[0], jpeg_paths_fract[1], jpeg_paths_fract[2],
+        "",
+        main_logger,
+        panel_labels=["a  Vegetation", "b  Organic soil", "c  Mineral soil"]
+    )
 
 
 

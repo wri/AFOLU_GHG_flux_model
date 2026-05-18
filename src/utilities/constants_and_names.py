@@ -1741,6 +1741,6 @@ legend_percentile_disclaimer = f"Legend value range represents 1 and 99 percenti
 three_panel_jpeg_base = f"three_panels__4km_aggregation__v{veg_model_version}"
 
 # Colors for jpegs showing the fraction of gross emissions from LULUCF components
-fraction_colors_rgb = [(254, 235, 226), (251, 180, 185), (247, 104, 161), (197, 27, 138), (122, 1, 119)]
+fraction_base_cmap = 'RdPu'
 
 

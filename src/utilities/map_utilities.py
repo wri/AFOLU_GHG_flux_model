@@ -1125,38 +1125,32 @@ def map_gross(s3_folders, model_type, model_path_description,
     series_end_time = time.time()
     main_logger.info(f"{pattern_segment} took {round(series_end_time - series_start_time)} seconds: {uu.timestr()}")
 
-def create_three_panel_map(three_panel_jpeg, emissions_jpeg, removals_jpeg, net_jpeg, year, main_logger):
+def create_three_panel_map(three_panel_jpeg, top_jpeg, middle_jpeg, bottom_jpeg, year, main_logger, panel_labels=None):
     """
     Creates a three-panel map showing emissions, removals, and net flux.
     """
     main_logger.info("Creating three-panel map")
 
     # Loads individual panel images
-    emissions_img = plt.imread(emissions_jpeg)
-    removals_img = plt.imread(removals_jpeg)
-    net_img = plt.imread(net_jpeg)
+    top_img = plt.imread(top_jpeg)
+    middle_img = plt.imread(middle_jpeg)
+    bottom_img = plt.imread(bottom_jpeg)
 
-    # Panel titles and images
-    panel_labels = ["a", "b", "c"]
-    images = [emissions_img, removals_img, net_img]
+    if panel_labels is None:
+        panel_labels = ["a", "b", "c"]
 
+    images = [top_img, middle_img, bottom_img]
     three_panel_dims = (cn.panel_dims[0], cn.panel_dims[1] * len(images))
 
-    # Sets up the figure
     fig, axes = plt.subplots(nrows=len(images), ncols=1, figsize=three_panel_dims)
-
-    # Removes spaces between panels
     fig.subplots_adjust(hspace=0, wspace=0)
 
-    # Adds each panel to the figure
     for ax, img, label in zip(axes, images, panel_labels):
         ax.imshow(img, aspect='auto')
-        ax.axis("off")  # Removes axis ticks
-        # Adds panel label in the top-left corner
+        ax.axis("off")
         ax.text(0.02, 0.98, label, transform=ax.transAxes, fontsize=10, fontweight="bold",
                 ha="left", va="top", color="black")
 
-    # Saves jpeg
     save_jpeg(three_panel_jpeg, year, main_logger)
     plt.close()
 
