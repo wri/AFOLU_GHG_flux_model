@@ -969,7 +969,7 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     with rasterio.open(LULUCF_emis_fract_min_soil_path, "w", **veg_meta) as dst:
         dst.write(LULUCF_emis_fract_min_soil, 1)
 
-    # Map creation with Claude
+    # Map creation with Claude ("Create LULUCF emissions fraction visualizations")
     # Categorical colormap: equal-interval classes (0–1), black for out-of-range (<0)
     fract_boundaries = [0, 0.3, 0.5, 0.7, 0.85, 0.95, 1.0]
     n_classes = len(fract_boundaries) - 1

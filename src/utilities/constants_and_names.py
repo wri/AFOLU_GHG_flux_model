@@ -16,8 +16,8 @@ veg_model_version_underscore = veg_model_version.replace(".", "_")
 SOC_model_version = "1.0.0"
 SOC_model_version_underscore = SOC_model_version.replace(".", "_")
 
-organic_soil_model_version = "0.9.7"
-# organic_soil_model_version = "1.0.0"
+# organic_soil_model_version = "0.9.7"
+organic_soil_model_version = "1.0.0"
 organic_soil_model_version_underscore = organic_soil_model_version.replace(".", "_")
 
 
@@ -1309,6 +1309,62 @@ iso_to_region = {
     'USA': 'North America', 'UZB': 'Non-tropical Asia', 'VAT': 'Europe', 'VCT': 'Tropical LAC', 'VEN': 'Tropical LAC', 'VGB': 'Tropical LAC', 'VIR': 'Tropical LAC', 'VNM': 'Tropical Asia',
     'VUT': 'Tropical Asia', 'XAD': 'Not tropical misc', 'XCA': 'Not tropical misc', 'XCL': 'Not tropical misc', 'XKO': 'Not tropical misc', 'XNC': 'Not tropical misc', 'XPI': 'Not tropical misc',
     'XSP': 'Not tropical misc', 'YEM': 'Non-tropical Asia', 'ZAF': 'Non-tropical Africa', 'ZMB': 'Tropical Africa', 'ZWE': 'Tropical Africa', 'NA': 'no_country'
+}
+
+# UN geoscheme regions from https://unstats.un.org/unsd/methodology/m49/
+# Converted to dictionary by https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6a0bc6ac-dc2c-8327-9154-3e49e70c5022
+iso_to_region_UN_geoscheme = {
+
+    # Africa
+    "DZA": "Africa", "EGY": "Africa", "LBY": "Africa", "MAR": "Africa", "SDN": "Africa", "TUN": "Africa", "ESH": "Africa", "IOT": "Africa",
+    "BDI": "Africa", "COM": "Africa", "DJI": "Africa", "ERI": "Africa", "ETH": "Africa", "ATF": "Africa", "KEN": "Africa", "MDG": "Africa",
+    "MWI": "Africa", "MUS": "Africa", "MYT": "Africa", "MOZ": "Africa", "REU": "Africa", "RWA": "Africa", "SYC": "Africa", "SOM": "Africa",
+    "SSD": "Africa", "UGA": "Africa", "TZA": "Africa", "ZMB": "Africa", "ZWE": "Africa", "AGO": "Africa", "CMR": "Africa", "CAF": "Africa",
+    "TCD": "Africa", "COG": "Africa", "COD": "Africa", "GNQ": "Africa", "GAB": "Africa", "STP": "Africa", "BWA": "Africa", "SWZ": "Africa",
+    "LSO": "Africa", "NAM": "Africa", "ZAF": "Africa", "BEN": "Africa", "BFA": "Africa", "CPV": "Africa", "CIV": "Africa", "GMB": "Africa",
+    "GHA": "Africa", "GIN": "Africa", "GNB": "Africa", "LBR": "Africa", "MLI": "Africa", "MRT": "Africa", "NER": "Africa", "NGA": "Africa",
+    "SHN": "Africa", "SEN": "Africa", "SLE": "Africa", "TGO": "Africa",
+
+    # North America
+    "AIA": "North America", "ATG": "North America", "ABW": "North America", "BHS": "North America", "BRB": "North America", "BES": "North America",
+    "VGB": "North America", "CYM": "North America", "CUB": "North America", "CUW": "North America", "DMA": "North America", "DOM": "North America",
+    "GRD": "North America", "GLP": "North America", "HTI": "North America", "JAM": "North America", "MTQ": "North America", "MSR": "North America",
+    "PRI": "North America", "BLM": "North America", "KNA": "North America", "LCA": "North America", "MAF": "North America", "VCT": "North America",
+    "SXM": "North America", "TTO": "North America", "TCA": "North America", "VIR": "North America", "BLZ": "North America", "CRI": "North America",
+    "SLV": "North America", "GTM": "North America", "HND": "North America", "MEX": "North America", "NIC": "North America", "PAN": "North America",
+    "BMU": "North America", "CAN": "North America", "GRL": "North America", "SPM": "North America", "USA": "North America",
+
+    # South America
+    "ARG": "South America", "BOL": "South America", "BVT": "South America", "BRA": "South America", "CHL": "South America", "COL": "South America",
+    "ECU": "South America", "FLK": "South America", "GUF": "South America", "GUY": "South America", "PRY": "South America", "PER": "South America",
+    "SGS": "South America", "SUR": "South America", "URY": "South America", "VEN": "South America",
+
+    # Antarctica
+    "ATA": "Antarctica",
+
+    # Asia
+    "KAZ": "Asia", "KGZ": "Asia", "TJK": "Asia", "TKM": "Asia", "UZB": "Asia", "CHN": "Asia", "HKG": "Asia", "MAC": "Asia",
+    "PRK": "Asia", "JPN": "Asia", "MNG": "Asia", "KOR": "Asia", "BRN": "Asia", "KHM": "Asia", "IDN": "Asia", "LAO": "Asia",
+    "MYS": "Asia", "MMR": "Asia", "PHL": "Asia", "SGP": "Asia", "THA": "Asia", "TLS": "Asia", "VNM": "Asia", "AFG": "Asia",
+    "BGD": "Asia", "BTN": "Asia", "IND": "Asia", "IRN": "Asia", "MDV": "Asia", "NPL": "Asia", "PAK": "Asia", "LKA": "Asia",
+    "ARM": "Asia", "AZE": "Asia", "BHR": "Asia", "CYP": "Asia", "GEO": "Asia", "IRQ": "Asia", "ISR": "Asia", "JOR": "Asia",
+    "KWT": "Asia", "LBN": "Asia", "OMN": "Asia", "QAT": "Asia", "SAU": "Asia", "PSE": "Asia", "SYR": "Asia", "TUR": "Asia",
+    "ARE": "Asia", "YEM": "Asia",
+
+    # Europe
+    "BLR": "Europe", "BGR": "Europe", "CZE": "Europe", "HUN": "Europe", "POL": "Europe", "MDA": "Europe", "ROU": "Europe", "RUS": "Europe",
+    "SVK": "Europe", "UKR": "Europe", "ALA": "Europe", "DNK": "Europe", "EST": "Europe", "FRO": "Europe", "FIN": "Europe", "GGY": "Europe",
+    "ISL": "Europe", "IRL": "Europe", "IMN": "Europe", "JEY": "Europe", "LVA": "Europe", "LTU": "Europe", "NOR": "Europe", "SJM": "Europe",
+    "SWE": "Europe", "GBR": "Europe", "ALB": "Europe", "AND": "Europe", "BIH": "Europe", "HRV": "Europe", "GIB": "Europe", "GRC": "Europe",
+    "VAT": "Europe", "ITA": "Europe", "MLT": "Europe", "MNE": "Europe", "MKD": "Europe", "PRT": "Europe", "SMR": "Europe", "SRB": "Europe",
+    "SVN": "Europe", "ESP": "Europe", "AUT": "Europe", "BEL": "Europe","FRA": "Europe", "DEU": "Europe", "LIE": "Europe", "LUX": "Europe",
+    "MCO": "Europe", "NLD": "Europe", "CHE": "Europe",
+
+    # Oceania
+    "AUS": "Oceania", "CXR": "Oceania", "CCK": "Oceania", "HMD": "Oceania", "NZL": "Oceania", "NFK": "Oceania", "FJI": "Oceania", "NCL": "Oceania",
+    "PNG": "Oceania", "SLB": "Oceania", "VUT": "Oceania", "GUM": "Oceania", "KIR": "Oceania", "MHL": "Oceania", "FSM": "Oceania", "NRU": "Oceania",
+    "MNP": "Oceania", "PLW": "Oceania", "UMI": "Oceania", "ASM": "Oceania", "COK": "Oceania", "PYF": "Oceania", "NIU": "Oceania", "PCN": "Oceania",
+    "WSM": "Oceania", "TKL": "Oceania", "TON": "Oceania", "TUV": "Oceania","WLF": "Oceania",
 }
 
 # Converts continent-ecozone codes to continent and ecozone labels

@@ -240,7 +240,7 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
     if cn.adm0_pattern in df_with_areas.columns:
         df_with_areas[cn.adm0_pattern] = df_with_areas[cn.adm0_pattern].map(cn.numeric_to_alpha3)
         df_with_areas['country_name'] = df_with_areas[cn.adm0_pattern].map(cn.iso_to_country)
-        df_with_areas['region'] = df_with_areas[cn.adm0_pattern].map(cn.iso_to_region)
+        df_with_areas['region'] = df_with_areas[cn.adm0_pattern].map(cn.iso_to_region_UN_geoscheme)
 
         # Because some rows for contextual layers may be blank
         df_with_areas[cn.adm0_pattern] = df_with_areas[cn.adm0_pattern].fillna("Unassigned")
