@@ -1034,6 +1034,7 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     ### (c) gross organic soil emissions  (d) net LULUCF flux
     ### Panels a and d reuse JPEGs from Part 1 (jpeg_path_veg_net) and Part 3 (jpeg_path_LULUCF_net).
     ### Panels b and c are created here.
+    ### From Claude ('Four-panel LULUCF and component map')
 
     main_logger.info("\n\n\n---Part 7: Mapping LULUCF component fluxes and net LULUCF (four-panel):")
 
