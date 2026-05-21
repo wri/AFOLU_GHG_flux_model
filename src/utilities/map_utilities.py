@@ -1154,3 +1154,33 @@ def create_three_panel_map(three_panel_jpeg, top_jpeg, middle_jpeg, bottom_jpeg,
     save_jpeg(three_panel_jpeg, year, main_logger)
     plt.close()
 
+
+def create_four_panel_map(four_panel_jpeg, top_jpeg, second_jpeg, third_jpeg, bottom_jpeg, year, main_logger, panel_labels=None):
+    """
+    Creates a four-panel single-column map, e.g., for components of LULUCF and total LULUCF.
+    """
+    main_logger.info("Creating four-panel map")
+
+    top_img = plt.imread(top_jpeg)
+    second_img = plt.imread(second_jpeg)
+    third_img = plt.imread(third_jpeg)
+    bottom_img = plt.imread(bottom_jpeg)
+
+    if panel_labels is None:
+        panel_labels = ["a", "b", "c", "d"]
+
+    images = [top_img, second_img, third_img, bottom_img]
+    four_panel_dims = (cn.panel_dims[0], cn.panel_dims[1] * len(images))
+
+    fig, axes = plt.subplots(nrows=len(images), ncols=1, figsize=four_panel_dims)
+    fig.subplots_adjust(hspace=0, wspace=0)
+
+    for ax, img, label in zip(axes, images, panel_labels):
+        ax.imshow(img, aspect='auto')
+        ax.axis("off")
+        ax.text(0.02, 0.98, label, transform=ax.transAxes, fontsize=10, fontweight="bold",
+                ha="left", va="top", color="black")
+
+    save_jpeg(four_panel_jpeg, year, main_logger)
+    plt.close()
+

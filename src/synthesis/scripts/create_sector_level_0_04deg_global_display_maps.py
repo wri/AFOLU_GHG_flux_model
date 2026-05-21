@@ -283,121 +283,99 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     })
 
 
-    # ### Part 1: Maps average annual vegetation net flux by itself (for completeness).
-    # ### This should be equivalent to the full model period annual average output from the vegetation model,
-    # ### but I'm recreating it here so that maps for all components are created here.
-    # ### The vegetation jpeg/gif script must have already been run (to create local reprojected vegetation net flux geotif).
-    # ### NOTE: I can't get this averge annual net flux map to match the one in 4_create_0_04deg_global_display_maps.
-    # ### The legend here has very different min and max values and the map colors are different.
-    # ### I assume this has to do with masking or removing NoData pixels in some way.
-    #
-    # ### TODO be able to create the same average annual net flux map here as in the vegetation jpeg script
-    # ### so that the vegetation map is created alongside vegetation+[other], LULUCF, and AFOLU.
-    #
-    # main_logger.info(f"  Plotting average annual vegetation net flux map")
-    #
-    # percentile_0_LULUCF_net = mu.percentile_for_0(mean_veg_net)
-    # main_logger.info(f"  0 is at the {percentile_0_LULUCF_net}th percentile of the average annual net flux vegetation raster.")
-    # percentiles_LULUCF_net = [percentile_0_LULUCF_net * cn.net_percentiles[0], percentile_0_LULUCF_net * cn.net_percentiles[1],
-    #                percentile_0_LULUCF_net * cn.net_percentiles[2],
-    #                percentile_0_LULUCF_net * cn.net_percentiles[3], percentile_0_LULUCF_net * cn.net_percentiles[4],
-    #                percentile_0_LULUCF_net * cn.net_percentiles[5], percentile_0_LULUCF_net * cn.net_percentiles[6],
-    #                percentile_0_LULUCF_net * cn.net_percentiles[7],
-    #                percentile_0_LULUCF_net * cn.net_percentiles[8], percentile_0_LULUCF_net * cn.net_percentiles[9]]
-    # # print("percentiles_LULUCF_net:", percentiles_LULUCF_net)
-    #
-    # main_logger.info(f"  Calculating percentiles_LULUCF_net and breaks for average annual net flux vegetation")
-    #
-    # # Converts RGB color palette to matplotlib color palette
-    # colors_matplotlib = mu.rgb_to_mpl_palette(cn.net_colors_rgb)
-    #
-    # # Matches percentile breaks with colors for the map.
-    # # Normalizes percentiles_LULUCF_net to a 0-1 scale.
-    # percentiles_normalized_LULUCF_net = np.linspace(0, 1, len(percentiles_LULUCF_net))
-    # # print("percentiles_normalized_LULUCF_net:", percentiles_normalized_LULUCF_net)
-    # cmap_LULUCF_net = LinearSegmentedColormap.from_list("custom_colormap", list(zip(percentiles_normalized_LULUCF_net, colors_matplotlib)))
-    #
-    # main_logger.info(f"  Masking raster for average annual net flux vegetation to non-0 values")
-    # masked_data_LULUCF_net = np.ma.masked_where(mean_veg_net == 0, mean_veg_net)
-    #
-    # percentile_for_saturation = 1
-    # breaks_all_yrs = np.percentile(mean_veg_net, [1, (100-percentile_for_saturation)])  # The min and max percentiles_LULUCF_net at which colors saturate
-    #
-    # lower_lim_all_yrs = breaks_all_yrs[0]
-    # global_neutral = 0
-    # upper_lim_all_yrs = breaks_all_yrs[-1]
-    #
-    # main_logger.info("For average raster:")
-    # main_logger.info(f"  lower limit ({percentile_for_saturation} percentile): {lower_lim_all_yrs}")
-    # main_logger.info(f"  neutral: {global_neutral}")
-    # main_logger.info(f"  upper limit ({(100-percentile_for_saturation)} percentile): {upper_lim_all_yrs}")
-    #
-    # # Creates the min and max values for the legend in kt CO2e (converts legend units from Mg (t) to kt with 10**3-- data doesn't change).
-    # # Rounds data_min down and data_max up for legend.
-    # rounded_lower_lim_all_yrs = math.ceil(lower_lim_all_yrs / 10 ** 3 * 100) / 100  # Rounds up
-    # rounded_upper_lim_all_yrs = math.floor(upper_lim_all_yrs / 10 ** 3 * 100) / 100  # Rounds down
-    # tick_labels_LULUCF_net = [f"< {rounded_lower_lim_all_yrs:.0f}  (sink)",  # Spaces are to horizontally align the text explanations
-    #                f"{0}        (neutral)",
-    #                f"> {rounded_upper_lim_all_yrs:.0f}  (source)"]
-    # print("tick_labels_LULUCF_net:", tick_labels_LULUCF_net)
-    #
-    # # For map (not legend)
-    # norm = TwoSlopeNorm(
-    #     vmin=lower_lim_all_yrs,
-    #     vcenter=global_neutral,
-    #     vmax=upper_lim_all_yrs
-    # )
-    #
-    # main_logger.info(f"  Plotting map for average annual net flux vegetation")
-    # ax, fig = mu.create_plot()
-    #
-    # # Sets the ocean color
-    # mu.set_ocean_color(ax)
-    #
-    # # Limits shapefile to focal extent (if requested)
-    # if bounding_box_proj is not None:
-    #     bbox_geom = box(*bounding_box_proj)
-    #     country_shapefile = country_shapefile.clip(bbox_geom)
-    #
-    # # Plots the country polygons first
-    # mu.plot_country_polygons(ax, country_shapefile)
-    #
-    # # Raster extent
-    # extent = list(raster_extent)
-    #
-    # # Plots the raster next
-    # img = mu.plot_raster(ax, cmap_LULUCF_net, extent, masked_data_LULUCF_net, norm)
-    #
-    # # Plots the country boundaries on top
-    # mu.plot_country_boundaries(ax, country_shapefile)
-    #
-    # # Explicitly sets the bounding box for the plot image
-    # if bounding_box_proj is not None:
-    #     ax.set_xlim(extent[0], extent[1])
-    #     ax.set_ylim(extent[2], extent[3])
-    #
-    # title_text = f"Net greenhouse gas flux\nAll vegetation pools, all gases\nkt CO$_2$e yr$^{{-1}}$"
-    #
-    # # Creates legend
-    # mu.create_divergent_legend_asymmetric(fig, rounded_lower_lim_all_yrs, rounded_upper_lim_all_yrs,
-    #                                    title_text, tick_labels_LULUCF_net,
-    #                                    "", cn.net_colors_rgb, percentiles_LULUCF_net, percentile_0_LULUCF_net, main_logger)
-    #
-    # # Removes axis ticks and labels
-    # mu.remove_ticks(ax)
-    #
-    #
-    # core_jpeg_name_LULUCF_net = f"vegetation_net_flux_all_pools_all_gases_{veg_version}__{veg_analysis_years}__kt_CO2e_yr__{uu.timestr()[0:8]}"
-    # if bounding_box_description:  # Adds bounding box description to file name, if supplied
-    #     core_jpeg_name_LULUCF_net = f"{core_jpeg_name_LULUCF_net}_{bounding_box_description}"
-    # jpeg_path_LULUCF_net = f"{LULUCF_local_jpeg_non_pres_folder}/{core_jpeg_name_LULUCF_net}.jpeg"
-    # jpeg_for_pres_path_LULUCF_net = f"{LULUCF_local_jpeg_pres_folder}/{core_jpeg_name_LULUCF_net}__for_pres.jpeg"
-    #
-    # # Saves two versions of the map: without and with a source note in the bottom right
-    # out_jpeg_for_pres = mu.save_pres_non_pres_jpegs(ax, jpeg_path_LULUCF_net, jpeg_for_pres_path_LULUCF_net, "", cn.veg_pres_text, main_logger)
+    ### Part 1: Maps average annual vegetation net flux by itself.
+    ### Matches the approach used by map_net_flux() in map_utilities.py:
+    ### percentile limits are computed from non-zero pixels only, using cn.net_percentiles multipliers.
+
+    main_logger.info("\n\n\n---Part 1: Mapping average annual vegetation net flux:")
+
+    # Reads the mean annual vegetation net flux raster (already reprojected), applying bbox clipping if requested.
+    # This also establishes raster_extent for use in subsequent parts.
+    with rasterio.open(veg_net_all_gases_geotif_local) as src:
+        if bounding_box_proj is not None:
+            minx, miny, maxx, maxy = bounding_box_proj
+            window = from_bounds(minx, miny, maxx, maxy, src.transform)
+            data_veg_net = src.read(1, window=window).astype('float32')
+            left, bottom, right, top = rasterio.windows.bounds(window, src.transform)
+            raster_extent = (left, right, bottom, top)
+        else:
+            data_veg_net = src.read(1).astype('float32')
+            b = src.bounds
+            raster_extent = (b.left, b.right, b.bottom, b.top)
+
+    # Percentile limits from non-zero pixels only (matching map_net_flux behavior)
+    non_zero_values_veg_net = data_veg_net[data_veg_net != 0]
+    percentile_for_saturation = 1
+    breaks_veg_net = np.percentile(non_zero_values_veg_net, [percentile_for_saturation, (100 - percentile_for_saturation)])
+    lower_lim_veg_net = breaks_veg_net[0]
+    upper_lim_veg_net = breaks_veg_net[-1]
+
+    main_logger.info(f"  lower limit ({percentile_for_saturation} percentile): {lower_lim_veg_net}")
+    main_logger.info(f"  upper limit ({(100 - percentile_for_saturation)} percentile): {upper_lim_veg_net}")
+
+    rounded_lower_lim_veg_net = math.ceil(lower_lim_veg_net / 10 ** 3 * 100) / 100
+    rounded_upper_lim_veg_net = math.floor(upper_lim_veg_net / 10 ** 3 * 100) / 100
+    tick_labels_veg_net = [f"< {rounded_lower_lim_veg_net:.0f}  (sink)",
+                           "0        (neutral)",
+                           f"> {rounded_upper_lim_veg_net:.0f}  (source)"]
+
+    # Colormap percentile breaks using cn.net_percentiles multipliers (same as map_net_flux)
+    percentile_0_veg_net = mu.percentile_for_0(data_veg_net)
+    main_logger.info(f"  0 is at the {percentile_0_veg_net}th percentile of the vegetation net flux raster.")
+    percentiles_veg_net = [percentile_0_veg_net * cn.net_percentiles[0], percentile_0_veg_net * cn.net_percentiles[1],
+                           percentile_0_veg_net * cn.net_percentiles[2], percentile_0_veg_net * cn.net_percentiles[3],
+                           percentile_0_veg_net * cn.net_percentiles[4], percentile_0_veg_net * cn.net_percentiles[5],
+                           percentile_0_veg_net * cn.net_percentiles[6], percentile_0_veg_net * cn.net_percentiles[7],
+                           percentile_0_veg_net * cn.net_percentiles[8], percentile_0_veg_net * cn.net_percentiles[9]]
+
+    colors_matplotlib = mu.rgb_to_mpl_palette(net_colors_rgb)
+    percentiles_normalized_veg_net = np.linspace(0, 1, len(percentiles_veg_net))
+    cmap_veg_net = LinearSegmentedColormap.from_list("custom_colormap", list(zip(percentiles_normalized_veg_net, colors_matplotlib)))
+
+    masked_data_veg_net = np.ma.masked_where(data_veg_net == 0, data_veg_net)
+
+    norm_veg_net = TwoSlopeNorm(
+        vmin=lower_lim_veg_net,
+        vcenter=0,
+        vmax=upper_lim_veg_net
+    )
+
+    ax, fig_veg_net = mu.create_plot()
+    mu.set_ocean_color(ax)
+
+    if bounding_box_proj is not None:
+        bbox_geom = box(*bounding_box_proj)
+        country_shapefile = country_shapefile.clip(bbox_geom)
+
+    mu.plot_country_polygons(ax, country_shapefile)
+
+    extent = list(raster_extent)
+    mu.plot_raster(ax, cmap_veg_net, extent, masked_data_veg_net, norm_veg_net)
+    mu.plot_country_boundaries(ax, country_shapefile)
+
+    if bounding_box_proj is not None:
+        ax.set_xlim(extent[0], extent[1])
+        ax.set_ylim(extent[2], extent[3])
+
+    title_text_veg_net = f"Net greenhouse gas flux\nAll vegetation pools, all gases\nkt CO$_2$e yr$^{{-1}}$"
+    mu.create_divergent_legend_asymmetric(fig_veg_net, rounded_lower_lim_veg_net, rounded_upper_lim_veg_net,
+                                          title_text_veg_net, tick_labels_veg_net,
+                                          veg_analysis_years, net_colors_rgb, percentiles_veg_net, percentile_0_veg_net, main_logger)
+    mu.remove_ticks(ax)
+
+    core_jpeg_name_veg_net = f"vegetation_net_flux_all_pools_all_gases_{veg_version}__{veg_analysis_years}__ktCO2e_yr__{uu.timestr()[0:8]}"
+    if bounding_box_description:
+        core_jpeg_name_veg_net = f"{core_jpeg_name_veg_net}_{bounding_box_description}"
+    jpeg_path_veg_net = f"{LULUCF_local_jpeg_non_pres_folder}/{core_jpeg_name_veg_net}.jpeg"
+    jpeg_for_pres_path_veg_net = f"{LULUCF_local_jpeg_pres_folder}/{core_jpeg_name_veg_net}__for_pres.jpeg"
+
+    mu.save_pres_non_pres_jpegs(ax, jpeg_path_veg_net, jpeg_for_pres_path_veg_net, "", cn.veg_pres_text, main_logger)
+
+    end_time = time.time()
+    main_logger.info(f"Vegetation net flux for {bounding_box_description} extent took {round(end_time - start_time)} seconds: {uu.timestr()}")
 
 
-    main_logger.info(f"\n---Combining individual datasets with vegetation net flux")
+    main_logger.info(f"\n\n\n---Part 2: Combining individual datasets with vegetation net flux")
     ### Part 2: Maps average annual vegetation net flux + one other dataset at a time (pairwise)
 
     # Iterates through non-vegetation layers to combine them with vegetation individually
@@ -604,7 +582,7 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
 
     ### Part 3: Maps net LULUCF
 
-    main_logger.info("\n\n\n---Mapping net LULUCF:")
+    main_logger.info("\n\n\n---Part 3: Mapping net LULUCF:")
 
     # Iteratively collects the names and versions of non-vegetation datasets, and text for bottom-right of maps
     non_veg_versions = ''
@@ -755,7 +733,7 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
 
     ### Part 4: Maps LULUCF gross emissions
 
-    main_logger.info("\n\n\n---Mapping LULUCF gross emissions and removals:")
+    main_logger.info("\n\n\n---Part 4: Mapping LULUCF gross emissions and removals:")
 
     # Gross LULUCF emissions
 
@@ -924,8 +902,10 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
 
     ### Part 5: Three-panel map of LULUCF (gross emissions, gross removals, net flux)
 
+    main_logger.info("\n\n\n---Part 5: Making three-panel LULUCF map (gross emissions, gross removals, net flux")
+
     # Saves LULUCF three-panel map JPEG
-    LULUCF_three_panel_output_name_kt = f"LULUCF_three_panel__veg_{veg_version}__{non_veg_versions}__ktCO2e_yr"
+    LULUCF_three_panel_output_name_kt = f"LULUCF_three_panel__emis_remv_net__veg_{veg_version}__{non_veg_versions}__ktCO2e_yr"
     core_jpeg_name_LULUCF_three_panel = f"{LULUCF_three_panel_output_name_kt}__{uu.timestr()[0:8]}"
     if bounding_box_description:  # Adds bounding box description to file name, if supplied
         core_jpeg_name_LULUCF_three_panel = f"{core_jpeg_name_LULUCF_three_panel}_{bounding_box_description}"
@@ -935,7 +915,7 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
 
     ### Part 6: Maps fraction of LULUCF gross emissions due to vegetation, mineral soil, and organic soil
 
-    main_logger.info(f"\n---Mapping fraction of gross emissions from organic soil: {uu.timestr()}")
+    main_logger.info(f"\n\n\n---Part 6: Mapping fraction of gross emissions from organic soil: {uu.timestr()}")
 
     # Loads gross vegetation emissions raster
     with rasterio.open(veg_gross_emis_all_gases_local) as src_veg_emis:
@@ -1049,9 +1029,176 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     )
 
 
+    ### Part 7: Four-panel map of LULUCF component fluxes
+    ### (a) net vegetation flux  (b) net mineral soil SOC change
+    ### (c) gross organic soil emissions  (d) net LULUCF flux
+    ### Panels a and d reuse JPEGs from Part 1 (jpeg_path_veg_net) and Part 3 (jpeg_path_LULUCF_net).
+    ### Panels b and c are created here.
+
+    main_logger.info("\n\n\n---Part 7: Mapping LULUCF component fluxes and net LULUCF (four-panel):")
 
 
-    # ### Part 6: Maps AFOLU
+    # --- Panel b: Net mineral soil SOC change (divergent colormap) ---
+
+    main_logger.info("\n---Mapping net mineral soil SOC change:")
+
+    # Derives the reprojected mineral soil path — same path produced by reproject_to_vegetation() in Part 2
+    mineral_soil_reproj_path = f"{cn.local_jpeg_folder_LULUCF}/{os.path.splitext(os.path.basename(mineral_soil_s3))[0]}_reproj.tif"
+
+    with rasterio.open(mineral_soil_reproj_path) as src:
+        if bounding_box_proj is not None:
+            minx, miny, maxx, maxy = bounding_box_proj
+            window = from_bounds(minx, miny, maxx, maxy, src.transform)
+            data_min_soil = src.read(1, window=window).astype('float32')
+        else:
+            data_min_soil = src.read(1).astype('float32')
+
+    # Applies same transformations as Part 2: Mg C/yr → Mg CO2/yr, then sign flip (loss positive, gain negative)
+    data_min_soil = data_min_soil * cn.C_to_CO2 * -1
+
+    non_zero_min_soil = data_min_soil[data_min_soil != 0]
+    percentile_for_saturation = 1
+    breaks_min_soil = np.percentile(non_zero_min_soil, [1, (100 - percentile_for_saturation)])
+    lower_lim_min_soil = breaks_min_soil[0]
+    upper_lim_min_soil = breaks_min_soil[-1]
+
+    rounded_lower_lim_min_soil = math.ceil(lower_lim_min_soil / 10 ** 3 * 100) / 100
+    rounded_upper_lim_min_soil = math.floor(upper_lim_min_soil / 10 ** 3 * 100) / 100
+    tick_labels_min_soil = [f"< {rounded_lower_lim_min_soil:.0f}  (sink)",
+                            "0        (neutral)",
+                            f"> {rounded_upper_lim_min_soil:.0f}  (source)"]
+
+    main_logger.info(f"  lower limit ({percentile_for_saturation} percentile): {lower_lim_min_soil}")
+    main_logger.info(f"  upper limit ({(100 - percentile_for_saturation)} percentile): {upper_lim_min_soil}")
+
+    percentile_0_min_soil = mu.percentile_for_0(data_min_soil)
+    main_logger.info(f"  0 is at the {percentile_0_min_soil}th percentile of the mineral soil raster.")
+    percentiles_min_soil = [percentile_0_min_soil / 6, percentile_0_min_soil / 4, percentile_0_min_soil / 2,
+                            percentile_0_min_soil / 1.3, percentile_0_min_soil / 1.05,
+                            percentile_0_min_soil * 1.05, percentile_0_min_soil * 1.1,
+                            percentile_0_min_soil * 1.2, percentile_0_min_soil * 1.3, percentile_0_min_soil * 1.5]
+
+    colors_matplotlib = mu.rgb_to_mpl_palette(net_colors_rgb)
+    percentiles_normalized_min_soil = np.linspace(0, 1, len(percentiles_min_soil))
+    cmap_min_soil = LinearSegmentedColormap.from_list("custom_colormap", list(zip(percentiles_normalized_min_soil, colors_matplotlib)))
+    masked_data_min_soil = np.ma.masked_where(data_min_soil == 0, data_min_soil)
+    norm_min_soil = TwoSlopeNorm(vmin=lower_lim_min_soil, vcenter=0, vmax=upper_lim_min_soil)
+
+    ax, fig_min_soil = mu.create_plot()
+    mu.set_ocean_color(ax)
+    mu.plot_country_polygons(ax, country_shapefile)
+    extent = list(raster_extent)
+    mu.plot_raster(ax, cmap_min_soil, extent, masked_data_min_soil, norm_min_soil)
+    mu.plot_country_boundaries(ax, country_shapefile)
+    if bounding_box_proj is not None:
+        ax.set_xlim(extent[0], extent[1])
+        ax.set_ylim(extent[2], extent[3])
+
+    title_text_min_soil = f"Net mineral soil SOC change\nkt CO$_2$e yr$^{{-1}}$"
+    mu.create_divergent_legend_asymmetric(fig_min_soil, rounded_lower_lim_min_soil, rounded_upper_lim_min_soil,
+                                          title_text_min_soil, tick_labels_min_soil,
+                                          veg_analysis_years, net_colors_rgb, percentiles_min_soil, percentile_0_min_soil, main_logger)
+    mu.remove_ticks(ax)
+
+    min_soil_output_name_kt = f"min_soil_net__veg_{veg_version}__{non_veg_versions}__ktCO2e_yr"
+    core_jpeg_name_min_soil = f"{min_soil_output_name_kt}__{uu.timestr()[0:8]}"
+    if bounding_box_description:
+        core_jpeg_name_min_soil = f"{core_jpeg_name_min_soil}_{bounding_box_description}"
+    jpeg_path_min_soil = f"{LULUCF_local_jpeg_non_pres_folder}/{core_jpeg_name_min_soil}.jpeg"
+    jpeg_for_pres_path_min_soil = f"{LULUCF_local_jpeg_pres_folder}/{core_jpeg_name_min_soil}__for_pres.jpeg"
+    mu.save_pres_non_pres_jpegs(ax, jpeg_path_min_soil, jpeg_for_pres_path_min_soil, "", full_slide_text_LULUCF_with_disclaimer, main_logger)
+
+    main_logger.info(f"Mineral soil net for {bounding_box_description} extent took {round(time.time() - start_time)} seconds: {uu.timestr()}")
+
+
+    # --- Panel c: Gross organic soil emissions (unidirectional colormap) ---
+
+    main_logger.info("\n---Mapping gross organic soil emissions:")
+
+    # organic_soil_local_reproj is defined in Part 6; re-reading here to apply bbox clipping consistently
+    with rasterio.open(organic_soil_local_reproj) as src:
+        if bounding_box_proj is not None:
+            minx, miny, maxx, maxy = bounding_box_proj
+            window = from_bounds(minx, miny, maxx, maxy, src.transform)
+            data_org_soil = src.read(1, window=window).astype('float32')
+        else:
+            data_org_soil = src.read(1).astype('float32')
+
+    non_zero_org_soil = data_org_soil[data_org_soil != 0]
+    percentile_for_saturation = 1
+    breaks_org_soil = np.percentile(non_zero_org_soil, [1, (100 - percentile_for_saturation)])
+    lower_lim_org_soil = breaks_org_soil[0]
+    upper_lim_org_soil = breaks_org_soil[-1]
+    rounded_upper_lim_org_soil = math.floor(upper_lim_org_soil / 10 ** 3 * 100) / 100
+    tick_labels_org_soil = [0, f"> {rounded_upper_lim_org_soil:.0f}"]
+    title_text_org_soil = f"Gross organic soil emissions\nkt CO$_2$e yr$^{{-1}}$"
+
+    main_logger.info(f"  lower limit ({percentile_for_saturation} percentile): {lower_lim_org_soil}")
+    main_logger.info(f"  upper limit ({(100 - percentile_for_saturation)} percentile): {upper_lim_org_soil}")
+
+    colors_matplotlib = mu.rgb_to_mpl_palette(cn.emissions_colors_rgb)
+    percentiles_normalized_org_soil = np.linspace(0, 1, len(cn.emissions_percentiles))
+    cmap_org_soil = LinearSegmentedColormap.from_list("custom_colormap", list(zip(percentiles_normalized_org_soil, colors_matplotlib)))
+    norm_org_soil = Normalize(vmin=lower_lim_org_soil, vmax=upper_lim_org_soil)
+    masked_data_org_soil = np.ma.masked_where(data_org_soil <= 0, data_org_soil)
+
+    ax, fig_org_soil = mu.create_plot()
+    mu.set_ocean_color(ax)
+    mu.plot_country_polygons(ax, country_shapefile)
+    extent = list(raster_extent)
+    img_org_soil = mu.plot_raster(ax, cmap_org_soil, extent, masked_data_org_soil, norm_org_soil)
+    mu.plot_country_boundaries(ax, country_shapefile)
+    if bounding_box_proj is not None:
+        ax.set_xlim(extent[0], extent[1])
+        ax.set_ylim(extent[2], extent[3])
+
+    mu.create_unidirection_legend(fig_org_soil, img_org_soil, lower_lim_org_soil, upper_lim_org_soil,
+                                   title_text_org_soil, tick_labels_org_soil,
+                                   'avg', cn.emissions_colors_rgb, cn.emissions_percentiles, main_logger)
+    mu.remove_ticks(ax)
+
+    org_soil_output_name_kt = f"org_soil_gross_emis__veg_{veg_version}__{non_veg_versions}__ktCO2e_yr"
+    core_jpeg_name_org_soil = f"{org_soil_output_name_kt}__{uu.timestr()[0:8]}"
+    if bounding_box_description:
+        core_jpeg_name_org_soil = f"{core_jpeg_name_org_soil}_{bounding_box_description}"
+    jpeg_path_org_soil = f"{LULUCF_local_jpeg_non_pres_folder}/{core_jpeg_name_org_soil}.jpeg"
+    jpeg_for_pres_path_org_soil = f"{LULUCF_local_jpeg_pres_folder}/{core_jpeg_name_org_soil}__for_pres.jpeg"
+    mu.save_pres_non_pres_jpegs(ax, jpeg_path_org_soil, jpeg_for_pres_path_org_soil, "", full_slide_text_LULUCF_with_disclaimer, main_logger)
+
+    main_logger.info(f"Organic soil gross emissions for {bounding_box_description} extent took {round(time.time() - start_time)} seconds: {uu.timestr()}")
+
+
+    # --- Four-panel composite ---
+    # Panel a: jpeg_path_veg_net — created by Part 1 (vegetation net flux)
+    # Panel b: jpeg_path_min_soil — created above
+    # Panel c: jpeg_path_org_soil — created above
+    # Panel d: jpeg_path_LULUCF_net — created by Part 3
+
+    four_panel_output_name = f"LULUCF_four_panel__component_fluxes__veg_{veg_version}__{non_veg_versions}__ktCO2e_yr"
+    core_jpeg_name_four_panel = f"{four_panel_output_name}__{uu.timestr()[0:8]}"
+    if bounding_box_description:
+        core_jpeg_name_four_panel = f"{core_jpeg_name_four_panel}_{bounding_box_description}"
+    jpeg_path_four_panel = f"{LULUCF_local_jpeg_non_pres_folder}/{core_jpeg_name_four_panel}.jpeg"
+
+    mu.create_four_panel_map(
+        jpeg_path_four_panel,
+        jpeg_path_veg_net,
+        jpeg_path_min_soil,
+        jpeg_path_org_soil,
+        jpeg_path_LULUCF_net,
+        "",
+        main_logger,
+        panel_labels=["a  Net vegetation flux", "b  Net mineral soil SOC change",
+                      "c  Gross organic soil emissions", "d  Net LULUCF flux"]
+    )
+
+    end_time = time.time()
+    main_logger.info(f"Through Part 7 for {bounding_box_description} extent took {round(end_time - start_time)} seconds: {uu.timestr()}")
+
+
+
+
+    # ### Part 8: Maps AFOLU
     #
     # main_logger.info("\n\n\n---Mapping AFOLU:")
     #

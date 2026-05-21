@@ -1311,9 +1311,9 @@ iso_to_region = {
     'XSP': 'Not tropical misc', 'YEM': 'Non-tropical Asia', 'ZAF': 'Non-tropical Africa', 'ZMB': 'Tropical Africa', 'ZWE': 'Tropical Africa', 'NA': 'no_country'
 }
 
-# UN geoscheme regions from https://unstats.un.org/unsd/methodology/m49/
+# UN geoscheme regions from https://unstats.un.org/unsd/methodology/m49/ ("geographic regions" tab)
 # Converted to dictionary by https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6a0bc6ac-dc2c-8327-9154-3e49e70c5022
-iso_to_region_UN_geoscheme = {
+iso_to_region_UN_geoscheme_L1 = {
 
     # Africa
     "DZA": "Africa", "EGY": "Africa", "LBY": "Africa", "MAR": "Africa", "SDN": "Africa", "TUN": "Africa", "ESH": "Africa", "IOT": "Africa",
@@ -1365,6 +1365,101 @@ iso_to_region_UN_geoscheme = {
     "PNG": "Oceania", "SLB": "Oceania", "VUT": "Oceania", "GUM": "Oceania", "KIR": "Oceania", "MHL": "Oceania", "FSM": "Oceania", "NRU": "Oceania",
     "MNP": "Oceania", "PLW": "Oceania", "UMI": "Oceania", "ASM": "Oceania", "COK": "Oceania", "PYF": "Oceania", "NIU": "Oceania", "PCN": "Oceania",
     "WSM": "Oceania", "TKL": "Oceania", "TON": "Oceania", "TUV": "Oceania","WLF": "Oceania",
+}
+
+iso_to_region_UN_geoscheme_L2_L3 = {
+
+    # Northern Africa
+    "DZA": "Northern Africa", "EGY": "Northern Africa", "LBY": "Northern Africa", "MAR": "Northern Africa", "SDN": "Northern Africa", "TUN": "Northern Africa", "ESH": "Northern Africa",
+
+    # Eastern Africa
+    "IOT": "Eastern Africa", "BDI": "Eastern Africa", "COM": "Eastern Africa", "DJI": "Eastern Africa", "ERI": "Eastern Africa", "ETH": "Eastern Africa", "ATF": "Eastern Africa", "KEN": "Eastern Africa",
+    "MDG": "Eastern Africa", "MWI": "Eastern Africa", "MUS": "Eastern Africa", "MYT": "Eastern Africa", "MOZ": "Eastern Africa", "REU": "Eastern Africa", "RWA": "Eastern Africa", "SYC": "Eastern Africa",
+    "SOM": "Eastern Africa", "SSD": "Eastern Africa", "UGA": "Eastern Africa", "TZA": "Eastern Africa", "ZMB": "Eastern Africa", "ZWE": "Eastern Africa",
+
+    # Middle Africa
+    "AGO": "Middle Africa", "CMR": "Middle Africa", "CAF": "Middle Africa", "TCD": "Middle Africa", "COG": "Middle Africa", "COD": "Middle Africa",
+    "GNQ": "Middle Africa", "GAB": "Middle Africa", "STP": "Middle Africa",
+
+    # Southern Africa
+    "BWA": "Southern Africa", "SWZ": "Southern Africa", "LSO": "Southern Africa", "NAM": "Southern Africa", "ZAF": "Southern Africa",
+
+    # Western Africa
+    "BEN": "Western Africa", "BFA": "Western Africa", "CPV": "Western Africa", "CIV": "Western Africa", "GMB": "Western Africa", "GHA": "Western Africa",
+    "GIN": "Western Africa", "GNB": "Western Africa", "LBR": "Western Africa", "MLI": "Western Africa", "MRT": "Western Africa", "NER": "Western Africa",
+    "NGA": "Western Africa", "SHN": "Western Africa", "SEN": "Western Africa", "SLE": "Western Africa", "TGO": "Western Africa",
+
+    # Caribbean
+    "AIA": "Caribbean", "ATG": "Caribbean", "ABW": "Caribbean", "BHS": "Caribbean", "BRB": "Caribbean", "BES": "Caribbean", "VGB": "Caribbean", "CYM": "Caribbean",
+    "CUB": "Caribbean", "CUW": "Caribbean", "DMA": "Caribbean", "DOM": "Caribbean", "GRD": "Caribbean", "GLP": "Caribbean", "HTI": "Caribbean", "JAM": "Caribbean",
+    "MTQ": "Caribbean", "MSR": "Caribbean", "PRI": "Caribbean", "BLM": "Caribbean", "KNA": "Caribbean", "LCA": "Caribbean", "MAF": "Caribbean", "VCT": "Caribbean",
+    "SXM": "Caribbean", "TTO": "Caribbean", "TCA": "Caribbean", "VIR": "Caribbean",
+
+    # Central America
+    "BLZ": "Central America", "CRI": "Central America", "SLV": "Central America", "GTM": "Central America", "HND": "Central America", "MEX": "Central America",
+    "NIC": "Central America", "PAN": "Central America",
+
+    # South America
+    "ARG": "South America", "BOL": "South America", "BVT": "South America", "BRA": "South America", "CHL": "South America", "COL": "South America",
+    "ECU": "South America", "FLK": "South America", "GUF": "South America", "GUY": "South America", "PRY": "South America", "PER": "South America",
+    "SGS": "South America", "SUR": "South America", "URY": "South America", "VEN": "South America",
+
+    # Northern America
+    "BMU": "Northern America", "CAN": "Northern America", "GRL": "Northern America", "SPM": "Northern America", "USA": "Northern America",
+
+    # Antarctica
+    "ATA": "Antarctica",
+
+    # Central Asia
+    "KAZ": "Central Asia", "KGZ": "Central Asia", "TJK": "Central Asia", "TKM": "Central Asia", "UZB": "Central Asia",
+
+    # Eastern Asia
+    "CHN": "Eastern Asia", "HKG": "Eastern Asia", "MAC": "Eastern Asia", "PRK": "Eastern Asia", "JPN": "Eastern Asia", "MNG": "Eastern Asia", "KOR": "Eastern Asia",
+
+    # South-eastern Asia
+    "BRN": "South-eastern Asia", "KHM": "South-eastern Asia", "IDN": "South-eastern Asia", "LAO": "South-eastern Asia", "MYS": "South-eastern Asia", "MMR": "South-eastern Asia",
+    "PHL": "South-eastern Asia", "SGP": "South-eastern Asia", "THA": "South-eastern Asia", "TLS": "South-eastern Asia", "VNM": "South-eastern Asia",
+
+    # Southern Asia
+    "AFG": "Southern Asia", "BGD": "Southern Asia", "BTN": "Southern Asia", "IND": "Southern Asia", "IRN": "Southern Asia", "MDV": "Southern Asia",
+    "NPL": "Southern Asia", "PAK": "Southern Asia", "LKA": "Southern Asia",
+
+    # Western Asia
+    "ARM": "Western Asia", "AZE": "Western Asia", "BHR": "Western Asia", "CYP": "Western Asia", "GEO": "Western Asia", "IRQ": "Western Asia", "ISR": "Western Asia", "JOR": "Western Asia",
+    "KWT": "Western Asia", "LBN": "Western Asia", "OMN": "Western Asia", "QAT": "Western Asia", "SAU": "Western Asia", "PSE": "Western Asia",
+    "SYR": "Western Asia", "TUR": "Western Asia", "ARE": "Western Asia", "YEM": "Western Asia",
+
+    # Eastern Europe
+    "BLR": "Eastern Europe", "BGR": "Eastern Europe", "CZE": "Eastern Europe", "HUN": "Eastern Europe", "POL": "Eastern Europe", "MDA": "Eastern Europe",
+    "ROU": "Eastern Europe", "RUS": "Eastern Europe", "SVK": "Eastern Europe", "UKR": "Eastern Europe",
+
+    # Northern Europe
+    "ALA": "Northern Europe", "DNK": "Northern Europe", "EST": "Northern Europe", "FRO": "Northern Europe", "FIN": "Northern Europe", "GGY": "Northern Europe",
+    "ISL": "Northern Europe", "IRL": "Northern Europe", "IMN": "Northern Europe", "JEY": "Northern Europe", "LVA": "Northern Europe", "LTU": "Northern Europe",
+    "NOR": "Northern Europe", "SJM": "Northern Europe", "SWE": "Northern Europe", "GBR": "Northern Europe",
+
+    # Southern Europe
+    "ALB": "Southern Europe", "AND": "Southern Europe", "BIH": "Southern Europe", "HRV": "Southern Europe", "GIB": "Southern Europe", "GRC": "Southern Europe",
+    "VAT": "Southern Europe", "ITA": "Southern Europe", "MLT": "Southern Europe", "MNE": "Southern Europe", "MKD": "Southern Europe", "PRT": "Southern Europe",
+    "SMR": "Southern Europe", "SRB": "Southern Europe", "SVN": "Southern Europe", "ESP": "Southern Europe",
+
+    # Western Europe
+    "AUT": "Western Europe", "BEL": "Western Europe", "FRA": "Western Europe", "DEU": "Western Europe", "LIE": "Western Europe", "LUX": "Western Europe",
+    "MCO": "Western Europe", "NLD": "Western Europe", "CHE": "Western Europe",
+
+    # Australia and New Zealand
+    "AUS": "Australia and New Zealand", "CXR": "Australia and New Zealand", "CCK": "Australia and New Zealand", "HMD": "Australia and New Zealand",
+    "NZL": "Australia and New Zealand", "NFK": "Australia and New Zealand",
+
+    # Melanesia
+    "FJI": "Melanesia", "NCL": "Melanesia", "PNG": "Melanesia", "SLB": "Melanesia", "VUT": "Melanesia",
+
+    # Micronesia
+    "GUM": "Micronesia", "KIR": "Micronesia", "MHL": "Micronesia", "FSM": "Micronesia", "NRU": "Micronesia", "MNP": "Micronesia", "PLW": "Micronesia", "UMI": "Micronesia",
+
+    # Polynesia
+    "ASM": "Polynesia", "COK": "Polynesia", "PYF": "Polynesia", "NIU": "Polynesia", "PCN": "Polynesia", "WSM": "Polynesia", "TKL": "Polynesia", "TON": "Polynesia",
+    "TUV": "Polynesia", "WLF": "Polynesia",
 }
 
 # Converts continent-ecozone codes to continent and ecozone labels

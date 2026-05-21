@@ -240,12 +240,14 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
     if cn.adm0_pattern in df_with_areas.columns:
         df_with_areas[cn.adm0_pattern] = df_with_areas[cn.adm0_pattern].map(cn.numeric_to_alpha3)
         df_with_areas['country_name'] = df_with_areas[cn.adm0_pattern].map(cn.iso_to_country)
-        df_with_areas['region'] = df_with_areas[cn.adm0_pattern].map(cn.iso_to_region_UN_geoscheme)
+        df_with_areas['region_L1'] = df_with_areas[cn.adm0_pattern].map(cn.iso_to_region_UN_geoscheme_L1)
+        df_with_areas['region_L2_L3'] = df_with_areas[cn.adm0_pattern].map(cn.iso_to_region_UN_geoscheme_L2_L3)
 
         # Because some rows for contextual layers may be blank
         df_with_areas[cn.adm0_pattern] = df_with_areas[cn.adm0_pattern].fillna("Unassigned")
         df_with_areas['country_name'] = df_with_areas['country_name'].fillna("Unassigned")
-        df_with_areas['region'] = df_with_areas['region'].fillna("Unassigned")
+        df_with_areas['region_L1'] = df_with_areas['region_L1'].fillna("Unassigned")
+        df_with_areas['region_L2_L3'] = df_with_areas['region_L2_L3'].fillna("Unassigned")
 
         # Renames some countries with long names
         df_with_areas["country_name"] = df_with_areas["country_name"].replace({
