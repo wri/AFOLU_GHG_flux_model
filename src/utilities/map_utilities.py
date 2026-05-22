@@ -192,18 +192,25 @@ def create_divergent_legend_asymmetric(fig, vmin, vmax, title_text, tick_labels,
                                        colorbar_height_multiplier=1.0, add_intermediate_ticks=False,
                                        show_direction_arrows=False, colorbar_left_offset=0.0):
     """
-    Creates a vertical asymmetric colorbar legend where 0 is not visually centered.
+    Creates a vertical divergent colorbar legend whose colors match the map exactly.
+
+    The map uses TwoSlopeNorm (neutral value always at 0.5 in colormap space) + 10 evenly-spaced
+    colors via np.linspace.  This function replicates that approach so the legend and map agree:
+    the same data value always shows the same color in both.  The neutral tick therefore sits at
+    the visual midpoint of the bar (50% height), matching TwoSlopeNorm's behaviour.
 
     Parameters:
         fig: Matplotlib figure
-        vmin: Minimum data value (e.g., -14)
-        vcenter: Center value (e.g., 0)
-        vmax: Maximum data value (e.g., 22)
+        vmin: Minimum data value in display units (e.g., -14 kt)
+        vmax: Maximum data value in display units (e.g., 17 kt)
         title_text: Text for the legend title
-        tick_labels: Labels for the three ticks (min, 0, max)
+        tick_labels: Labels for the three anchor ticks (min, 0, max)
         year: Year string, for logging/debug
+        colors_rgb: List of RGB tuples for the colormap (same length as used in the map)
+        percentiles: (kept for backward compatibility; no longer used in legend construction)
+        percentile_0: (kept for backward compatibility; no longer used in legend construction)
         colorbar_height_multiplier: Scale factor for colorbar height (default 1.0)
-        add_intermediate_ticks: If True, adds ticks at 1/3 and 2/3 of saturated values on each side
+        add_intermediate_ticks: If True, adds ticks at 1/3 and 2/3 of each side's saturated value
         show_direction_arrows: If True, adds "Source"/"Sink" arrow annotations and strips direction
                                text (e.g., "(source)", "(sink)") from the existing tick labels
         colorbar_left_offset: Additional shift (in figure fraction) applied to the colorbar left
@@ -216,48 +223,24 @@ def create_divergent_legend_asymmetric(fig, vmin, vmax, title_text, tick_labels,
     if show_direction_arrows:
         tick_labels = [l.split('(')[0].strip() if isinstance(l, str) else l for l in tick_labels]
 
-    # Converts net flux RGB palette to hex
-    # per https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/68d6d26f-b054-8323-98bb-731a86582e74
+    # Converts RGB palette to hex
     net_colors_rgb_hex = ['#{:02x}{:02x}{:02x}'.format(r, g, b) for r, g, b in colors_rgb]
 
-    # Calculates color (RGB and hex) for neutral value-- for legend only. Not used in mop because it makes the map look worse.
-    neutral_rgb = tuple(round((colors_rgb[4][i] + colors_rgb[5][i]) / 2) for i in range(3))
-    neutral_hex = "#{:02X}{:02X}{:02X}".format(*neutral_rgb)
+    # Builds colormap with evenly-spaced colors, exactly matching the map (map_net_flux uses
+    # np.linspace(0, 1, n) as well).  Colors at equal intervals means each shade covers the same
+    # fraction of the colourmap range, so the visual progression matches gross emissions colorbars.
+    positions = np.linspace(0, 1, len(net_colors_rgb_hex))
+    cmap = LinearSegmentedColormap.from_list("asymmetric_div", list(zip(positions, net_colors_rgb_hex)))
 
-    # Computes neutral (no flux) position in normalized [0–1] space for display on legend
-    neutral_pos = abs(vmin) / (vmax - vmin)
-    main_logger.info(f"  Neutral tick position for legend: {neutral_pos}")
+    # TwoSlopeNorm matches what the map uses: neutral (0) always maps to 0.5 in colormap space.
+    # Using the same norm here ensures that any data value shows the same color in both map and legend.
+    norm = TwoSlopeNorm(vmin=vmin, vcenter=0, vmax=vmax)
+    sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
+    sm.set_array([])
 
-    # Creates the colormap manually with asymmetry.
-    # Determining what percentile of the legend each color should be at was pretty convoluted.
-    # Long ChatGPT conversation (https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/68d6d26f-b054-8323-98bb-731a86582e74)
-    # which ended up getting me an asymmetric legend and the basis for this percentile-color list
-    # but not the actual percentiles.
-    # I messed around for a while to figure out how to calculate the percentile for each color.
-    # I am still not sure this is entirely right (in the sense that the percentiles here may not exactly match the
-    # percentiles used for colors on the map) but this should be somewhat close or at least generally representative.
-    # I tried it with a global map and a Central Africa map and the legend looked okay at both scales.
-    # Basically, I tried to determine at what point on the legend each color should go relative to the neutral value,
-    # hence, everything is in reference to neutral_pos (when flux=0).
-    colors = [
-        (0.0, net_colors_rgb_hex[0]),         # sink color
-        ((1-((percentile_0-percentiles[1])/percentile_0))*neutral_pos, net_colors_rgb_hex[1]),         # sink color
-        ((1-((percentile_0-percentiles[2])/percentile_0))*neutral_pos, net_colors_rgb_hex[2]),         # sink color
-        ((1-((percentile_0-percentiles[3])/percentile_0))*neutral_pos, net_colors_rgb_hex[3]),         # sink color
-        ((1-((percentile_0-percentiles[4])/percentile_0))*neutral_pos, net_colors_rgb_hex[4]),         # sink color
-        (neutral_pos, neutral_hex),         # near neutral, midpoint of adjacent colors per ChatGPT
-        (neutral_pos+(1-neutral_pos)*((percentiles[5]-percentile_0)/percentile_0), net_colors_rgb_hex[5]),         # source color
-        (neutral_pos+(1-neutral_pos)*((percentiles[6]-percentile_0)/percentile_0), net_colors_rgb_hex[6]),         # source color
-        (neutral_pos+(1-neutral_pos)*((percentiles[7]-percentile_0)/percentile_0), net_colors_rgb_hex[7]),         # source color
-        (neutral_pos+(1-neutral_pos)*((percentiles[8]-percentile_0)/percentile_0), net_colors_rgb_hex[8]),         # source color
-        (1.0, net_colors_rgb_hex[9]),          # source color
-    ]
-    main_logger.info(f"legend breakpoints and associated colors: {colors}")
+    main_logger.info(f"  Neutral tick at bar height 0.5 (TwoSlopeNorm convention)")
 
-    # Makes color map for legend
-    cmap = LinearSegmentedColormap.from_list("asymmetric_div", colors)
-
-    # Adds ticks using a separate axis; height is scaled by colorbar_height_multiplier;
+    # Adds the colorbar axis; height is scaled by colorbar_height_multiplier;
     # left position shifted by colorbar_left_offset to make room for direction arrows if needed
     cbar_ax = fig.add_axes([          # [left, bottom, width, height]
         cn.colorbar_dimensions[0] + cn.colorbar_dimensions[2] + colorbar_left_offset,
@@ -266,51 +249,48 @@ def create_divergent_legend_asymmetric(fig, vmin, vmax, title_text, tick_labels,
         cn.colorbar_dimensions[3] * colorbar_height_multiplier
     ])
 
-    cb = plt.colorbar(plt.cm.ScalarMappable(cmap=cmap), cax=cbar_ax, orientation="vertical")
+    # Colorbar ticks are in DATA space (kt); TwoSlopeNorm positions them correctly on the bar
+    cb = plt.colorbar(sm, cax=cbar_ax, orientation="vertical")
 
     if add_intermediate_ticks:
-        # Adds ticks at 1/3 and 2/3 of the saturated values on each side of zero.
-        # Normalized positions on the sink side (0 → neutral_pos) and source side (neutral_pos → 1).
-        t_sink_1 = neutral_pos / 3           # 1/3 of the way from bottom to neutral
-        t_sink_2 = 2 * neutral_pos / 3       # 2/3 of the way from bottom to neutral
-        t_src_1 = neutral_pos + (1 - neutral_pos) / 3   # 1/3 of the way from neutral to top
-        t_src_2 = neutral_pos + 2 * (1 - neutral_pos) / 3  # 2/3 of the way from neutral to top
-        # Corresponding data values (vmin and vmax are already in display units, e.g. kt)
+        # 1/3 and 2/3 of the saturated values on each side, in data/display units.
+        # These directly mirror the gross emissions intermediate ticks (1/3 and 2/3 of max range),
+        # making the colour progressions comparable across panels.
         d_sink_1 = round(2 * vmin / 3)
         d_sink_2 = round(vmin / 3)
-        d_src_1 = round(vmax / 3)
-        d_src_2 = round(2 * vmax / 3)
-        tick_positions = [0.0, t_sink_1, t_sink_2, neutral_pos, t_src_1, t_src_2, 1.0]
+        d_src_1  = round(vmax / 3)
+        d_src_2  = round(2 * vmax / 3)
+        tick_data = [vmin, d_sink_1, d_sink_2, 0, d_src_1, d_src_2, vmax]
         tick_labels_full = [tick_labels[0],
                             f"{d_sink_1:.0f}", f"{d_sink_2:.0f}",
                             tick_labels[1],
                             f"{d_src_1:.0f}", f"{d_src_2:.0f}",
                             tick_labels[2]]
-        cb.set_ticks(tick_positions)
+        cb.set_ticks(tick_data)
         cb.set_ticklabels(tick_labels_full, fontsize=cn.legend_fontsize)
     else:
-        cb.set_ticks([0.0, neutral_pos, 1.0])
+        cb.set_ticks([vmin, 0, vmax])
         cb.set_ticklabels(tick_labels, fontsize=cn.legend_fontsize)
 
-    # Adds "Source" and "Sink" arrow annotations to the left of the colorbar
+    # Adds "Source" and "Sink" arrow annotations to the left of the colorbar.
+    # With TwoSlopeNorm, neutral is always at bar height 0.5, so arrow midpoints are fixed at
+    # 0.25 (sink) and 0.75 (source).
     if show_direction_arrows:
         arrow_x = -0.6  # in axes fraction coords, to the left of the colorbar
-        mid_source = (1.0 + neutral_pos) / 2
-        mid_sink = neutral_pos / 2
-        # Upward arrow indicating increasing source (top of bar)
-        cbar_ax.annotate('', xy=(arrow_x, 0.97), xytext=(arrow_x, neutral_pos + 0.03),
+        # Upward arrow indicating increasing source (top half of bar)
+        cbar_ax.annotate('', xy=(arrow_x, 0.97), xytext=(arrow_x, 0.53),
                          xycoords='axes fraction', textcoords='axes fraction',
                          arrowprops=dict(arrowstyle='-|>', color='black', lw=1.2, mutation_scale=8),
                          annotation_clip=False)
-        cbar_ax.text(arrow_x - 0.35, mid_source, 'Source', ha='center', va='center',
+        cbar_ax.text(arrow_x - 0.35, 0.75, 'Source', ha='center', va='center',
                      fontsize=cn.legend_fontsize, rotation=90,
                      transform=cbar_ax.transAxes, clip_on=False)
-        # Downward arrow indicating increasing sink (bottom of bar)
-        cbar_ax.annotate('', xy=(arrow_x, 0.03), xytext=(arrow_x, neutral_pos - 0.03),
+        # Downward arrow indicating increasing sink (bottom half of bar)
+        cbar_ax.annotate('', xy=(arrow_x, 0.03), xytext=(arrow_x, 0.47),
                          xycoords='axes fraction', textcoords='axes fraction',
                          arrowprops=dict(arrowstyle='-|>', color='black', lw=1.2, mutation_scale=8),
                          annotation_clip=False)
-        cbar_ax.text(arrow_x - 0.35, mid_sink, 'Sink', ha='center', va='center',
+        cbar_ax.text(arrow_x - 0.35, 0.25, 'Sink', ha='center', va='center',
                      fontsize=cn.legend_fontsize, rotation=90,
                      transform=cbar_ax.transAxes, clip_on=False)
 
@@ -327,7 +307,7 @@ def create_divergent_legend_asymmetric(fig, vmin, vmax, title_text, tick_labels,
 def create_unidirection_legend(fig, img, lower_lim_all_yrs, upper_lim_all_yrs, title_text, tick_labels,
                                year, colors_rgb, percentiles, main_logger,
                                colorbar_height_multiplier=1.0, add_intermediate_ticks=False,
-                               label_divisor=1.0):
+                               label_divisor=1.0, colorbar_left_offset=0.0):
     """
     Creates a vertical colorbar legend with a left-aligned title above it.
     :param fig: The figure
@@ -340,6 +320,8 @@ def create_unidirection_legend(fig, img, lower_lim_all_yrs, upper_lim_all_yrs, t
     :param add_intermediate_ticks: If True, adds ticks at 1/3 and 2/3 of the range
     :param label_divisor: Divisor applied to intermediate tick data values before formatting as labels.
                           Use 1e3 when lower/upper limits are in Mg but labels should be in kt (default 1.0).
+    :param colorbar_left_offset: Additional shift (in figure fraction) applied to the colorbar left
+                                 position (default 0.0).
     :return: N/A
     """
     main_logger.info(f"  Creating legend for {year}")
@@ -348,9 +330,10 @@ def create_unidirection_legend(fig, img, lower_lim_all_yrs, upper_lim_all_yrs, t
     # per https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/68d6d26f-b054-8323-98bb-731a86582e74
     net_colors_rgb_hex = ['#{:02x}{:02x}{:02x}'.format(r, g, b) for r, g, b in colors_rgb]
 
-    # Add a vertical colorbar (legend) in the bottom-left of the map; height scaled by colorbar_height_multiplier
+    # Add a vertical colorbar (legend) in the bottom-left of the map;
+    # height scaled by colorbar_height_multiplier; position shifted right by colorbar_left_offset
     cbar_ax = fig.add_axes([          # [left, bottom, width, height]
-        cn.colorbar_dimensions[0] + cn.colorbar_dimensions[2],
+        cn.colorbar_dimensions[0] + cn.colorbar_dimensions[2] + colorbar_left_offset,
         cn.colorbar_dimensions[1],
         cn.colorbar_dimensions[2],
         cn.colorbar_dimensions[3] * colorbar_height_multiplier
@@ -703,6 +686,7 @@ def map_net_flux(s3_folders, model_type, model_path_description,
 
     # Stores yearly arrays to compute annual average for annual average map
     yearly_data_stack = []
+    yearly_masked_data = []
 
     for i, year in enumerate(cn.interval_end_years_annual[0:]):
     # for i, year in enumerate(cn.interval_end_years_annual[0:2]): # For testing a specific year
@@ -769,6 +753,7 @@ def map_net_flux(s3_folders, model_type, model_path_description,
 
         main_logger.info(f"  Masking raster for {year} to non-0 values")
         masked_data = np.ma.masked_where(data == 0, data)
+        yearly_masked_data.append(masked_data)
 
         # For map (not legend)
         norm = TwoSlopeNorm(
@@ -814,7 +799,9 @@ def map_net_flux(s3_folders, model_type, model_path_description,
         # Creates legend
         create_divergent_legend_asymmetric(fig, rounded_lower_lim_all_yrs, rounded_upper_lim_all_yrs,
                                            title_text, tick_labels,
-                                           year, colors_rgb, percentiles, percentile_0, main_logger)
+                                           year, colors_rgb, percentiles, percentile_0, main_logger,
+                                           colorbar_height_multiplier=1.8, add_intermediate_ticks=True,
+                                           show_direction_arrows=True, colorbar_left_offset=0.05)
 
         # Removes axis ticks and labels
         remove_ticks(ax)
@@ -887,7 +874,9 @@ def map_net_flux(s3_folders, model_type, model_path_description,
 
     create_divergent_legend_asymmetric(fig, rounded_lower_lim_all_yrs, rounded_upper_lim_all_yrs,
                                        title_text, tick_labels,
-                                       "avg", colors_rgb, percentiles_avg, percentile_0_mean, main_logger)
+                                       "avg", colors_rgb, percentiles_avg, percentile_0_mean, main_logger,
+                                       colorbar_height_multiplier=1.8, add_intermediate_ticks=True,
+                                       show_direction_arrows=True, colorbar_left_offset=0.05)
 
     remove_ticks(ax)
 
@@ -900,6 +889,40 @@ def map_net_flux(s3_folders, model_type, model_path_description,
     jpeg_for_pres_path_avg = f"{local_jpeg_pres_folder}/{core_jpeg_name_avg}__for_pres.jpeg"
     save_pres_non_pres_jpegs(ax, jpeg_path_avg, jpeg_for_pres_path_avg, "",
                              cn.veg_pres_text, main_logger)
+
+    ### Creates 9-panel map (one panel per year, legend on first panel only)
+
+    def _legend_fn_net(ax, _img):
+        _vmin = rounded_lower_lim_all_yrs
+        _vmax = rounded_upper_lim_all_yrs
+        if "all_gases" in pattern_segment:
+            _title = f"Net GHG flux\nAll vegetation pools, all gases\nkt CO$_2$e yr$^{{-1}}$"
+        else:
+            _title = f"Net GHG flux\nAll vegetation pools, CO$_2$ only\nkt CO$_2$e yr$^{{-1}}$"
+        _norm_legend = TwoSlopeNorm(vmin=_vmin, vcenter=0, vmax=_vmax)
+        _sm = plt.cm.ScalarMappable(norm=_norm_legend, cmap=cmap)
+        _sm.set_array([])
+        cbar_ax = ax.inset_axes([0.01, 0.08, 0.05, 0.38])
+        cb = plt.colorbar(_sm, cax=cbar_ax, orientation="vertical")
+        d_sink_1 = round(2 * _vmin / 3)
+        d_sink_2 = round(_vmin / 3)
+        d_src_1  = round(_vmax / 3)
+        d_src_2  = round(2 * _vmax / 3)
+        cb.set_ticks([_vmin, d_sink_1, d_sink_2, 0, d_src_1, d_src_2, _vmax])
+        cb.set_ticklabels([f"< {_vmin:.0f}", f"{d_sink_1:.0f}", f"{d_sink_2:.0f}", "0",
+                           f"{d_src_1:.0f}", f"{d_src_2:.0f}", f"> {_vmax:.0f}"],
+                          fontsize=cn.legend_fontsize)
+        cbar_ax.text(0, 1.05, _title, fontsize=cn.legend_fontsize, ha="left", va="bottom",
+                     transform=cbar_ax.transAxes)
+
+    core_jpeg_name_nine = f"veg_{pattern_segment_revised}__9panel_{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}__v{cn.veg_model_version_underscore}__{uu.timestr()[0:8]}"
+    if bounding_box_description:
+        core_jpeg_name_nine += f"_{bounding_box_description}"
+    nine_panel_jpeg = f"{local_jpeg_non_pres_folder}/{core_jpeg_name_nine}.jpeg"
+
+    create_nine_panel_map(nine_panel_jpeg, yearly_masked_data, cmap, norm,
+                          raster_extent, country_shapefile, cn.interval_end_years_annual,
+                          bounding_box_proj, _legend_fn_net, main_logger)
 
     series_end_time = time.time()
     main_logger.info(f"{pattern_segment} took {round(series_end_time - series_start_time)} seconds: {uu.timestr()}")
@@ -1015,6 +1038,7 @@ def map_gross(s3_folders, model_type, model_path_description,
 
     # Stores yearly arrays to compute annual average for annual average map
     yearly_data_stack = []
+    yearly_masked_data = []
 
     for i, year in enumerate(cn.interval_end_years_annual[0:]):
     # for i, year in enumerate(cn.interval_end_years_annual[0:2]): # For testing a specific year
@@ -1081,6 +1105,7 @@ def map_gross(s3_folders, model_type, model_path_description,
             masked_data = np.ma.masked_where(data == 0, data)
             main_logger.info("Not using either emissions or removals")
 
+        yearly_masked_data.append(masked_data)
         main_logger.info(f"  Normalizing for {year}")
         # Normalizes the data for the colormap
         norm = Normalize(vmin=lower_lim_all_yrs, vmax=upper_lim_all_yrs)
@@ -1116,7 +1141,9 @@ def map_gross(s3_folders, model_type, model_path_description,
         # Legend for gross fluxes
         create_unidirection_legend(fig, img, lower_lim_all_yrs, upper_lim_all_yrs,
                                    title_text, tick_labels,
-                                   year, colors_rgb, percentiles, main_logger)
+                                   year, colors_rgb, percentiles, main_logger,
+                                   colorbar_height_multiplier=1.8, add_intermediate_ticks=True,
+                                   label_divisor=1e3, colorbar_left_offset=0.05)
 
         # Removes axis ticks and labels
         remove_ticks(ax)
@@ -1165,7 +1192,9 @@ def map_gross(s3_folders, model_type, model_path_description,
     # Legend for gross fluxes
     create_unidirection_legend(fig, img, lower_lim_all_yrs, upper_lim_all_yrs,
                                title_text, tick_labels,
-                               'avg', colors_rgb, percentiles, main_logger)
+                               'avg', colors_rgb, percentiles, main_logger,
+                               colorbar_height_multiplier=1.8, add_intermediate_ticks=True,
+                               label_divisor=1e3, colorbar_left_offset=0.05)
 
     remove_ticks(ax)
 
@@ -1178,6 +1207,29 @@ def map_gross(s3_folders, model_type, model_path_description,
     jpeg_for_pres_path_avg = f"{local_jpeg_pres_folder}/{core_jpeg_name_avg}__for_pres.jpeg"
     save_pres_non_pres_jpegs(ax, jpeg_path_avg, jpeg_for_pres_path_avg, f'{cn.interval_end_years_annual[0]}-{cn.interval_end_years_annual[-1]}',
                              cn.veg_pres_text, main_logger)
+
+    ### Creates 9-panel map (one panel per year, legend on first panel only)
+
+    def _legend_fn_gross(ax, img):
+        cbar_ax = ax.inset_axes([0.01, 0.08, 0.05, 0.38])
+        cb = plt.colorbar(img, cax=cbar_ax, orientation="vertical")
+        _range = upper_lim_all_yrs - lower_lim_all_yrs
+        t1 = lower_lim_all_yrs + _range / 3
+        t2 = lower_lim_all_yrs + 2 * _range / 3
+        cb.set_ticks([lower_lim_all_yrs, t1, t2, upper_lim_all_yrs])
+        cb.set_ticklabels([tick_labels[0], f"{round(t1 / 1e3):.0f}", f"{round(t2 / 1e3):.0f}", tick_labels[1]],
+                          fontsize=cn.legend_fontsize)
+        cbar_ax.text(0, 1.1, title_text, fontsize=cn.legend_fontsize, ha="left", va="bottom",
+                     transform=cbar_ax.transAxes)
+
+    core_jpeg_name_nine = f"veg_{pattern_segment_revised}__9panel_{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}__v{cn.veg_model_version_underscore}__{uu.timestr()[0:8]}"
+    if bounding_box_description:
+        core_jpeg_name_nine += f"_{bounding_box_description}"
+    nine_panel_jpeg = f"{local_jpeg_non_pres_folder}/{core_jpeg_name_nine}.jpeg"
+
+    create_nine_panel_map(nine_panel_jpeg, yearly_masked_data, cmap, norm,
+                          raster_extent, country_shapefile, cn.interval_end_years_annual,
+                          bounding_box_proj, _legend_fn_gross, main_logger)
 
     series_end_time = time.time()
     main_logger.info(f"{pattern_segment} took {round(series_end_time - series_start_time)} seconds: {uu.timestr()}")
@@ -1240,4 +1292,48 @@ def create_four_panel_map(four_panel_jpeg, top_jpeg, second_jpeg, third_jpeg, bo
 
     save_jpeg(four_panel_jpeg, year, main_logger)
     plt.close()
+
+
+# From Claude (session '9-panel annual map JPEG')
+def create_nine_panel_map(nine_panel_jpeg_path, yearly_masked_data, cmap, norm,
+                          raster_extent, country_shapefile, years, bounding_box_proj,
+                          legend_fn, main_logger):
+    """
+    Creates a 3x3 JPEG with one panel per year, reading left-to-right then top-to-bottom.
+    The legend is added only to the first (top-left) panel via legend_fn(ax, img).
+    """
+    main_logger.info("\n\n---Creating 9-panel map")
+
+    fig, axes = plt.subplots(3, 3, figsize=(cn.panel_dims[0] * 3, cn.panel_dims[1] * 3))
+    fig.subplots_adjust(hspace=0, wspace=0)
+
+    extent = list(raster_extent)
+
+    if bounding_box_proj is not None:
+        bbox_geom = box(*bounding_box_proj)
+        cs = country_shapefile.clip(bbox_geom)
+    else:
+        cs = country_shapefile
+
+    for idx, (ax, masked_d, yr) in enumerate(zip(axes.flat, yearly_masked_data, years)):
+        set_ocean_color(ax)
+        plot_country_polygons(ax, cs)
+        img = plot_raster(ax, cmap, extent, masked_d, norm)
+        plot_country_boundaries(ax, cs)
+        remove_ticks(ax)
+
+        if bounding_box_proj is not None:
+            ax.set_xlim(extent[0], extent[1])
+            ax.set_ylim(extent[2], extent[3])
+
+        ax.text(0.02, 0.98, str(yr), transform=ax.transAxes, fontsize=12, fontweight='bold',
+                ha='left', va='top', color='black')
+
+        if idx == 0:
+            legend_fn(ax, img)
+
+    year_range = f"{cn.interval_end_years_annual[0]}-{cn.interval_end_years_annual[-1]}"
+    save_jpeg(nine_panel_jpeg_path, year_range, main_logger)
+    plt.close()
+
 

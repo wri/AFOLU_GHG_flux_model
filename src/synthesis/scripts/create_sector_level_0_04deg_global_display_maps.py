@@ -809,7 +809,8 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     mu.create_unidirection_legend(fig_LULUCF_emis, img_LULUCF_emis, lower_lim_all_yrs_LULUCF_emis, upper_lim_all_yrs_LULUCF_emis,
                                title_text_LULUCF_emis, tick_labels_LULUCF_emis,
                                'avg', cn.emissions_colors_rgb, cn.emissions_percentiles, main_logger,
-                               colorbar_height_multiplier=1.8, add_intermediate_ticks=True, label_divisor=1e3)
+                               colorbar_height_multiplier=1.8, add_intermediate_ticks=True, label_divisor=1e3,
+                               colorbar_left_offset=0.05)
 
     mu.remove_ticks(ax)
 
@@ -893,7 +894,8 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     mu.create_unidirection_legend(fig_LULUCF_remv, img_LULUCF_remv, lower_lim_all_yrs_LULUCF_remv, upper_lim_all_yrs_LULUCF_remv,
                                title_text_LULUCF_remv, tick_labels_LULUCF_remv,
                                'avg', cn.removals_colors_rgb, cn.removals_percentiles, main_logger,
-                               colorbar_height_multiplier=1.8, add_intermediate_ticks=True, label_divisor=1e3)
+                               colorbar_height_multiplier=1.8, add_intermediate_ticks=True, label_divisor=1e3,
+                               colorbar_left_offset=0.05)
 
     mu.remove_ticks(ax)
 
@@ -1170,7 +1172,8 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     mu.create_unidirection_legend(fig_org_soil, img_org_soil, lower_lim_org_soil, upper_lim_org_soil,
                                    title_text_org_soil, tick_labels_org_soil,
                                    'avg', cn.emissions_colors_rgb, cn.emissions_percentiles, main_logger,
-                                   colorbar_height_multiplier=1.8, add_intermediate_ticks=True, label_divisor=1e3)
+                                   colorbar_height_multiplier=1.8, add_intermediate_ticks=True, label_divisor=1e3,
+                                   colorbar_left_offset=0.05)
     mu.remove_ticks(ax)
 
     org_soil_output_name_kt = f"org_soil_gross_emis__veg_{veg_version}__{non_veg_versions}__ktCO2e_yr"
