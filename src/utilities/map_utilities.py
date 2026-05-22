@@ -188,7 +188,9 @@ def remove_ticks(ax):
     ax.set_yticklabels([])  # Remove y-axis labels
 
 def create_divergent_legend_asymmetric(fig, vmin, vmax, title_text, tick_labels,
-                                       year, colors_rgb, percentiles, percentile_0, main_logger):
+                                       year, colors_rgb, percentiles, percentile_0, main_logger,
+                                       colorbar_height_multiplier=1.0, add_intermediate_ticks=False,
+                                       show_direction_arrows=False, colorbar_left_offset=0.0):
     """
     Creates a vertical asymmetric colorbar legend where 0 is not visually centered.
 
@@ -200,8 +202,19 @@ def create_divergent_legend_asymmetric(fig, vmin, vmax, title_text, tick_labels,
         title_text: Text for the legend title
         tick_labels: Labels for the three ticks (min, 0, max)
         year: Year string, for logging/debug
+        colorbar_height_multiplier: Scale factor for colorbar height (default 1.0)
+        add_intermediate_ticks: If True, adds ticks at 1/3 and 2/3 of saturated values on each side
+        show_direction_arrows: If True, adds "Source"/"Sink" arrow annotations and strips direction
+                               text (e.g., "(source)", "(sink)") from the existing tick labels
+        colorbar_left_offset: Additional shift (in figure fraction) applied to the colorbar left
+                              position. Use to move the bar right when direction arrows would otherwise
+                              overflow the left edge of the panel (default 0.0).
     """
     main_logger.info(f"  Creating legend for {year}")
+
+    # Optionally strips direction qualifiers from tick labels (e.g., "(source)", "(sink)", "(neutral)")
+    if show_direction_arrows:
+        tick_labels = [l.split('(')[0].strip() if isinstance(l, str) else l for l in tick_labels]
 
     # Converts net flux RGB palette to hex
     # per https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/68d6d26f-b054-8323-98bb-731a86582e74
@@ -244,17 +257,62 @@ def create_divergent_legend_asymmetric(fig, vmin, vmax, title_text, tick_labels,
     # Makes color map for legend
     cmap = LinearSegmentedColormap.from_list("asymmetric_div", colors)
 
-    # Adds ticks using a separate axis
+    # Adds ticks using a separate axis; height is scaled by colorbar_height_multiplier;
+    # left position shifted by colorbar_left_offset to make room for direction arrows if needed
     cbar_ax = fig.add_axes([          # [left, bottom, width, height]
-        cn.colorbar_dimensions[0] + cn.colorbar_dimensions[2],
+        cn.colorbar_dimensions[0] + cn.colorbar_dimensions[2] + colorbar_left_offset,
         cn.colorbar_dimensions[1],
         cn.colorbar_dimensions[2],
-        cn.colorbar_dimensions[3]
+        cn.colorbar_dimensions[3] * colorbar_height_multiplier
     ])
 
     cb = plt.colorbar(plt.cm.ScalarMappable(cmap=cmap), cax=cbar_ax, orientation="vertical")
-    cb.set_ticks([0.0, neutral_pos, 1.0])
-    cb.set_ticklabels(tick_labels, fontsize=cn.legend_fontsize)
+
+    if add_intermediate_ticks:
+        # Adds ticks at 1/3 and 2/3 of the saturated values on each side of zero.
+        # Normalized positions on the sink side (0 → neutral_pos) and source side (neutral_pos → 1).
+        t_sink_1 = neutral_pos / 3           # 1/3 of the way from bottom to neutral
+        t_sink_2 = 2 * neutral_pos / 3       # 2/3 of the way from bottom to neutral
+        t_src_1 = neutral_pos + (1 - neutral_pos) / 3   # 1/3 of the way from neutral to top
+        t_src_2 = neutral_pos + 2 * (1 - neutral_pos) / 3  # 2/3 of the way from neutral to top
+        # Corresponding data values (vmin and vmax are already in display units, e.g. kt)
+        d_sink_1 = round(2 * vmin / 3)
+        d_sink_2 = round(vmin / 3)
+        d_src_1 = round(vmax / 3)
+        d_src_2 = round(2 * vmax / 3)
+        tick_positions = [0.0, t_sink_1, t_sink_2, neutral_pos, t_src_1, t_src_2, 1.0]
+        tick_labels_full = [tick_labels[0],
+                            f"{d_sink_1:.0f}", f"{d_sink_2:.0f}",
+                            tick_labels[1],
+                            f"{d_src_1:.0f}", f"{d_src_2:.0f}",
+                            tick_labels[2]]
+        cb.set_ticks(tick_positions)
+        cb.set_ticklabels(tick_labels_full, fontsize=cn.legend_fontsize)
+    else:
+        cb.set_ticks([0.0, neutral_pos, 1.0])
+        cb.set_ticklabels(tick_labels, fontsize=cn.legend_fontsize)
+
+    # Adds "Source" and "Sink" arrow annotations to the left of the colorbar
+    if show_direction_arrows:
+        arrow_x = -0.6  # in axes fraction coords, to the left of the colorbar
+        mid_source = (1.0 + neutral_pos) / 2
+        mid_sink = neutral_pos / 2
+        # Upward arrow indicating increasing source (top of bar)
+        cbar_ax.annotate('', xy=(arrow_x, 0.97), xytext=(arrow_x, neutral_pos + 0.03),
+                         xycoords='axes fraction', textcoords='axes fraction',
+                         arrowprops=dict(arrowstyle='-|>', color='black', lw=1.2, mutation_scale=8),
+                         annotation_clip=False)
+        cbar_ax.text(arrow_x - 0.35, mid_source, 'Source', ha='center', va='center',
+                     fontsize=cn.legend_fontsize, rotation=90,
+                     transform=cbar_ax.transAxes, clip_on=False)
+        # Downward arrow indicating increasing sink (bottom of bar)
+        cbar_ax.annotate('', xy=(arrow_x, 0.03), xytext=(arrow_x, neutral_pos - 0.03),
+                         xycoords='axes fraction', textcoords='axes fraction',
+                         arrowprops=dict(arrowstyle='-|>', color='black', lw=1.2, mutation_scale=8),
+                         annotation_clip=False)
+        cbar_ax.text(arrow_x - 0.35, mid_sink, 'Sink', ha='center', va='center',
+                     fontsize=cn.legend_fontsize, rotation=90,
+                     transform=cbar_ax.transAxes, clip_on=False)
 
     # Adds title above the bar
     cbar_ax.text(
@@ -267,15 +325,21 @@ def create_divergent_legend_asymmetric(fig, vmin, vmax, title_text, tick_labels,
     )
 
 def create_unidirection_legend(fig, img, lower_lim_all_yrs, upper_lim_all_yrs, title_text, tick_labels,
-                               year, colors_rgb, percentiles, main_logger):
+                               year, colors_rgb, percentiles, main_logger,
+                               colorbar_height_multiplier=1.0, add_intermediate_ticks=False,
+                               label_divisor=1.0):
     """
     Creates a vertical colorbar legend with a left-aligned title above it.
     :param fig: The figure
     :param img: The image
-    :param vmin: minimum value to use in scaling legend colors
-    :param vmax: maximum value to use in scaling legend colors
+    :param lower_lim_all_yrs: minimum value to use in scaling legend colors (raw data units)
+    :param upper_lim_all_yrs: maximum value to use in scaling legend colors (raw data units)
     :param title_text: Title for legend
-    :param tick_labels: Tick labels for legend
+    :param tick_labels: Tick labels for legend (already in display units; used as-is for extremes)
+    :param colorbar_height_multiplier: Scale factor for colorbar height (default 1.0)
+    :param add_intermediate_ticks: If True, adds ticks at 1/3 and 2/3 of the range
+    :param label_divisor: Divisor applied to intermediate tick data values before formatting as labels.
+                          Use 1e3 when lower/upper limits are in Mg but labels should be in kt (default 1.0).
     :return: N/A
     """
     main_logger.info(f"  Creating legend for {year}")
@@ -284,18 +348,33 @@ def create_unidirection_legend(fig, img, lower_lim_all_yrs, upper_lim_all_yrs, t
     # per https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/68d6d26f-b054-8323-98bb-731a86582e74
     net_colors_rgb_hex = ['#{:02x}{:02x}{:02x}'.format(r, g, b) for r, g, b in colors_rgb]
 
-    # Add a vertical colorbar (legend) in the bottom-left of the map
+    # Add a vertical colorbar (legend) in the bottom-left of the map; height scaled by colorbar_height_multiplier
     cbar_ax = fig.add_axes([          # [left, bottom, width, height]
         cn.colorbar_dimensions[0] + cn.colorbar_dimensions[2],
         cn.colorbar_dimensions[1],
         cn.colorbar_dimensions[2],
-        cn.colorbar_dimensions[3]
+        cn.colorbar_dimensions[3] * colorbar_height_multiplier
     ])
     cb = plt.colorbar(img, cax=cbar_ax, orientation="vertical")
 
-    # Set custom ticks and labels for the colorbar
-    cb.set_ticks([lower_lim_all_yrs, upper_lim_all_yrs])  # Set the ticks at the minimum, zero, and maximum
-    cb.set_ticklabels(tick_labels, fontsize=cn.legend_fontsize)  # Format the labels
+    if add_intermediate_ticks:
+        # Adds ticks at 1/3 and 2/3 of the range between lower and upper limits.
+        # Tick positions are in raw data units (e.g. Mg); labels are divided by label_divisor
+        # to convert to display units (e.g. kt when label_divisor=1e3).
+        data_range = upper_lim_all_yrs - lower_lim_all_yrs
+        t1 = lower_lim_all_yrs + data_range / 3
+        t2 = lower_lim_all_yrs + 2 * data_range / 3
+        tick_positions = [lower_lim_all_yrs, t1, t2, upper_lim_all_yrs]
+        tick_labels_full = [tick_labels[0],
+                            f"{round(t1 / label_divisor):.0f}",
+                            f"{round(t2 / label_divisor):.0f}",
+                            tick_labels[1]]
+        cb.set_ticks(tick_positions)
+        cb.set_ticklabels(tick_labels_full, fontsize=cn.legend_fontsize)
+    else:
+        # Set custom ticks and labels for the colorbar
+        cb.set_ticks([lower_lim_all_yrs, upper_lim_all_yrs])  # Set the ticks at the minimum, zero, and maximum
+        cb.set_ticklabels(tick_labels, fontsize=cn.legend_fontsize)  # Format the labels
 
     # Add a left-aligned, multi-row title above the colorbar
     cbar_ax.text(

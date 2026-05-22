@@ -26,6 +26,8 @@ from that information. That keeps all zoomed in maps in the same shape as the gl
 
 Legend min and max for net use the 1 and 99% values. For vegetation timeseries, the percentiles are from the mean map.
 
+Revised and extended with Claude (session 'Four-panel LULUCF and component map')
+
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 Runs locally, not in Coiled.
 
@@ -362,7 +364,9 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     title_text_veg_net = f"Net greenhouse gas flux\nAll vegetation pools, all gases\nkt CO$_2$e yr$^{{-1}}$"
     mu.create_divergent_legend_asymmetric(fig_veg_net, rounded_lower_lim_veg_net, rounded_upper_lim_veg_net,
                                           title_text_veg_net, tick_labels_veg_net,
-                                          veg_analysis_years, net_colors_rgb, percentiles_veg_net, percentile_0_veg_net, main_logger)
+                                          veg_analysis_years, net_colors_rgb, percentiles_veg_net, percentile_0_veg_net, main_logger,
+                                          colorbar_height_multiplier=1.8, add_intermediate_ticks=True, show_direction_arrows=True,
+                                          colorbar_left_offset=0.05)
     mu.remove_ticks(ax)
 
     core_jpeg_name_veg_net = f"vegetation_net_flux_all_pools_all_gases_{veg_version}__{veg_analysis_years}__ktCO2e_yr__{uu.timestr()[0:8]}"
@@ -562,7 +566,9 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
         # Creates legend
         mu.create_divergent_legend_asymmetric(fig_veg_pairwise, rounded_lower_lim_all_yrs_veg_pairwise, rounded_upper_lim_all_yrs_veg_pairwise,
                                               title_text, tick_labels_veg_pairwise,
-                                              veg_analysis_years, net_colors_rgb, percentiles_veg_pairwise, percentile_0_veg_pairwise, main_logger)
+                                              veg_analysis_years, net_colors_rgb, percentiles_veg_pairwise, percentile_0_veg_pairwise, main_logger,
+                                              colorbar_height_multiplier=1.8, add_intermediate_ticks=True, show_direction_arrows=True,
+                                              colorbar_left_offset=0.05)
 
         # Removes axis ticks and labels
         mu.remove_ticks(ax)
@@ -715,7 +721,9 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     # Creates legend
     mu.create_divergent_legend_asymmetric(fig_LULUCF_net, rounded_lower_lim_LULUCF_net, rounded_upper_lim_LULUCF_net,
                                           title_text, tick_labels_LULUCF_net,
-                                          veg_analysis_years, net_colors_rgb, percentiles_LULUCF_net, percentile_0_LULUCF_net, main_logger)
+                                          veg_analysis_years, net_colors_rgb, percentiles_LULUCF_net, percentile_0_LULUCF_net, main_logger,
+                                          colorbar_height_multiplier=1.8, add_intermediate_ticks=True, show_direction_arrows=True,
+                                          colorbar_left_offset=0.05)
 
     # Removes axis ticks and labels
     mu.remove_ticks(ax)
@@ -800,7 +808,8 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     # Legend for gross fluxes
     mu.create_unidirection_legend(fig_LULUCF_emis, img_LULUCF_emis, lower_lim_all_yrs_LULUCF_emis, upper_lim_all_yrs_LULUCF_emis,
                                title_text_LULUCF_emis, tick_labels_LULUCF_emis,
-                               'avg', cn.emissions_colors_rgb, cn.emissions_percentiles, main_logger)
+                               'avg', cn.emissions_colors_rgb, cn.emissions_percentiles, main_logger,
+                               colorbar_height_multiplier=1.8, add_intermediate_ticks=True, label_divisor=1e3)
 
     mu.remove_ticks(ax)
 
@@ -883,7 +892,8 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     # Legend for gross fluxes
     mu.create_unidirection_legend(fig_LULUCF_remv, img_LULUCF_remv, lower_lim_all_yrs_LULUCF_remv, upper_lim_all_yrs_LULUCF_remv,
                                title_text_LULUCF_remv, tick_labels_LULUCF_remv,
-                               'avg', cn.removals_colors_rgb, cn.removals_percentiles, main_logger)
+                               'avg', cn.removals_colors_rgb, cn.removals_percentiles, main_logger,
+                               colorbar_height_multiplier=1.8, add_intermediate_ticks=True, label_divisor=1e3)
 
     mu.remove_ticks(ax)
 
@@ -1100,7 +1110,9 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     title_text_min_soil = f"Net mineral soil SOC change\nkt CO$_2$e yr$^{{-1}}$"
     mu.create_divergent_legend_asymmetric(fig_min_soil, rounded_lower_lim_min_soil, rounded_upper_lim_min_soil,
                                           title_text_min_soil, tick_labels_min_soil,
-                                          veg_analysis_years, net_colors_rgb, percentiles_min_soil, percentile_0_min_soil, main_logger)
+                                          veg_analysis_years, net_colors_rgb, percentiles_min_soil, percentile_0_min_soil, main_logger,
+                                          colorbar_height_multiplier=1.8, add_intermediate_ticks=True, show_direction_arrows=True,
+                                          colorbar_left_offset=0.05)
     mu.remove_ticks(ax)
 
     min_soil_output_name_kt = f"min_soil_net__veg_{veg_version}__{non_veg_versions}__ktCO2e_yr"
@@ -1157,7 +1169,8 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
 
     mu.create_unidirection_legend(fig_org_soil, img_org_soil, lower_lim_org_soil, upper_lim_org_soil,
                                    title_text_org_soil, tick_labels_org_soil,
-                                   'avg', cn.emissions_colors_rgb, cn.emissions_percentiles, main_logger)
+                                   'avg', cn.emissions_colors_rgb, cn.emissions_percentiles, main_logger,
+                                   colorbar_height_multiplier=1.8, add_intermediate_ticks=True, label_divisor=1e3)
     mu.remove_ticks(ax)
 
     org_soil_output_name_kt = f"org_soil_gross_emis__veg_{veg_version}__{non_veg_versions}__ktCO2e_yr"
