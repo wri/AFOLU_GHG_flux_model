@@ -860,9 +860,9 @@ def map_net_flux(s3_folders, model_type, model_path_description,
 
     # Title for average map
     if "all_gases" in pattern_segment:
-        title_text = "Mean annual net greenhouse gas flux\nAll vegetation pools, all gases\nkt CO$_2$e yr$^{{-1}}$"
+        title_text = "Mean annual net GHG flux\nAll vegetation pools, all gases\nkt CO$_2$e yr$^{{-1}}$"
     else:
-        title_text = "Mean annual net greenhouse gas flux\nAll vegetation pools, CO$_2$ only\nkt CO$_2$e yr$^{{-1}}$"
+        title_text = "Mean annual net GHG flux\nAll vegetation pools, CO$_2$ only\nkt CO$_2$e yr$^{{-1}}$"
 
     # 0th percentile for the mean of the timeseries
     percentile_0_mean = percentile_for_0(mean_data)
