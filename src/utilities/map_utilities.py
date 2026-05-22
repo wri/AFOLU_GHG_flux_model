@@ -543,8 +543,6 @@ def map_net_flux(s3_folders, model_type, model_path_description,
     else:
         bounding_box_proj = None
 
-    all_valid_values = []
-
     # First pass: Reprojects input rasters
     for i, year in enumerate(cn.interval_end_years_annual[0:]):
     # for i, year in enumerate(cn.interval_end_years_annual[2:3]): # For testing a specific year
@@ -576,26 +574,22 @@ def map_net_flux(s3_folders, model_type, model_path_description,
         # Reprojects raster, if needed
         reproject_raster(year_path_unproj, year_path_reproj, main_logger)
 
-    # Second pass: Gets the range of values across years to standardize legend across years
-    main_logger.info("\n\n---Pre-scanning rasters to determine full time series upper and lower limits...")
-    for i, year in enumerate(cn.interval_end_years_annual[0:]):
-    # for i, year in enumerate(cn.interval_end_years_annual[2:3]):
+    # Second pass: reads all reprojected year rasters, computes mean, derives shared legend limits from mean's non-zero pixels
+    main_logger.info("\n\n---Computing mean raster to derive shared legend limits...")
+    yearly_data_for_limits = []
 
-        print(f"Scanning {year}")
+    for i, year in enumerate(cn.interval_end_years_annual[0:]):
         s3_folder = s3_folders[i]
         parts = s3_folder.strip('/').split('/')
 
         pattern_idx = parts.index(f"version_{cn.veg_model_version_underscore}__{model_type}__{model_path_description}")
         pattern_segment = parts[pattern_idx + 1]
-        print("pattern_segment:", pattern_segment)
 
         interval_idx = parts.index("annual_intervals")
         interval_segment = parts[interval_idx + 1]
-        print("interval_segment:", interval_segment)
 
         year_file = f"{pattern_segment}{cn.flux_aggreg_pixel_meaning}_v{cn.veg_model_version_underscore}_{interval_segment}_global"
         year_path_reproj = f"{local_reproj_folder}/{year_file}_reproj.tif"
-        print("year_path_reproj:", year_path_reproj)
 
         with rasterio.open(year_path_reproj) as src:
             if bounding_box_proj is not None:
@@ -603,36 +597,30 @@ def map_net_flux(s3_folders, model_type, model_path_description,
                 data = src.read(1, window=window)
             else:
                 data = src.read(1)
+        yearly_data_for_limits.append(data.astype('float32'))
 
-        valid = data[data != 0]
-        if valid.size > 0:
-            all_valid_values.append(valid)
-
-    # Calculates min, center and max across all years
-    all_valid_values = np.concatenate(all_valid_values)
+    mean_for_limits = np.mean(np.stack(yearly_data_for_limits, axis=0), axis=0)
+    non_zero_mean_for_limits = mean_for_limits[mean_for_limits != 0]
 
     percentile_for_saturation = 1
-    breaks_all_yrs = np.percentile(all_valid_values, [1, (100-percentile_for_saturation)])  # The min and max percentiles at which colors saturate
-
+    breaks_all_yrs = np.percentile(non_zero_mean_for_limits, [percentile_for_saturation, (100 - percentile_for_saturation)])
     lower_lim_all_yrs = breaks_all_yrs[0]
     global_neutral = 0
     upper_lim_all_yrs = breaks_all_yrs[-1]
 
-    main_logger.info("Across all years:")
+    main_logger.info("Legend limits from mean raster (non-zero pixels):")
     main_logger.info(f"  lower limit ({percentile_for_saturation} percentile): {lower_lim_all_yrs}")
     main_logger.info(f"  neutral: {global_neutral}")
-    main_logger.info(f"  upper limit ({(100-percentile_for_saturation)} percentile): {upper_lim_all_yrs}")
+    main_logger.info(f"  upper limit ({(100 - percentile_for_saturation)} percentile): {upper_lim_all_yrs}")
 
-    # Creates the min and max values for the legend in kt CO2e (converts legend units from Mg (t) to kt with 10**3-- data doesn't change).
-    # Rounds data_min down and data_max up for legend.
-    rounded_lower_lim_all_yrs = math.ceil(lower_lim_all_yrs / 10 ** 3 * 100) / 100  # Rounds up
-    rounded_upper_lim_all_yrs = math.floor(upper_lim_all_yrs / 10 ** 3 * 100) / 100  # Rounds down
-    tick_labels = [f"< {rounded_lower_lim_all_yrs:.0f}  (sink)",  # Spaces are to horizontally align the text explanations
+    rounded_lower_lim_all_yrs = math.ceil(lower_lim_all_yrs / 10 ** 3 * 100) / 100
+    rounded_upper_lim_all_yrs = math.floor(upper_lim_all_yrs / 10 ** 3 * 100) / 100
+    tick_labels = [f"< {rounded_lower_lim_all_yrs:.0f}  (sink)",
                    f"{0}        (neutral)",
                    f"> {rounded_upper_lim_all_yrs:.0f}  (source)"]
-    # print(tick_labels)
 
-    # Final pass: Iterates through modeled years to create the jpegs
+
+    # Final pass: Iterates through modeled years to create the annual jpegs
 
     # Stores yearly arrays to compute annual average for annual average map
     yearly_data_stack = []
@@ -853,8 +841,6 @@ def map_gross(s3_folders, model_type, model_path_description,
     else:
         bounding_box_proj = None
 
-    all_valid_values = []
-
     # First pass: Reprojects input rasters
     for i, year in enumerate(cn.interval_end_years_annual[0:]):
     # for i, year in enumerate(cn.interval_end_years_annual[2:3]): # For testing a specific year
@@ -886,14 +872,11 @@ def map_gross(s3_folders, model_type, model_path_description,
         # Reprojects raster, if needed
         reproject_raster(year_path_unproj, year_path_reproj, main_logger)
 
-    pattern_segment = ''
+    # Second pass: reads all reprojected year rasters, computes mean, derives shared legend limits from mean's non-zero pixels
+    main_logger.info("\n\n---Computing mean raster to derive shared legend limits...")
+    yearly_data_for_limits = []
 
-    # Second pass: Gets the range of values across years to standardize legend across years
-    main_logger.info("\n\n---Pre-scanning rasters to determine full time series upper and lower limits...")
     for i, year in enumerate(cn.interval_end_years_annual[0:]):
-    # for i, year in enumerate(cn.interval_end_years_annual[2:3]):
-
-        # print(f"Scanning {year}")
         s3_folder = s3_folders[i]
         parts = s3_folder.strip('/').split('/')
 
@@ -912,28 +895,22 @@ def map_gross(s3_folders, model_type, model_path_description,
                 data = src.read(1, window=window)
             else:
                 data = src.read(1)
+        yearly_data_for_limits.append(data.astype('float32'))
 
-        valid = data[data != 0]
-        if valid.size > 0:
-            all_valid_values.append(valid)
-
-    # Calculates min and max across all years
-    all_valid_values = np.concatenate(all_valid_values)
+    mean_for_limits = np.mean(np.stack(yearly_data_for_limits, axis=0), axis=0)
+    non_zero_mean_for_limits = mean_for_limits[mean_for_limits != 0]
 
     percentile_for_saturation = 1
-    breaks_all_yrs = np.percentile(all_valid_values, [1, (100 - percentile_for_saturation)])  # The min and max percentiles at which colors saturate
-
+    breaks_all_yrs = np.percentile(non_zero_mean_for_limits, [percentile_for_saturation, (100 - percentile_for_saturation)])
     lower_lim_all_yrs = breaks_all_yrs[0]
     upper_lim_all_yrs = breaks_all_yrs[-1]
 
-    main_logger.info("Across all years:")
+    main_logger.info("Legend limits from mean raster (non-zero pixels):")
     main_logger.info(f"  lower limit ({percentile_for_saturation} percentile): {lower_lim_all_yrs}")
     main_logger.info(f"  upper limit ({(100 - percentile_for_saturation)} percentile): {upper_lim_all_yrs}")
 
-    # Creates the legend in kt CO2e (converts legend units from Mg (t) to kt with 10**3-- data doesn't change).
-    # Rounds data_min down and data_max up for legend.
-    rounded_lower_lim_all_yrs = math.ceil(lower_lim_all_yrs / 10 ** 3 * 100) / 100  # Rounds up
-    rounded_upper_lim_all_yrs = math.floor(upper_lim_all_yrs / 10 ** 3 * 100) / 100  # Rounds down
+    rounded_lower_lim_all_yrs = math.ceil(lower_lim_all_yrs / 10 ** 3 * 100) / 100
+    rounded_upper_lim_all_yrs = math.floor(upper_lim_all_yrs / 10 ** 3 * 100) / 100
 
     # Legend labels depend on what exact input is displayed
     if "removals" in pattern_segment:
@@ -954,7 +931,8 @@ def map_gross(s3_folders, model_type, model_path_description,
         main_logger.info("Can't generate tick labels")
     main_logger.info(f"tick labels {tick_labels}")
 
-    # Final pass: Iterates through modeled years to create the jpegs
+
+    # Final pass: Iterates through modeled years to create the annual jpegs
 
     # Stores yearly arrays to compute annual average for annual average map
     yearly_data_stack = []

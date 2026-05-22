@@ -19,6 +19,13 @@ as well as a north-south extent for the map to include.
 The aspect ratio used in the global map of 2:1 (width:height) is maintained, and the east-west extent is determined
 from that information. That keeps all zoomed in maps in the same shape as the global map for simplicity.
 
+Min and max of net legend use the 1 and 99% of the mean annual map for annual maps and the average annual map.
+Max of emissions and min of removals use the 99% of the mean annual map for annual maps and the average annual map.
+That way, the annual maps, the annual gif, and average annual map all use the same legend.
+However, this also means that the min and max for the legend for the annual maps don't actually correspond directly
+with the range of values in those maps; they are based on the average of years.
+This was standardized across the vegetation-only and vegetation mapping for LULUCF using Claude session 'Four-panel LULUCF and component map'.
+
 With https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/67634e63-bbcc-800a-8267-004e88ced2e4
 Continued at https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/68d6d26f-b054-8323-98bb-731a86582e74
 Annual average maps from https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69835153-d804-832e-a9bf-ecf01d221a11

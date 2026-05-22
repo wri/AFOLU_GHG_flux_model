@@ -24,6 +24,8 @@ A zoomed in map can be created by supplying central lat-long arguments, as well 
 The aspect ratio used in the global map of 2:1 (width:height) is maintained, and the east-west extent is determined
 from that information. That keeps all zoomed in maps in the same shape as the global map for simplicity.
 
+Legend min and max for net use the 1 and 99% values. For vegetation timeseries, the percentiles are from the mean map.
+
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 Runs locally, not in Coiled.
 
