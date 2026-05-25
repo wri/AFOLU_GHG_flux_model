@@ -1,11 +1,12 @@
 """
-Calculates carbon densities (Mg C/ha) and annual gross gain, gross loss, and net stock changes (Mg C/ha/yr,
+Calculates carbon densities (Mg C/ha) and annual gross gain, gross loss, and net stock changes (Mg CO2/ha/yr,
 accounting for shorter interval length in the last interval) in 0-30 cm topsoil.
 Like for vegetation, gross and net loss (emissions) is positive and gross and net gain (removals) is negative.
 
-Neither change nor density converted to Mg CO2.
+Density remains in Mg C/ha; stock changes are converted to Mg CO2/ha/yr for ease of downstream use.
 
 Calling gross values gain and loss instead of emissions and removals to differentiate them from vegetation emissions and removals (which are in CO2(e).)
+Loss is positive and gain is negative, to match the signs for emissions and removals
 
 NoData value is np.nan.
 NoData used for:
@@ -121,7 +122,7 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
             lu.print_and_log(f"{status}: {uu.timestr()}", False, logger_worker)
         layers[layer] = data
 
-    organic_soil_mask_uri = f"{cn.organic_soil_extent_dir}{tile_id}_{cn.organic_soil_extent_pattern}.tif"
+    organic_soil_mask_uri = f"{cn.organic_soil_extent_dir}{tile_id}__{cn.organic_soil_extent_pattern}.tif"
 
     organic_soil_mask = uu.get_tile_dataset_rio(organic_soil_mask_uri, bounds, chunk_length_pixels, logger_worker,'uint8')
     organic_soil_mask = organic_soil_mask[0]  # Converts downloaded tuple (array, status) to just the array

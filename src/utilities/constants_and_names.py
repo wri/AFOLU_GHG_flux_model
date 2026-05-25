@@ -13,11 +13,10 @@ from src.utilities import universal_utilities as uu
 veg_model_version = "1.0.5"
 veg_model_version_underscore = veg_model_version.replace(".", "_")
 
-SOC_model_version = "1.0.0"
+SOC_model_version = "1.0.1"
 SOC_model_version_underscore = SOC_model_version.replace(".", "_")
 
-# organic_soil_model_version = "0.9.7"
-organic_soil_model_version = "1.0.0"
+organic_soil_model_version = "1.0.1"
 organic_soil_model_version_underscore = organic_soil_model_version.replace(".", "_")
 
 
@@ -692,10 +691,11 @@ GPW_MVH_pattern = f"GPW_height"
 
 
 # Organic Soils
-# Organic soil mask, from Hengl et al. under review (https://essd.copernicus.org/preprints/essd-2025-336/)
-# Per Erin's Slack message 2025-12-23, she is using >10 for organic soil extent, so mineral soil is <=10.
-organic_soil_extent_dir = "s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/inputs/processed/peat_mask/OGH/tiles_unthresholded/20251110/"
-organic_soil_extent_pattern = "ogh_unthresholded_mask"
+# Organic soil mask, created by Erin Glen based on Hengl et al. 2026 and
+# https://opengeohub.medium.com/global-organic-soils-extent-and-peat-depth-at-30-m-spatial-resolution-based-on-multisource-eo-data-c6e00f390069
+# Erin confirmed that it didn't matter which interval I used for the organic soil mask; all are equivalent.
+organic_soil_extent_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/outputs/version_{organic_soil_model_version_underscore}/organic_soil/ogh_mixed_f1_f15_f2_20260513/five_year_intervals/2001_2005/40000_pixels/20260525/"
+organic_soil_extent_pattern = "organic_soil__2001_2005"
 
 
 # Cropland emissions
