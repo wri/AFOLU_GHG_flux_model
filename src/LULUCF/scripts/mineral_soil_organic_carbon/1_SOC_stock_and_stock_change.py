@@ -142,7 +142,7 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
         # Replace COG int16 NoData with nan
         interval_array_full_extent = np.where(interval_array_full_extent == nodata_val, np.nan, interval_array_full_extent)
 
-        # Convert units from kg C/m³ * 10 -> Mg C/ha
+        # Convert units from kg C/m³ * 10 for 0-30 cm depth -> Mg C/ha for 0-30 cm depth
         converted_array_full_extent = (interval_array_full_extent * SOC_CONVERSION_FACTOR).astype(np.float32)
 
         # print(f"\n--- Chunk {bounds_str} ---")
@@ -150,7 +150,7 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
         # print(f"Organic soil mask shape for {bounds_str} for {end_year}: {organic_soil_mask.shape}")
 
         # Masks extent to just mineral soil (excludes pixels with high chance of being organic soil, per OpenGeoHub analysis)
-        converted_array_min_soil_extent = np.where(organic_soil_mask <= cn.organic_soil_prob_threshold, converted_array_full_extent, np.nan)
+        converted_array_min_soil_extent = np.where(organic_soil_mask != cn.organic_soil_mask_val, converted_array_full_extent, np.nan)
 
         # Save back to output dicts with the converted unit arrays
         out_dict_full_extent[f"{cn.SOC_density_full_extent_pattern}{cn.C_density_pixel_meaning}_{end_year}"] = converted_array_full_extent
@@ -166,7 +166,7 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
     # print("out_dict_min_soil_extent_ordered:", out_dict_min_soil_extent_ordered)
 
 
-    ### Part 3: Calculate density changes between adjacent intervals (Mg C/ha/yr for 0-30 cm)
+    ### Part 3: Calculate density changes between adjacent intervals (Mg CO2/ha/yr for 0-30 cm)
 
     # Computes and save deltas. Iterates through both full extent and mineral soil extent
     # print(year_ranges)
@@ -179,12 +179,13 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
         lu.print_and_log(f"Calculating SOC change for {end_year} to {start_year} for {bounds_str}: {uu.timestr()}", is_large_run, logger_worker)
 
         # Multiplies difference by -1 to make net loss positive and net gain negative (as for vegetation)
+        # Interval arrays must be unsigned so difference can be negative
         net_full_extent = (out_dict_full_extent_ordered[f"{cn.SOC_density_full_extent_pattern}{cn.C_density_pixel_meaning}_{end_year}"] -
-                             out_dict_full_extent_ordered[f"{cn.SOC_density_full_extent_pattern}{cn.C_density_pixel_meaning}_{start_year}"]) / year_diff * -1  # Interval arrays must be unsigned so difference can be negative
+                             out_dict_full_extent_ordered[f"{cn.SOC_density_full_extent_pattern}{cn.C_density_pixel_meaning}_{start_year}"]) / year_diff * -1 * cn.C_to_CO2
         net_min_soil = (out_dict_min_soil_extent_ordered[f"{cn.SOC_density_min_soil_extent_pattern}{cn.C_density_pixel_meaning}_{end_year}"] -
-                          out_dict_min_soil_extent_ordered[f"{cn.SOC_density_min_soil_extent_pattern}{cn.C_density_pixel_meaning}_{start_year}"]) / year_diff * -1  # Interval arrays must be unsigned so difference can be negative
+                          out_dict_min_soil_extent_ordered[f"{cn.SOC_density_min_soil_extent_pattern}{cn.C_density_pixel_meaning}_{start_year}"]) / year_diff * -1 * cn.C_to_CO2
 
-        # Multiplying by -1 creates -0s, so need to force all -0s back to 0. Per Claude.
+        # Multiplying by -1 creates -0s, so need to force all -0s back to 0. Per Claude session 'Fix negative zero in stock net change calculation'
         net_full_extent[net_full_extent == 0] = np.float32(0)
         net_min_soil[net_min_soil == 0] = np.float32(0)
 
@@ -405,7 +406,7 @@ def main(cluster_name, model_type,
 
     start_time = uu.timestr() # Starting time for stage
     main_logger.info(f"Stage {stage} started at: {start_time}")
-    main_logger.info(f"Model version: {cn.SOC_model_version}")
+    main_logger.info(f"SOC model version: {cn.SOC_model_version}")
     main_logger.info(f"Model path descriptor: {model_path_description}")
     main_logger.info(f"Run date: {run_date}")
     main_logger.info(f"Batch size: {batch_size} chunks")

@@ -9,15 +9,22 @@ from src.utilities import universal_utilities as uu
 ### Constants
 ########
 
-### Model version
+### Model versions. Written order should be as below for consistency.
+
+AFOLU_model_version = "1.0.0"
+AFOLU_model_version_underscore = AFOLU_model_version.replace(".", "_")
+
+LULUCF_model_version = "1.0.0"
+LULUCF_model_version_underscore = LULUCF_model_version.replace(".", "_")
+
 veg_model_version = "1.0.5"
 veg_model_version_underscore = veg_model_version.replace(".", "_")
 
-SOC_model_version = "1.0.1"
-SOC_model_version_underscore = SOC_model_version.replace(".", "_")
-
 organic_soil_model_version = "1.0.1"
 organic_soil_model_version_underscore = organic_soil_model_version.replace(".", "_")
+
+SOC_model_version = "1.0.1"
+SOC_model_version_underscore = SOC_model_version.replace(".", "_")
 
 
 ### s3 buckets
@@ -938,8 +945,8 @@ veg_summative_for_LULUCF_output_dirs = [
 
 ### Soil organic carbon (SOC) timeseries from OpenGeoHub (OGH) (URIs from https://github.com/openlandmap/soildb/blob/main/tables/OpenLandMap_soildb_COGS.csv)
 
-# Threshold probabiltiy for counting pixel as organic soil (per Erin Glen via Slack 2026-04-07)
-organic_soil_prob_threshold = 10
+# Value for organic soil, from Erin Glen's organic soil mask
+organic_soil_mask_val = 1
 
 # From Hengl et al. 2026 (https://essd.copernicus.org/articles/18/989/2026/)
 # Confirmed to be up-to-date by Tom Hengl on 2025-12-19 via email.
@@ -965,21 +972,21 @@ SOC_path_zarr = f"{SOC_outputs_path}zarr/CHUNK_SIZE_pixels/RUN_DATE/SOC_zarr.zar
 # Extent of raw COGs
 SOC_density_full_extent_pattern = "SOC_density__full_extent__0-30cm_MgC"
 SOC_density_full_extent_dir = f"{SOC_outputs_path}{SOC_density_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_loss_full_extent_pattern = "SOC_loss__full_extent__0-30cm_MgC"
+SOC_loss_full_extent_pattern = "SOC_loss__full_extent__0-30cm_MgCO2"
 SOC_loss_full_extent_dir = f"{SOC_outputs_path}{SOC_loss_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_gain_full_extent_pattern = "SOC_gain__full_extent__0-30cm_MgC"
+SOC_gain_full_extent_pattern = "SOC_gain__full_extent__0-30cm_MgCO2"
 SOC_gain_full_extent_dir = f"{SOC_outputs_path}{SOC_gain_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_net_full_extent_pattern = "SOC_net__full_extent__0-30cm_MgC"
+SOC_net_full_extent_pattern = "SOC_net__full_extent__0-30cm_MgCO2"
 SOC_net_full_extent_dir = f"{SOC_outputs_path}{SOC_net_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
 
 # Extent of mineral soil (excludes thresholded organic soil extent created by Erin Glen)
 SOC_density_min_soil_extent_pattern = "SOC_density__mineral_soil_extent__0-30cm_MgC"
 SOC_density_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_density_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_loss_min_soil_extent_pattern = "SOC_loss__mineral_soil_extent__0-30cm_MgC"
+SOC_loss_min_soil_extent_pattern = "SOC_loss__mineral_soil_extent__0-30cm_MgCO2"
 SOC_loss_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_loss_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_gain_min_soil_extent_pattern = "SOC_gain__mineral_soil_extent__0-30cm_MgC"
+SOC_gain_min_soil_extent_pattern = "SOC_gain__mineral_soil_extent__0-30cm_MgCO2"
 SOC_gain_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_gain_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_net_min_soil_extent_pattern = "SOC_net__mineral_soil_extent__0-30cm_MgC"
+SOC_net_min_soil_extent_pattern = "SOC_net__mineral_soil_extent__0-30cm_MgCO2"
 SOC_net_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_net_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
 
 SOC_outputs_to_zarr = [

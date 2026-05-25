@@ -72,6 +72,7 @@ For mineral soil, I could calculate the annual density change for 2015 vs. 2022,
 For organic soil, I'll have to average the two periods of emissions.
 #TODO I'm going to add the sign switching to the mineral soil processing step, so I won't need to do it in this script.
 #TODO In the emissions fraction maps, mineral soil fraction is the residual of veg and organic soil for now but I want to calculate it on its own once I have corrected mineral soil
+#TODO Include LULUCF and AFOLU versions in output map names and/or folders
 """
 
 import argparse
