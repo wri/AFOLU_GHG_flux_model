@@ -38,7 +38,7 @@
 -bb 24 -8 24.25 -7.75 -cs 0.25           # 0.25x0.25 deg (00N_020E), 1 chunk (has repeated fires in single pixel in tall veg)
 -bb 23.75 -6.75 24 -6.5 -cs 0.25         # 0.25x0.25 deg (00N_020E), 1 chunk (has repeated fires in single pixel in cropland)
 -bb 115.75 -3.75 116 -3.5 -cs 0.25       # 0.25x0.25 deg (00N_110E), 1 chunk (has forest converted to cropland, has burned forest-- both 2015-2016)
--bb 115.25 -3.75 115.5 -3.5 -cs 0.25     # 0.25x0.25 deg (00N_110E), 1 chunk (has oil palm 2000 extent and Descals planting year outside SDPTv2 extent; has primary forest)
+-bb 115 -4 116 -3 -cs 1                  # 1x1 deg (00N_110E), 1 chunk (has oil palm 2000 extent and Descals planting year outside SDPTv2 extent; has primary forest). Has all kinds of starting C density situations/codes.
 -bb 112.5 -1 112.75 -0.75 -cs 0.25       # 0.25x0.25 deg (00N_110E), 1 chunk (has IFL2016, humid tropical primary forest, and forest >=100 years in 2015 in all combos-- good for testing primary forest)
 -bb 23 -4 24 -3 -cs 1                    # 1x1 d1f (00N_020E), 1 chunk (has IFL2016, humid tropical primary forest, forest >=100 years in 2015 and fire-- good for testing primary forest)
 -bb 10 42 11 43 -cs 0.5                  # 1x1 deg (50N_010E), 4 chunks (some GLCLU code=254 for ocean and some land, so data should be output)

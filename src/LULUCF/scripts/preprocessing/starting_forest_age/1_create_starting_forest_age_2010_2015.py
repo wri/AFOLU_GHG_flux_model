@@ -1,5 +1,5 @@
 """
-Maps forest age in 2010 and 2015 in 1x1 deg geotifs using GAMI v2.1.
+Maps forest age in 2010 and 2015 in 1x1 deg geotifs using GAMI v3.0.
 Requires Python library zarr v2.x; can't use zarr v3.x, which is what my more recent conda environments are using (for zonal stats purposes).
 If I try running this with zarr3, I get errors about not being able to access the files.
 
@@ -8,12 +8,12 @@ conda activate coiled_20250203
 
 https://dataservices.gfz-potsdam.de/panmetaworks/showshort.php?id=8f5974e7-3ece-11ef-967a-4ffbfe06208e
 https://datapub.gfz-potsdam.de/download/10.5880.GFZ.1.4.2023.006-VEnuo/
-Metadata: https://datapub.gfz-potsdam.de/download/10.5880.GFZ.1.4.2023.006-VEnuo/2023-006_Besnard-et-al_Data-Description-v2.1.pdf
+Metadata for older version: https://datapub.gfz-potsdam.de/download/10.5880.GFZ.1.4.2023.006-VEnuo/2023-006_Besnard-et-al_Data-Description-v2.1.pdf
 Also needs zarr package
 
 Mini GEE app for age viewing from Simon Besnard (email 6/27/25):
 https://besnardsim.users.earthengine.app/view/globalforestage
-GEE asset: projects/ee-besnardsim/assets/GAMI_v2_0_mean_100m
+GEE asset for older version of GAMI: projects/ee-besnardsim/assets/GAMI_v2_0_mean_100m
 
 This preprocessing step doesn't scale quite like others, as far as I can tell.
 It starts by reading in the relevant ZARR pieces for the chunks being processed, but I don't know how that scales.
@@ -35,37 +35,23 @@ Local (won't run Dask locally because of usage of submit):
 python -m src.LULUCF.scripts.preprocessing.starting_forest_age.1_create_starting_forest_age_2010_2015 -bb 10 49 11 50 -cs 1 --run_local --no_upload
 
 Coiled tiny test:
-python -m src.utilities.create_cluster -cn LULUCF_preprocessing -n 1 -t 1 -m 2
-python -m src.LULUCF.scripts.preprocessing.starting_forest_age.1_create_starting_forest_age_2010_2015 -cn LULUCF_preprocessing -bb 10 49 11 50 -cs 1
+python -m src.utilities.create_cluster -cn starting_forest_age -n 1 -t 1 -m 8
+python -m src.LULUCF.scripts.preprocessing.starting_forest_age.1_create_starting_forest_age_2010_2015 -cn starting_forest_age -bb 10 49 11 50 -cs 1
 
 Coiled larger test (because this doesn't always scale beyond 1 chunk well):
-python -m src.utilities.create_cluster -cn LULUCF_preprocessing -n 4 -t 4 -m 4
-python -m src.LULUCF.scripts.preprocessing.starting_forest_age.1_create_starting_forest_age_2010_2015 -cn LULUCF_preprocessing -bb 10 47 13 50 -cs 1
+python -m src.utilities.create_cluster -cn starting_forest_age -n 4 -t 4 -m 8
+python -m src.LULUCF.scripts.preprocessing.starting_forest_age.1_create_starting_forest_age_2010_2015 -cn starting_forest_age -bb 10 47 13 50 -cs 1
 
 Full run:
-python -m src.utilities.create_cluster -n 40 -t 9 -m 32 -cn LULUCF_preprocessing
-python -m src.LULUCF.scripts.preprocessing.starting_forest_age.1_create_starting_forest_age_2010_2015 -cn LULUCF_preprocessing -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive forest age 2010/2015 run."
+python -m src.utilities.create_cluster -n 80 -m 8 -cn starting_forest_age
+python -m src.LULUCF.scripts.preprocessing.starting_forest_age.1_create_starting_forest_age_2010_2015 -cn starting_forest_age -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "Global forest age for 2015 using GAMI v3.1."
 
-In the three times I've run this, I've found that it gets through more and more batches the more workers I give it.
--n 10 could only get through a few batches at a time in data-dense latitudes and took over a dozen restarts to get through all the batches.
--n 20 did better and took about 7 restarts to get through all the batches.
--n 40 did best yet and required only 2 restarts to get through all the batches.
-The first two starts with -n 40 eventually failed with "No disk space left of workers" errors
-(https://cloud.coiled.io/clusters/1014981/account/wri-forest-research/information?organization=wri&tab=Alerts).
--n 40 used approximately 1600 Coiled credits and $80 in AWS charges over all three clusters. It took nearly 20 hours to run.
-Part 1: https://cloud.coiled.io/clusters/1014981/account/wri-forest-research/information?organization=wri
-Part 2: https://cloud.coiled.io/clusters/1015660/account/wri-forest-research/information?organization=wri
-Part 3: https://cloud.coiled.io/clusters/1016516/account/wri-forest-research/information?organization=wri
-
-I didn't try lots of different configurations, like the number of threads/worker.
-More optimization is possible but I hope to never have to do this again.
-If I do run it again, try with -m 16.
-
-I also noticed that the batches took wildly different amounts of time depending on where they were.
-Some batches in the 60N band took 1 hour to run, while those around 50S took 20 minutes to run, and batches in 70N
-and 80N took just a few minutes to run. I suppose this makes sense, but is worth noting all the same.
-
-chunk_list = chunk_list[1501:] is how I resumed the processing at the batch that failed.
+In the four times I've run this, I've used more workers each time. When I first tried with 10 workers,
+it kept running out of memory after a few hundred chunks. With 20 workers, it ran for much longer.
+With about 40 workers, it ran all the way through.
+I don't know what memory per worker is best to use. It doesn't seem to use more than about 3 GB/worker,
+so maybe 8GB/worker is enough next time.
+There's definitely more performance testing I could do with this, but it's not worth it because I run it very infrequently.
 
 Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/67dcb99b-edb8-800a-abd8-f718de76043c
 https://chatgpt.com/share/e/67e1b7f6-c0d4-800a-a945-3133de9bf3a0
@@ -121,7 +107,7 @@ def calculate_forest_age(bounds, is_large_run, no_upload, output_dir_list, stage
     tile_id = uu.xy_to_tile_id(bounds[0], bounds[3])
     chunk_length_pixels = uu.calc_chunk_length_pixels(bounds)
 
-    zarr_url = "s3://dog.atlaseo-glm.eo-gridded-data/collections/GAMI/GAMI_v2.1.zarr"
+    zarr_url = "s3://dog.atlaseo-glm.eo-gridded-data/collections/GAMI/GAMI_v3.1.zarr"
 
     base_cache_dir = os.path.expanduser("~/zarr_cache")
     os.makedirs(base_cache_dir, exist_ok=True)
@@ -319,7 +305,7 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
 
 
     # Runs in batches of specified size. This may help with managing zarr access/caches.
-    batch_size = 300
+    batch_size = 2000
     # batch_size = 5  # For testing
     chunk_batches = [chunk_list[i:i + batch_size] for i in range(0, len(chunk_list), batch_size)]
     main_logger.info(f"There are {len(chunk_batches)} batches to process: {uu.timestr()}")

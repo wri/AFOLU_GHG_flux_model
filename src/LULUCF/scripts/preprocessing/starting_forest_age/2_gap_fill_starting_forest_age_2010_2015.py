@@ -1,5 +1,5 @@
 """
-Gap-fills forest age in 2010 and 2015 to assign an age to all pixels for which there is no age in GAMI v2.1.
+Gap-fills forest age in 2010 and 2015 to assign an age to all pixels for which there is no age in GAMI v3.1.
 This way, every pixel has a starting age in 2010 and 2015.
 1x1 deg chunks that do not have any age pixels are returned as rasters with all 0s.
 Interpolation uses the age in the focal chunk and all adjacent chunks that exist so that there are not
@@ -15,50 +15,16 @@ Does not have age data (should output a raster full of 0s):
 python -m src.LULUCF.scripts.preprocessing.starting_forest_age.2_gap_fill_starting_forest_age_2010_2015 --year 2010 -bb -28 -60 -27 -59 -cs 1 --run_local
 
 Coiled test:
-python -m src.utilities.create_cluster -cn LULUCF_preprocessing -n 1 -t 1 -m 2
-python -m src.LULUCF.scripts.preprocessing.starting_forest_age.2_gap_fill_starting_forest_age_2010_2015 --year 2010 -cn LULUCF_preprocessing -bb 10 49 11 50 -cs 1
-python -m src.LULUCF.scripts.preprocessing.starting_forest_age.2_gap_fill_starting_forest_age_2010_2015 --year 2010 -cn LULUCF_preprocessing -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -f 5
+python -m src.utilities.create_cluster -cn starting_forest_age -n 1 -t 1 -m 2
+python -m src.LULUCF.scripts.preprocessing.starting_forest_age.2_gap_fill_starting_forest_age_2010_2015 --year 2010 -cn starting_forest_age -bb 10 49 11 50 -cs 1
+python -m src.LULUCF.scripts.preprocessing.starting_forest_age.2_gap_fill_starting_forest_age_2010_2015 --year 2010 -cn starting_forest_age -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -f 5
 
 Full Coiled run (2010):
-python -m src.utilities.create_cluster -n 80 -t 23 -m 16 -cn LULUCF_preprocessing
-python -m src.LULUCF.scripts.preprocessing.starting_forest_age.2_gap_fill_starting_forest_age_2010_2015 --year 2010 -cn LULUCF_preprocessing -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive interpolated forest age for 2010."
-With 80 workers:
-Peak memory per worker: ~8 GB
-Time until chunk stats: 18:06
-Time after chunk stats: 18:31
-Coiled credits: 29.33 (81/hr for 80 x2gd.medium workers, according to dashboard)
-AWS cost: $1.25 ($3.43/hr, according to dashboard)
-https://cloud.coiled.io/clusters/1019231/account/wri-forest-research/information?organization=wri
-
-With 40 workers:
-Peak memory per worker: ~8 GB
-Time until chunk stats: 38:43
-Time after chunk stats: 39:11
-Coiled credits: 28.5 (41/hr for 40 x2gd.medium workers, according to dashboard)
-AWS cost: $1.24 ($1.76/hr, according to dashboard)
-https://cloud.coiled.io/clusters/1016544/account/wri-forest-research/information?organization=wri
-
-
+python -m src.utilities.create_cluster -n 80 -t 23 -m 16 -cn starting_forest_age
+python -m src.LULUCF.scripts.preprocessing.starting_forest_age.2_gap_fill_starting_forest_age_2010_2015 --year 2010 -cn starting_forest_age -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "Gap-filled age globally for 2015 using GAMI v3.1."
 Full Coiled run (2015):
-python -m src.utilities.create_cluster -n 40 -t 29 -m 16 -cn LULUCF_preprocessing
-python -m src.LULUCF.scripts.preprocessing.starting_forest_age.2_gap_fill_starting_forest_age_2010_2015 --year 2015 -cn LULUCF_preprocessing -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive interpolated forest age for 2015."
-With 80 workers:
-Peak memory per worker: ~8 GB
-Time until chunk stats: 15:03
-Time after chunk stats: 15:25
-Coiled credits: 24.26 (81/hr for 80 x2gd.medium workers, according to dashboard)
-AWS cost: $1.04 ($3.43/hr, according to dashboard)
-https://cloud.coiled.io/clusters/1019287/account/wri-forest-research/information?organization=wri
-
-With 40 workers:
-Peak memory per worker: ~8.5 GB
-Time until chunk stats: 38.47
-Time after chunk stats: 39.12
-Coiled credits: 28.8 (41/hr for 40 x2gd.medium workers, according to dashboard)
-AWS cost: $1.24 ($1.76/hr, according to dashboard)
-https://cloud.coiled.io/clusters/1016585/account/wri-forest-research/information?organization=wri
-Interestingly, -t 23 for gap-filled age 2010 and -t 29 for gap-filled age 2015 took basically the same
-amount of time and used the same number of Coiled credits/had the same AWS costs (even with 2015 having 6 more threads/worker).
+python -m src.utilities.create_cluster -n 40 -t 29 -m 16 -cn starting_forest_age
+python -m src.LULUCF.scripts.preprocessing.starting_forest_age.2_gap_fill_starting_forest_age_2010_2015 --year 2015 -cn starting_forest_age -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "Gap-filled age globally for 2015 using GAMI v3.1."
 
 https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/67e69c53-bcd4-800a-8874-8cf4d1fb9c56
 https://chatgpt.com/share/e/67eaa8ea-b108-800a-b469-b813b970d61f
@@ -364,7 +330,7 @@ def main(cluster_name, year, run_local=False, no_stats=False, no_log=False, no_u
         if n_workers > 10:
             main_logger.info("Resizing cluster to 1 worker")
 
-            resize_cluster.resize_coiled_cluster("LULUCF_preprocessing", 1)
+            resize_cluster.resize_coiled_cluster("starting_forest_age", 1)
 
     # Prepares 1x1 deg chunk stats spreadsheet: min, mean, max, and sum for all input and output chunks,
     # and min and max values across all chunks for all inputs and outputs

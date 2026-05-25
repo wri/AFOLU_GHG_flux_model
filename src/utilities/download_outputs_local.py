@@ -22,9 +22,8 @@ import constants_and_names as cn
 
 # Constants
 BUCKET = "gfw2-data"
-# PREFIX = f"climate/AFOLU_flux_model/LULUCF/outputs/version_{cn.veg_model_version_underscore}/"
-PREFIX = f"climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_4__standard__test_box/"
-BASE_DEST = f"/mnt/c/GIS/AFOLU_flux_model/test_data/output/v{cn.veg_model_version_underscore}/"
+BASE_DEST = f"/mnt/c/GIS/AFOLU_flux_model/test_data/output/v{cn.veg_model_version_underscore}__standard__global/"
+BASE_DEST = f"/mnt/c/GIS/AFOLU_flux_model/test_data/output/v1_0_4/"
 
 # Speeds up accessing the input geotifs from s3 when they are in a folder with lots of files.
 # The more files in an s3 folder, the longer it takes to access them without this environment variable.

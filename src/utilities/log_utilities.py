@@ -51,13 +51,15 @@ def populate_main_log_header(client, cluster, log_note, run_local, model_type, s
         worker_memory = "N/A- local run"
         n_workers = "N/A- local run"
         nthreads = "N/A- local run"
+        dashboard_link = "N/A- local run"
     else:
-        worker_memory, n_workers, nthreads = uu.get_cluster_info(client, cluster)
+        worker_memory, n_workers, nthreads, dashboard_link = uu.get_cluster_info(client, cluster)
 
     main_logger.info(f"Model type: {model_type}")
     main_logger.info(f"Stage: {stage}")
     main_logger.info(f"Number of workers: {n_workers}")
     main_logger.info(f"Memory per worker: {worker_memory}")
+    main_logger.info(f"Coiled dashboard link: {dashboard_link}")
     main_logger.info(f"Threads per worker: {nthreads}")
     main_logger.info(f"Log note: {log_note}\n")
 
@@ -100,10 +102,10 @@ def compile_worker_logs(no_log, cluster, stage, start_time_str, logger):
     if no_log:
         return
 
-    worker_log_name = f"{cn.combined_log}_workers_{stage}_{time.strftime('%Y%m%d_%H_%M_%S')}.log"
-    worker_log_local_path = f"{cn.local_log_path}{worker_log_name}"
+    combined_worker_log_name = f"{cn.combined_log}_workers_{stage}_{time.strftime('%Y%m%d_%H_%M_%S')}.log"
+    worker_log_local_path = f"{cn.local_log_path}{combined_worker_log_name}"
 
-    logger.info(f"Preparing consolidated log {worker_log_name}")
+    logger.info(f"Combining worker logs into {combined_worker_log_name}")
 
     # Recovers legs from Coiled
     logs = cluster.get_logs()
@@ -154,7 +156,7 @@ def merge_main_and_worker_upload_logs(no_log, main_log, worker_log, stage):
         calc_proc_times__sec = [int(m) for m in re.findall(r'Calculated.*?(\d+) seconds', log_content)]
 
         # Extract seconds from lines for zarr insertion
-        zarr_insert_proc_times__sec = [int(m) for m in re.findall(r'Wrote outputs to global zarrs.*?(\d+) seconds', log_content)]
+        zarr_insert_proc_times__sec = [int(m) for m in re.findall(r'Wrote outputs to global zarr.*?(\d+) seconds', log_content)]
 
         # Extract seconds from lines for geotif uploads
         uploads_proc_times__sec = [int(m) for m in re.findall(r'Uploads completed for.*?(\d+) seconds', log_content)]
@@ -196,26 +198,26 @@ def merge_main_and_worker_upload_logs(no_log, main_log, worker_log, stage):
         # Step 3: Append results to the log file
         with open(combined_local_log, "a") as outfile:
             outfile.write("\n")
-            outfile.write("=== Chunk-level processing times (approximate because worker log may be missing end) ===\n")
+            outfile.write("=== Chunk-level processing times (approximate because some of worker log may be missing) ===\n")
             outfile.write(f"Processing stats for calculation code ({len(calc_proc_times__sec)} tasks):\n")
             outfile.write(f"  Average and stdev: {avg_calc_proc_times__sec:.0f} seconds (stdev: {stdev_calc_proc_times__sec:.0f})\n")
-            outfile.write(f"  Min and max: {min_calc_proc_times__sec:.0f} - {max_calc_proc_times__sec:.0f}\n")
+            outfile.write(f"  Min and max: {min_calc_proc_times__sec:.0f}-{max_calc_proc_times__sec:.0f}\n")
 
             outfile.write(f"Processing stats for zarr insertion code ({len(zarr_insert_proc_times__sec)} tasks):\n")
             outfile.write(f"  Average and stdev: {avg_zarr_pop_proc_times__sec:.0f} seconds (stdev: {stdev_zarr_pop_proc_times__sec:.0f})\n")
-            outfile.write(f"  Min and max: {min_zarr_pop_proc_times__sec:.0f} - {max_zarr_pop_proc_times__sec:.0f}\n")
+            outfile.write(f"  Min and max: {min_zarr_pop_proc_times__sec:.0f}-{max_zarr_pop_proc_times__sec:.0f}\n")
 
             outfile.write(f"Processing stats for geotif upload code ({len(uploads_proc_times__sec)} tasks):\n")
             outfile.write(f"  Average and stdev: {avg_uploads_proc_times__sec:.0f} seconds (stdev: {stdev_uploads_proc_times__sec:.0f})\n")
-            outfile.write(f"  Min and max: {min_uploads_proc_times__sec:.0f} - {max_uploads_proc_times__sec:.0f}\n")
+            outfile.write(f"  Min and max: {min_uploads_proc_times__sec:.0f}-{max_uploads_proc_times__sec:.0f}\n")
 
             outfile.write(f"Processing stats for full tasks ({len(total_chunk_proc_times__sec)} tasks):\n")
             outfile.write(f"  Average and stdev: {avg_total_chunk_proc_times__sec:.0f} seconds (stdev: {stdev_total_chunk_proc_times__sec:.0f})\n")
-            outfile.write(f"  Min and max: {min_total_chunk_proc_times__sec:.0f} - {max_total_chunk_proc_times__sec:.0f}\n")
+            outfile.write(f"  Min and max: {min_total_chunk_proc_times__sec:.0f}-{max_total_chunk_proc_times__sec:.0f}\n")
 
             outfile.write(f"Peak memory usage for tasks ({len(peak_memory__GB)} tasks):\n")
             outfile.write(f"  Average and stdev: {avg_peak_memory__GB:.2f} GB (stdev: {stdev_peak_memory__GB:.2f})\n")
-            outfile.write(f"  Min and max: {min_peak_memory__GB:.2f} - {max_peak_memory__GB:.2f}\n")
+            outfile.write(f"  Min and max: {min_peak_memory__GB:.2f}-{max_peak_memory__GB:.2f}\n")
 
             outfile.write("--- End of log---\n")
 

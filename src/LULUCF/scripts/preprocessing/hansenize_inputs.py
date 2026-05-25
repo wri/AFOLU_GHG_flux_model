@@ -2,22 +2,23 @@
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Coiled test area without land (i.e. no data):
-python -m src.utilities.create_cluster -cn QC -n 2 -m 16
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn QC -p secondary_natural_forest -bb -120 30 -110 40 -cs 10
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn QC -p secondary_natural_forest -bb 100 -10 110 10 -cs 10 --no_upload
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn QC -p mangroves -bb -120 30 -110 40 -cs 10
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn QC -p mangroves -bb 100 -10 110 10 -cs 10 --no_upload
-python -m src.LULUCF.scripts.preprocessing.gmw_smooth_mangrove_extent_timeseries.0_smooth_mangrove_extent_1x1_degree -cn QC -bb 60 -11 61 -10 -cs 1
-python -m src.LULUCF.scripts.preprocessing.gmw_smooth_mangrove_extent_timeseries.0_smooth_mangrove_extent_1x1_degree -cn QC -bb 116 -3 117 -2 -cs 1 --no_upload
-python -m src.LULUCF.scripts.preprocessing.gmw_smooth_mangrove_extent_timeseries.1_aggregate_smoothed_mangrove_extent_1x1_degree -cn QC --first_10x10s_to_process 1 --no_upload
+python -m src.utilities.create_cluster -cn Hansenize -n 2 -m 4
+python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p secondary_natural_forest -bb -120 30 -110 40 -cs 10
+python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p secondary_natural_forest -bb 100 -10 110 10 -cs 10 --no_upload
+python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p mangroves -bb -120 30 -110 40 -cs 10
+python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p mangroves -bb 100 -10 110 10 -cs 10 --no_upload
+python -m src.LULUCF.scripts.preprocessing.gmw_smooth_mangrove_extent_timeseries.0_smooth_mangrove_extent_1x1_degree -cn Hansenize -bb 60 -11 61 -10 -cs 1
+python -m src.LULUCF.scripts.preprocessing.gmw_smooth_mangrove_extent_timeseries.0_smooth_mangrove_extent_1x1_degree -cn Hansenize -bb 116 -3 117 -2 -cs 1 --no_upload
+python -m src.LULUCF.scripts.preprocessing.gmw_smooth_mangrove_extent_timeseries.1_aggregate_smoothed_mangrove_extent_1x1_degree -cn Hansenize --first_10x10s_to_process 1 --no_upload
 
 Coiled test area with data:
-python -m src.utilities.create_cluster -cn hansenize_mangroves_test -n 2 -m 16
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn hansenize_mangroves_test -p mangroves -bb 100 -10 110 10 -cs 10
+python -m src.utilities.create_cluster -cn Hansenize -n 2 -m 4
+python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p mangroves -bb 100 -10 110 10 -cs 10
 
-Coiled full run:
-python -m src.utilities.create_cluster -cn hansenize_mangroves -n 20 -t 12 -m 8
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn hansenize_mangroves -p mangroves -bb -180 -60 180 80 -cs 10
+Coiled full run (running with 20 clusters causes an error  of not finding the vrt, perhaps because it's being accessed too quickly-- better to run with fewer workers for now):
+python -m src.utilities.create_cluster -cn Hansenize -n 10 -t 1 -m 4
+python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p mangroves -bb -180 -60 180 80 -cs 10
+python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p AGB2015 AGB2015_stdev -bb -180 -60 180 80 -cs 10
 # Note: Tried this with -n 20 -t 12 -m 16 (for mangrove extent from 1996 to 2016) and then again with -n 20 -t 12 -m 8 (for mangrove extent from 2017 to 2020).
     # After reducing the memory to 8 and using a smaller vm type, gdal_warp per dataset finshed 2x a fast (10 minutes in stead of 20).
     # Could be that it is stored closer on memory or that we just got a faster cluster the second time around.
@@ -134,6 +135,15 @@ def main(cluster_name, process, bounding_box, chunk_size, run_local, no_upload):
             'vrt': f"/tmp/agb2015.vrt",
             'processed_dir': cn.agb_2015_dir_processed,
             'processed_pattern': cn.agb_2015_pattern
+        }
+
+    if 'AGB2015_stdev' in process:
+        download_upload_dictionary["AGB2015_stdev"] = {
+            'raw_dir': cn.agb_stdev_2015_dir_raw,
+            'raw_pattern': cn.agb_stdev_2015_pattern_raw,
+            'vrt': f"/tmp/agb2015_stdev.vrt",
+            'processed_dir': cn.agb_stdev_2015_dir_processed,
+            'processed_pattern': cn.agb_stdev_2015_pattern
         }
 
     if 'climate_zone' in process:

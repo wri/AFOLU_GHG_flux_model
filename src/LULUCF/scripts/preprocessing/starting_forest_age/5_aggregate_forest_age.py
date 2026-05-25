@@ -8,12 +8,12 @@ Local:
 python -m src.LULUCF.scripts.preprocessing.starting_forest_age.5_aggregate_forest_age --years 2000 2010 2015 --first_10x10s_to_process 2 --run_local
 
 Coiled test:
-python -m src.utilities.create_cluster -cn LULUCF_preprocessing -n 1 -t 1 -m 4
-python -m src.LULUCF.scripts.preprocessing.starting_forest_age.5_aggregate_forest_age -cn LULUCF_preprocessing --years 2000 2010 2015 --first_10x10s_to_process 2
+python -m src.utilities.create_cluster -cn starting_forest_age -n 1 -t 1 -m 4
+python -m src.LULUCF.scripts.preprocessing.starting_forest_age.5_aggregate_forest_age -cn starting_forest_age --years 2000 2010 2015 --first_10x10s_to_process 2
 
 Full Coiled run
-python -m src.utilities.create_cluster -cn LULUCF_preprocessing -n 30 -t 4 -m 4
-python -m src.LULUCF.scripts.preprocessing.starting_forest_age.5_aggregate_forest_age -cn LULUCF_preprocessing --years 2000 2010 2015
+python -m src.utilities.create_cluster -cn starting_forest_age -n 30 -t 4 -m 4
+python -m src.LULUCF.scripts.preprocessing.starting_forest_age.5_aggregate_forest_age -cn starting_forest_age --years 2000 2010 2015
 Cluster: https://cloud.coiled.io/clusters/1018902/account/wri-forest-research/information?organization=wri
 Peak memory per worker: ~2 GB
 Time until chunk stats: 27:48 for 2000, 15:13 for 2010, 13:05 for 2015
@@ -21,8 +21,8 @@ Time after chunk stats: 27:49 for 2000, 15:14 for 2010, 13:05 for 2015
 Coiled credits: 15.51 for 2000, 8.2 for 2010, 8.5 for 2015 (31/hr for 30 m8g.medium workers, according to dashboard)
 AWS cost: $0.37 for 2000, $0.18 for 2010, $0.20 for 2015 ($0.72/hr for 30 m8g.medium workers, according to dashboard)
 
-python -m src.utilities.create_cluster -cn LULUCF_preprocessing -n 50 -t 4 -m 4
-python -m src.LULUCF.scripts.preprocessing.starting_forest_age.5_aggregate_forest_age -cn LULUCF_preprocessing --years 2010 2015
+python -m src.utilities.create_cluster -cn starting_forest_age -n 50 -t 4 -m 4
+python -m src.LULUCF.scripts.preprocessing.starting_forest_age.5_aggregate_forest_age -cn starting_forest_age --years 2010 2015
 2010 and 2015 redone at https://cloud.coiled.io/clusters/1019308/account/wri-forest-research/information?organization=wri
 Peak memory per worker: ~2 GB
 Time until chunk stats: 14:26 for 2010, 12:20 for 2015
