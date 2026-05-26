@@ -750,6 +750,8 @@ IPCC_node_path = "IPCC_nod_code"
 IPCC_node_pattern = "IPCC_node"
 IPCC_change_path = "IPCC_basic_change"
 IPCC_change_pattern = "IPCC_change"
+IPCC_summary_path = "IPCC_total_summary"
+IPCC_summary_pattern = "IPCC_summary"
 
 ### IPCC codes
 settlement_IPCC = 1

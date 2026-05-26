@@ -47,37 +47,123 @@ from src.utilities import resize_cluster
 os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "TRUE"
 
 
-def get_sdpt_status(simpleName, simpleType):
-    # Planted forest vs tree crop
-    if int(simpleName) == int(1):
-        sdpt_planted_forest = True
-        sdpt_tree_crop = False
-    elif int(simpleName) == int(2):
-        sdpt_planted_forest = False
-        sdpt_tree_crop = True
-    else:
-        sdpt_planted_forest = False
-        sdpt_tree_crop = False
 
-    # Oil palm
-    if int(simpleType) == int(1):
-        sdpt_oil_palm = True
-    else:
-        sdpt_oil_palm = False
+# Returns boolean values for whether a pixel is planted forest or tree crop
+def get_sdpt_status(sdpt_type):
+    sdpt_planted_forest = not np.isnan(sdpt_type) and int(sdpt_type) == 1
+    sdpt_tree_crop      = not np.isnan(sdpt_type) and int(sdpt_type) == 2
 
-    return sdpt_planted_forest, sdpt_tree_crop, sdpt_oil_palm
+    return sdpt_planted_forest, sdpt_tree_crop
+
+# Returns boolean values for whether a pixel is oil palm using SDPT simpleName, Descals oil palm planting year, or pre-2000 plantation
+def get_oil_palm_status(pre_2000_plantation, sdpt_name, descals_planting_year,  year):
+
+    pre_2000 = not np.isnan(pre_2000_plantation) and int(pre_2000_plantation) == 1
+    sdpt_oil_palm = not np.isnan(sdpt_name) and int(sdpt_name) == 1
+    descals_oil_palm = not np.isnan(descals_planting_year) and 0 < int(descals_planting_year) <= int(year)
+
+    oil_palm = (pre_2000 or sdpt_oil_palm or descals_oil_palm)
+
+    return oil_palm
+
 
 # Move general utilities from here up to UU
 #######################################################################################################################
+# IPCC Land use hierarchy: Settlements > Cropland > Forest Land > Grassland > Wetlands > Other
+# GLAD LC numeric values --> Default IPCC LU assignment
+settlement_lc   = {250}                                         # Built up
+cropland_lc     = {244}                                         # Cropland
+forest_lc       = set(range(27, 49)) | set(range(127, 149))     # Tall vegetation
+grass_lc        = set(range(5, 27)) | set(range(105, 127))      # Short veg
+wetland_lc      = set(range(200, 205))                          # Wetland
+bare_lc         = set(range(0, 5)) | set(range(100, 105))       # Bare
+water_lc        = set(range(205, 208))                          # Open water
+ice_lc          = {241}                                         # Snow/ice
+
+# Lookup table to go from GLAD LC -> LU token
+lc_token_map = {
+    **{v: "S" for v in settlement_lc},
+    **{v: "C" for v in cropland_lc},
+    **{v: "F" for v in forest_lc},
+    **{v: "G" for v in grass_lc},
+    **{v: "W" for v in wetland_lc},
+    **{v: "B" for v in bare_lc},
+    **{v: "O" for v in water_lc},
+    **{v: "I" for v in ice_lc},
+}
+
+# Node codes describing which rule was used to determine final land use
+node_code_map = {
+    "built_glad": 10,
+
+    "crop_glad": 20,
+    "crop_oil_palm": 21,
+    "crop_sdpt_tree_crop": 22,
+    "crop_perm_ag_driver": 23,
+
+    "forest_glad": 30,
+    "forest_gmw_mangrove": 31,
+    "forest_sdpt_planted_forest": 32,
+    "forest_shift_cult_driver": 333,
+    "forest_logging_driver": 334,
+    "forest_wildfire_driver": 335,
+    "forest_nat_dist_driver": 337,
+
+    "grass_glad": 40,
+    "grass_perm_ag_driver": 41,
+
+    "wetland_glad": 50,
+
+    "bare_glad": 60,
+    "water_glad": 61,
+    "ice_glad": 62,
+}
+
+# Default node codes before rules are applied
+def default_node_code(token):
+    if token == "S":
+        return node_code_map["built_glad"]
+    if token == "C":
+        return node_code_map["crop_glad"]
+    if token == "F":
+        return node_code_map["forest_glad"]
+    if token == "G":
+        return node_code_map["grass_glad"]
+    if token == "W":
+        return node_code_map["wetland_glad"]
+    if token == "B":
+        return node_code_map["bare_glad"]
+    if token == "O":
+        return node_code_map["water_glad"]
+    if token == "I":
+        return node_code_map["ice_glad"]
+    return None
+
+# Function to get land use token per land cover numeric value (tokens used for regex exception rules)
+def token_for_lc(v):
+    return lc_token_map.get(v, "-")
+
+def set_tokens(tokens, node_codes, indices, new_token, node_code):
+    for i in indices:
+        tokens[i] = new_token
+        node_codes[i] = node_code
 
 
-def apply_regex_rules():
+
+
+def apply_regex_rules(LC_timeseries, tcl_before_ts, driver, oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove):
 
 
 
+
+
+    return LU_timeseries
+
+
+# TODO: Does this need to use numba?
 def IPCC_land_use(in_dict):
 
-    # Dictionary for output arrays: IPCC land use class, land use node code, and land use transitions
+    # Dictionary for output arrays: IPCC land use class, land use node code, land use transition, and land use trajectory
     out_dict = {}
 
     # Input data
@@ -95,11 +181,12 @@ def IPCC_land_use(in_dict):
     tcl_block = in_dict[cn.tree_cover_loss_pattern]
     drivers_block = in_dict[cn.drivers_pattern]
 
-    planted_forest_type_block = in_dict[cn.planted_forest_type_pattern]
-    planted_forest_tree_crop_block = in_dict[cn.planted_forest_tree_crop_pattern]
+    oil_palm_2000_extent_block = in_dict[cn.oil_palm_2000_extent_pattern]  # IDN/ MYS pre-2000 plantation
+    oil_palm_first_year_block = in_dict[cn.oil_palm_first_year_pattern]    # Descals oil palm planting year
 
-    oil_palm_2000_extent_block = in_dict[cn.oil_palm_2000_extent_pattern]
-    oil_palm_first_year_block = in_dict[cn.oil_palm_first_year_pattern]
+    planted_forest_tree_crop_block = in_dict[cn.planted_forest_tree_crop_pattern]
+    planted_forest_type_block = in_dict[cn.planted_forest_type_pattern]
+
 
     # Mangrove extent
     # TODO: Read in as a union so only 1 tile set needed
@@ -128,7 +215,7 @@ def IPCC_land_use(in_dict):
         out_dict[f"{cn.IPCC_node_pattern}_{year}"] = np.zeros(LC_2015_block.shape, dtype=np.uint16)
     for year in cn.years_annual[:-1]:
         out_dict[f"{cn.IPCC_change_pattern}_{year}_{year+1}"] = np.zeros(LC_2015_block.shape, dtype=np.uint16)
-
+    out_dict[f"{cn.IPCC_summary_pattern}"] = np.zeros(LC_2016_block.shape, dtype=np.uint32)
 
     # Iterates through all pixels in the chunk
     for row in range(LC_2015_block.shape[0]):
@@ -149,17 +236,19 @@ def IPCC_land_use(in_dict):
 
             tcl_year = tcl_block[row, col]
             driver = drivers_block[row, col]
+            try:
+                tcl_before_ts = (int(tcl_year) <= 2015)
+            except:
+                tcl_before_ts = False
 
             planted_forest_tree_crop = planted_forest_tree_crop_block[row, col]     # simpleName
-            planted_forest_type = planted_forest_type_block[row, col]               # simpleType
-            sdpt_planted_forest, sdpt_tree_crop, sdpt_oil_palm = get_sdpt_status(planted_forest_tree_crop, planted_forest_type)
+            sdpt_planted_forest, sdpt_tree_crop = get_sdpt_status(planted_forest_tree_crop)
 
-
-
-
-
-    oil_palm_2000_extent = oil_palm_2000_extent_block[row, col]
+            oil_palm_2000_extent = oil_palm_2000_extent_block[row, col]
+            planted_forest_type = planted_forest_type_block[row, col]  # simpleType
             oil_palm_first_year = oil_palm_first_year_block[row, col]
+            oil_palm = get_oil_palm_status(oil_palm_2000_extent, planted_forest_type, oil_palm_first_year, 2024)
+            #TODO: Come back to this if allowing planting year logic during LU timeseries (i.e. F -> C in tall veg remaining tall veg)
 
             # Mangrove extent years (1 = mangrove, 0 = no mangrove)
             mang_1996 = mangrove_extent_1996_block[row, col]
@@ -174,8 +263,10 @@ def IPCC_land_use(in_dict):
             mang_2019 = mangrove_extent_2019_block[row, col]
             mang_2020 = mangrove_extent_2020_block[row, col]
             mang_timeseries = np.array([mang_1996, mang_2007, mang_2008, mang_2009, mang_2010, mang_2015, mang_2016, mang_2017, mang_2018, mang_2019, mang_2020]).astype('uint8')
-            gmw_mangrove_extent = bool(np.any(mang_timeseries == 1))    # Union of all GMW years: Troe or False
+            gmw_mangrove = bool(np.any(mang_timeseries == 1))
 
+            # Pass in values for regex rules
+            a, b, c, d, e, f = apply_regex_rules(LC_timeseries, tcl_before_ts, driver, oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove)
 
 
 
@@ -448,7 +539,7 @@ def main(cluster_name, run_date, run_local, no_log, no_upload, chunk_shapefile_u
         # This approach handles large task lists (graphs) better than [dask.delayed()]
         futures = []
         for chunk in chunk_batch:
-            future = client.submit(IPCC_land_use, )
+            future = client.submit(calculate_and_upload_IPCC_land_use, )
             futures.append(future)
         batch_results = client.gather(futures)
 
