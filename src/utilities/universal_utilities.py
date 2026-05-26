@@ -722,11 +722,12 @@ def get_tile_dataset_rio(uri, bounds, chunk_length_pixels, logger_worker, data_t
                     window = rasterio.windows.from_bounds(*bounds, ds.transform)
                     data = ds.read(1, window=window)
 
-                    # Checks if array shape is not what we expect (full chunk size) and pads the array if the array is incomplete.
+                    # Checks if array shape is not what we expect (full chunk size) and pads the array with np.NaN if the array is incomplete.
+                    # Was using 0s before but 0 has meaning and np.NaN doesn't.
                     # Per https://chatgpt.com/c/67dcb99b-edb8-800a-abd8-f718de76043c
                     if data.shape != expected_shape:
                         original_shape = data.shape
-                        padded_data = np.zeros(expected_shape, dtype=numpy_dtype)
+                        padded_data = np.full(expected_shape, np.nan, dtype=data_type)
 
                         # Calculates offset in pixels relative to chunk
                         row_offset = max(0, int(window.row_off))

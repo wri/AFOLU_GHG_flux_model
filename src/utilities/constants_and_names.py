@@ -701,8 +701,8 @@ GPW_MVH_pattern = f"GPW_height"
 # Organic soil mask, created by Erin Glen based on Hengl et al. 2026 and
 # https://opengeohub.medium.com/global-organic-soils-extent-and-peat-depth-at-30-m-spatial-resolution-based-on-multisource-eo-data-c6e00f390069
 # Erin confirmed that it didn't matter which interval I used for the organic soil mask; all are equivalent.
-organic_soil_extent_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/outputs/version_{organic_soil_model_version_underscore}/organic_soil/ogh_mixed_f1_f15_f2_20260513/five_year_intervals/2001_2005/40000_pixels/20260525/"
-organic_soil_extent_pattern = "organic_soil__2001_2005"
+organic_soil_extent_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/outputs/version_{organic_soil_model_version_underscore}/organic_soil/ogh_mixed_f1_f15_f2_20260513/five_year_intervals/2021_2024/40000_pixels/20260525/"
+organic_soil_extent_pattern = "organic_soil__2021_2024"
 
 
 # Cropland emissions
