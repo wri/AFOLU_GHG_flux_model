@@ -47,13 +47,40 @@ from src.utilities import resize_cluster
 os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "TRUE"
 
 
+def get_sdpt_status(simpleName, simpleType):
+    # Planted forest vs tree crop
+    if int(simpleName) == int(1):
+        sdpt_planted_forest = True
+        sdpt_tree_crop = False
+    elif int(simpleName) == int(2):
+        sdpt_planted_forest = False
+        sdpt_tree_crop = True
+    else:
+        sdpt_planted_forest = False
+        sdpt_tree_crop = False
+
+    # Oil palm
+    if int(simpleType) == int(1):
+        sdpt_oil_palm = True
+    else:
+        sdpt_oil_palm = False
+
+    return sdpt_planted_forest, sdpt_tree_crop, sdpt_oil_palm
+
+# Move general utilities from here up to UU
+#######################################################################################################################
+
+
+def apply_regex_rules():
+
+
+
 def IPCC_land_use(in_dict):
 
-    # Dictionary for output arrays
+    # Dictionary for output arrays: IPCC land use class, land use node code, and land use transitions
     out_dict = {}
 
     # Input data
-    # GLCLU timeseries
     LC_2015_block = in_dict[f"{cn.land_cover_pattern}_2015"]
     LC_2016_block = in_dict[f"{cn.land_cover_pattern}_2016"]
     LC_2017_block = in_dict[f"{cn.land_cover_pattern}_2017"]
@@ -70,6 +97,7 @@ def IPCC_land_use(in_dict):
 
     planted_forest_type_block = in_dict[cn.planted_forest_type_pattern]
     planted_forest_tree_crop_block = in_dict[cn.planted_forest_tree_crop_pattern]
+
     oil_palm_2000_extent_block = in_dict[cn.oil_palm_2000_extent_pattern]
     oil_palm_first_year_block = in_dict[cn.oil_palm_first_year_pattern]
 
@@ -91,20 +119,62 @@ def IPCC_land_use(in_dict):
     # TODO: Read in as a union so only 1 tile set needed
 
 
-
     # Filters tcl_block to only where tcl occurred before 2015 (ignoring 0s)
-    pre_2015_tcl_mask_block = ((tcl_block > 0) & (tcl_block < 15)).astype(np.uint8)
+    #pre_2015_tcl_mask_block = ((tcl_block > 0) & (tcl_block < 15)).astype(np.uint8)
 
-    # Dictionaries of output land use arrays: IPCC land use class, land use node code, and land use transitions
-    land_use_ts = {}
-    land_use_node_ts = {}
-    land_use_transition_ts = {}
-
+    # Add empty arrays for output datasets
     for year in cn.years_annual:
-        land_use_ts[f"land_use_{year}"] =  np.zeros(LC_2015_block.shape, dtype=np.uint8)
-        land_use_node_ts[f"land_use_node_{year}"] = np.zeros(LC_2015_block.shape, dtype=np.uint16)
+        out_dict[f"{cn.IPCC_class_pattern}_{year}"] =  np.zeros(LC_2015_block.shape, dtype=np.uint8)
+        out_dict[f"{cn.IPCC_node_pattern}_{year}"] = np.zeros(LC_2015_block.shape, dtype=np.uint16)
     for year in cn.years_annual[:-1]:
-        land_use_transition_ts[f"land_use_transition_{year}_{year+1}"] = np.zeros(LC_2015_block.shape, dtype=np.uint16)
+        out_dict[f"{cn.IPCC_change_pattern}_{year}_{year+1}"] = np.zeros(LC_2015_block.shape, dtype=np.uint16)
+
+
+    # Iterates through all pixels in the chunk
+    for row in range(LC_2015_block.shape[0]):
+        for col in range(LC_2015_block.shape[1]):
+
+            ### Reads input pixel values
+            LC_2015 = LC_2015_block[row, col]
+            LC_2016 = LC_2016_block[row, col]
+            LC_2017 = LC_2017_block[row, col]
+            LC_2018 = LC_2018_block[row, col]
+            LC_2019 = LC_2019_block[row, col]
+            LC_2020 = LC_2020_block[row, col]
+            LC_2021 = LC_2021_block[row, col]
+            LC_2022 = LC_2022_block[row, col]
+            LC_2023 = LC_2023_block[row, col]
+            LC_2024 = LC_2024_block[row, col]
+            LC_timeseries = np.array([LC_2015, LC_2016, LC_2017, LC_2018, LC_2019, LC_2020, LC_2021, LC_2022, LC_2023, LC_2024]).astype('uint8')
+
+            tcl_year = tcl_block[row, col]
+            driver = drivers_block[row, col]
+
+            planted_forest_tree_crop = planted_forest_tree_crop_block[row, col]     # simpleName
+            planted_forest_type = planted_forest_type_block[row, col]               # simpleType
+            sdpt_planted_forest, sdpt_tree_crop, sdpt_oil_palm = get_sdpt_status(planted_forest_tree_crop, planted_forest_type)
+
+
+
+
+
+    oil_palm_2000_extent = oil_palm_2000_extent_block[row, col]
+            oil_palm_first_year = oil_palm_first_year_block[row, col]
+
+            # Mangrove extent years (1 = mangrove, 0 = no mangrove)
+            mang_1996 = mangrove_extent_1996_block[row, col]
+            mang_2007 = mangrove_extent_2007_block[row, col]
+            mang_2008 = mangrove_extent_2008_block[row, col]
+            mang_2009 = mangrove_extent_2009_block[row, col]
+            mang_2010 = mangrove_extent_2010_block[row, col]
+            mang_2015 = mangrove_extent_2015_block[row, col]
+            mang_2016 = mangrove_extent_2016_block[row, col]
+            mang_2017 = mangrove_extent_2017_block[row, col]
+            mang_2018 = mangrove_extent_2018_block[row, col]
+            mang_2019 = mangrove_extent_2019_block[row, col]
+            mang_2020 = mangrove_extent_2020_block[row, col]
+            mang_timeseries = np.array([mang_1996, mang_2007, mang_2008, mang_2009, mang_2010, mang_2015, mang_2016, mang_2017, mang_2018, mang_2019, mang_2020]).astype('uint8')
+            gmw_mangrove_extent = bool(np.any(mang_timeseries == 1))    # Union of all GMW years: Troe or False
 
 
 
@@ -131,7 +201,7 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
 
     # If a particular tile doesn't exist for an input, an array of 0s of the correct size and datatype is returned instead.
     futures = uu.prepare_to_download_chunk(bounds, updated_download_dict, chunk_length_pixels, is_large_run, logger_worker, False)
-    # print(futures)
+    print(futures)
 
     lu.print_and_log(f"Waiting for requests for data in chunk {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker)
 
@@ -150,13 +220,7 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
     # Calculates stats for the input layers
     for key, array in layers.items():
         chunk_stats.append(uu.calculate_ipcc_stats(array, key, bounds_str, tile_id, 'input_layer'))
-    # print(chunk_stats)
-
-    ### Part 3: Organize data for use before IPCC land use assignment 
-    # TODO
-    # Array of GLCLU []
-    # Union of GMW 
-    # Union of GPW cultivated grassland extent
+    print(chunk_stats)
 
     # Frees up a little memory 
     del updated_download_dict
@@ -374,6 +438,7 @@ def main(cluster_name, run_date, run_local, no_log, no_upload, chunk_shapefile_u
     all_1x1_stats = []
     success_count = 0  # Count of successful chunks
 
+    # TODO: Run locally or in coiled
     # Iterates through the batches
     for i, chunk_batch in enumerate(chunk_batches):
         main_logger.info(f"Processing batch {i + 1}/{len(chunk_batches)} ({len(chunk_batch)} chunks): {uu.timestr()}")
