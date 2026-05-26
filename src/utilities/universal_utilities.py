@@ -1521,6 +1521,53 @@ def calculate_stats(array_per_ha, name, bounds_str, tile_id, in_out, array_per_p
             'data_type': array_per_ha.dtype.name
         }
 
+
+#TODO: Print out counts of all land use classes?
+def calculate_ipcc_stats(array, name, bounds_str, tile_id, in_out):
+
+    # Sums the per pixel totals if relevant
+    if in_out == 'output_layer':
+        values, counts = np.unique(array, return_counts=True)
+        mode = values[np.argmax(counts)]
+    else:
+        mode = 'N/A- input layer or no array supplied'
+
+    # Gets the output file pattern and year/year_range
+    out_pattern, year_range = strip_and_extract_years(name)
+
+    if array is None or not np.any(array):  # Checks if the array is None or empty
+        return {
+            'chunk_id': bounds_str,
+            'tile_id': tile_id,
+            'layer_name': name,
+            'pattern': out_pattern,
+            'years': year_range,
+            'chunk_name': f'{tile_id}__{bounds_str}__{out_pattern}_{year_range}.tif',
+            'tile_name': f'{tile_id}__{out_pattern}_{year_range}.tif',
+            'in_out': in_out,
+            'min_value': 'no data',
+            'max_value': 'no data',
+            'count_value': 'no data',
+            'mode_value': mode,
+            'data_type': 'no data'
+        }
+    else:    # Only calculates stats if there is data in the array
+        return {
+            'chunk_id': bounds_str,
+            'tile_id': tile_id,
+            'layer_name': name,
+            'pattern': out_pattern,
+            'years': year_range,
+            'chunk_name': f'{tile_id}__{bounds_str}__{out_pattern}_{year_range}.tif',
+            'tile_name': f'{tile_id}__{out_pattern}_{year_range}.tif',
+            'in_out': in_out,
+            'min_value': float(np.min(array)),
+            'max_value': float(np.max(array)),
+            'count_value': np.count_nonzero(array),
+            'mode_value': mode,
+            'data_type': array.dtype.name
+        }
+
 # Makes sure that all columns in output chunk stats Pandas dataframe are indeed numeric
 # From https://chatgpt.com/c/68751cbe-6888-800a-bf9d-3657b048a810
 def sanitize_numeric_columns(df, numeric_cols):
