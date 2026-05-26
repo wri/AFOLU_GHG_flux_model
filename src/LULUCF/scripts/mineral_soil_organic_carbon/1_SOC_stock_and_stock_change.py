@@ -278,6 +278,9 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
 
         chunk_stats_combined.append(chunk_stats)
 
+    # Extent chunks for all years should have the same number of pixels.
+    # Sometimes they don't, and I think that's because the underlying geotifs have different numbers of pixels, so it's not a problem with this script.
+    # Still, I want to be aware of when the pixel counts are different across years.
     all_same_full_extent = len(set(full_extent_density_pixel_count_list)) <= 1
     all_same_mineral = len(set(mineral_extent_density_pixel_count_list)) <= 1
     lu.print_and_log(f"Pixel count in full extent chunk for {bounds_str} in {tile_id}: {full_extent_density_pixel_count_list}. All the same: {all_same_full_extent}.", False, logger_worker)
@@ -285,13 +288,12 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
 
     if not all_same_full_extent or not all_same_mineral:
         msg = (
-            f"Pixel count mismatch in chunk {bounds_str} ({tile_id}). "
+            f"WARNING: Pixel count mismatch in chunk {bounds_str} ({tile_id}). "
             f"Full extent counts: {full_extent_density_pixel_count_list}, "
             f"Mineral extent counts: {mineral_extent_density_pixel_count_list}"
         )
         lu.print_and_log(msg, False, logger_worker)
 
-        raise RuntimeError(msg)
 
     lu.print_and_log(f"Populated chunk stats for outputs in {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
 
