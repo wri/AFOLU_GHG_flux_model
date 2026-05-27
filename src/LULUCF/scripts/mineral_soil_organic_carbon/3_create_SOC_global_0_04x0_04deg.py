@@ -27,7 +27,7 @@ python -m src.LULUCF.scripts.mineral_soil_organic_carbon.3_create_SOC_global_0_0
 
 Full run:
 python -m src.utilities.create_cluster -n 5 -t 1 -m 4 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.3_create_SOC_global_0_04x0_04deg -cn mineral_soil --input_date 20251224 -mt standard -mpd global --log_note "This is a global run for SOC v1.0.1 (2000-2022, revised organic/mineral soil split)."
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.3_create_SOC_global_0_04x0_04deg -cn mineral_soil --input_date YYYYMMDD -mt standard -mpd global --log_note "This is a global run for SOC v1.0.1 (2000-2022, revised organic/mineral soil split)."
 
 # Per https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant
 """
@@ -80,7 +80,11 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
 
     full_list_of_vars_change = [
         cn.SOC_net_full_extent_pattern,
-        cn.SOC_net_min_soil_extent_pattern
+        cn.SOC_net_min_soil_extent_pattern,
+        cn.SOC_loss_full_extent_pattern,
+        cn.SOC_loss_min_soil_extent_pattern,
+        cn.SOC_gain_full_extent_pattern,
+        cn.SOC_gain_min_soil_extent_pattern
     ]
 
     # Limits the processed variables to the supplied number (for testing)
