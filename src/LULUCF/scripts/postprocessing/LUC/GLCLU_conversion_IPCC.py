@@ -27,6 +27,7 @@ import time
 import sys
 import pandas as pd
 import numpy as np
+import re
 
 import fsspec
 import xarray as xr
@@ -69,8 +70,51 @@ def get_oil_palm_status(pre_2000_plantation, sdpt_name, descals_planting_year,  
 
 # Move general utilities from here up to UU
 #######################################################################################################################
+""" Regex-based land-use reclassification rules
+These rules replace the default land use classes.
+1. Convert annual GLAD LC values to LU tokens.
+2. Use regex to identify token patterns for exceptions.
+3. Reclassify token arrays and assign a matching node_code array.
+
+Node codes used here:
+1) Settlements and Infrastructure:
+    10 = Built from GLAD data
+
+2) Cropland:
+    20  = Crop from GLAD data
+    21  = Crop from oil palm extent
+    22  = Crop from SDPT tree crop extent
+    23X = Crop from permanent agriculture driver
+         - 233 = TV after TCL where driver is permanent agriculture (assume tree crops)
+         - 234 = SV after TCL outside GPW extent (i.e. "rangeland") where driver is permanent agriculture (assume crops)
+
+3) Forest:
+    30  = Tall veg from GLAD data
+    31  = Forest from SDPT planted forest extent
+    32  = Forest from GMW mangrove extent
+    33X = Short vegetation or bare reclassified as Forest using drivers rules (assume unstocked forest)
+        333 = Forest from shifting cultivation driver
+        334 = Forest from logging driver
+        335 = Forest from wildfire driver
+        337 = Forest from natural disturbance driver
+
+4) Grassland:
+    40 = Short veg from GLAD data
+    41 = Short veg from permanent agriculture driver
+        - SV after TCL inside GPW extent where driver is permanent agriculture (assume rangeland)
+
+
+5) Wetland:
+    50 = Wetland from GLAD data
+
+6) Other
+    60 = Bare from GLAD data
+    61 = Water from GLAD data
+    62 = Snow/ice from GLAD data
+"""
+
 # IPCC Land use hierarchy: Settlements > Cropland > Forest Land > Grassland > Wetlands > Other
-# GLAD LC numeric values --> Default IPCC LU assignment
+# Default GLAD LC numeric values
 settlement_lc   = {250}                                         # Built up
 cropland_lc     = {244}                                         # Cropland
 forest_lc       = set(range(27, 49)) | set(range(127, 149))     # Tall vegetation
@@ -80,7 +124,7 @@ bare_lc         = set(range(0, 5)) | set(range(100, 105))       # Bare
 water_lc        = set(range(205, 208))                          # Open water
 ice_lc          = {241}                                         # Snow/ice
 
-# Lookup table to go from GLAD LC -> LU token
+# Lookup table to go from GLAD LC code -> default LU token
 lc_token_map = {
     **{v: "S" for v in settlement_lc},
     **{v: "C" for v in cropland_lc},
@@ -92,7 +136,13 @@ lc_token_map = {
     **{v: "I" for v in ice_lc},
 }
 
-# Node codes describing which rule was used to determine final land use
+# Function to get land use token per land cover numeric value (tokens used for regex exception rules)
+def token_for_lc(v):
+    if v not in lc_token_map:
+        raise ValueError(f"Unknown GLCLU code: {v}")
+    return lc_token_map[v]
+
+# Node code values based on what exception was applied
 node_code_map = {
     "built_glad": 10,
 
@@ -110,7 +160,7 @@ node_code_map = {
     "forest_nat_dist_driver": 337,
 
     "grass_glad": 40,
-    "grass_perm_ag_driver": 41,
+    "grass_gpw": 41,
 
     "wetland_glad": 50,
 
@@ -139,31 +189,136 @@ def default_node_code(token):
         return node_code_map["ice_glad"]
     return None
 
-# Function to get land use token per land cover numeric value (tokens used for regex exception rules)
-def token_for_lc(v):
-    return lc_token_map.get(v, "-")
-
+# Function to override default values based on regex rules
 def set_tokens(tokens, node_codes, indices, new_token, node_code):
     for i in indices:
         tokens[i] = new_token
         node_codes[i] = node_code
 
+# Converts char tokens to final int values in LU map
+lu_token_map = {
+    "S": 1,
+    "C": 2,
+    "F": 3,
+    "G": 4,
+    "W": 5,
+    "B": 6,
+    "O": 6,
+    "I": 6,
+}
+
+def apply_extent_rules(lu_dict):
+    tokens = lu_dict["tokens"]
+    node_codes = lu_dict["node_codes"]
+
+    crop_reclass_idx = [i for i, token in enumerate(tokens) if token in {"F", "G", "W", "B"}]
+    forest_reclass_idx = [i for i, token in enumerate(tokens) if token in {"G", "W", "B"}]
+    # TODO: May want to consider not including wetland?
+
+    # Crop is highest priority and extents are applied in this order: oil palm -> SDPT tree crop --> pre-2000 plantation
+    if lu_dict["oil_palm"]:
+        set_tokens(tokens, node_codes, crop_reclass_idx, "C", node_code_map["crop_oil_palm"])
+        return True
+    if lu_dict["sdpt_tree_crop"]:
+        set_tokens(tokens, node_codes, crop_reclass_idx, "C", node_code_map["crop_sdpt_tree_crop"])
+        return True
+
+    # If no crop extent applies, forest extents are applied by this order: GMW mangrove -> SDPT planted forest
+    if lu_dict["gmw_mangrove"]:
+        set_tokens(tokens, node_codes, forest_reclass_idx, "F", node_code_map["forest_gmw_mangrove"])
+        return True
+    if lu_dict["sdpt_planted_forest"]:
+        set_tokens(tokens, node_codes, forest_reclass_idx, "F", node_code_map["forest_sdpt_planted_forest"])
+        return True
+    return False
+
+def apply_all_tall_veg(lu_dict):
+    tcl_prior = lu_dict["tcl_prior"]
+    driver = lu_dict["driver"]
+
+    all_idx = range(len(lu_dict["tokens"]))
+
+    # If TCL has occurred by the start of timeseries and the driver is permanent ag, assume tall veg is tree crops
+    if tcl_prior and driver == 1:
+        set_tokens(lu_dict["tokens"], lu_dict["node_codes"], all_idx, "C", node_code_map["crop_perm_ag_driver"])
+
+# Short vegetation all years
+def apply_all_short_veg(lu_dict):
+    tcl_prior = lu_dict["tcl_prior"]
+    driver = lu_dict["driver"]
+
+    all_idx = range(len(lu_dict["tokens"]))
+
+    driver_to_forest_node = {
+        3: node_code_map["forest_shift_cult_driver"],
+        4: node_code_map["forest_logging_driver"],
+        5: node_code_map["forest_wildfire_driver"],
+        7: node_code_map["forest_nat_dist_driver"],
+    }
+
+    # If TCL has occurred by the start of the timeseries and the driver is permanent ag and not in cultivated grass extent, assume crop
+    if tcl_prior and driver == 1:
+        if not lu_dict["gpw_cultiv_grass"]:
+            set_tokens(lu_dict["tokens"], lu_dict["node_codes"], all_idx, "C", node_code_map["crop_perm_ag_driver"])
+        else:
+            set_tokens(lu_dict["tokens"], lu_dict["node_codes"], all_idx, "G", node_code_map["grass_gpw"])
+    # If TCL has occurred by the start of the timeseries and the driver is shifting cultivation, logging, wildfire, or other natural disturbances, assume unstocked forest
+    elif tcl_prior and driver in driver_to_forest_node:
+        set_tokens(lu_dict["tokens"], lu_dict["node_codes"], all_idx, "F", driver_to_forest_node[driver])
 
 
+def apply_regex_rules(lc_timeseries, driver, tcl_year, oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove, gpw_cultiv_grass):
 
-def apply_regex_rules(LC_timeseries, tcl_before_ts, driver, oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove):
+    # Create default token array and default node code array from LC timeseries
+    tokens = [token_for_lc(v) for v in lc_timeseries]               #char array representing land use timeseries
+    node_codes = [default_node_code(token) for token in tokens]     #int array representing class definition rules applied throughout the timeseries
 
+    lu_dict ={
+        "tokens": tokens,
+        "node_codes": node_codes,
+        "driver": driver,
+        "tcl_year": tcl_year,
+        "tcl_prior": (tcl_year != 0 and tcl_year <= 2015),
+        "oil_palm": oil_palm,
+        "sdpt_tree_crop": sdpt_tree_crop,
+        "sdpt_planted_forest": sdpt_planted_forest,
+        "gmw_mangrove": gmw_mangrove,
+        "gpw_cultiv_grass": gpw_cultiv_grass,
+    }
 
+    # Check if oil palm, tree crop or forest based on special cases
+    extent_rule_applied = apply_extent_rules(lu_dict)
 
+    if not extent_rule_applied:
+        token_seq = "".join(lu_dict["tokens"]) #Creates a concat string
+        if re.fullmatch(r"F+", token_seq):
+            apply_all_tall_veg(lu_dict)
+        elif re.fullmatch(r"G+", token_seq):
+            apply_all_short_veg(lu_dict)
 
+    # Final token and node code timeseries
+    final_tokens = lu_dict["tokens"]
+    node_code_ts = lu_dict["node_codes"]
 
-    return LU_timeseries
+    # Convert final tokens to numeric LU codes
+    lu_ts = [lu_token_map[token] for token in final_tokens]
+
+    # Create transition timeseries: 2015_2016 through 2023_2024
+    transition_ts = [int(f"{lu_ts[i]}{lu_ts[i + 1]}") for i in range(len(lu_ts) - 1)]
+
+    # Create sequential unique LU summary ([3, 3, 3, 4, 4, 4, 2, 2, 2] -> [3, 4, 2] -> Forest to Grass to Crop)
+    summary = []
+    for lu in lu_ts:
+        if not summary or lu != summary[-1]:
+            summary.append(lu)
+
+    return lu_ts, node_code_ts, transition_ts, summary
 
 
 # TODO: Does this need to use numba?
 def IPCC_land_use(in_dict):
 
-    # Dictionary for output arrays: IPCC land use class, land use node code, land use transition, and land use trajectory
+    # Dictionary for output arrays: IPCC land use class, land use node code, land use change, and land use summary
     out_dict = {}
 
     # Input data
@@ -203,19 +358,50 @@ def IPCC_land_use(in_dict):
     mangrove_extent_2020_block = in_dict[f"{cn.mangrove_extent_processed_pattern}_2020"]
 
     # GPW cultivated grassland extent
+    # TODO: Add gpw_cultiv_grass here
     # TODO: Read in as a union so only 1 tile set needed
 
+    # Creat empty arrays for output datasets
+    LU_2015_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
+    LU_2016_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
+    LU_2017_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
+    LU_2018_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
+    LU_2019_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
+    LU_2020_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
+    LU_2021_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
+    LU_2022_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
+    LU_2023_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
+    LU_2024_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
 
-    # Filters tcl_block to only where tcl occurred before 2015 (ignoring 0s)
-    #pre_2015_tcl_mask_block = ((tcl_block > 0) & (tcl_block < 15)).astype(np.uint8)
+    node_code_2015_block = np.zeros(LC_2015_block.shape, dtype=np.uint16)
+    node_code_2016_block = np.zeros(LC_2015_block.shape, dtype=np.uint16)
+    node_code_2017_block = np.zeros(LC_2015_block.shape, dtype=np.uint16)
+    node_code_2018_block = np.zeros(LC_2015_block.shape, dtype=np.uint16)
+    node_code_2019_block = np.zeros(LC_2015_block.shape, dtype=np.uint16)
+    node_code_2020_block = np.zeros(LC_2015_block.shape, dtype=np.uint16)
+    node_code_2021_block = np.zeros(LC_2015_block.shape, dtype=np.uint16)
+    node_code_2022_block = np.zeros(LC_2015_block.shape, dtype=np.uint16)
+    node_code_2023_block = np.zeros(LC_2015_block.shape, dtype=np.uint16)
+    node_code_2024_block = np.zeros(LC_2015_block.shape, dtype=np.uint16)
 
-    # Add empty arrays for output datasets
-    for year in cn.years_annual:
-        out_dict[f"{cn.IPCC_class_pattern}_{year}"] =  np.zeros(LC_2015_block.shape, dtype=np.uint8)
-        out_dict[f"{cn.IPCC_node_pattern}_{year}"] = np.zeros(LC_2015_block.shape, dtype=np.uint16)
-    for year in cn.years_annual[:-1]:
-        out_dict[f"{cn.IPCC_change_pattern}_{year}_{year+1}"] = np.zeros(LC_2015_block.shape, dtype=np.uint16)
-    out_dict[f"{cn.IPCC_summary_pattern}"] = np.zeros(LC_2016_block.shape, dtype=np.uint32)
+    LU_change_2015_2016_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
+    LU_change_2016_2017_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
+    LU_change_2017_2018_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
+    LU_change_2018_2019_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
+    LU_change_2019_2020_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
+    LU_change_2020_2021_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
+    LU_change_2021_2022_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
+    LU_change_2022_2023_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
+    LU_change_2023_2024_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
+
+    LU_summary_block = np.zeros(LC_2015_block.shape, dtype=np.uint32)
+
+    # for year in cn.years_annual:
+    #     out_dict[f"{cn.IPCC_class_pattern}_{year}"] =  np.zeros(LC_2015_block.shape, dtype=np.uint8)
+    #     out_dict[f"{cn.IPCC_node_pattern}_{year}"] = np.zeros(LC_2015_block.shape, dtype=np.uint16)
+    # for year in cn.years_annual[:-1]:
+    #     out_dict[f"{cn.IPCC_change_pattern}_{year}_{year+1}"] = np.zeros(LC_2015_block.shape, dtype=np.uint16)
+    # out_dict[f"{cn.IPCC_summary_pattern}"] = np.zeros(LC_2016_block.shape, dtype=np.uint32)
 
     # Iterates through all pixels in the chunk
     for row in range(LC_2015_block.shape[0]):
@@ -236,10 +422,6 @@ def IPCC_land_use(in_dict):
 
             tcl_year = tcl_block[row, col]
             driver = drivers_block[row, col]
-            try:
-                tcl_before_ts = (int(tcl_year) <= 2015)
-            except:
-                tcl_before_ts = False
 
             planted_forest_tree_crop = planted_forest_tree_crop_block[row, col]     # simpleName
             sdpt_planted_forest, sdpt_tree_crop = get_sdpt_status(planted_forest_tree_crop)
@@ -248,7 +430,7 @@ def IPCC_land_use(in_dict):
             planted_forest_type = planted_forest_type_block[row, col]  # simpleType
             oil_palm_first_year = oil_palm_first_year_block[row, col]
             oil_palm = get_oil_palm_status(oil_palm_2000_extent, planted_forest_type, oil_palm_first_year, 2024)
-            #TODO: Come back to this if allowing planting year logic during LU timeseries (i.e. F -> C in tall veg remaining tall veg)
+            #TODO: Come back to this if allowing oil_palm planting year logic (i.e. F -> C in tall veg remaining tall veg).
 
             # Mangrove extent years (1 = mangrove, 0 = no mangrove)
             mang_1996 = mangrove_extent_1996_block[row, col]
@@ -265,26 +447,102 @@ def IPCC_land_use(in_dict):
             mang_timeseries = np.array([mang_1996, mang_2007, mang_2008, mang_2009, mang_2010, mang_2015, mang_2016, mang_2017, mang_2018, mang_2019, mang_2020]).astype('uint8')
             gmw_mangrove = bool(np.any(mang_timeseries == 1))
 
+            #TODO: Add gpw_cultiv_grass here
+
             # Pass in values for regex rules
-            a, b, c, d, e, f = apply_regex_rules(LC_timeseries, tcl_before_ts, driver, oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove)
+            LU_timeseries, node_code_timeseries, LU_change_timeseries, summary = (
+                apply_regex_rules(LC_timeseries, driver, tcl_year, oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove, False))
+            #TODO: Add gpw_cultiv_grass (currently set to False)
 
+            # Write out results
+            LU_2015_block[row, col] = LU_timeseries[0]
+            LU_2016_block[row, col] = LU_timeseries[1]
+            LU_2017_block[row, col] = LU_timeseries[2]
+            LU_2018_block[row, col] = LU_timeseries[3]
+            LU_2019_block[row, col] = LU_timeseries[4]
+            LU_2020_block[row, col] = LU_timeseries[5]
+            LU_2021_block[row, col] = LU_timeseries[6]
+            LU_2022_block[row, col] = LU_timeseries[7]
+            LU_2023_block[row, col] = LU_timeseries[8]
+            LU_2024_block[row, col] = LU_timeseries[9]
 
+            node_code_2015_block[row, col] = node_code_timeseries[0]
+            node_code_2016_block[row, col] = node_code_timeseries[1]
+            node_code_2017_block[row, col] = node_code_timeseries[2]
+            node_code_2018_block[row, col] = node_code_timeseries[3]
+            node_code_2019_block[row, col] = node_code_timeseries[4]
+            node_code_2020_block[row, col] = node_code_timeseries[5]
+            node_code_2021_block[row, col] = node_code_timeseries[6]
+            node_code_2022_block[row, col] = node_code_timeseries[7]
+            node_code_2023_block[row, col] = node_code_timeseries[8]
+            node_code_2024_block[row, col] = node_code_timeseries[9]
+
+            LU_change_2015_2016_block[row, col] = LU_change_timeseries[0]
+            LU_change_2016_2017_block[row, col] = LU_change_timeseries[1]
+            LU_change_2017_2018_block[row, col] = LU_change_timeseries[2]
+            LU_change_2018_2019_block[row, col] = LU_change_timeseries[3]
+            LU_change_2019_2020_block[row, col] = LU_change_timeseries[4]
+            LU_change_2020_2021_block[row, col] = LU_change_timeseries[5]
+            LU_change_2021_2022_block[row, col] = LU_change_timeseries[6]
+            LU_change_2022_2023_block[row, col] = LU_change_timeseries[7]
+            LU_change_2023_2024_block[row, col] = LU_change_timeseries[8]
+
+            # Convert array into single value
+            summary_code = int("".join(str(x) for x in summary))
+            LU_summary_block[row, col] = summary_code
+
+    # Write final blocks to out_dict
+    out_dict[f"{cn.IPCC_class_pattern}_2015"] = LU_2015_block.copy()
+    out_dict[f"{cn.IPCC_class_pattern}_2016"] = LU_2016_block.copy()
+    out_dict[f"{cn.IPCC_class_pattern}_2017"] = LU_2017_block.copy()
+    out_dict[f"{cn.IPCC_class_pattern}_2018"] = LU_2018_block.copy()
+    out_dict[f"{cn.IPCC_class_pattern}_2019"] = LU_2019_block.copy()
+    out_dict[f"{cn.IPCC_class_pattern}_2020"] = LU_2020_block.copy()
+    out_dict[f"{cn.IPCC_class_pattern}_2021"] = LU_2021_block.copy()
+    out_dict[f"{cn.IPCC_class_pattern}_2022"] = LU_2022_block.copy()
+    out_dict[f"{cn.IPCC_class_pattern}_2023"] = LU_2023_block.copy()
+    out_dict[f"{cn.IPCC_class_pattern}_2024"] = LU_2024_block.copy()
+
+    out_dict[f"{cn.IPCC_node_pattern}_2015"] = node_code_2015_block.copy()
+    out_dict[f"{cn.IPCC_node_pattern}_2016"] = node_code_2016_block.copy()
+    out_dict[f"{cn.IPCC_node_pattern}_2017"] = node_code_2017_block.copy()
+    out_dict[f"{cn.IPCC_node_pattern}_2018"] = node_code_2018_block.copy()
+    out_dict[f"{cn.IPCC_node_pattern}_2019"] = node_code_2019_block.copy()
+    out_dict[f"{cn.IPCC_node_pattern}_2020"] = node_code_2020_block.copy()
+    out_dict[f"{cn.IPCC_node_pattern}_2021"] = node_code_2021_block.copy()
+    out_dict[f"{cn.IPCC_node_pattern}_2022"] = node_code_2022_block.copy()
+    out_dict[f"{cn.IPCC_node_pattern}_2023"] = node_code_2023_block.copy()
+    out_dict[f"{cn.IPCC_node_pattern}_2024"] = node_code_2024_block.copy()
+
+    out_dict[f"{cn.IPCC_change_pattern}_2015_2016"] = LU_change_2015_2016_block.copy()
+    out_dict[f"{cn.IPCC_change_pattern}_2016_2017"] = LU_change_2016_2017_block.copy()
+    out_dict[f"{cn.IPCC_change_pattern}_2017_2018"] = LU_change_2017_2018_block.copy()
+    out_dict[f"{cn.IPCC_change_pattern}_2018_2019"] = LU_change_2018_2019_block.copy()
+    out_dict[f"{cn.IPCC_change_pattern}_2019_2020"] = LU_change_2019_2020_block.copy()
+    out_dict[f"{cn.IPCC_change_pattern}_2020_2021"] = LU_change_2020_2021_block.copy()
+    out_dict[f"{cn.IPCC_change_pattern}_2021_2022"] = LU_change_2021_2022_block.copy()
+    out_dict[f"{cn.IPCC_change_pattern}_2022_2023"] = LU_change_2022_2023_block.copy()
+    out_dict[f"{cn.IPCC_change_pattern}_2023_2024"] = LU_change_2023_2024_block.copy()
+
+    out_dict[f"{cn.IPCC_summary_pattern}"] = LU_summary_block.copy()
+
+    return out_dict
 
 
 
 def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is_large_run, no_upload, output_folders, stage):
 
-    # Stores the min, mean, and max chunks for inputs and outputs for the chunk
     chunk_stats = []
     process = psutil.Process(os.getpid())
     logger_worker = lu.setup_logging_worker()
     chunk_start_time = time.time()
-
     uu.rename_s3_task_file(stage, bounds, "preprocessing_", is_large_run, logger_worker)
 
     bounds_str = uu.boundstr(bounds)  # [8, -1, 9, 0] to 8_-1_9_0
     tile_id = uu.xy_to_tile_id(bounds[0], bounds[3])  # YYN/S_XXXE/W
     chunk_length_pixels = uu.calc_chunk_length_pixels(bounds)  # Chunk length in pixels
+
+
 
     ### Part 1: Downloads all inputs for chunk.
     # Replaces the placeholder tile_id in the download data dictionary with the tile_id for this chunk
@@ -307,26 +565,28 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
             lu.print_and_log(f"{status}: {uu.timestr()}", False, logger_worker)
         layers[layer] = data
 
-    ### Part 2: Calculates min, mode, and max for each input chunk.
-    # Calculates stats for the input layers
-    for key, array in layers.items():
-        chunk_stats.append(uu.calculate_ipcc_stats(array, key, bounds_str, tile_id, 'input_layer'))
-    print(chunk_stats)
-
-    # Frees up a little memory 
+    # Frees up a little memory
     del updated_download_dict
     del futures
     gc.collect()
-    
+
+
+
+    ### Part 2: Calculates min, mode, and max for each input chunk.
+    # Calculates stats for the input layers
+    # for key, array in layers.items():
+    #     chunk_stats.append(uu.calculate_ipcc_stats(array, key, bounds_str, tile_id, 'input_layer'))
+    # print(chunk_stats)
+    # TODO: What stats do we want to know for input chunks?
+
     
 
-    ### Part 4: IPCC land use assignment
-
-    lu.print_and_log(f"Determining IPCC land use in {bounds_str} in {tile_id}: {uu.timestr()}",False, logger_worker)
+    ### Part 3: IPCC land use assignment
+    lu.print_and_log(f"Assigning IPCC land use in {bounds_str} in {tile_id}: {uu.timestr()}",False, logger_worker)
     uu.rename_s3_task_file(stage, bounds, "calculating_", is_large_run, logger_worker)
     ipcc_start = time.time()
 
-    out_dict = IPCC_land_use()
+    out_dict = IPCC_land_use(layers)
     print("out_dict:", out_dict)
 
     ipcc_end = time.time()
@@ -334,25 +594,34 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
     lu.print_and_log(f"Memory usage after IPCC stage completed for {bounds_str}: {process.memory_info().rss / 1024 ** 2:.2f} MB", False, logger_worker)
     lu.print_and_log(f"Assigned IPCC land use in {bounds_str} in {tile_id} in {round(ipcc_end - ipcc_start)} seconds: {uu.timestr()}",False, logger_worker)
 
+    # Deletes all unnecessary input dictionaries before moving on
+    in_dicts = [layers]
+    [in_dict.clear() for in_dict in in_dicts]
 
 
-    ### Part 6: Calculates chunk stats
+    #TODO: Add Zarr step here
+
+
+    ### Part 5: Calculates chunk stats
     lu.print_and_log(f"Populating chunk stats for outputs in {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker)
 
-    # The relevant pixel area (m^2) file in s3
-    pixel_area_uri = f"{cn.pixel_area_dir}{cn.pixel_area_pattern}_{tile_id}.tif"
-
-    # Gets numpy arrays of the model output being analyzed and the area (m^2) per pixel
-    pixel_area_chunk = uu.get_tile_dataset_rio(pixel_area_uri, bounds, chunk_length_pixels, 'Float32')
-    pixel_area_chunk = pixel_area_chunk[0]  # Converts downloaded tuple (array, status) to just the array
+    # # The relevant pixel area (m^2) file in s3
+    # pixel_area_uri = f"{cn.pixel_area_dir}{cn.pixel_area_pattern}_{tile_id}.tif"
+    #
+    # # Gets numpy arrays of the model output being analyzed and the area (m^2) per pixel
+    # pixel_area_chunk = uu.get_tile_dataset_rio(pixel_area_uri, bounds, chunk_length_pixels, 'Float32')
+    # pixel_area_chunk = pixel_area_chunk[0]  # Converts downloaded tuple (array, status) to just the array
 
     # Calculates stats for the output layers
     for key, array in out_dict.items():
         chunk_stats.append(uu.calculate_ipcc_stats(array, key, bounds_str, tile_id, 'output_layer'))
 
     lu.print_and_log(f"Populated chunk stats for outputs in {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
+    # TODO: updated to pixel counts per class or total pixel area per class. Update with LU_change and LU_summary
 
-    ### Part 7: Saves numpy arrays as rasters and uploads to s3
+
+
+    ### Part 6: Saves numpy arrays as rasters and uploads to s3
 
     uu.rename_s3_task_file(stage, bounds, "uploading_", is_large_run, logger_worker)
 
@@ -412,7 +681,8 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
     return return_message, chunk_stats  # Return both the success message and the statistics
 
 
-def main(cluster_name, run_date, run_local, no_log, no_upload, chunk_shapefile_uri, bounding_box, chunk_size_deg, first_chunks, log_note):
+def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, no_upload=False, create_zarr=False,
+         chunk_shapefile_uri=False, bounding_box=None, chunk_size_deg=None, first_chunks=None, log_note=None):
 
     ### Step 1: Preparation
 
@@ -427,7 +697,6 @@ def main(cluster_name, run_date, run_local, no_log, no_upload, chunk_shapefile_u
     # Determines if arguments for start and end year are valid
     start_year = cn.first_model_year_annual
     end_year = cn.last_model_year_annual
-    # TODO: Delete?
 
     # Connects to Coiled cluster if not running locally and the named cluster exists
     cluster, client, run_local = uu.connect_to_Coiled_cluster(cluster_name, run_local)
@@ -448,7 +717,6 @@ def main(cluster_name, run_date, run_local, no_log, no_upload, chunk_shapefile_u
 
     # Calculates the interval type, difference between start and end years of intervals, and the model output years for the model run
     interval_type, interval_year_diff_list, interval_length_list, interval_end_years = uu.get_interval_info(end_year, main_logger, start_year)
-    # TODO: Delete?
 
     # Returns a dataframe of chunk_ids and iso code from the GADM4.1 1x1 deg fishnet used for chunk stats.
     fishnet_iso_df = uu.fishnet_with_GADM_iso(chunk_shapefile_uri)
@@ -462,19 +730,18 @@ def main(cluster_name, run_date, run_local, no_log, no_upload, chunk_shapefile_u
 
     # Dictionary of data to download (inputs to LU assignment).
     download_dict = {
-        # TCL year
+        cn.tree_cover_loss_pattern: f"{cn.tree_cover_loss_dir}{cn.tree_cover_loss_pattern}_{sample_tile_id}.tif",
         cn.drivers_pattern: f"{cn.drivers_path}{sample_tile_id}_{cn.drivers_pattern}.tif",
-
         cn.oil_palm_2000_extent_pattern: f"{cn.oil_palm_2000_extent_dir}{sample_tile_id}_{cn.oil_palm_2000_extent_pattern}.tif",
         cn.oil_palm_first_year_pattern: f"{cn.oil_palm_first_year_dir}{cn.oil_palm_first_year_pattern}_{sample_tile_id}.tif",
         cn.planted_forest_tree_crop_pattern: f"{cn.planted_forest_tree_crop_dir}{sample_tile_id}.tif",
         cn.planted_forest_type_pattern: f"{cn.planted_forest_type_dir}{sample_tile_id}_{cn.planted_forest_type_pattern}.tif",
-        # Global pasture watch
     }
 
     # GLCLU timeseries
     for year in cn.years_annual:
         download_dict[f"{cn.land_cover_pattern}_{year}"] = f"{cn.land_cover_annual_path}{year}/{sample_tile_id}.tif"
+        #TODO: Add global pasture watch data
 
     # GMW mangrove extent timeseries
     for year in cn.mangrove_extent_years:
@@ -494,17 +761,9 @@ def main(cluster_name, run_date, run_local, no_log, no_upload, chunk_shapefile_u
     main_logger.info(f"Getting tile_id of first tile in each tile set: {uu.timestr()}")
     first_tiles = uu.first_file_name_in_s3_folder(download_dict)
 
-    # Creates a download dictionary with the datatype of each input in the values.
-    main_logger.info(f"Getting datatype of first tile in each tile set: {uu.timestr()}")
-    download_dict_with_data_types = uu.add_file_type_to_dict(first_tiles)
-
-    # main_logger.info(f"download_dict_with_data_types for {stage}:")
-    # for key, value in download_dict_with_data_types.items():
-    #     main_logger.info(f"  {key}: {value}")
-    # TODO: Delete?
 
     # Creates a list of output directories for all outputs
-    output_dir_list_core_intermediate = [cn.IPCC_class_dir, cn.IPCC_node_dir, cn.IPCC_change_dir]
+    output_dir_list_core_intermediate = [cn.IPCC_class_dir, cn.IPCC_node_dir, cn.IPCC_change_dir, cn.IPCC_summary_dir]
     output_dir_list = uu.create_output_dir_name_list(output_dir_list_core_intermediate, interval_type, start_year, chunk_size_pixels,
                             model_type, interval_end_years, interval_year_diff_list, run_date, False)
     output_dir_list.sort()  # Alphabetically order the outputs (modifies output_dir_list)
@@ -513,7 +772,7 @@ def main(cluster_name, run_date, run_local, no_log, no_upload, chunk_shapefile_u
     for item in output_dir_list:
         main_logger.info(f"  {item}")
 
-
+    # TODO: Add zarr step here
 
     ### Step 2: Create 1x1 degree outputs
 
@@ -530,20 +789,29 @@ def main(cluster_name, run_date, run_local, no_log, no_upload, chunk_shapefile_u
     success_count = 0  # Count of successful chunks
 
     # TODO: Run locally or in coiled
+
     # Iterates through the batches
     for i, chunk_batch in enumerate(chunk_batches):
         main_logger.info(f"Processing batch {i + 1}/{len(chunk_batches)} ({len(chunk_batch)} chunks): {uu.timestr()}")
         main_logger.info("Creating batch task txts in s3...")
         uu.create_s3_task_files(stage, chunk_batch)
 
-        # This approach handles large task lists (graphs) better than [dask.delayed()]
-        futures = []
-        for chunk in chunk_batch:
-            future = client.submit(calculate_and_upload_IPCC_land_use, )
-            futures.append(future)
-        batch_results = client.gather(futures)
+        if run_local:
+            batch_results = [calculate_and_upload_IPCC_land_use(chunk, download_dict, True, no_upload, output_dir_list, stage)
+                             for chunk in chunk_batch]
+            all_results.extend(batch_results)
 
-        all_results.extend(batch_results)
+            del batch_results
+
+        else:
+            futures = [client.submit(calculate_and_upload_IPCC_land_use, chunk, download_dict, True, no_upload, output_dir_list, stage)
+                       for chunk in chunk_batch]
+            batch_results = client.gather(futures)
+            all_results.extend(batch_results)
+
+            del futures
+            del batch_results
+            client.run(gc.collect)
 
         success_count, batch_stats = uu.count_successful_chunks(chunk_batch, True, main_logger, batch_results)
         all_1x1_stats.extend(batch_stats)
@@ -558,13 +826,9 @@ def main(cluster_name, run_date, run_local, no_log, no_upload, chunk_shapefile_u
             with pd.ExcelWriter(local_spreadsheet) as writer:
                 df_batch_stats.to_excel(writer, sheet_name=f'stats__batch_{i}', index=False)
 
-        del futures
-        del batch_results
-        client.run(gc.collect)
-
         uu.stage_duration(start_time, uu.timestr(), f"{stage}, batch {i}", main_logger)
 
-
+    #TODO: Add from stage 4 on
 
 
 
@@ -580,8 +844,10 @@ if __name__ == '__main__':
     parser.add_argument('-ln', '--log_note', help='Note to include in the log.')
 
     parser.add_argument('--run_local', action='store_true', help='Run locally without Dask/Coiled')
+    parser.add_argument('--no_stats', action='store_true', help='Do not create the chunk stats spreadsheet')
     parser.add_argument('--no_log', action='store_true', help='Do not create the combined log')
     parser.add_argument('--no_upload', action='store_true', help='Do not save and upload outputs to s3')
+    parser.add_argument('--create_zarr', action='store_true', help='Create and populate global mega-zarr with model outputs')
 
     args = parser.parse_args()
 
@@ -594,12 +860,14 @@ if __name__ == '__main__':
     log_note = args.log_note
 
     run_local = args.run_local
+    no_stats = args.no_stats
     no_log = args.no_log
     no_upload = args.no_upload
+    create_zarr = args.create_zarr
 
     # Create the cluster with command line arguments
-    main(cluster_name, run_date, run_local, no_log, no_upload, chunk_shapefile_uri, bounding_box=bounding_box,
-         chunk_size_deg=chunk_size_deg, first_chunks=first_chunks, log_note=log_note)
+    main(cluster_name, run_date, run_local, no_stats, no_log, no_upload, create_zarr, chunk_shapefile_uri,
+         bounding_box=bounding_box, chunk_size_deg=chunk_size_deg, first_chunks=first_chunks, log_note=log_note)
 
 
 

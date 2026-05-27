@@ -743,6 +743,9 @@ model_type_placeholder = "MODEL_TYPE"
 outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs/version_{model_version_underscore}/"
 outputs_path_mega_zarr = f"{outputs_path}mega_zarr/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/CHUNK_SIZE_pixels/RUN_DATE/"
 
+#IPCC LUC translation version number
+IPCC_LU_version = "1.0.0"
+
 ### IPCC classes and change
 IPCC_class_path = "IPCC_basic_class"
 IPCC_class_pattern = "IPCC_class"
@@ -761,11 +764,12 @@ grassland_IPCC = 4
 wetland_IPCC = 5
 otherland_IPCC = 6
 
-IPCC_class_max_val = 6  # Maximum value of IPCC class codes
+#IPCC_class_max_val = 6  # Maximum value of IPCC class codes
 
-IPCC_class_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs/LUC/{IPCC_class_path}/YEAR/CHUNK_SIZE_pixels/RUN_DATE/"
-IPCC_node_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs/LUC/{IPCC_node_path}/YEAR/CHUNK_SIZE_pixels/RUN_DATE/"
-IPCC_change_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs/LUC/{IPCC_change_path}/START_END/CHUNK_SIZE_pixels/RUN_DATE/"
+IPCC_class_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/land_use/{IPCC_LU_version}/{IPCC_class_path}/YEAR/CHUNK_SIZE_pixels/RUN_DATE/"
+IPCC_node_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/land_use/{IPCC_LU_version}/{IPCC_node_path}/YEAR/CHUNK_SIZE_pixels/RUN_DATE/"
+IPCC_change_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/land_use/{IPCC_LU_version}/{IPCC_change_path}/START_END/CHUNK_SIZE_pixels/RUN_DATE/"
+IPCC_summary_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/land_use/{IPCC_LU_version}/{IPCC_summary_path}/2015_2024/CHUNK_SIZE_pixels/RUN_DATE/"
 
 land_state_pattern = "land_state_node"
 land_state_node_fire_value = 9  # State nodes that end in this value had fire
