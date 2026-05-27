@@ -24,7 +24,7 @@ Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Coiled small tests:
 python -m src.utilities.create_cluster -n 1 -m 32 -cn SOC_zonal_stats --zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stats -bb 10 49 11 50 -fv 2 -ft 2 -mt standard -mpd global --input_date YYYYMMDD -zd test_box  -mcstn KEEP_definitive_runs/SOC_density/v1_0_0__2000_2022__20251224/soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx
+python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stats -bb 10 49 11 50 -fv 2 -ft 2 -mt standard -mpd global --input_date YYYYMMDD -zd test_box --veg_input_date 20260130 --veg_model_version 1.0.05 --veg_model_type standard --veg_model_path_description global -mcstn KEEP_definitive_runs/SOC_density/v1_0_0__2000_2022__20251224/soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx
 
 Coiled 8-tile test (Central and East Africa):
 python -m src.utilities.create_cluster -n 50 -m 32 -cn SOC_zonal_stats --zonal_stats
@@ -71,6 +71,7 @@ from src.utilities import resize_cluster
 
 
 def main(cluster_name, input_date, model_type, no_upload, zonal_stats_description,
+         veg_input_date, veg_model_version, veg_model_type, veg_model_path_description,
          chunk_shapefile_uri=False, bounding_box=None,
          first_variables_to_process=None, first_tiles_to_process=None, model_path_description=None,
          model_chunk_stats_table_name=None, log_note=None):
@@ -100,12 +101,16 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     main_logger, main_log_local_path, n_workers = lu.populate_main_log_header(client, cluster, log_note, run_local, model_type, stage)
 
     main_logger.info(f"Stage {stage} started at: {uu.timestr()}")
-    main_logger.info(f"Model version: {cn.SOC_model_version}")
-    main_logger.info(f"Model path descriptor: {model_path_description}")
-    main_logger.info(f"Zonal stats descriptor: {zonal_stats_description}")
+    main_logger.info(f"SOC model version: {cn.SOC_model_version}")
+    main_logger.info(f"SOC model path descriptor: {model_path_description}")
+    main_logger.info(f"SOC zonal stats descriptor: {zonal_stats_description}")
     main_logger.info(f"Start year: 2000; end year: {cn.SOC_density_intervals[-1]}")
     main_logger.info(f"Input date: {input_date}")
     main_logger.info(f"no_upload: {no_upload}")
+    main_logger.info(f"Veg model input date (for forest age): {veg_input_date}")
+    main_logger.info(f"Veg model version (for forest age): {veg_model_version}")
+    main_logger.info(f"Veg model type (for forest age): {veg_model_type}")
+    main_logger.info(f"Veg model path description (for forest age): {veg_model_path_description}")
     main_logger.info(f"Running sub-tile test area: {sub_tile_test}")
 
     # Returns a dataframe of chunk_id and ISO for the GADM4.1 1x1 deg fishnet.
@@ -155,7 +160,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     # lat-long chunk size for source zarr
     source_zarr_chunk_size = cn.chunk_dims  #4000x4000
 
-    # The zarr path that's being used
+    # The SOC zarr path that's being used
     SOC_zarr_path = zu.create_zarr_path(cn.SOC_path_zarr, source_zarr_chunk_size, 'N/A',
                                         model_type, cn.SOC_model_version_underscore, model_path_description,
                                         input_date, main_logger)
@@ -199,6 +204,17 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     # managed_land_CAN_xr = xr.open_zarr(cn.managed_land_CAN_zarr_path, consolidated=False).rename_vars(band_data=cn.managed_land_CAN_pattern)  # Alignment issues below, so not using it.     # Tried in https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69c09184-06dc-8332-a90f-7bf0e803ea16
     # managed_land_USA_xr = xr.open_zarr(cn.managed_land_USA_zarr_path, consolidated=False).rename_vars(band_data=cn.managed_land_USA_pattern)
 
+    # Need the veg zarr path for forest age
+    # Forest age categorical variable from Claude, session 'Forest age categorization in zonal stats'
+    veg_zarr_path = zu.create_zarr_path(
+        cn.veg_outputs_path_mega_zarr, source_zarr_chunk_size, 'annual',
+        veg_model_type, cn.veg_model_version_underscore, veg_model_path_description,
+        veg_input_date, main_logger
+    )
+    veg_ds = xr.open_zarr(veg_zarr_path, consolidated=False)
+    forest_age_xr = veg_ds[cn.forest_age_output_pattern]
+
+
     ds = xr.open_zarr(SOC_zarr_path, consolidated=False)
     ds_selected_analysis_vars = ds[vars_to_process]
 
@@ -213,6 +229,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     KBA_xr = zsu.round_coords(KBA_xr)
     watersheds_xr = zsu.round_coords(watersheds_xr)
     drivers_xr = zsu.round_coords(drivers_xr)
+    forest_age_xr = zsu.round_coords(forest_age_xr)
     BRA_biomes_xr = zsu.round_coords(BRA_biomes_xr)
     # managed_land_CAN_xr = zsu.round_coords(managed_land_CAN_xr)
     # managed_land_USA_xr = zsu.round_coords(managed_land_USA_xr)
@@ -228,11 +245,23 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     KBA_aligned = zsu.safe_crop(KBA_xr, reference)
     watersheds_aligned = zsu.safe_crop(watersheds_xr, reference)
     drivers_aligned = zsu.safe_crop(drivers_xr, reference)
+    forest_age_aligned = zsu.safe_crop(forest_age_xr, reference)
     BRA_biomes_aligned = zsu.safe_crop(BRA_biomes_xr, reference)
     # managed_land_CAN_aligned = zsu.safe_crop(managed_land_CAN_xr, reference)
     # managed_land_USA_aligned = zsu.safe_crop(managed_land_USA_xr, reference)
     # land_state_node_aligned = zsu.safe_crop(land_state_node, reference)
     ds_selected_analysis_vars_aligned = zsu.safe_crop(ds_selected_analysis_vars, reference)
+
+    # Extracts first year of age zarr and converts it to categories
+    forest_age_raw = forest_age_aligned.isel(year=0, drop=True)
+    forest_age_cat_da = xr.where(forest_age_raw == 0, 0,
+                                    xr.where(forest_age_raw <= 20, 1,
+                                    xr.where(forest_age_raw <= 40, 21,
+                                    xr.where(forest_age_raw <= 60, 41,
+                                    xr.where(forest_age_raw <= 80, 61,
+                                    xr.where(forest_age_raw <= 100, 81, 101))))))
+    forest_age_cat_xr = forest_age_cat_da.astype(np.uint8).rename(cn.forest_age_category_pattern).to_dataset()
+
 
     main_logger.info(f"Selecting datasets: {uu.timestr()}")
     # List of selected variable names (already aligned and cropped)
@@ -328,6 +357,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
         KBA_aligned_subset = KBA_aligned.sel(x=slice(west, east), y=slice(north, south))
         watersheds_aligned_subset = watersheds_aligned.sel(x=slice(west, east), y=slice(north, south))
         drivers_aligned_subset = drivers_aligned.sel(x=slice(west, east), y=slice(north, south))
+        forest_age_cat_subset = forest_age_cat_xr.sel(x=slice(west, east), y=slice(north, south))
         BRA_biomes_aligned_subset = BRA_biomes_aligned.sel(x=slice(west, east), y=slice(north, south))
         # managed_land_CAN_aligned_subset = managed_land_CAN_aligned.sel(x=slice(west, east), y=slice(north, south))  # Alignment issue below, so not using it
         # managed_land_USA_aligned_subset = managed_land_USA_aligned.sel(x=slice(west, east), y=slice(north, south))
@@ -380,6 +410,12 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
         else:
             drivers_da = drivers_aligned_subset[cn.drivers_of_loss_pattern]
 
+        if forest_age_cat_subset[cn.forest_age_category_pattern].sizes.get("x", 0) == 0 or forest_age_cat_subset[cn.forest_age_category_pattern].sizes.get("y", 0) == 0:
+            forest_age_cat_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(cn.forest_age_category_pattern)
+            main_logger.info(f"  {cn.forest_age_category_pattern} not in {tile_id}. Creating xarray of all 0s.")
+        else:
+            forest_age_cat_da = forest_age_cat_subset[cn.forest_age_category_pattern]
+
         if BRA_biomes_aligned_subset[cn.BRA_biomes_pattern].sizes.get("x", 0) == 0 or BRA_biomes_aligned_subset[cn.BRA_biomes_pattern].sizes.get("y", 0) == 0:
             bra_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(cn.BRA_biomes_pattern)
             main_logger.info(f"  {cn.BRA_biomes_pattern} not in {tile_id}. Creating xarray of all 0s.")
@@ -424,6 +460,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
          KBA_da,
          watersheds_da,
          drivers_da,
+         forest_age_cat_da,
          bra_da,
          # managed_land_CAN_da,
          # managed_land_USA_da,
@@ -439,6 +476,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
             KBA_da,
             watersheds_da,
             drivers_da,
+            forest_age_cat_da,
             bra_da,
             # managed_land_CAN_da,
             # managed_land_USA_da,
@@ -459,6 +497,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
                 KBA_da,
                 watersheds_da,
                 drivers_da,
+                forest_age_cat_da,
                 bra_da,
                 # managed_land_CAN_da,
                 # managed_land_USA_da,
@@ -475,6 +514,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
                 cn.KBA_codes,
                 cn.watershed_codes,
                 cn.drivers_codes,
+                cn.forest_age_category_codes,
                 cn.BRA_biomes_codes,
                 # cn.managed_land_codes,  # For Canada
                 # cn.managed_land_codes,  # For USA
@@ -496,6 +536,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
             cn.KBA_pattern,
             cn.watersheds_pattern,
             cn.drivers_of_loss_pattern,
+            cn.forest_age_category_pattern,
             cn.BRA_biomes_pattern,
             # cn.managed_land_CAN_pattern,
             # cn.managed_land_USA_pattern,
@@ -606,6 +647,12 @@ if __name__ == "__main__":
     parser.add_argument('-mcstn', '--model_chunk_stats_table_name', required=False, help='local path for model chunk stats to check if tile had any pixels in it, and skip if empty')
     parser.add_argument('-ln', '--log_note', help='Note to include in the log.')
 
+    # Used to specify the forest age contextual layer
+    parser.add_argument('--veg_input_date', help='Date of vegetation model run, YYYYMMDD')
+    parser.add_argument('--veg_model_version', help='Version of vegetation model')
+    parser.add_argument('--veg_model_type', help='Vegetation model type (e.g., standard)')
+    parser.add_argument('--veg_model_path_description', help='Vegetation model path description (e.g., global)')
+
     parser.add_argument('--no_upload', action='store_true', help='Do not save and upload outputs to s3')
 
     args = parser.parse_args()
@@ -622,10 +669,16 @@ if __name__ == "__main__":
     model_chunk_stats_table_name = args.model_chunk_stats_table_name
     log_note = args.log_note
 
+    veg_input_date = args.veg_input_date
+    veg_model_version = args.veg_model_version
+    veg_model_type = args.veg_model_type
+    veg_model_path_description = args.veg_model_path_description
+
     no_upload = args.no_upload
 
     # Create the cluster with command line arguments
-    main(cluster_name, input_date, model_type, no_upload, zonal_stats_description, chunk_shapefile_uri, bounding_box=bounding_box,
-         first_variables_to_process=first_variables_to_process,
+    main(cluster_name, input_date, model_type, no_upload, zonal_stats_description,
+         veg_input_date, veg_model_version, veg_model_type, veg_model_path_description,
+         chunk_shapefile_uri, bounding_box=bounding_box, first_variables_to_process=first_variables_to_process,
          first_tiles_to_process=first_tiles_to_process, model_path_description=model_path_description,
          model_chunk_stats_table_name=model_chunk_stats_table_name, log_note=log_note)

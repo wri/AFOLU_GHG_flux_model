@@ -1219,6 +1219,9 @@ drivers_codes = np.array([0, 1, 2, 3, 4, 5, 6, 7], dtype=np.uint8)
 
 managed_land_codes = np.array([0, 1, 2], dtype=np.uint8)
 
+forest_age_category_pattern = 'forest_age_category'
+forest_age_category_codes = np.array([0, 1, 21, 41, 61, 81, 101], dtype=np.uint8)
+
 # Converts numeric ISO values to ISO codes
 # From https://github.com/wri/project-zeno-data-infra/blob/main/notebooks/grasslands_areas_gadm_2000-2022.ipynb
 numeric_to_alpha3 = {
@@ -1834,6 +1837,16 @@ managed_land_to_text = {
     0: "NA",
     1: "managed",
     2: "unmanaged",
+}
+
+forest_age_category_to_text = {
+    0: 'non_forest',
+    1: '1_20yr',
+    21: '21_40yr',
+    41: '41_60yr',
+    61: '61_80yr',
+    81: '81_100yr',
+    101: '>100yr'
 }
 
 veg_local_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/vegetation_v{veg_model_version_underscore}_standard_global/"

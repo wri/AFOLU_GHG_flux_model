@@ -297,6 +297,9 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
         df_with_areas[cn.managed_land_USA_pattern] = df_with_areas[cn.managed_land_USA_pattern].map(cn.managed_land_to_text)
     if cn.BRA_biomes_pattern in df_with_areas.columns:
         df_with_areas[cn.BRA_biomes_pattern] = df_with_areas[cn.BRA_biomes_pattern].map(cn.BRA_biomes_to_text)
+    if cn.forest_age_category_pattern in df_with_areas.columns:
+        df_with_areas[cn.forest_age_category_pattern] = df_with_areas[cn.forest_age_category_pattern].map(cn.forest_age_category_to_text)
+        df_with_areas[cn.forest_age_category_pattern] = df_with_areas[cn.forest_age_category_pattern].fillna("Unassigned")
 
     # Calculates flux density (Mg CO2(e)/ha) for each row
     df_with_areas['density__Mg_ha'] = df_with_areas['value'] / df_with_areas['pixel_area_ha'].replace(0, pd.NA)
