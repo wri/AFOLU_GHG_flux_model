@@ -29,6 +29,9 @@ This was standardized across the vegetation-only and vegetation mapping for LULU
 With https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/67634e63-bbcc-800a-8267-004e88ced2e4
 Continued at https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/68d6d26f-b054-8323-98bb-731a86582e74
 Annual average maps from https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69835153-d804-832e-a9bf-ecf01d221a11
+
+#TODO Projected removals geotif (gross_removals__all_C_pools__MgCO2_0_04deg_yr_v1_0_5_2016_global_reproj.tif) doesn't match the annual global 0.04x0.04 deg geotif series that well.
+#Need to fix projection of WGS84 geotif somehow.
 """
 
 import argparse

@@ -1,14 +1,20 @@
 """
-Creates 10x10 deg per-hectare and per-pixel geotifs from global zarr for numeric model outputs.
+Creates 10x10 deg per-hectare, per-pixel, and 0.04x0.04 deg geotifs from global zarr for numeric model outputs.
 It creates a task list for all datasets, years, and 10x10 deg tiles for the variables, years, and area of interest,
 then runs that giant task list in parallel in batches (as a safeguard against failure during a large task list).
 
-Unit numerator is Mg C, not Mg CO2
-
-All gross stock change values are positive (loss and gain).
-For net stock change, positive is SOC gain and negative is SOC loss (opposite of signs for vegetation).
-Neither change nor density converted to Mg CO2.
+Density in Mg C; loss, gain and net change are in Mg CO2.
+For net stock change, negative is SOC gain and positive is SOC loss (same as signs for vegetation).
+Gross gain is negative and gross loss is positive (same as signs for vegetation).
 Calling gross values gain and loss instead of emissions and removals to differentiate them from vegetation emissions and removals (which are in CO2(e).)
+
+NoData value is np.nan.
+NoData used for:
+density- pixels without a value;
+net change- pixels without a value;
+loss and gain- pixels without a value in the relevant direction (i.e. a loss pixel with gain gets NaN)
+0 is reserved for net, loss, and gain pixels that had no change in density.
+Thus, when consecutive densities are the same, net, loss, and gain will all have 0s.
 
 Providing a bounding box with -bb or a chunk shapefile limits the 10x10 deg creation
 to the 10x10 deg tiles that contain the bounding box or shapefile.

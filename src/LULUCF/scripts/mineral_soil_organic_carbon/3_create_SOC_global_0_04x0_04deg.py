@@ -1,8 +1,8 @@
 """
 Creates global outputs at 0.04x0.04 deg resolution (approximately 4x4 km at the equator) for specified inputs.
-Units are Mg C/0.04x0.04 deg pixel/year for interval-level outputs.
-Not converted to Mg CO2.
-Positive is SOC gain and negative is SOC loss (opposite of signs for vegetation).
+Net change, loss, and gain are Mg CO2/0.04x0.04 deg pixel/year for interval-level outputs.
+Density is Mg C/0.04x0.04 deg pixel/year.
+Negative is SOC gain and positive is SOC loss (same signs as vegetation).
 These are for presentations and other static displays.
 They are not to be used for calculations or statistics.
 
@@ -27,7 +27,7 @@ python -m src.LULUCF.scripts.mineral_soil_organic_carbon.3_create_SOC_global_0_0
 
 Full run:
 python -m src.utilities.create_cluster -n 5 -t 1 -m 4 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.3_create_SOC_global_0_04x0_04deg -cn mineral_soil --input_date 20251224 -mt standard -mpd global --log_note "This is a global run for SOC v1.0.0 (2000-2022)."
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.3_create_SOC_global_0_04x0_04deg -cn mineral_soil --input_date 20251224 -mt standard -mpd global --log_note "This is a global run for SOC v1.0.1 (2000-2022, revised organic/mineral soil split)."
 
 # Per https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant
 """
