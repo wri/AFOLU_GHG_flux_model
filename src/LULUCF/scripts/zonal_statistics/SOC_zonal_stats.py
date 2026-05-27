@@ -1,6 +1,11 @@
 """
 Zonal stats for soil organic carbon.
 
+Density in Mg C; loss, gain and net change are in Mg CO2.
+For net stock change, negative is SOC gain and positive is SOC loss (same as signs for vegetation).
+Gross gain is negative and gross loss is positive (same as signs for vegetation).
+Calling gross values gain and loss instead of emissions and removals to differentiate them from vegetation emissions and removals (which are in CO2(e).)
+
 Area to analyze can be specified with a shapefile or a bounding box.
 If a shapefile is supplied, all 10x10 deg tiles that intersect the shapefile are analyzed iteratively.
 If a bounding box is supplied:
@@ -41,9 +46,7 @@ python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stat
 -mcstn KEEP_definitive_runs/SOC_density/v1_0_0__2000_2022__20251224/soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx
 
 #TODO Try running with 16GB workers. May be using little enough memory to run on that.
-#TODO Add 1km TCL drivers as contextual layer (from vegetation__drivers_primary_land_state__zonal_stats)
 #TODO Add forest age classes in 20-year increments (or at least <20 and >20) as contextual layer. Not sure how to do that, though.
-#TODO MAYBE Convert stock changes from Mg C to Mg CO2 and change output names accordingly.
 """
 
 import argparse
@@ -158,11 +161,6 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
                                         input_date, main_logger)
     main_logger.info(f"Zonal stats from zarr ({source_zarr_chunk_size} pixel chunks): {SOC_zarr_path}")
 
-    # # For land state node
-    # veg_zarr_path = zu.create_zarr_path(cn.veg_outputs_path_mega_zarr, source_zarr_chunk_size, 'annual',
-    #                                      model_type, cn.veg_model_version_underscore, model_path_description,
-    #                                      veg_input_date, main_logger)
-
     # Creates dataframe of state_node codes and meanings
     state_node_df = zsu.create_state_node_df(cn.state_node_lookup_table_local, cn.state_node_lookup_table_s3, cn.sheet)
     node_codes = np.array(list(state_node_df['land_state']), dtype=np.uint32)
@@ -196,9 +194,10 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     composite_primary_xr = xr.open_zarr(cn.starting_composite_primary_forest_zarr_path, consolidated=False)  # No rename because it's created by a different process where the variable is named starting_composite_primary_forest
     KBA_xr = xr.open_zarr(cn.KBA_zarr_path, consolidated=False).rename_vars(band_data=cn.KBA_pattern)
     watersheds_xr = xr.open_zarr(cn.watersheds_zarr_path, consolidated=False).rename_vars(band_data=cn.watersheds_pattern)
+    drivers_xr = xr.open_zarr(cn.drivers_of_loss_zarr_path, consolidated=False).rename_vars(band_data=cn.drivers_of_loss_pattern)
     BRA_biomes_xr = xr.open_zarr(cn.BRA_biomes_zarr_path, consolidated=False).rename_vars(band_data=cn.BRA_biomes_pattern)
     # managed_land_CAN_xr = xr.open_zarr(cn.managed_land_CAN_zarr_path, consolidated=False).rename_vars(band_data=cn.managed_land_CAN_pattern)  # Alignment issues below, so not using it.     # Tried in https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69c09184-06dc-8332-a90f-7bf0e803ea16
-    managed_land_USA_xr = xr.open_zarr(cn.managed_land_USA_zarr_path, consolidated=False).rename_vars(band_data=cn.managed_land_USA_pattern)
+    # managed_land_USA_xr = xr.open_zarr(cn.managed_land_USA_zarr_path, consolidated=False).rename_vars(band_data=cn.managed_land_USA_pattern)
 
     ds = xr.open_zarr(SOC_zarr_path, consolidated=False)
     ds_selected_analysis_vars = ds[vars_to_process]
@@ -213,9 +212,10 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     composite_primary_xr = zsu.round_coords(composite_primary_xr)
     KBA_xr = zsu.round_coords(KBA_xr)
     watersheds_xr = zsu.round_coords(watersheds_xr)
+    drivers_xr = zsu.round_coords(drivers_xr)
     BRA_biomes_xr = zsu.round_coords(BRA_biomes_xr)
     # managed_land_CAN_xr = zsu.round_coords(managed_land_CAN_xr)
-    managed_land_USA_xr = zsu.round_coords(managed_land_USA_xr)
+    # managed_land_USA_xr = zsu.round_coords(managed_land_USA_xr)
     # land_state_node = zsu.round_coords(ds[cn.land_state_pattern])
 
     main_logger.info(f"Cropping: {uu.timestr()}")
@@ -227,9 +227,10 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     composite_primary_aligned = zsu.safe_crop(composite_primary_xr, reference)
     KBA_aligned = zsu.safe_crop(KBA_xr, reference)
     watersheds_aligned = zsu.safe_crop(watersheds_xr, reference)
+    drivers_aligned = zsu.safe_crop(drivers_xr, reference)
     BRA_biomes_aligned = zsu.safe_crop(BRA_biomes_xr, reference)
     # managed_land_CAN_aligned = zsu.safe_crop(managed_land_CAN_xr, reference)
-    managed_land_USA_aligned = zsu.safe_crop(managed_land_USA_xr, reference)
+    # managed_land_USA_aligned = zsu.safe_crop(managed_land_USA_xr, reference)
     # land_state_node_aligned = zsu.safe_crop(land_state_node, reference)
     ds_selected_analysis_vars_aligned = zsu.safe_crop(ds_selected_analysis_vars, reference)
 
@@ -326,9 +327,10 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
         composite_primary_aligned_subset = composite_primary_aligned.sel(x=slice(west, east), y=slice(north, south))
         KBA_aligned_subset = KBA_aligned.sel(x=slice(west, east), y=slice(north, south))
         watersheds_aligned_subset = watersheds_aligned.sel(x=slice(west, east), y=slice(north, south))
+        drivers_aligned_subset = drivers_aligned.sel(x=slice(west, east), y=slice(north, south))
         BRA_biomes_aligned_subset = BRA_biomes_aligned.sel(x=slice(west, east), y=slice(north, south))
         # managed_land_CAN_aligned_subset = managed_land_CAN_aligned.sel(x=slice(west, east), y=slice(north, south))  # Alignment issue below, so not using it
-        managed_land_USA_aligned_subset = managed_land_USA_aligned.sel(x=slice(west, east), y=slice(north, south))
+        # managed_land_USA_aligned_subset = managed_land_USA_aligned.sel(x=slice(west, east), y=slice(north, south))
         # land_state_node_aligned_subset = land_state_node_aligned.sel(x=slice(west, east), y=slice(north, south))
         pixel_area_expanded_subset = pixel_area_expanded.sel(x=slice(west, east), y=slice(north, south))
 
@@ -372,6 +374,12 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
         else:
             watersheds_da = watersheds_aligned_subset[cn.watersheds_pattern]
 
+        if drivers_aligned_subset[cn.drivers_of_loss_pattern].sizes.get("x", 0) == 0 or drivers_aligned_subset[cn.drivers_of_loss_pattern].sizes.get("y", 0) == 0:
+            drivers_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(cn.drivers_of_loss_pattern)
+            main_logger.info(f"  {cn.drivers_of_loss_pattern} not in {tile_id}. Creating xarray of all 0s.")
+        else:
+            drivers_da = drivers_aligned_subset[cn.drivers_of_loss_pattern]
+
         if BRA_biomes_aligned_subset[cn.BRA_biomes_pattern].sizes.get("x", 0) == 0 or BRA_biomes_aligned_subset[cn.BRA_biomes_pattern].sizes.get("y", 0) == 0:
             bra_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(cn.BRA_biomes_pattern)
             main_logger.info(f"  {cn.BRA_biomes_pattern} not in {tile_id}. Creating xarray of all 0s.")
@@ -384,11 +392,11 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
         # else:
         #     managed_land_CAN_da = managed_land_CAN_aligned_subset[cn.managed_land_CAN_pattern]
 
-        if managed_land_USA_aligned_subset[cn.managed_land_USA_pattern].sizes.get("x", 0) == 0 or managed_land_USA_aligned_subset[cn.managed_land_USA_pattern].sizes.get("y", 0) == 0:
-            managed_land_USA_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(cn.managed_land_USA_pattern)
-            main_logger.info(f"  {cn.managed_land_USA_pattern} not in {tile_id}. Creating xarray of all 0s.")
-        else:
-            managed_land_USA_da = managed_land_USA_aligned_subset[cn.managed_land_USA_pattern]
+        # if managed_land_USA_aligned_subset[cn.managed_land_USA_pattern].sizes.get("x", 0) == 0 or managed_land_USA_aligned_subset[cn.managed_land_USA_pattern].sizes.get("y", 0) == 0:
+        #     managed_land_USA_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(cn.managed_land_USA_pattern)
+        #     main_logger.info(f"  {cn.managed_land_USA_pattern} not in {tile_id}. Creating xarray of all 0s.")
+        # else:
+        #     managed_land_USA_da = managed_land_USA_aligned_subset[cn.managed_land_USA_pattern]
 
         if (composite_primary_aligned_subset[cn.starting_composite_primary_forest_pattern].sizes.get("x", 0) == 0 or
                 composite_primary_aligned_subset[cn.starting_composite_primary_forest_pattern].sizes.get("y", 0) == 0):
@@ -415,7 +423,8 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
          composite_primary_da,
          KBA_da,
          watersheds_da,
-         # bra_da,
+         drivers_da,
+         bra_da,
          # managed_land_CAN_da,
          # managed_land_USA_da,
          # land_state_node_aligned_subset,
@@ -429,7 +438,8 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
             composite_primary_da,
             KBA_da,
             watersheds_da,
-            # bra_da,
+            drivers_da,
+            bra_da,
             # managed_land_CAN_da,
             # managed_land_USA_da,
             # land_state_node_aligned_subset,
@@ -448,7 +458,8 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
                 composite_primary_da,
                 KBA_da,
                 watersheds_da,
-                # bra_da,
+                drivers_da,
+                bra_da,
                 # managed_land_CAN_da,
                 # managed_land_USA_da,
                 flux_cube_subset["year"]
@@ -463,7 +474,8 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
                 cn.composite_primary_codes,
                 cn.KBA_codes,
                 cn.watershed_codes,
-                # cn.BRA_biomes_codes,
+                cn.drivers_codes,
+                cn.BRA_biomes_codes,
                 # cn.managed_land_codes,  # For Canada
                 # cn.managed_land_codes,  # For USA
                 flux_cube_subset.year.values,
@@ -483,7 +495,8 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
             cn.starting_composite_primary_forest_pattern,
             cn.KBA_pattern,
             cn.watersheds_pattern,
-            # cn.BRA_biomes_pattern,
+            cn.drivers_of_loss_pattern,
+            cn.BRA_biomes_pattern,
             # cn.managed_land_CAN_pattern,
             # cn.managed_land_USA_pattern,
             'year'
@@ -564,7 +577,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     # Converts from long to wide df
     combined_wide_df = zsu.create_wide_df(combined_df, main_logger)
 
-    combined_wide_df_name = f'SOC_model_zonal_stats_v{cn.SOC_model_version_underscore}_wide_{time.strftime('%Y%m%d_%H_%M_%S')}'
+    combined_wide_df_name = f'SOC_model_zonal_stats_wide_v{cn.SOC_model_version_underscore}_{time.strftime('%Y%m%d_%H_%M_%S')}'
     combined_wide_df.to_parquet(f"{local_zonal_stats_folder}/{combined_wide_df_name}.parquet")
     if len(combined_wide_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
         combined_wide_df.to_csv(f"{local_zonal_stats_folder}/{combined_wide_df_name}.csv", index=False)
