@@ -30,6 +30,7 @@ def create_state_node_df(state_node_lookup_table_local, state_node_lookup_table_
 
     return state_node_df
 
+
 # Crops one input to the other input's extent.
 # ref is the reference dataset that is being cropped to.
 # From long chat in https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/684749fe-7b30-800a-ba8b-c502377f2c3a
@@ -44,6 +45,18 @@ def round_coords(ds, decimals=5):
         'y': np.round(ds.coords['y'].values, decimals)
     })
     return ds
+
+
+# Reclassifies age zarr for a given year into 20-year bins
+# Per Claude session 'Forest age categorization in zonal stats'
+def categorize_age(da):
+    """Reclassify raw forest age (integer years) into 20-year category codes."""
+    return xr.where(da == 0, 0,
+                    xr.where(da <= 20, 1,
+                    xr.where(da <= 40, 21,
+                    xr.where(da <= 60, 41,
+                    xr.where(da <= 80, 61,
+                    xr.where(da <= 100, 81, 101))))))
 
 
 # Converts results of flox to coordinate dictionary.

@@ -38,7 +38,7 @@ python -m src.utilities.create_cluster -n 50 -m 64 -cn vegetation_zonal_stats --
 python -m src.LULUCF.scripts.zonal_statistics.vegetation_zonal_stats -cn vegetation_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Zonal stats for vegetation model v1.0.5 (2016-2024)."
 
 #TODO Add TCL 1km driver contextual layer from supplemental script
-#TODO Add forest age classes in 20-year increments (or at least <20 and >20) as contextual layer. Not sure how to do that, though.
+#TODO Add forest age classes in 20-year increments (or at least <20 and >20) as contextual layer. Done for SOC zonal stats already.
 """
 
 import argparse
