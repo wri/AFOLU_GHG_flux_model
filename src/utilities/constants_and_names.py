@@ -2,13 +2,23 @@ import math
 import boto3
 import numpy as np
 
+# Project imports
+from src.utilities import universal_utilities as uu
+
 ########
 ### Constants
 ########
 
 ### Model version
-model_version = "1.0.3_1884_chunks"
-model_version_underscore = model_version.replace(".", "_")
+veg_model_version = "1.0.5"
+veg_model_version_underscore = veg_model_version.replace(".", "_")
+
+SOC_model_version = "1.0.0"
+SOC_model_version_underscore = SOC_model_version.replace(".", "_")
+
+organic_soil_model_version = "0.9.7"
+organic_soil_model_version_underscore = organic_soil_model_version.replace(".", "_")
+
 
 ### s3 buckets
 s3 = boto3.resource('s3')
@@ -99,7 +109,7 @@ IPCC_removal_factor_table_tab = "natrl fores gain, for std model"
 mangrove_rate_ratio_tab = 'mang gain and Cratios,for model'
 
 # Emission factors for partial disturbances (by 1km driver)
-partial_disturbance_emission_factor_table_name = "partial_disturbance_emission_factors_LULUCF_model__20250415.xlsx"
+partial_disturbance_emission_factor_table_name = "partial_disturbance_emission_factors_LULUCF_model__20260424.xlsx"
 partial_disturbance_emission_factor_table_full_path = f"{EF_RF_C_ratio_spreadsheet_URL}{partial_disturbance_emission_factor_table_name}"
 partial_disturbance_emission_factor_table_tab = "EF_combined"
 
@@ -123,7 +133,7 @@ gwp_n2o = 273 # AR6 WG1 Table 7.15
 
 # Combustion factor for trees that had fire but no height reduction or other sign of disturbance
 # (i.e. undisturbed trees remaining trees).
-# From IPCC 2019, Table 2.6, "Boreal forest- ground fire" (applied globally, though boreal)
+# From IPCC 2019, Table 2.6, "Boreal forest- surface fire" (applied globally, though boreal)
 Cf_forest_undisturbed = 0.15
 
 other_landcover_node = 7
@@ -157,6 +167,12 @@ Cf_grassland = 0.77
 
 ### GLCLU cover codes
 ### Classifications proposed by Elise Mazur 2025-06-05 by email. Agreed on 2025-06-09
+# Bare ground
+bare_ground_dry_min_code = 0
+bare_ground_dry_max_code = 4
+bare_ground_wet_min_code = 100
+bare_ground_wet_max_code = 104
+
 # Short vegetation
 short_veg_dry_min_code = 5
 short_veg_dry_max_code = 26
@@ -181,6 +197,10 @@ chunk_dims = 4000           # Size of a 1x1 deg raster in pixels
 full_raster_dims = 40000    # Size of a 10x10 deg raster in pixels
 
 resolution = 0.00025  # Decimal degrees
+global_geotif_resolution = 0.04
+
+# Pixel aggregation parameters
+global_aggregation_factor = int(global_geotif_resolution / resolution)  # 160 native pixels per 0.04 deg
 
 #Dimensions for global zarrs (80N to 80S)
 global_width = int(round(360.0 / resolution))
@@ -188,16 +208,17 @@ global_height = int(round(160.0 / resolution))
 origin_x = -180.0
 origin_y = 80.0
 
-agg_chunk_length_pixels = 4000 * 0.04  # Dimensions for 1x1 deg outputs at 0.04x0.04 deg resolution
-
 # Threshold for height loss to be counted as disturbed (m)
 sig_height_loss_threshold_abs = 5
 
 # Threshold for height gain to be counted as regrowth in the same interval as a disturbance
 sig_height_gain_threshold_abs = -5
 
-# Height minimum for trees (meters)
+# Height minimum for GLAD trees (meters)
 tree_threshold = 5
+
+# Height minimum for short vegetation using Global Pasture Watch (meters) (Hunter et al. 2025)
+GPW_short_veg_threshold = 2
 
 # Converts grams to kilograms for burning of dry matter
 g_to_kg = 10 ** -3
@@ -229,7 +250,7 @@ primary_age_threshold = 100
 
 ##### Miscellaneous
 
-# Pattern for date (XXXX), date range (XXXX_YYYY), or date range (XXXX_YYYY_XXXX_YYYY, SOC only) with 1 or 2 leading _ in output file names
+# Pattern for date (XXXX) or date range (XXXX_YYYY_XXXX_YYYY, SOC only) with 1 or 2 leading _ in output file names
 date_date_range_pattern = r'_{1,2}(?:\d{4}(?:_\d{4})*)'
 
 AFOLU_dir = f"{full_bucket_prefix}/climate/AFOLU_flux_model/"
@@ -292,7 +313,6 @@ vegetation_height_annual_path = f"{LULUCF_dir}landcover/vegetation_height/annual
 vegetation_height_annual_pattern = ""
 vegetation_height_pattern = "vegetation_height"  # Raw tifs don't have a pattern; this is just for use in the numba data dictionary
 
-
 forest_disturbance_annual_dir = f"{LULUCF_dir}landcover/annual_forest_disturbance/raw/"
 forest_disturbance_layer_name = "forest_disturbance"
 
@@ -304,15 +324,16 @@ agb_2000_pattern = "t_aboveground_biomass_ha_2000"
 # From https://catalogue.ceda.ac.uk/uuid/bf535053562141c6bb7ad831f5998d77/
 # https://data.ceda.ac.uk/neodc/esacci/biomass/data/agb/maps/v5.01/geotiff
 # Bulk downloaded to computer (/mnt/c/GIS/AFOLU_flux_model/ESA_CCI_2015/) using WSL Ubuntu:
-# wget -e robots=off --mirror --no-parent -r https://dap.ceda.ac.uk/neodc/esacci/biomass/data/agb/maps/v5.01/geotiff/2015/
-agb_2015_dir_raw = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/v5_01/2015/AGB/raw/"
-agb_2015_pattern_raw = "ESACCI-BIOMASS-L4-AGB-MERGED-100m-2015-fv5.0"
-agb_2015_dir_processed = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/v5_01/2015/AGB/processed/20250217/"
+# wget -e robots=off --mirror --no-parent -r https://dap.ceda.ac.uk/neodc/esacci/biomass/data/agb/maps/v6.0/geotiff/2015/
+esa_AGB_v = 'v6_0'
+agb_2015_dir_raw = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/AGB/raw/"
+agb_2015_pattern_raw = "ESACCI-BIOMASS-L4-AGB-MERGED-100m-2015-fv6.0"
+agb_2015_dir_processed = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/AGB/processed/20260120/"
 agb_2015_pattern = "AGB_2015_ESA_CCI_Mg_AGB_ha"
 
-agb_stdev_2015_dir_raw = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/v5_01/2015/AGB_stdev/raw/"
-agb_stdev_2015_pattern_raw = "ESACCI-BIOMASS-L4-AGB_SD-MERGED-100m-2015-fv5.0"
-agb_stdev_2015_dir_processed = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/v5_01/2015/AGB_stdev/processed/20250217/"
+agb_stdev_2015_dir_raw = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/AGB_stdev/raw/"
+agb_stdev_2015_pattern_raw = "ESACCI-BIOMASS-L4-AGB_SD-MERGED-100m-2015-fv6.0"
+agb_stdev_2015_dir_processed = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/AGB_stdev/processed/20260120/"
 agb_stdev_2015_pattern = "AGB_stdev_2015_ESA_CCI_Mg_AGB_ha"
 
 mangrove_agb_2000_dir = f"{full_bucket_prefix}/climate/carbon_model/mangrove_biomass/processed/standard/20190220/"
@@ -338,7 +359,7 @@ litter_c_LC_masked_dens_pattern = "carbon_density__litter_C__landcover_masked__M
 non_soil_c_LC_masked_dens_pattern = "carbon_density__non_soil__landcover_masked__MgC"
 soil_c_dens_LC_masked_pattern = "carbon_density__soil_C__landcover_masked__MgC"
 
-# Carbon density pattern for LULUCF model outputs
+# Carbon density pattern for vegetation model outputs
 agc_modeled_dens_pattern = "carbon_density__AGC__MgC"
 bgc_modeled_dens_pattern = "carbon_density__BGC__MgC"
 deadwood_c_modeled_dens_pattern = "carbon_density__deadwood_C__MgC"
@@ -382,39 +403,48 @@ litter_c_2000_LC_masked_pattern = f"{litter_c_LC_masked_dens_pattern}_2000"
 non_soil_c_2000_LC_masked_dir = f"{full_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/year_2000_derived_carbon_pools/{non_soil_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2000_creation_date}/"
 non_soil_c_2000_LC_masked_pattern = f"{non_soil_c_LC_masked_dens_pattern}_2000"
 
-## 2015
-carbon_2015_creation_date = '20250930'
+starting_C_densities_2000_path_mega_zarr = f"{full_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/year_2000_derived_carbon_pools/mega_zarr/CHUNK_SIZE_pixels/RUN_DATE/starting_C_densities_zarr.zarr"
 
-agc_2015_raw_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/v5_01/2015/year_2015_derived_carbon_pools/{agc_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+
+## 2015
+carbon_2015_creation_date = '20260129'
+
+agc_2015_raw_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{agc_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 agc_2015_raw_pattern = f"{agc_raw_dens_pattern}_2015"
 
-bgc_2015_raw_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/v5_01/2015/year_2015_derived_carbon_pools/{bgc_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+bgc_2015_raw_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{bgc_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 bgc_2015_raw_pattern = f"{bgc_raw_dens_pattern}_2015"
 
-deadwood_c_2015_raw_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/v5_01/2015/year_2015_derived_carbon_pools/{deadwood_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+deadwood_c_2015_raw_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{deadwood_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 deadwood_c_2015_raw_pattern = f"{deadwood_c_raw_dens_pattern}_2015"
 
-litter_c_2015_raw_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/v5_01/2015/year_2015_derived_carbon_pools/{litter_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+litter_c_2015_raw_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{litter_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 litter_c_2015_raw_pattern = f"{litter_c_raw_dens_pattern}_2015"
 
-non_soil_c_2015_raw_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/v5_01/2015/year_2015_derived_carbon_pools/{non_soil_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+non_soil_c_2015_raw_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{non_soil_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 non_soil_c_2015_raw_pattern = f"{non_soil_c_raw_dens_pattern}_2015"
 
 # Carbon density, masked by landcover composite
-agc_2015_LC_masked_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/v5_01/2015/year_2015_derived_carbon_pools/{agc_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+agc_2015_LC_masked_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{agc_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 agc_2015_LC_masked_pattern = f"{agc_LC_masked_dens_pattern}_2015"
 
-bgc_2015_LC_masked_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/v5_01/2015/year_2015_derived_carbon_pools/{bgc_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+bgc_2015_LC_masked_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{bgc_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 bgc_2015_LC_masked_pattern = f"{bgc_LC_masked_dens_pattern}_2015"
 
-deadwood_c_2015_LC_masked_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/v5_01/2015/year_2015_derived_carbon_pools/{deadwood_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+deadwood_c_2015_LC_masked_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{deadwood_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 deadwood_c_2015_LC_masked_pattern = f"{deadwood_c_LC_masked_dens_pattern}_2015"
 
-litter_c_2015_LC_masked_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/v5_01/2015/year_2015_derived_carbon_pools/{litter_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+litter_c_2015_LC_masked_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{litter_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 litter_c_2015_LC_masked_pattern = f"{litter_c_LC_masked_dens_pattern}_2015"
 
-non_soil_c_2015_LC_masked_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/v5_01/2015/year_2015_derived_carbon_pools/{non_soil_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+non_soil_c_2015_LC_masked_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{non_soil_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 non_soil_c_2015_LC_masked_pattern = f"{non_soil_c_LC_masked_dens_pattern}_2015"
+
+starting_C_densities_2015_path_mega_zarr = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/mega_zarr/CHUNK_SIZE_pixels/RUN_DATE/starting_C_densities_zarr.zarr"
+
+# Code that describes the source for the starting carbon densities in the landcover-masked outputs
+starting_C_pools_LC_masked_source_flag_pattern = "carbon_density_source_flag_landcover_masked"
+starting_C_pools_LC_masked_state_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{starting_C_pools_LC_masked_source_flag_pattern}/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 
 
 ### Other inputs
@@ -455,19 +485,22 @@ r_s_ratio_non_mang_pattern = "BGB_AGB_ratio_non_mang"
 continent_ecozone_dir = f"{full_bucket_prefix}/climate/carbon_model/fao_ecozones/ecozone_continent/20190116/processed/"
 continent_ecozone_pattern = "fao_ecozones_continents_processed"
 
+TCL_dir = f"{full_bucket_prefix}/forest_change/hansen_2024/"
+TCL_pattern = "GFW2024"
+
 ## Forest age
 # Forest age in 2010 and 2015 (created together)
-forest_age_2010_2015_run_date = '20250705'
-forest_age_2010_dir = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/forest_age/GAMI_v2_1/2010/standard/not_gap_filled/CHUNK_SIZE_pixels/{forest_age_2010_2015_run_date}/"
+forest_age_2010_2015_run_date = '20260126'
+forest_age_2010_dir = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/forest_age/GAMI_v3_1/2010/standard/not_gap_filled/CHUNK_SIZE_pixels/{forest_age_2010_2015_run_date}/"
 forest_age_2010_pattern = "forest_age_not_gap_filled_2010"
 
-forest_age_2015_dir = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/forest_age/GAMI_v2_1/2015/standard/not_gap_filled/CHUNK_SIZE_pixels/{forest_age_2010_2015_run_date}/"
+forest_age_2015_dir = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/forest_age/GAMI_v3_1/2015/standard/not_gap_filled/CHUNK_SIZE_pixels/{forest_age_2010_2015_run_date}/"
 forest_age_2015_pattern = "forest_age_not_gap_filled_2015"
 
-forest_age_2010_gap_filled_dir = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/forest_age/GAMI_v2_1/2010/standard/gap_filled/CHUNK_SIZE_pixels/{forest_age_2010_2015_run_date}/"
+forest_age_2010_gap_filled_dir = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/forest_age/GAMI_v3_1/2010/standard/gap_filled/CHUNK_SIZE_pixels/{forest_age_2010_2015_run_date}/"
 forest_age_2010_gap_filled_pattern = "forest_age_gap_filled_2010"
 
-forest_age_2015_gap_filled_dir = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/forest_age/GAMI_v2_1/2015/standard/gap_filled/CHUNK_SIZE_pixels/{forest_age_2010_2015_run_date}/"
+forest_age_2015_gap_filled_dir = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/forest_age/GAMI_v3_1/2015/standard/gap_filled/CHUNK_SIZE_pixels/{forest_age_2010_2015_run_date}/"
 forest_age_2015_gap_filled_pattern = "forest_age_gap_filled_2015"
 
 # Forest age in 2000 (age in 2000 is derived from gap-filled age in 2010, so there is no non-gap-filled age in 2000 data)
@@ -484,6 +517,12 @@ global_age_at_disturbance_file = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF
 # Forest age pattern for use in the LULUCF model. Applies to any starting year (2000 or 2015).
 forest_age_start_year_pattern = "forest_age_gap_filled_start_year"
 forest_age_output_pattern = "forest_age_at_end_of_interval"
+
+# Starting composite primary forest (2015)
+starting_composite_primary_forest_run_date = '20260210'
+starting_composite_primary_forest_pattern = "starting_composite_primary_forest"
+starting_composite_primary_forest_dir = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/{starting_composite_primary_forest_pattern}/2015/{chunk_dims}_pixels/{starting_composite_primary_forest_run_date}/"
+starting_composite_primary_forest_zarr_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/{starting_composite_primary_forest_pattern}/2015/zarr/{chunk_dims}_pixels/{starting_composite_primary_forest_run_date}/{starting_composite_primary_forest_pattern}.zarr"
 
 # GEE script that the global rasters are from is https://code.earthengine.google.com/805896f7a511c13eb873c4804a683abc (each file takes about 15 minutes to export to Google Drive).
 # NOTE: GEE export function splits the exported global raster into two pieces. I merged the two pieces into a single file in ArcPro,
@@ -645,41 +684,18 @@ mangrove_1x1deg_smoothed_dir = f"{full_bucket_prefix}/global-mangrove-extent/ver
 mangrove_extent_processed_dir = f"{full_bucket_prefix}/global-mangrove-extent/version3/smoothed/raster/"
 mangrove_extent_processed_pattern = f"GMW{GMW_version}_smoothed_mangrove_extent"
 
+# Global Pasture Watch median vegetation height (https://stac.openlandmap.org/gpw_gsvh-30m/collection.json?.language=en,
+# from Hunter et al. 2025 (https://www.nature.com/articles/s41597-025-05739-6)
+GPW_MVH_uri = f"https://s3.opengeohub.org/gpw/arco/gpw_short.veg.height_egbt_m_30m_s_YYYY0101_YYYY1231_go_epsg.4326_v1.tif"
+GPW_MVH_pattern = f"GPW_height"
+
+
 # Organic Soils
 # Organic soil mask, from Hengl et al. under review (https://essd.copernicus.org/preprints/essd-2025-336/)
-# and thresholded by Erin Glen for peat emissions model. Includes only pixels with organic soil probability >23%,
-# a cutoff determined by OpenGeoHub and implemented by Erin.
-organic_soil_extent_dir = "s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/inputs/processed/peat_mask/OGH/tiles/"
-organic_soil_extent_pattern = "ogh_mask"
+# Per Erin's Slack message 2025-12-23, she is using >10 for organic soil extent, so mineral soil is <=10.
+organic_soil_extent_dir = "s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/inputs/processed/peat_mask/OGH/tiles_unthresholded/20251110/"
+organic_soil_extent_pattern = "ogh_unthresholded_mask"
 
-### Soil organic carbon (SOC) timeseries (URIs from https://github.com/openlandmap/soildb/blob/main/tables/OpenLandMap_soildb_COGS.csv)
-# From Hengl et al. under review (https://essd.copernicus.org/preprints/essd-2025-336/)
-# Units of raw global COGs are kg C/m^3 for 0-30 cm, multiplied by 10 (rescale factor) to make COGs ints.
-# Values in dict need to be lists (even with just 1 element) because of how uu.prepare_to_download_chunk works.
-SOC_COGS = {
-    "2000_2005": ["https://s3.opengeohub.org/global-soil/global_soil_props_v20250204_mosaics/oc_iso.10694.1995.mg.cm3_m_30m_b0cm..30cm_20000101_20051231_g_epsg.4326_v20250204.tif"],
-    "2005_2010": ["https://s3.opengeohub.org/global-soil/global_soil_props_v20250204_mosaics/oc_iso.10694.1995.mg.cm3_m_30m_b0cm..30cm_20050101_20101231_g_epsg.4326_v20250204.tif"],
-    "2010_2015": ["https://s3.opengeohub.org/global-soil/global_soil_props_v20250204_mosaics/oc_iso.10694.1995.mg.cm3_m_30m_b0cm..30cm_20100101_20151231_g_epsg.4326_v20250204.tif"],
-    "2015_2020": ["https://s3.opengeohub.org/global-soil/global_soil_props_v20250204_mosaics/oc_iso.10694.1995.mg.cm3_m_30m_b0cm..30cm_20150101_20201231_g_epsg.4326_v20250204.tif"]
-}
-
-SOC_timeseries_run_date = '20250819'
-SOC_timeseries_base_output_dir = f"{full_bucket_prefix}/climate/AFOLU_flux_model/soil_organic_carbon_timeseries/"
-
-SOC_density_intervals = ['2000_2005', '2005_2010', '2010_2015', '2015_2020']
-SOC_change_intervals = ['2000_2005_2005_2010', '2005_2010_2010_2015', '2010_2015_2015_2020', '2000_2005_2015_2020']   # Last one is the full-period delta
-
-# Extent of raw COGs
-SOC_density_full_extent_pattern = "SOC_density__full_extent__0-30cm_MgC"
-SOC_density_full_extent_dir = f"{SOC_timeseries_base_output_dir}{SOC_density_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_change_full_extent_pattern = "SOC_change__full_extent__0-30cm_MgC"
-SOC_change_full_extent_dir = f"{SOC_timeseries_base_output_dir}{SOC_change_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-
-# Extent of mineral soil (excludes thresholded organic soil extent created by Erin Glen)
-SOC_density_min_soil_extent_pattern = "SOC_density__mineral_soil_extent__0-30cm_MgC"
-SOC_density_min_soil_extent_dir = f"{SOC_timeseries_base_output_dir}{SOC_density_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_change_min_soil_extent_pattern = "SOC_change__mineral_soil_extent__0-30cm_MgC"
-SOC_change_min_soil_extent_dir = f"{SOC_timeseries_base_output_dir}{SOC_change_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
 
 # Cropland emissions
 cropland_emis_run_date =  '20241204'
@@ -738,22 +754,17 @@ global_cropland_total_amount_all_crops_nonpeat_2019_processed_pattern = f"all_GH
 
 ##### Outputs
 
-model_type_placeholder = "MODEL_TYPE"
-
-outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs/version_{model_version_underscore}/"
-outputs_path_mega_zarr = f"{outputs_path}mega_zarr/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/CHUNK_SIZE_pixels/RUN_DATE/"
-
 #IPCC LUC translation version number
 IPCC_LU_version = "1.0.0"
 
 ### IPCC classes and change
-IPCC_class_path = "IPCC_basic_class"
+IPCC_class_path = "IPCC_class"
 IPCC_class_pattern = "IPCC_class"
-IPCC_node_path = "IPCC_nod_code"
-IPCC_node_pattern = "IPCC_node"
-IPCC_change_path = "IPCC_basic_change"
+IPCC_node_path = "IPCC_node_code"
+IPCC_node_pattern = "IPCC_node_code"
+IPCC_change_path = "IPCC_change"
 IPCC_change_pattern = "IPCC_change"
-IPCC_summary_path = "IPCC_total_summary"
+IPCC_summary_path = "IPCC_summary"
 IPCC_summary_pattern = "IPCC_summary"
 
 ### IPCC codes
@@ -766,10 +777,11 @@ otherland_IPCC = 6
 
 #IPCC_class_max_val = 6  # Maximum value of IPCC class codes
 
-IPCC_class_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/land_use/{IPCC_LU_version}/{IPCC_class_path}/YEAR/CHUNK_SIZE_pixels/RUN_DATE/"
-IPCC_node_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/land_use/{IPCC_LU_version}/{IPCC_node_path}/YEAR/CHUNK_SIZE_pixels/RUN_DATE/"
-IPCC_change_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/land_use/{IPCC_LU_version}/{IPCC_change_path}/START_END/CHUNK_SIZE_pixels/RUN_DATE/"
-IPCC_summary_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/land_use/{IPCC_LU_version}/{IPCC_summary_path}/2015_2024/CHUNK_SIZE_pixels/RUN_DATE/"
+IPCC_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/land_use/{IPCC_LU_version}/"
+IPCC_class_dir = f"{IPCC_outputs_path}/{IPCC_class_path}/YEAR/CHUNK_SIZE_pixels/RUN_DATE/"
+IPCC_node_dir = f"{IPCC_outputs_path}/{IPCC_node_path}/YEAR/CHUNK_SIZE_pixels/RUN_DATE/"
+IPCC_change_dir = f"{IPCC_outputs_path}/{IPCC_change_path}/START_END/CHUNK_SIZE_pixels/RUN_DATE/"
+IPCC_summary_dir = f"{IPCC_outputs_path}/{IPCC_summary_path}/2015_2024/CHUNK_SIZE_pixels/RUN_DATE/"
 
 land_state_pattern = "land_state_node"
 land_state_node_fire_value = 9  # State nodes that end in this value had fire
@@ -782,6 +794,9 @@ bgc_gross_emis_pattern = "gross_emissions__BGC__MgCO2"
 deadwood_c_gross_emis_pattern = "gross_emissions__deadwood_C__MgCO2"
 litter_c_gross_emis_pattern = "gross_emissions__litter_C__MgCO2"
 
+ch4_gross_emis_pattern = "gross_emissions__CH4__MgCO2e"
+n2o_gross_emis_pattern = "gross_emissions__N2O__MgCO2e"
+
 agc_gross_removals_pattern = "gross_removals__AGC__MgCO2"
 bgc_gross_removals_pattern = "gross_removals__BGC__MgCO2"
 deadwood_c_gross_removals_pattern = "gross_removals__deadwood_C__MgCO2"
@@ -791,9 +806,6 @@ net_flux_agc_pattern = "net_flux__AGC__MgCO2"
 net_flux_bgc_pattern = "net_flux__BGC__MgCO2"
 net_flux_deadwood_c_pattern = "net_flux__deadwood_C__MgCO2"
 net_flux_litter_c_pattern = "net_flux__litter_C__MgCO2"
-
-ch4_flux_pattern = "gross_emissions__CH4__MgCO2e"
-n2o_flux_pattern = "gross_emissions__N2O__MgCO2e"
 
 gross_emis_all_C_pools_CO2_only_pattern = "gross_emissions__all_C_pools__CO2_only__MgCO2"
 gross_emis_all_C_pools_non_CO2_only_pattern = "gross_emissions__all_C_pools__non_CO2_only__MgCO2e"
@@ -816,45 +828,47 @@ times_burned_in_interval = "times_burned_in_current_interval"
 agc_emission_factor = "AGC_emission_factor_CO2_only__fraction"
 composite_primary_forest = "composite_primary_forest"
 
-zarr_output_pattern = "global_zarr"
-zarr_pixel_chunks = 10000
-
 # Tolerance for difference between model and zarr chunk stat metrics.
 # There's often some rounding/float error between them, so a small difference (~10^-8) is expected.
 zarr_difference_tolerance = 0.05
 
+model_version_type_description_placeholder = 'version_MODEL_VERSION__TYPE__DESCRIPTION'
+
+veg_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/{model_version_type_description_placeholder}/"
+veg_outputs_path_mega_zarr = f"{veg_outputs_path}mega_zarr/MODEL_INTERVAL_TYPE_intervals/CHUNK_SIZE_pixels/RUN_DATE/vegetation_zarr.zarr"
+
 # List of output directories from vegetation model with placeholders for parts of the directory
 veg_core_output_dirs = [
-    f"{outputs_path}{agc_modeled_dens_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/YEAR/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{bgc_modeled_dens_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/YEAR/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{deadwood_c_modeled_dens_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/YEAR/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{litter_c_modeled_dens_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/YEAR/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{agc_gross_emis_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{bgc_gross_emis_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{deadwood_c_gross_emis_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{litter_c_gross_emis_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{agc_gross_removals_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{bgc_gross_removals_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{deadwood_c_gross_removals_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{litter_c_gross_removals_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{ch4_flux_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{n2o_flux_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{land_state_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{agc_rf_pre_dist_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+    f"{veg_outputs_path}{agc_modeled_dens_pattern}/MODEL_INTERVAL_TYPE_intervals/YEAR/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{bgc_modeled_dens_pattern}/MODEL_INTERVAL_TYPE_intervals/YEAR/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{deadwood_c_modeled_dens_pattern}/MODEL_INTERVAL_TYPE_intervals/YEAR/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{litter_c_modeled_dens_pattern}/MODEL_INTERVAL_TYPE_intervals/YEAR/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{agc_gross_emis_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{bgc_gross_emis_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{deadwood_c_gross_emis_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{litter_c_gross_emis_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{agc_gross_removals_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{bgc_gross_removals_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{deadwood_c_gross_removals_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{litter_c_gross_removals_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{ch4_gross_emis_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{n2o_gross_emis_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{land_state_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{agc_rf_pre_dist_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
 ]
 
 # Intermediate outputs from vegetation model
 veg_intermediate_output_dirs = [
-    f"{outputs_path}{forest_age_output_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/YEAR/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{gain_year_count_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{most_recent_year_not_tall_veg}/{model_type_placeholder}/RUNSTART_END/CHUNK_SIZE_pixels/RUN_DATE/", # Years represent from model start to current interval end
-    f"{outputs_path}{max_height_since_last_time_not_tall_veg}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{first_time_sig_loss_from_max_height}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{part_or_full_dist_in_earlier_intervals}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{part_or_full_dist_in_curr_interval}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{times_burned_in_interval}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{agc_emission_factor}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{composite_primary_forest}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/YEAR/CHUNK_SIZE_pixels/RUN_DATE/"
+    f"{veg_outputs_path}{forest_age_output_pattern}/MODEL_INTERVAL_TYPE_intervals/YEAR/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{gain_year_count_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{most_recent_year_not_tall_veg}/RUNSTART_END/CHUNK_SIZE_pixels/RUN_DATE/", # Years represent from model start to current interval end
+    f"{veg_outputs_path}{max_height_since_last_time_not_tall_veg}/MODEL_INTERVAL_TYPE_intervals/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{first_time_sig_loss_from_max_height}/MODEL_INTERVAL_TYPE_intervals/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{part_or_full_dist_in_earlier_intervals}/MODEL_INTERVAL_TYPE_intervals/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{part_or_full_dist_in_curr_interval}/MODEL_INTERVAL_TYPE_intervals/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{times_burned_in_interval}/MODEL_INTERVAL_TYPE_intervals/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{agc_emission_factor}/MODEL_INTERVAL_TYPE_intervals/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{composite_primary_forest}/MODEL_INTERVAL_TYPE_intervals/YEAR/CHUNK_SIZE_pixels/RUN_DATE/"
 ]
 
 # Summative outputs from core vegetation model
@@ -866,38 +880,799 @@ veg_summative_output_patterns = [
     non_soil_c_modeled_dens_pattern
 ]
 
-# Summative outputs from core vegetation model
-veg_summative_output_dirs = [
-    # Outputs per interval
-    f"{outputs_path}{gross_emis_all_C_pools_CO2_only_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{gross_emis_all_C_pools_non_CO2_only_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{gross_emis_all_C_pools_all_gases_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{gross_removals_all_C_pools_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{net_flux_agc_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{net_flux_bgc_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{net_flux_deadwood_c_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{net_flux_litter_c_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{net_flux_all_C_pools_CO2_only_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{net_flux_all_C_pools_all_gases_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{outputs_path}{non_soil_c_modeled_dens_pattern}/{model_type_placeholder}/MODEL_INTERVAL_TYPE_intervals/YEAR/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"  # Only per interval
-]
-
 # Only specific datasets output to zarrs.
 # Starts with non-summative outputs from the vegetation model
 core_veg_outputs_to_zarr = [
     agc_modeled_dens_pattern, bgc_modeled_dens_pattern, deadwood_c_modeled_dens_pattern, litter_c_modeled_dens_pattern,
     agc_gross_emis_pattern, bgc_gross_emis_pattern, deadwood_c_gross_emis_pattern, litter_c_gross_emis_pattern,
-    ch4_flux_pattern, n2o_flux_pattern,
+    ch4_gross_emis_pattern, n2o_gross_emis_pattern,
     agc_gross_removals_pattern, bgc_gross_removals_pattern, deadwood_c_gross_removals_pattern, litter_c_gross_removals_pattern,
     land_state_pattern, composite_primary_forest, forest_age_output_pattern
 ]
 
 # Also want to add the metadata for the summative outputs to the global zarr upfront for simplicity,
 # rather than having to add more empty layers to the zarr at the summative stage
-full_outputs_to_zarr = core_veg_outputs_to_zarr
-full_outputs_to_zarr.extend(veg_summative_output_patterns)
+full_veg_outputs_to_zarr = core_veg_outputs_to_zarr
+full_veg_outputs_to_zarr.extend(veg_summative_output_patterns)
 
-pixel_area_global_zarr = "s3://gfw2-data/climate/AFOLU_flux_model/contextual_layer_global_zarr/pixel_area/20251106/global_pixel_area_20251106.zarr"
+# Summative outputs from core vegetation model
+veg_summative_output_dirs = [
+    f"{veg_outputs_path}{gross_emis_all_C_pools_CO2_only_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{gross_emis_all_C_pools_non_CO2_only_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{gross_emis_all_C_pools_all_gases_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{gross_removals_all_C_pools_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{net_flux_agc_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{net_flux_bgc_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{net_flux_deadwood_c_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{net_flux_litter_c_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{net_flux_all_C_pools_CO2_only_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{net_flux_all_C_pools_all_gases_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{non_soil_c_modeled_dens_pattern}/MODEL_INTERVAL_TYPE_intervals/YEAR/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"  # Only per interval
+]
+
+
+### LULUCF summation
+
+burned_organic_soils_total_pattern = "burned_total_Mg_CO2e_ha_yr"
+burned_organic_soils_total_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/outputs/version_{organic_soil_model_version_underscore}/{burned_organic_soils_total_pattern}/ogh_sensitivity_500m_10/five_year_intervals/START_END/CHUNK_SIZE_pixels/RUN_DATE/"
+
+drained_organic_soils_total_pattern = "drained_total_Mg_CO2e_ha_yr"
+drained_organic_soils_total_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/outputs/version_{organic_soil_model_version_underscore}/{drained_organic_soils_total_pattern}/ogh_sensitivity_500m_10/five_year_intervals/START_END/CHUNK_SIZE_pixels/RUN_DATE/"
+
+
+# Soil total patterns
+gross_emis_all_C_pools_CO2_only_soil_pattern = "soil_gross_emissions__all_C_pools__CO2_only__MgCO2"
+gross_emis_all_C_pools_non_CO2_only_soil_pattern = "soil_gross_emissions__all_C_pools__non_CO2_only__MgCO2e"
+gross_emis_all_C_pools_all_gases_soil_pattern = "soil_gross_emissions__all_C_pools__all_gases__MgCO2e"
+
+net_flux_all_C_pools_CO2_only_soil_pattern = "soil_net_flux__all_C_pools__CO2_only__MgCO2"
+net_flux_all_C_pools_all_gases_soil_pattern = "soil_net_flux__all_C_pools__all_gases__MgCO2e"
+
+# LULUCF patterns
+gross_emis_all_C_pools_CO2_only_LULUCF_pattern = "LULUCF_gross_emissions__all_C_pools__CO2_only__MgCO2"
+gross_emis_all_C_pools_non_CO2_only_LULUCF_pattern = "LULUCF_gross_emissions__all_C_pools__non_CO2_only__MgCO2e"
+gross_emis_all_C_pools_all_gases_LULUCF_pattern = "LULUCF_gross_emissions__all_C_pools__all_gases__MgCO2e"
+
+gross_removals_all_C_pools_LULUCF_pattern = "LULUCF_gross_removals__all_C_pools__MgCO2"
+
+net_flux_all_C_pools_CO2_only_LULUCF_pattern = "LULUCF_net_flux__all_C_pools__CO2_only__MgCO2"
+net_flux_all_C_pools_all_gases_LULUCF_pattern = "LULUCF_net_flux__all_C_pools__all_gases__MgCO2e"
+
+# Summative outputs used for LULUCF totals
+veg_summative_for_LULUCF_output_dirs = [
+    f"{veg_outputs_path}{gross_emis_all_C_pools_CO2_only_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{gross_emis_all_C_pools_non_CO2_only_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{gross_emis_all_C_pools_all_gases_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{gross_removals_all_C_pools_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{net_flux_all_C_pools_CO2_only_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{net_flux_all_C_pools_all_gases_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+]
+
+### Soil organic carbon (SOC) timeseries from OpenGeoHub (OGH) (URIs from https://github.com/openlandmap/soildb/blob/main/tables/OpenLandMap_soildb_COGS.csv)
+
+# Threshold probabiltiy for counting pixel as organic soil (per Erin Glen via Slack 2026-04-07)
+organic_soil_prob_threshold = 10
+
+# From Hengl et al. 2026 (https://essd.copernicus.org/articles/18/989/2026/)
+# Confirmed to be up-to-date by Tom Hengl on 2025-12-19 via email.
+# Units of raw global COGs are kg C/m^3 for 0-30 cm, multiplied by 10 (rescale factor) to make COGs ints.
+# Values in dict need to be lists (even with just 1 element) because of how uu.prepare_to_download_chunk works.
+SOC_COGS = {
+    "2005": ["https://s3.opengeohub.org/global-soil/global_soil_props_v20250204_mosaics/oc_iso.10694.1995.mg.cm3_m_30m_b0cm..30cm_20000101_20051231_g_epsg.4326_v20250204.tif"],
+    "2010": ["https://s3.opengeohub.org/global-soil/global_soil_props_v20250204_mosaics/oc_iso.10694.1995.mg.cm3_m_30m_b0cm..30cm_20050101_20101231_g_epsg.4326_v20250204.tif"],
+    "2015": ["https://s3.opengeohub.org/global-soil/global_soil_props_v20250204_mosaics/oc_iso.10694.1995.mg.cm3_m_30m_b0cm..30cm_20100101_20151231_g_epsg.4326_v20250204.tif"],
+    "2020": ["https://s3.opengeohub.org/global-soil/global_soil_props_v20250204_mosaics/oc_iso.10694.1995.mg.cm3_m_30m_b0cm..30cm_20150101_20201231_g_epsg.4326_v20250204.tif"],
+    "2022": ["https://s3.opengeohub.org/global-soil/global_soil_props_v20250204_mosaics/oc_iso.10694.1995.mg.cm3_m_30m_b0cm..30cm_20200101_20221231_g_epsg.4326_v20250204.tif"]
+}
+
+SOC_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/{model_version_type_description_placeholder}/"
+
+# Value refers to the end year of the OGH reporting block
+SOC_density_intervals = [2005, 2010, 2015, 2020, 2022]
+# Value refers to the end year of the second OGH reporting block, e.g., 2010 is the comparison of 2000-2005 block vs. 2005-2010 block
+SOC_change_intervals = [2010, 2015, 2020, 2022]
+
+SOC_path_zarr = f"{SOC_outputs_path}zarr/CHUNK_SIZE_pixels/RUN_DATE/SOC_zarr.zarr"
+
+# Extent of raw COGs
+SOC_density_full_extent_pattern = "SOC_density__full_extent__0-30cm_MgC"
+SOC_density_full_extent_dir = f"{SOC_outputs_path}{SOC_density_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+SOC_loss_full_extent_pattern = "SOC_loss__full_extent__0-30cm_MgC"
+SOC_loss_full_extent_dir = f"{SOC_outputs_path}{SOC_loss_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+SOC_gain_full_extent_pattern = "SOC_gain__full_extent__0-30cm_MgC"
+SOC_gain_full_extent_dir = f"{SOC_outputs_path}{SOC_gain_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+SOC_net_full_extent_pattern = "SOC_net__full_extent__0-30cm_MgC"
+SOC_net_full_extent_dir = f"{SOC_outputs_path}{SOC_net_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+
+# Extent of mineral soil (excludes thresholded organic soil extent created by Erin Glen)
+SOC_density_min_soil_extent_pattern = "SOC_density__mineral_soil_extent__0-30cm_MgC"
+SOC_density_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_density_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+SOC_loss_min_soil_extent_pattern = "SOC_loss__mineral_soil_extent__0-30cm_MgC"
+SOC_loss_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_loss_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+SOC_gain_min_soil_extent_pattern = "SOC_gain__mineral_soil_extent__0-30cm_MgC"
+SOC_gain_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_gain_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+SOC_net_min_soil_extent_pattern = "SOC_net__mineral_soil_extent__0-30cm_MgC"
+SOC_net_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_net_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+
+SOC_outputs_to_zarr = [
+    SOC_density_full_extent_pattern, SOC_density_min_soil_extent_pattern,
+    SOC_net_full_extent_pattern,  SOC_net_min_soil_extent_pattern,
+    SOC_loss_full_extent_pattern, SOC_loss_min_soil_extent_pattern,
+    SOC_gain_full_extent_pattern, SOC_gain_min_soil_extent_pattern
+]
+
+
+### Soil summative outputs
+
+soil_output_patterns = [
+    gross_emis_all_C_pools_CO2_only_soil_pattern,
+    gross_emis_all_C_pools_non_CO2_only_soil_pattern,
+    gross_emis_all_C_pools_all_gases_soil_pattern,
+    net_flux_all_C_pools_CO2_only_soil_pattern,
+    net_flux_all_C_pools_CO2_only_soil_pattern
+]
+soil_output_dirs = [
+    f"{SOC_outputs_path}{gross_emis_all_C_pools_CO2_only_soil_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{SOC_outputs_path}{gross_emis_all_C_pools_non_CO2_only_soil_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{SOC_outputs_path}{gross_emis_all_C_pools_all_gases_soil_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{SOC_outputs_path}{net_flux_all_C_pools_CO2_only_soil_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{SOC_outputs_path}{net_flux_all_C_pools_CO2_only_soil_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+]
+
+
+### LULUCF summative outputs
+
+LULUCF_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs_LULUCF/{model_version_type_description_placeholder}/"
+LULUCF_outputs_path_mega_zarr = f"{LULUCF_outputs_path}mega_zarr/MODEL_INTERVAL_TYPE_intervals/CHUNK_SIZE_pixels/RUN_DATE/"
+
+LULUCF_output_patterns = [
+    gross_emis_all_C_pools_CO2_only_LULUCF_pattern,
+    gross_emis_all_C_pools_non_CO2_only_LULUCF_pattern,
+    gross_emis_all_C_pools_all_gases_LULUCF_pattern,
+    gross_removals_all_C_pools_LULUCF_pattern,
+    net_flux_all_C_pools_CO2_only_LULUCF_pattern,
+    net_flux_all_C_pools_all_gases_LULUCF_pattern
+]
+LULUCF_output_dirs = [
+    f"{LULUCF_outputs_path}{gross_emis_all_C_pools_CO2_only_LULUCF_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{LULUCF_outputs_path}{gross_emis_all_C_pools_non_CO2_only_LULUCF_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{LULUCF_outputs_path}{gross_emis_all_C_pools_all_gases_LULUCF_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{LULUCF_outputs_path}{gross_removals_all_C_pools_LULUCF_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{LULUCF_outputs_path}{net_flux_all_C_pools_CO2_only_LULUCF_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{LULUCF_outputs_path}{net_flux_all_C_pools_all_gases_LULUCF_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
+]
+
+
+#######
+### Zonal stats resources
+#######
+
+### Contextual layer zarrs
+
+contextual_zarr_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/contextual_layer_global_zarr/"
+
+adm0_zarr_date = '20251209'
+adm0_zarr_dtype = 'uint16'
+adm0_geotif_path = "s3://gfw2-data/gadm_administrative_boundaries/v4.1/v4.1.64__from_gfw-data-lake/raster/epsg-4326/10/40000/adm0/gdal-geotiff/"
+adm0_zarr_path = f"{contextual_zarr_path}GADM4_1_adm0_global/{adm0_zarr_date}_fillValue_removed/global_GADM41_adm0_{adm0_zarr_date}.zarr"
+adm0_test_chunk = [13, 48, 14, 49]  # Three countries meet in Europe, with different values in three corners (50N_010E)
+adm0_pattern = 'adm0'
+
+pixel_area_zarr_date = '20251209'
+pixel_area_zarr_dtype = 'float32'
+pixel_area_geotif_path = "s3://gfw2-data/analyses/umd_area_2013__from_gfw-data-lake/v1.10/raster/epsg-4326/10/40000/area_m/gdal-geotiff/"
+pixel_area_zarr_path = f"{contextual_zarr_path}pixel_area/{pixel_area_zarr_date}_fillValue_removed/global_pixel_area_{pixel_area_zarr_date}.zarr"
+pixel_area_test_chunk = [13, 48, 14, 49]  # 50N_010E
+pixel_area_zstats_pattern = 'pixel_area'
+
+WDPA_zarr_date = '20251229'
+WDPA_zarr_dtype = 'uint8'
+WDPA_geotif_path = "s3://gfw2-data/conservation/wdpa_licensed_proteced_areas__from_data_lake/v202511/raster/epsg-4326/10/40000/detailed_iucn_cat/gdal-geotiff/"
+WDPA_zarr_path = f"{contextual_zarr_path}WDPAv202511/{WDPA_zarr_date}_fillValue_removed/wdpa_{WDPA_zarr_date}.zarr"
+WDPA_test_chunk = [21, -3, 22, -2]  # Has WDPA 0, 3 (bottom left, top right), and 9 (top left) (00N_020E)
+WDPA_pattern = 'WDPA'
+
+BRA_biomes_zarr_date = '20251229'
+BRA_biomes_zarr_dtype = 'uint8'
+BRA_biomes_geotif_path = "s3://gfw2-data/country/bra/bra_biomes_geotif/"
+BRA_biomes_zarr_path = f"{contextual_zarr_path}BRA_biomes/{BRA_biomes_zarr_date}_fillValue_removed/BRA_biomes_{BRA_biomes_zarr_date}.zarr"
+BRA_biomes_test_chunk = [-58, -16, -57, -15]  # Three biomes meet, with different values in three corners (10S_060W)
+BRA_biomes_pattern = 'BRA_biomes'
+
+cont_eco_zarr_date = '20260206'
+cont_eco_zarr_dtype = 'uint16'
+cont_eco_geotif_path = "s3://gfw2-data/climate/carbon_model/fao_ecozones/ecozone_continent/20190116/processed/"
+cont_eco_zarr_path = f"{contextual_zarr_path}FAO_ecozone_continents/{cont_eco_zarr_date}_fillValue_removed/FAO_ecozone_continents_{cont_eco_zarr_date}.zarr"
+cont_eco_test_chunk = [119, -6, 120, -5]  # Mix of 0, 4018 and 4020, with 4020 in upper right (00N_110E)
+cont_eco_zstats_pattern = 'cont_eco'
+
+landmark_zarr_date = '20260213'
+landmark_zarr_dtype = 'uint8'
+landmark_geotif_path = "s3://gfw2-data/landmark/gfw-data-lake/landmark_ip_lc_and_indicative_poly/v20250909/raster/epsg-4326/10/40000/is/geotiff/"
+landmark_zarr_path = f"{contextual_zarr_path}landmark/v20250909/{landmark_zarr_date}_fillValue_removed/landmark_{landmark_zarr_date}.zarr"
+landmark_test_chunk = [29, -1, 30, 0]  # 1 in upper left and lower left (00N_020E)
+landmark_pattern = 'Landmark'
+
+KBA_zarr_date = '20260213'
+KBA_zarr_dtype = 'uint16'
+KBA_geotif_path = "s3://gfw2-data/conservation/Key_Biodiversity_Areas/KBA_2024_09/KBA_v20240903__from_gfw-data-lake/raster/epsg-4326/10/40000/is/geotiff/"
+KBA_zarr_path = f"{contextual_zarr_path}KBA/v20240903/{KBA_zarr_date}_fillValue_removed/KBA_{KBA_zarr_date}.zarr"
+KBA_test_chunk = [29, -1, 30, 0]  # 1 in upper right; roughly 1/3-1/2 of chunk is KBA (00N_020E)
+KBA_pattern = 'KBA'
+
+watersheds_zarr_date = '20260213'
+watersheds_zarr_dtype = 'uint16'
+watersheds_geotif_path = "s3://gfw2-data/water/mapbox_river_basins__from_gfw-data-lake/v2018/raster/epsg-4326/10/40000/id/gdal-geotiff/"
+watersheds_zarr_path = f"{contextual_zarr_path}river_basins/v2018/{watersheds_zarr_date}_fillValue_removed/river_basins_{watersheds_zarr_date}.zarr"
+watersheds_test_chunk = [29, -1, 30, 0]  # 7005 in upper and lower left corners, 7003 in upper and lower right corners; should have nearly full coverage (00N_020E)
+watersheds_pattern = 'watershed'
+
+managed_land_CAN_zarr_date = '20260322'
+managed_land_CAN_zarr_dtype = 'uint8'  # 1=managed, 2=unmanaged
+managed_land_CAN_geotif_path = "s3://gfw2-data/climate/jrc_managed_land_can__from_gfw-data-lake/v20260218/raster/epsg-4326/10/40000/managed_land_extent/geotiff/"
+managed_land_CAN_zarr_path = f"{contextual_zarr_path}jrc_managed_land_can/v20260218/{managed_land_CAN_zarr_date}_fillValue_removed/jrc_managed_land_can_{managed_land_CAN_zarr_date}.zarr"
+managed_land_CAN_test_chunk = [-141, 61, -140, 62]  # 1 (managed) in bottom corners, 2 (unmanaged) in top corners. Should have full coverage. (70N_150W)
+managed_land_CAN_pattern = 'managed_land_Canada'
+
+managed_land_USA_zarr_date = '20260219'
+managed_land_USA_zarr_dtype = 'uint8'  # 1=managed, 2=unmanaged
+managed_land_USA_geotif_path = "s3://gfw2-data/climate/jrc_managed_land_usa__from_gfw-data-lake/v20260218/raster/epsg-4326/10/40000/managed_land_extent/geotiff/"
+managed_land_USA_zarr_path = f"{contextual_zarr_path}jrc_managed_land_USA/v20260218/{managed_land_USA_zarr_date}_fillValue_removed/jrc_managed_land_USA_{managed_land_USA_zarr_date}.zarr"
+managed_USA_test_chunk = [-143, 61, -142, 62]  # 1 (managed) in top right, 2 (unmanaged) in other corners. Should have full coverage. (70N_150W)
+managed_land_USA_pattern = 'managed_land_USA'
+
+### Value options for contextual layer values.
+### Every contextual layer needs to have all possible values listed here.
+
+state_node_lookup_table_local = "/mnt/c/GIS/git/AFOLU_GHG_flux_model/src/LULUCF/LULUCF_state_node_lookup_table.xlsx"
+state_node_lookup_table_s3 = "http://gfw2-data.s3.amazonaws.com/climate/AFOLU_flux_model/LULUCF/state_node_lookup_tables/LULUCF_state_node_lookup_table.xlsx"
+sheet = "v102_20251027"
+
+primary_forest_IFL_codes = np.array([0, 1], dtype=np.uint8)
+
+BRA_biomes_codes = np.array([0, 1, 2, 3, 4, 5, 6], dtype=np.uint8)
+
+WDPA_codes = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], dtype=np.uint8)
+
+# GADM v4.1 adm0 IDs (from Solomon Negusse's notebook)
+gadm_adm0_ids = np.array([  0.,   4.,   8.,  10.,  12.,  16.,  20.,  24.,  28.,  31.,  32.,
+        36.,  40.,  44.,  48.,  50.,  51.,  52.,  56.,  60.,  64.,  68.,
+        70.,  72.,  74.,  76.,  84.,  86.,  90.,  92.,  96., 100., 104.,
+       108., 112., 116., 120., 124., 132., 136., 140., 144., 148., 152.,
+       156., 158., 162., 166., 170., 174., 175., 178., 180., 184., 188.,
+       191., 192., 196., 203., 204., 208., 212., 214., 218., 222., 226.,
+       231., 232., 233., 234., 238., 239., 242., 246., 248., 250., 254.,
+       258., 260., 262., 266., 268., 270., 275., 276., 288., 292., 296.,
+       300., 304., 308., 312., 316., 320., 324., 328., 332., 334., 336.,
+       340., 348., 352., 356., 360., 364., 368., 372., 376., 380., 384.,
+       388., 392., 398., 400., 404., 408., 410., 414., 417., 418., 422.,
+       426., 428., 430., 434., 438., 440., 442., 450., 454., 458., 462.,
+       466., 470., 474., 478., 480., 484., 492., 496., 498., 499., 500.,
+       504., 508., 512., 516., 520., 524., 528., 531., 533., 534., 535.,
+       540., 548., 554., 558., 562., 566.,70., 574., 578., 580., 581.,
+       583., 584., 585., 586., 591., 598., 600., 604., 608., 612., 616.,
+       620., 624., 626., 630., 634., 638., 642., 643., 646., 652., 654.,
+       659., 660., 662., 663., 666., 670., 674., 678., 682., 686., 688.,
+       690., 694., 702., 703., 704., 705., 706., 710., 716., 724., 728.,
+       729., 732., 740., 744., 748., 752., 756., 760., 762., 764., 768.,
+       772., 776., 780., 784., 788., 792., 795., 796., 798., 800., 804.,
+       807., 818., 826., 831., 832., 833., 834., 840., 850., 854., 858.,
+       860., 862., 876., 882., 887., 894.], dtype=np.uint16)
+
+cont_eco_codes = np.array([0,
+    1004, 1007, 1008, 1009, 1010, 1014, 1016, 1017, 1018, 1018,
+    1019, 1020, 1021, 1022,
+    2001, 2002, 2003, 2004, 2004, 2005, 2006, 2007, 2007, 2008,
+    2008, 2009, 2009, 2010, 2010, 2011, 2012, 2013, 2013,
+    2014, 2014, 2014, 2014, 2015, 2015, 2016, 2017, 2017,
+    2018, 2018, 2018, 2019, 2019, 2020, 2020, 2021, 2021, 2022,
+    3004, 3005,
+    4001, 4002, 4003, 4004, 4005, 4006, 4008, 4009, 4011, 4012,
+    4013, 4014, 4015, 4016, 4017, 4018, 4019, 4020, 4022,
+    5007, 5010, 5021,
+    6007, 6010, 6021,
+    7001, 7002, 7003, 7004, 7005, 7007, 7009, 7011, 7012,
+    7013, 7014, 7015, 7022,
+    8004, 8008, 8013, 8014
+], dtype=np.uint16)
+
+landmark_codes = np.array([0, 1], dtype=np.uint8)
+
+composite_primary_codes = np.array([0, 1], dtype=np.uint8)
+
+KBA_codes = np.array([0, 1], dtype=np.uint8)
+
+watershed_codes = np.array([0,
+    1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010,
+    1011, 1012, 1013, 1014, 1015, 1016, 1017, 1018,
+    2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010,
+    2011, 2012, 2013, 2014, 2015,
+    3001, 3002, 3003, 3004, 3005, 3006, 3007, 3008, 3009, 3010,
+    3011, 3012, 3013, 3014, 3015, 3016, 3017, 3018, 3019, 3020,
+    3021, 3022, 3023, 3024, 3025,
+    4001, 4002, 4003, 4004, 4005, 4006, 4007, 4008, 4009, 4010,
+    4011, 4012, 4013, 4014, 4015, 4016, 4017, 4018, 4019, 4020,
+    4021, 4022, 4023, 4024, 4025, 4026, 4027, 4028, 4029, 4030,
+    4031, 4032, 4033, 4034, 4035, 4036, 4037, 4038, 4039, 4040,
+    4042, 4043, 4044, 4045, 4046, 4047, 4048, 4049, 4050, 4051,
+    4052,
+    5001, 5002, 5003, 5004, 5005, 5006, 5007, 5008, 5009, 5010,
+    5011, 5012, 5013, 5014, 5015, 5016, 5017, 5018, 5019, 5020,
+    5021, 5022, 5023, 5024, 5025, 5026, 5027, 5028, 5029, 5030,
+    5031, 5032, 5033, 5034, 5035, 5036, 5037, 5038, 5039, 5040,
+    5041, 5042, 5043, 5044, 5045, 5046, 5047, 5048, 5049, 5050,
+    5051, 5052, 5053, 5054, 5055, 5056, 5057, 5058, 5059, 5060,
+    5061, 5062, 5063, 5064, 5065, 5066, 5067, 5068,
+    6001, 6002, 6003, 6004, 6005, 6006, 6007, 6008, 6009, 6010,
+    6011, 6012, 6013, 6014, 6015, 6016, 6017, 6018, 6019,
+    7001, 7002, 7003, 7004, 7005, 7006, 7007, 7008, 7009, 7010,
+    7011, 7014, 7015, 7016, 7017, 7018, 7019, 7020, 7021, 7022,
+    7023, 7024, 7025, 7026, 7027,
+    8001, 8002, 8003, 8004, 8005, 8006, 8007, 8008, 8009
+], dtype=np.uint16)
+
+managed_land_codes = np.array([0, 1, 2], dtype=np.uint8)
+
+# Converts numeric ISO values to ISO codes
+# From https://github.com/wri/project-zeno-data-infra/blob/main/notebooks/grasslands_areas_gadm_2000-2022.ipynb
+numeric_to_alpha3 = {
+    4: 'AFG', 248: 'ALA', 8: 'ALB', 12: 'DZA', 16: 'ASM', 20: 'AND', 24: 'AGO', 660: 'AIA',
+    10: 'ATA', 28: 'ATG', 32: 'ARG', 51: 'ARM', 533: 'ABW', 36: 'AUS', 40: 'AUT', 31: 'AZE',
+    44: 'BHS', 48: 'BHR', 50: 'BGD', 52: 'BRB', 112: 'BLR', 56: 'BEL', 84: 'BLZ', 204: 'BEN',
+    60: 'BMU', 64: 'BTN', 68: 'BOL', 535: 'BES', 70: 'BIH', 72: 'BWA', 74: 'BVT', 76: 'BRA',
+    86: 'IOT', 96: 'BRN', 100: 'BGR', 854: 'BFA', 108: 'BDI', 132: 'CPV', 116: 'KHM', 120: 'CMR',
+    124: 'CAN', 136: 'CYM', 140: 'CAF', 148: 'TCD', 152: 'CHL', 156: 'CHN', 162: 'CXR', 166: 'CCK',
+    170: 'COL', 174: 'COM', 178: 'COG', 180: 'COD', 184: 'COK', 188: 'CRI', 384: 'CIV', 191: 'HRV',
+    192: 'CUB', 531: 'CUW', 196: 'CYP', 203: 'CZE', 208: 'DNK', 262: 'DJI', 212: 'DMA', 214: 'DOM',
+    218: 'ECU', 818: 'EGY', 222: 'SLV', 226: 'GNQ', 232: 'ERI', 233: 'EST', 748: 'SWZ', 231: 'ETH',
+    238: 'FLK', 234: 'FRO', 242: 'FJI', 246: 'FIN', 250: 'FRA', 254: 'GUF', 258: 'PYF', 260: 'ATF',
+    266: 'GAB', 270: 'GMB', 268: 'GEO', 276: 'DEU', 288: 'GHA', 292: 'GIB', 300: 'GRC', 304: 'GRL',
+    308: 'GRD', 312: 'GLP', 316: 'GUM', 320: 'GTM', 831: 'GGY', 324: 'GIN', 624: 'GNB', 328: 'GUY',
+    332: 'HTI', 334: 'HMD', 336: 'VAT', 340: 'HND', 344: 'HKG', 348: 'HUN', 352: 'ISL', 356: 'IND',
+    360: 'IDN', 364: 'IRN', 368: 'IRQ', 372: 'IRL', 833: 'IMN', 376: 'ISR', 380: 'ITA', 388: 'JAM',
+    392: 'JPN', 832: 'JEY', 400: 'JOR', 398: 'KAZ', 404: 'KEN', 296: 'KIR', 408: 'PRK', 410: 'KOR',
+    414: 'KWT', 417: 'KGZ', 418: 'LAO', 428: 'LVA', 422: 'LBN', 426: 'LSO', 430: 'LBR', 434: 'LBY',
+    438: 'LIE', 440: 'LTU', 442: 'LUX', 446: 'MAC', 450: 'MDG', 454: 'MWI', 458: 'MYS', 462: 'MDV',
+    466: 'MLI', 470: 'MLT', 584: 'MHL', 474: 'MTQ', 478: 'MRT', 480: 'MUS', 175: 'MYT', 484: 'MEX',
+    583: 'FSM', 498: 'MDA', 492: 'MCO', 496: 'MNG', 499: 'MNE', 500: 'MSR', 504: 'MAR', 508: 'MOZ',
+    104: 'MMR', 516: 'NAM', 520: 'NRU', 524: 'NPL', 528: 'NLD', 540: 'NCL', 554: 'NZL', 558: 'NIC',
+    562: 'NER', 566: 'NGA', 570: 'NIU', 574: 'NFK', 807: 'MKD', 580: 'MNP', 578: 'NOR', 512: 'OMN',
+    586: 'PAK', 585: 'PLW', 275: 'PSE', 591: 'PAN', 598: 'PNG', 600: 'PRY', 604: 'PER', 608: 'PHL',
+    612: 'PCN', 616: 'POL', 620: 'PRT', 630: 'PRI', 634: 'QAT', 638: 'REU', 642: 'ROU', 643: 'RUS',
+    646: 'RWA', 652: 'BLM', 654: 'SHN', 659: 'KNA', 662: 'LCA', 663: 'MAF', 666: 'SPM', 670: 'VCT',
+    882: 'WSM', 674: 'SMR', 678: 'STP', 682: 'SAU', 686: 'SEN', 688: 'SRB', 690: 'SYC', 694: 'SLE',
+    702: 'SGP', 534: 'SXM', 703: 'SVK', 705: 'SVN', 90: 'SLB', 706: 'SOM', 710: 'ZAF', 239: 'SGS',
+    728: 'SSD', 724: 'ESP', 144: 'LKA', 729: 'SDN', 740: 'SUR', 744: 'SJM', 752: 'SWE', 756: 'CHE',
+    760: 'SYR', 158: 'TWN', 762: 'TJK', 834: 'TZA', 764: 'THA', 626: 'TLS', 768: 'TGO', 772: 'TKL',
+    776: 'TON', 780: 'TTO', 788: 'TUN', 792: 'TUR', 795: 'TKM', 796: 'TCA', 798: 'TUV', 800: 'UGA',
+    804: 'UKR', 784: 'ARE', 826: 'GBR', 840: 'USA', 581: 'UMI', 858: 'URY', 860: 'UZB', 548: 'VUT',
+    862: 'VEN', 704: 'VNM', 92: 'VGB', 850: 'VIR', 876: 'WLF', 732: 'ESH', 887: 'YEM', 894: 'ZMB',
+    716: 'ZWE', 0: 'NA'
+}
+
+iso_to_country = {
+    'ABW': 'Aruba', 'AFG': 'Afghanistan', 'AGO': 'Angola', 'AIA': 'Anguilla', 'ALA': 'Åland Islands', 'ALB': 'Albania', 'AND': 'Andorra', 'ARE': 'United Arab Emirates', 'ARG': 'Argentina',
+    'ARM': 'Armenia', 'ATF': 'French Southern Territories', 'ATG': 'Antigua and Barbuda', 'AUS': 'Australia', 'AUT': 'Austria', 'AZE': 'Azerbaijan', 'BDI': 'Burundi', 'BEL': 'Belgium', 'BEN': 'Benin',
+    'BES': 'Bonaire', 'BFA': 'Burkina Faso', 'BGD': 'Bangladesh', 'BGR': 'Bulgaria', 'BHR': 'Bahrain', 'BHS': 'Bahamas', 'BIH': 'Bosnia and Herzegovina', 'BLM': 'Saint Barthélemy', 'BLR': 'Belarus',
+    'BLZ': 'Belize', 'BMU': 'Bermuda', 'BOL': 'Bolivia', 'BRA': 'Brazil', 'BRB': 'Barbados', 'BRN': 'Brunei', 'BTN': 'Bhutan', 'BWA': 'Botswana', 'CAF': 'Central African Republic', 'CAN': 'Canada',
+    'CHE': 'Switzerland', 'CHL': 'Chile', 'CHN': 'China', 'CIV': 'Côte d Ivoire', 'CMR': 'Cameroon', 'COD': 'DR Congo', 'COG': 'Republic of Congo', 'COL': 'Colombia',
+    'COM': 'Comoros', 'CPV': 'Cape Verde', 'CRI': 'Costa Rica', 'CUB': 'Cuba', 'CUW': 'Curaçao', 'CYM': 'Cayman Islands', 'CYP': 'Cyprus', 'CZE': 'Czechia', 'DEU': 'Germany', 'DJI': 'Djibouti',
+    'DMA': 'Dominica', 'DNK': 'Denmark', 'DOM': 'Dominican Republic', 'DZA': 'Algeria', 'ECU': 'Ecuador', 'EGY': 'Egypt', 'ERI': 'Eritrea', 'ESH': 'Western Sahara', 'ESP': 'Spain', 'EST': 'Estonia',
+    'ETH': 'Ethiopia', 'FIN': 'Finland', 'FJI': 'Fiji', 'FLK': 'Falkland Islands', 'FRA': 'France', 'FRO': 'Faroe Islands', 'FSM': 'Micronesia', 'GAB': 'Gabon', 'GBR': 'United Kingdom',
+    'GEO': 'Georgia', 'GGY': 'Guernsey', 'GHA': 'Ghana', 'GIB': 'Gibraltar', 'GIN': 'Guinea', 'GLP': 'Guadeloupe', 'GMB': 'Gambia', 'GNB': 'Guinea-Bissau', 'GNQ': 'Equatorial Guinea', 'GRC': 'Greece',
+    'GRD': 'Grenada', 'GRL': 'Greenland', 'GTM': 'Guatemala', 'GUF': 'French Guiana', 'GUY': 'Guyana', 'HKG': 'Hong Kong', 'HND': 'Honduras', 'HRV': 'Croatia', 'HTI': 'Haiti', 'HUN': 'Hungary',
+    'IDN': 'Indonesia', 'IMN': 'Isle of Man', 'IND': 'India', 'IRL': 'Ireland', 'IRN': 'Iran', 'IRQ': 'Iraq', 'ISL': 'Iceland', 'ISR': 'Israel', 'ITA': 'Italy', 'JAM': 'Jamaica', 'JEY': 'Jersey',
+    'JOR': 'Jordan', 'JPN': 'Japan', 'KAZ': 'Kazakhstan', 'KEN': 'Kenya', 'KGZ': 'Kyrgyzstan', 'KHM': 'Cambodia', 'KIR': 'Kiribati', 'KNA': 'Saint Kitts and Nevis', 'KOR': 'Korea', 'KWT': 'Kuwait',
+    'LAO': 'Laos', 'LBN': 'Lebanon', 'LBR': 'Liberia', 'LBY': 'Libya', 'LCA': 'Saint Lucia', 'LIE': 'Liechtenstein', 'LKA': 'Sri Lanka', 'LSO': 'Lesotho', 'LTU': 'Lithuania', 'LUX': 'Luxembourg',
+    'LVA': 'Latvia', 'MAC': 'Macao', 'MAF': 'Saint Martin (French part)', 'MAR': 'Morocco', 'MCO': 'Monaco', 'MDA': 'Moldova', 'MDG': 'Madagascar', 'MDV': 'Maldives',
+    'MEX': 'Mexico', 'MKD': 'North Macedonia', 'MLI': 'Mali', 'MLT': 'Malta', 'MMR': 'Myanmar', 'MNE': 'Montenegro', 'MNG': 'Mongolia', 'MOZ': 'Mozambique', 'MRT': 'Mauritania', 'MSR': 'Montserrat', 'MTQ': 'Martinique', 'MUS': 'Mauritius',
+    'MWI': 'Malawi', 'MYS': 'Malaysia', 'MYT': 'Mayotte', 'NAM': 'Namibia', 'NCL': 'New Caledonia', 'NER': 'Niger', 'NFK': 'Norfolk Island', 'NGA': 'Nigeria', 'NIC': 'Nicaragua', 'NLD': 'Netherlands',
+    'NOR': 'Norway', 'NPL': 'Nepal', 'NRU': 'Nauru', 'NZL': 'New Zealand', 'OMN': 'Oman', 'PAK': 'Pakistan', 'PAN': 'Panama', 'PER': 'Peru', 'PHL': 'Philippines', 'PLW': 'Palau', 'PNG': 'Papua New Guinea',
+    'POL': 'Poland', 'PRI': 'Puerto Rico', 'PRK': 'Korea (the Democratic Peoples Republic of)', 'PRT': 'Portugal', 'PRY': 'Paraguay', 'PSE': 'Palestine, State of', 'QAT': 'Qatar', 'REU': 'Réunion',
+    'ROU': 'Romania', 'RUS': 'Russia', 'RWA': 'Rwanda', 'SAU': 'Saudi Arabia', 'SDN': 'Sudan', 'SEN': 'Senegal',
+    'SGP': 'Singapore','SJM': 'Svalbard and Jan Mayen', 'SLB': 'Solomon Islands', 'SLE': 'Sierra Leone', 'SLV': 'El Salvador', 'SMR': 'San Marino', 'SOM': 'Somalia', 'SPM': 'Saint Pierre and Miquelon',
+    'SRB': 'Serbia', 'SSD': 'South Sudan', 'STP': 'Sao Tome and Principe', 'SUR': 'Suriname', 'SVK': 'Slovakia', 'SVN': 'Slovenia', 'SWE': 'Sweden',
+    'SWZ': 'Swaziland', 'SXM': 'Sint Maarten', 'SYC': 'Seychelles', 'SYR': 'Syria', 'TCA': 'Turks and Caicos Islands', 'TCD': 'Chad', 'TGO': 'Togo', 'THA': 'Thailand', 'TJK': 'Tajikistan',
+    'TKM': 'Turkmenistan', 'TLS': 'East Timor', 'TTO': 'Trinidad and Tobago', 'TUN': 'Tunisia', 'TUR': 'Turkey', 'TUV': 'Tuvalu', 'TWN': 'Taiwan', 'TZA': 'Tanzania',
+    'UGA': 'Uganda', 'UKR': 'Ukraine', 'UMI': 'United States Minor Outlying Islands', 'URY': 'Uruguay', 'USA': 'USA', 'UZB': 'Uzbekistan', 'VAT': 'Holy See', 'VCT': 'Saint Vincent and the Grenadines',
+    'VEN': 'Venezuela', 'VGB': 'British Virgin Islands', 'VIR': 'Virgin Islands, U.S.', 'VNM': 'Vietnam', 'VUT': 'Vanuatu', 'XAD': 'nan', 'XCA': 'nan', 'XCL': 'nan',
+    'XKO': 'nan', 'XNC': 'nan', 'XPI': 'nan', 'XSP': 'nan', 'YEM': 'Yemen', 'ZAF': 'South Africa', 'ZMB': 'Zambia', 'ZWE': 'Zimbabwe',
+    'NA': 'no_country'
+}
+
+iso_to_region = {
+    'ABW': 'Tropical LAC', 'AFG': 'Non-tropical Asia', 'AGO': 'Tropical Africa', 'AIA': 'Tropical LAC', 'ALA': 'Europe', 'ALB': 'Europe', 'AND': 'Europe', 'ARE': 'Non-tropical Asia',
+    'ARG': 'Non-tropical LAC', 'ARM': 'Non-tropical Asia', 'ATF': 'Non-tropical Africa', 'ATG': 'Tropical LAC', 'AUS': 'Non-tropical Asia', 'AUT': 'Europe', 'AZE': 'Non-tropical Asia',
+    'BDI': 'Tropical Africa', 'BEL': 'Europe', 'BEN': 'Tropical Africa', 'BES': 'Tropical LAC', 'BFA': 'Tropical Africa', 'BGD': 'Tropical Asia', 'BGR': 'Europe', 'BHR': 'Non-tropical Asia',
+    'BHS': 'Tropical LAC', 'BIH': 'Europe', 'BLM': 'Tropical LAC', 'BLR': 'Europe', 'BLZ': 'Tropical LAC', 'BMU': 'Tropical LAC', 'BOL': 'Tropical LAC', 'BRA': 'Tropical LAC', 'BRB': 'Tropical LAC',
+    'BRN': 'Tropical Asia', 'BTN': 'Tropical Asia', 'BWA': 'Tropical Africa', 'CAF': 'Tropical Africa', 'CAN': 'North America', 'CHE': 'Europe', 'CHL': 'Non-tropical LAC', 'CHN': 'Non-tropical Asia',
+    'CIV': 'Tropical Africa', 'CMR': 'Tropical Africa', 'COD': 'Tropical Africa', 'COG': 'Tropical Africa', 'COL': 'Tropical LAC', 'COM': 'Tropical Africa', 'CPV': 'Tropical Africa',
+    'CRI': 'Tropical LAC', 'CUB': 'Tropical LAC', 'CUW': 'Tropical LAC', 'CYM': 'Tropical LAC', 'CYP': 'Europe', 'CZE': 'Europe', 'DEU': 'Europe', 'DJI': 'Tropical Africa', 'DMA': 'Tropical LAC',
+    'DNK': 'Europe', 'DOM': 'Tropical LAC', 'DZA': 'Non-tropical Africa', 'ECU': 'Tropical LAC', 'EGY': 'Non-tropical Africa', 'ERI': 'Tropical Africa', 'ESH': 'Non-tropical Africa', 'ESP': 'Europe', 'EST': 'Europe',
+    'ETH': 'Tropical Africa', 'FIN': 'Europe', 'FJI': 'Tropical Asia', 'FLK': 'Non-tropical LAC', 'FRA': 'Europe', 'FRO': 'Europe', 'FSM': 'Tropical Asia', 'GAB': 'Tropical Africa', 'GBR': 'Europe',
+    'GEO': 'Non-tropical Asia', 'GGY': 'Europe', 'GHA': 'Tropical Africa', 'GIB': 'Europe', 'GIN': 'Tropical Africa', 'GLP': 'Tropical LAC', 'GMB': 'Tropical Africa', 'GNB': 'Tropical Africa',
+    'GNQ': 'Tropical Africa', 'GRC': 'Europe', 'GRD': 'Tropical LAC', 'GRL': 'Europe', 'GTM': 'Tropical LAC', 'GUF': 'Tropical LAC', 'GUY': 'Tropical LAC', 'HKG': 'Non-tropical Asia', 'HND': 'Tropical LAC',
+    'HRV': 'Europe', 'HTI': 'Tropical LAC', 'HUN': 'Europe', 'IDN': 'Tropical Asia', 'IMN': 'Europe', 'IND': 'Tropical Asia', 'IRL': 'Europe', 'IRN': 'Non-tropical Asia', 'IRQ': 'Non-tropical Asia',
+    'ISL': 'Europe', 'ISR': 'Non-tropical Asia', 'ITA': 'Europe', 'JAM': 'Tropical LAC', 'JEY': 'Europe', 'JOR': 'Non-tropical Asia', 'JPN': 'Non-tropical Asia', 'KAZ': 'Non-tropical Asia', 'KEN': 'Tropical Africa',
+    'KGZ': 'Non-tropical Asia', 'KHM': 'Tropical Asia', 'KIR': 'Tropical Asia', 'KNA': 'Tropical LAC', 'KOR': 'Non-tropical Asia', 'KWT': 'Non-tropical Asia', 'LAO': 'Tropical Asia',
+    'LBN': 'Non-tropical Asia', 'LBR': 'Tropical Africa', 'LBY': 'Non-tropical Africa', 'LCA': 'Tropical LAC', 'LIE': 'Europe', 'LKA': 'Tropical Asia', 'LSO': 'Non-tropical Africa', 'LTU': 'Europe',
+    'LUX': 'Europe', 'LVA': 'Europe', 'MAC': 'Tropical Asia', 'MAF': 'Tropical LAC', 'MAR': 'Non-tropical Africa', 'MCO': 'Europe', 'MDA': 'Europe', 'MDG': 'Tropical Africa', 'MDV': 'Tropical Africa',
+    'MEX': 'Tropical LAC', 'MKD': 'Europe', 'MLI': 'Tropical Africa', 'MLT': 'Europe', 'MMR': 'Tropical Asia', 'MNE': 'Europe', 'MNG': 'Non-tropical Asia', 'MOZ': 'Tropical Africa', 'MRT': 'Tropical Africa',
+    'MSR': 'Tropical LAC', 'MTQ': 'Tropical LAC', 'MUS': 'Tropical Africa', 'MWI': 'Tropical Africa', 'MYS': 'Tropical Asia', 'MYT': 'Tropical Africa', 'NAM': 'Tropical Africa', 'NCL': 'Tropical Asia', 'NER': 'Tropical Africa',
+    'NFK': 'Non-tropical Asia', 'NGA': 'Tropical Africa', 'NIC': 'Tropical LAC', 'NLD': 'Europe', 'NOR': 'Europe', 'NPL': 'Tropical Asia', 'NRU': 'Non-tropical Asia', 'NZL': 'Non-tropical Asia',
+    'OMN': 'Non-tropical Asia', 'PAK': 'Non-tropical Asia', 'PAN': 'Tropical LAC', 'PER': 'Tropical LAC', 'PHL': 'Tropical Asia', 'PLW': 'Tropical Asia', 'PNG': 'Tropical Asia', 'POL': 'Europe',
+    'PRI': 'Tropical LAC', 'PRK': 'Non-tropical Asia', 'PRT': 'Europe', 'PRY': 'Tropical LAC', 'PSE': 'Non-tropical Asia', 'QAT': 'Non-tropical Asia', 'REU': 'Tropical Africa', 'ROU': 'Europe',
+    'RUS': 'Non-tropical Asia', 'RWA': 'Tropical Africa', 'SAU': 'Non-tropical Asia', 'SDN': 'Tropical Africa', 'SEN': 'Tropical Africa', 'SGP': 'Tropical Asia', 'SJM': 'Europe', 'SLB': 'Tropical Asia',
+    'SLE': 'Tropical Africa', 'SLV': 'Tropical LAC', 'SMR': 'Europe', 'SOM': 'Tropical Africa', 'SPM': 'North America', 'SRB': 'Europe', 'SSD': 'Tropical Africa', 'STP': 'Non-tropical Africa', 'SUR': 'Tropical LAC',
+    'SVK': 'Europe', 'SVN': 'Europe', 'SWE': 'Europe', 'SWZ': 'Tropical Africa', 'SXM': 'Tropical LAC', 'SYC': 'Tropical Africa', 'SYR': 'Non-tropical Asia', 'TCA': 'Tropical LAC', 'TCD': 'Tropical Africa',
+    'TGO': 'Tropical Africa', 'THA': 'Tropical Asia', 'TJK': 'Non-tropical Asia', 'TKM': 'Non-tropical Asia', 'TLS': 'Tropical Asia', 'TTO': 'Tropical LAC', 'TUN': 'Non-tropical Africa',
+    'TUR': 'Non-tropical Asia', 'TUV': 'Tropical Asia', 'TWN': 'Non-tropical Asia', 'TZA': 'Tropical Africa', 'UGA': 'Tropical Africa', 'UKR': 'Europe', 'UMI': 'Tropical Asia', 'URY': 'Non-tropical LAC',
+    'USA': 'North America', 'UZB': 'Non-tropical Asia', 'VAT': 'Europe', 'VCT': 'Tropical LAC', 'VEN': 'Tropical LAC', 'VGB': 'Tropical LAC', 'VIR': 'Tropical LAC', 'VNM': 'Tropical Asia',
+    'VUT': 'Tropical Asia', 'XAD': 'Not tropical misc', 'XCA': 'Not tropical misc', 'XCL': 'Not tropical misc', 'XKO': 'Not tropical misc', 'XNC': 'Not tropical misc', 'XPI': 'Not tropical misc',
+    'XSP': 'Not tropical misc', 'YEM': 'Non-tropical Asia', 'ZAF': 'Non-tropical Africa', 'ZMB': 'Tropical Africa', 'ZWE': 'Tropical Africa', 'NA': 'no_country'
+}
+
+# Converts continent-ecozone codes to continent and ecozone labels
+cont_eco_to_text = {
+    1004: {"ecozone": "No data", "continent": "Africa"},
+    1007: {"ecozone": "Subtropical dry forest", "continent": "Africa"},
+    1008: {"ecozone": "Subtropical humid forest", "continent": "Africa"},
+    1009: {"ecozone": "Subtropical mountain system", "continent": "Africa"},
+    1010: {"ecozone": "Subtropical steppe", "continent": "Africa"},
+    1014: {"ecozone": "No data- Assigned to temperate oceanic forest", "continent": "Africa"},
+    1016: {"ecozone": "Tropical desert", "continent": "Africa"},
+    1017: {"ecozone": "Tropical dry forest", "continent": "Africa"},
+    1018: {"ecozone": "Tropical moist deciduous forest", "continent": "Africa"},
+    1019: {"ecozone": "Tropical mountain system", "continent": "Africa"},
+    1020: {"ecozone": "Tropical rainforest", "continent": "Africa"},
+    1021: {"ecozone": "Tropical shrubland", "continent": "Africa"},
+    1022: {"ecozone": "Water", "continent": "Africa"},
+
+    2001: {"ecozone": "Boreal coniferous forest", "continent": "America North"},
+    2002: {"ecozone": "Boreal mountain system", "continent": "America North"},
+    2003: {"ecozone": "Boreal tundra woodland", "continent": "America North"},
+    2004: {"ecozone": "No data", "continent": "America South"},
+    2005: {"ecozone": "Polar", "continent": "America North"},
+    2006: {"ecozone": "Subtropical desert", "continent": "America North"},
+    2007: {"ecozone": "Subtropical dry forest", "continent": "America South"},
+    2008: {"ecozone": "Subtropical humid forest", "continent": "America South"},
+    2009: {"ecozone": "Subtropical mountain system", "continent": "America South"},
+    2010: {"ecozone": "Subtropical steppe", "continent": "America South"},
+    2011: {"ecozone": "Temperate continental forest", "continent": "America North"},
+    2012: {"ecozone": "Temperate desert", "continent": "America North"},
+    2013: {"ecozone": "Temperate mountain system", "continent": "America South"},
+    2014: {"ecozone": "Temperate oceanic forest", "continent": "America South"},
+    2015: {"ecozone": "Temperate steppe", "continent": "America South"},
+    2016: {"ecozone": "Tropical desert", "continent": "America South"},
+    2017: {"ecozone": "Tropical dry forest", "continent": "America South"},
+    2018: {"ecozone": "Tropical moist deciduous forest", "continent": "America South"},
+    2019: {"ecozone": "Tropical mountain system", "continent": "America South"},
+    2020: {"ecozone": "Tropical rainforest", "continent": "America South"},
+    2021: {"ecozone": "Tropical shrubland", "continent": "America South"},
+    2022: {"ecozone": "Water", "continent": "America North"},
+
+    3004: {"ecozone": "No data", "continent": "Antarctica"},
+    3005: {"ecozone": "Polar", "continent": "Antarctica"},
+
+    4001: {"ecozone": "Boreal coniferous forest", "continent": "Asia"},
+    4002: {"ecozone": "Boreal mountain system", "continent": "Asia"},
+    4003: {"ecozone": "Boreal tundra woodland", "continent": "Asia"},
+    4004: {"ecozone": "No data", "continent": "Asia"},
+    4005: {"ecozone": "Polar", "continent": "Asia"},
+    4006: {"ecozone": "Subtropical desert", "continent": "Asia"},
+    4008: {"ecozone": "Subtropical humid forest", "continent": "Asia"},
+    4009: {"ecozone": "Subtropical mountain system", "continent": "Asia"},
+    4011: {"ecozone": "Temperate continental forest", "continent": "Asia"},
+    4012: {"ecozone": "Temperate desert", "continent": "Asia"},
+    4013: {"ecozone": "Temperate mountain system", "continent": "Asia"},
+    4014: {"ecozone": "Temperate oceanic forest", "continent": "Asia"},
+    4015: {"ecozone": "Temperate steppe", "continent": "Asia"},
+    4016: {"ecozone": "Tropical desert", "continent": "Asia"},
+    4017: {"ecozone": "Tropical dry forest", "continent": "Asia"},
+    4018: {"ecozone": "Tropical moist deciduous forest", "continent": "Asia"},
+    4019: {"ecozone": "Tropical mountain system", "continent": "Asia"},
+    4020: {"ecozone": "Tropical rainforest", "continent": "Asia"},
+    4022: {"ecozone": "Water", "continent": "Asia"},
+
+    5007: {"ecozone": "Subtropical dry forest", "continent": "Asia continental"},
+    5010: {"ecozone": "Subtropical steppe", "continent": "Asia continental"},
+    5021: {"ecozone": "Tropical shrubland", "continent": "Asia continental"},
+
+    6007: {"ecozone": "Subtropical dry forest", "continent": "Asia insular"},
+    6010: {"ecozone": "Subtropical steppe", "continent": "Asia insular"},
+    6021: {"ecozone": "Tropical shrubland", "continent": "Asia insular"},
+
+    7001: {"ecozone": "Boreal coniferous forest", "continent": "Europe"},
+    7002: {"ecozone": "Boreal mountain system", "continent": "Europe"},
+    7003: {"ecozone": "Boreal tundra woodland", "continent": "Europe"},
+    7004: {"ecozone": "No data", "continent": "Europe"},
+    7005: {"ecozone": "Polar", "continent": "Europe"},
+    7007: {"ecozone": "Subtropical dry forest", "continent": "Europe"},
+    7009: {"ecozone": "Subtropical mountain system", "continent": "Europe"},
+    7011: {"ecozone": "Temperate continental forest", "continent": "Europe"},
+    7012: {"ecozone": "Temperate desert", "continent": "Europe"},
+    7013: {"ecozone": "Temperate mountain system", "continent": "Europe"},
+    7014: {"ecozone": "Temperate oceanic forest", "continent": "Europe"},
+    7015: {"ecozone": "Temperate steppe", "continent": "Europe"},
+    7022: {"ecozone": "Water", "continent": "Europe"},
+
+    8004: {"ecozone": "No data", "continent": "New Zealand"},
+    8008: {"ecozone": "Subtropical humid forest", "continent": "New Zealand"},
+    8013: {"ecozone": "Temperate mountain system", "continent": "New Zealand"},
+    8014: {"ecozone": "Temperate oceanic forest", "continent": "New Zealand"},
+}
+
+# Converts the watershed code to name
+watershed_to_text = {
+    1001: "Gulf of Mexico, North Atlantic Coast",
+    1002: "United States, North Atlantic Coast",
+    1003: "Mississippi - Missouri",
+    1004: "Gulf Coast",
+    1005: "California",
+    1006: "Great Basin",
+    1007: "North America, Colorado",
+    1008: "Columbia and Northwestern United States",
+    1009: "Fraser",
+    1010: "Pacific and Arctic Coast",
+    1011: "Saskatchewan - Nelson",
+    1012: "Northwest Territories",
+    1013: "Hudson Bay Coast",
+    1014: "Atlantic Ocean Seaboard",
+    1015: "Churchill",
+    1016: "St Lawrence",
+    1017: "St John",
+    1018: "Mackenzie",
+    2001: "Río Grande - Bravo",
+    2002: "Mexico, Northwest Coast",
+    2003: "Baja California",
+    2004: "Mexico, Interior",
+    2005: "North Gulf",
+    2006: "Río Verde",
+    2007: "Río Lerma",
+    2008: "Pacific Central Coast",
+    2009: "Río Balsas",
+    2010: "Papaloapan",
+    2011: "Isthmus of Tehuantepec",
+    2012: "Grijalva - Usumacinta",
+    2013: "Yucatán Peninsula",
+    2014: "Southern Central America",
+    2015: "Caribbean",
+    3001: "Caribbean Coast",
+    3002: "Magdalena",
+    3003: "Orinoco",
+    3004: "Northeast South America, South Atlantic Coast",
+    3005: "Amazon",
+    3006: "Tocantins",
+    3007: "North Brazil, South Atlantic Coast",
+    3008: "Parnaiba",
+    3009: "East Brazil, South Atlantic Coast",
+    3010: "Sao Francisco",
+    3011: "Uruguay - Brazil, South Atlantic Coast",
+    3012: "La Plata",
+    3013: "North Argentina, South Atlantic Coast",
+    3014: "South America, Colorado",
+    3015: "Negro",
+    3016: "South Argentina, South Atlantic Coast",
+    3017: "Central Patagonia Highlands",
+    3018: "Colombia - Ecuador, Pacific Coast",
+    3019: "Peru, Pacific Coast",
+    3020: "North Chile, Pacific Coast",
+    3021: "South Chile, Pacific Coast",
+    3022: "La Puna Region",
+    3023: "Salinas Grandes",
+    3024: "Mar Chiquita",
+    3025: "Pampas Region",
+    4001: "Spain - Portugal, Atlantic Coast",
+    4002: "Douro",
+    4003: "Tagus",
+    4004: "Guadiana",
+    4005: "Spain, South and East Coast",
+    4006: "Guadalquivir",
+    4007: "Ebro",
+    4008: "Gironde",
+    4009: "France, West Coast",
+    4010: "Loire",
+    4011: "Seine",
+    4012: "Rhône",
+    4013: "France, South Coast",
+    4014: "England and Wales",
+    4015: "Ireland",
+    4016: "Scotland",
+    4017: "Scheldt",
+    4018: "Rhine",
+    4019: "Maas",
+    4020: "Ems - Weser",
+    4021: "Po",
+    4022: "Italy, West Coast",
+    4023: "Tiber",
+    4024: "Italy, East Coast",
+    4025: "Danube",
+    4026: "Elbe",
+    4027: "Denmark - Germany Coast",
+    4028: "Sweden",
+    4029: "Wisla",
+    4030: "Oder",
+    4031: "Adriatic Sea - Greece - Black Sea Coast",
+    4032: "Dnieper",
+    4033: "Poland Coast",
+    4034: "Neman",
+    4035: "Dniester",
+    4036: "Don",
+    4037: "Volga",
+    4038: "Ural",
+    4039: "Daugava",
+    4040: "Narva",
+    4042: "Black Sea, North Coast",
+    4043: "Caspian Sea Coast",
+    4044: "Baltic Sea Coast",
+    4045: "Neva",
+    4046: "Mediterranean Sea Islands",
+    4047: "Scandinavia, North Coast",
+    4048: "Finland",
+    4049: "Russia, Barents Sea Coast",
+    4050: "Arctic Ocean Islands",
+    4051: "Northern Dvina",
+    4052: "Iceland",
+    5001: "Amur",
+    5002: "Bo Hai - Korean Bay, North Coast",
+    5003: "Russia, South East Coast",
+    5004: "Gobi Interior",
+    5005: "Ziya He, Interior",
+    5006: "Huang He",
+    5007: "Tarim Interior",
+    5008: "Plateau of Tibet Interior",
+    5009: "Yangtze",
+    5010: "China Coast",
+    5011: "Xun Jiang",
+    5012: "South China Sea Coast",
+    5013: "Kiribati - Nauru",
+    5014: "North and South Korea",
+    5015: "Andaman - Nicobar Islands",
+    5016: "Hong (Red River)",
+    5017: "Viet Nam, Coast",
+    5018: "Mekong",
+    5019: "Gulf of Thailand Coast",
+    5020: "Chao Phraya",
+    5021: "Peninsula Malaysia",
+    5022: "Salween",
+    5023: "Sittang",
+    5024: "Irrawaddy",
+    5025: "Bay of Bengal, North East Coast",
+    5026: "Hainan",
+    5027: "Sumatra",
+    5028: "Java - Timor",
+    5029: "Irian Jaya Coast",
+    5030: "Taiwan",
+    5031: "Sulawesi",
+    5032: "Kalimantan",
+    5033: "North Borneo Coast",
+    5034: "Philippines",
+    5035: "Ganges - Bramaputra",
+    5036: "Yasai",
+    5037: "Brahamani",
+    5038: "Mahandi",
+    5039: "India North East Coast",
+    5040: "Godavari",
+    5041: "Krishna",
+    5042: "Pennar",
+    5043: "India East Coast",
+    5044: "Cauvery",
+    5045: "India South Coast",
+    5046: "India West Coast",
+    5047: "Tapti",
+    5048: "Narmada",
+    5049: "Mahi",
+    5050: "Sabarmati",
+    5051: "Indus",
+    5052: "Sri Lanka",
+    5053: "Fly",
+    5054: "Papua New Guinea Coast",
+    5055: "Wake - Marshall Islands",
+    5056: "Japan",
+    5057: "Palau and East Indonesia",
+    5058: "North Marina Islands and Guam",
+    5059: "Sepik",
+    5060: "Micronesia",
+    5061: "Tuvalu",
+    5062: "Solomon Islands",
+    5063: "Lena",
+    5064: "Siberia, North Coast",
+    5065: "Yenisey",
+    5066: "Kara Sea Coast",
+    5067: "Ob",
+    5068: "Siberia, West Coast",
+    6001: "Black Sea, South Coast",
+    6002: "Mediterranean Sea, East Coast",
+    6003: "Caspian Sea, South West Coast",
+    6004: "Tigris - Euphrates",
+    6005: "Eastern Jordan - Syria",
+    6006: "Dead Sea",
+    6007: "Sinai Peninsula",
+    6008: "Red Sea, East Coast",
+    6009: "Arabian Peninsula",
+    6010: "Persian Gulf Coast",
+    6011: "Central Iran",
+    6012: "Arabian Sea Coast",
+    6013: "Hamun-i-Mashkel",
+    6014: "Helmand",
+    6015: "Farahrud",
+    6016: "Caspian Sea, East Coast",
+    6017: "Amu Darya",
+    6018: "Syr Darya",
+    6019: "Lake Balkash",
+    7001: "Senegal",
+    7002: "Niger",
+    7003: "Nile",
+    7004: "Shebelli - Juba",
+    7005: "Congo",
+    7006: "Zambezi",
+    7007: "Limpopo",
+    7008: "Orange",
+    7009: "Lake Chad",
+    7010: "Rift Valley",
+    7011: "Africa, South Interior",
+    7014: "Africa, North Interior",
+    7015: "Madasgacar",
+    7016: "South Africa, South Coast",
+    7017: "Africa, Indian Ocean Coast",
+    7018: "Africa, East Central Coast",
+    7019: "Africa, Red Sea - Gulf of Aden Coast",
+    7020: "Mediterranean South Coast",
+    7021: "Africa, West Coast",
+    7022: "Gulf of Guinea",
+    7023: "Angola, Coast",
+    7024: "South Africa, West Coast",
+    7025: "Namibia, Coast",
+    7026: "Africa, North West Coast",
+    7027: "Volta",
+    8001: "Australia, West Coast",
+    8002: "Australia, North Coast",
+    8003: "Australia, Interior",
+    8004: "Australia, South Coast",
+    8005: "Australia, East Coast",
+    8006: "Murray - Darling",
+    8007: "South Pacific Islands",
+    8008: "New Zealand",
+    8009: "Tasmania"
+}
+
+# Converts the WDPA code to type
+WDPA_to_text = {
+    0: "NA",
+    1: "Category Ia",
+    2: "Category Ib",
+    3: "Category II",
+    4: "Category III",
+    5: "Category IV",
+    6: "Category V",
+    7: "Category VI",
+    8: "UNESCO-MAB Biosphere Reserve",
+    9: "World Heritage Site (natural or mixed)",
+    10: "Ramsar Site, Wetland of International Importance",
+    11: "Not Reported",
+    12: "Not Applicable",
+    13: "Not Assigned"
+}
+
+BRA_biomes_to_text = {
+    0: "NA",
+    1: "Caatinga",
+    2: "Cerrado",
+    3: "Pantanal",
+    4: "Pampa",
+    5: "Amazônia",
+    6: "Mata Atlântica"
+}
+
+managed_land_to_text = {
+    0: "NA",
+    1: "managed",
+    2: "unmanaged",
+}
+
+veg_local_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/vegetation_v{veg_model_version_underscore}_standard_global/"
+SOC_local_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/SOC_v{SOC_model_version_underscore}_standard_global/"
+
 
 
 #######
@@ -907,6 +1682,12 @@ pixel_area_global_zarr = "s3://gfw2-data/climate/AFOLU_flux_model/contextual_lay
 # Country shapefile, with small islands removed for visual simplicity
 original_shapefile_path = "/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/world-administrative-boundaries_simple__20250102.shp"
 reprojected_shapefile_path = "/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/world-administrative-boundaries_simple__20250102_reproj.shp"
+
+local_jpeg_folder_vegetation = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/vegetation/v{veg_model_version_underscore}_standard_global/"
+local_jpeg_folder_LULUCF = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/LULUCF_totals/veg_v{veg_model_version_underscore}_standard_global__org_soil_v_{organic_soil_model_version_underscore}__min_soil_v_{SOC_model_version_underscore}/"
+local_jpeg_folder_cropland = f"/mnt/c/GIS/AFOLU_flux_model/cropland_emissions/20250828/4x4km_aggregated_maps/"
+local_jpeg_folder_livestock = f"/mnt/c/GIS/AFOLU_flux_model/livestock_emissions/20251223/4x4km_aggregated_maps/"
+local_jpeg_folder_AFOLU = f"/mnt/c/GIS/AFOLU_flux_model/AFOLU_totals/4x4km_aggregated_maps/v{veg_model_version_underscore}__standard__global/"
 
 # CRS for jpegs (Robinson equal area)
 Robinson_crs = "ESRI:54030"
@@ -923,11 +1704,32 @@ boundary_width = 0.2 # Width of country boundaries
 panel_dims = (12, 6) # Map panel dimensions (width, height)
 dpi_jpeg = 300 # dpi for output jpegs
 legend_fontsize = 9 # Font size for legend titles and labels
-colorbar_dimensions = [0.14, 0.17, 0.02, 0.13] # [left, bottom, width, height]
+colorbar_dimensions = [0.12, 0.17, 0.02, 0.13] # [left, bottom, width, height]
 
-pres_text = f"Land use vegetation fluxes (model v{model_version}, 2016-2024)"
+# Colors in RGB. Gross emissions and removals are subset of net flux palette.
+# From https://colorbrewer2.org/#type=diverging&scheme=BrBG&n=10
+net_colors_rgb = [(0, 60, 48), (1, 102, 94), (53, 151, 143), (128, 205, 193), (199, 234, 229),  # Used for removals
+                  (246, 232, 195), (223, 194, 125), (191, 129, 45), (140, 81, 10), (84, 48, 5)  # Used for emissions
+                  ]
+# Defines desired percentiles for colors. Specifies where colors transition in the data.
+# Setting neutral ends of sink and source is empirically based on the 0 value being around the 82nd percentile.
+# From some experimentation, it's better not to encode a neutral percentile (or associated color) here or below.
+# It dampens the colors around the neutral value (low emissions and removals) even more.
+net_percentiles = [0.17, 0.25, 0.5, 0.77, 0.95,
+                   1.05, 1.1, 1.2, 1.3, 1.5]
+removals_percentiles = [5, 25, 50, 75, 99]
+emissions_percentiles = [5, 25, 50, 75, 99]
+removals_colors_rgb = net_colors_rgb[0:5]
+emissions_colors_rgb = net_colors_rgb[5:]
+
+veg_pres_text = f"Vegetation fluxes: v{veg_model_version}, {interval_end_years_annual[0]}-{last_model_year_annual}"
+organic_soil_pres_text = f"Organic soil: v{organic_soil_model_version}, 2021-2024"
+mineral_soil_pres_text = f"Mineral soil: v{SOC_model_version}, 2021-2022"
+cropland_pres_text = f"Cropland: vYYYYMMDD, ca. 2020"
+livestock_pres_text = f"Livestock: vYYYYMMDD, ca. 2020"
+legend_percentile_disclaimer = f"Legend value range represents 1 and 99 percentiles of fluxes."
 
 # Output global aggregated jpeg names
-three_panel_jpeg_base = f"three_panels__4km_aggregation__v{model_version}"
+three_panel_jpeg_base = f"three_panels__4km_aggregation__v{veg_model_version}"
 
 

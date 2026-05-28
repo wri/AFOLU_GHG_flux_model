@@ -55,7 +55,7 @@ def populate_main_log_header(client, cluster, log_note, run_local, model_type, s
 
     main_logger.info(f"Model type: {model_type}")
     main_logger.info(f"Stage: {stage}")
-    main_logger.info(f"Model version: {cn.model_version}")
+    main_logger.info(f"Model version: {cn.veg_model_version}")
     main_logger.info(f"Number of workers: {n_workers}")
     main_logger.info(f"Memory per worker: {worker_memory}")
     main_logger.info(f"Threads per worker: {nthreads}")

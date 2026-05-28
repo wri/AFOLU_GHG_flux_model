@@ -1,12 +1,12 @@
 """
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
-Local test (Dask part does not work because of client.submit()):
-python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 10 49.75 10.25 50 -cs 0.25 --run_local --no_upload --run_date YYYYMMDD
+Local test:
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 119.5 -5.75 119.75 -5.5 -cs 0.25 --run_local --no_upload --run_date 20268888
 
 Coiled small tests (0.25x0.25 deg chunk):
-python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn IPCC_land_use_change
-python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_change -bb 116.25 -2.25 116.5 -2 -cs 0.25 --run_date YYYYMMDD
+python -m src.utilities.create_cluster -n 1 -m 16 -cn IPCC_land_use_change
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_change -bb 119.5 -5.75 119.75 -5.5 -cs 0.25 --run_date 20268888
 
 Coiled small tests (1x1 deg chunk):
 python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn IPCC_land_use_change
@@ -121,7 +121,7 @@ forest_lc       = set(range(27, 49)) | set(range(127, 149))     # Tall vegetatio
 grass_lc        = set(range(5, 27)) | set(range(105, 127))      # Short veg
 wetland_lc      = set(range(200, 205))                          # Wetland
 bare_lc         = set(range(0, 5)) | set(range(100, 105))       # Bare
-water_lc        = set(range(205, 208))                          # Open water
+water_lc        = set(range(205, 208)) | {254}                  # Open water
 ice_lc          = {241}                                         # Snow/ice
 
 # Lookup table to go from GLAD LC code -> default LU token
@@ -394,7 +394,7 @@ def IPCC_land_use(in_dict):
     LU_change_2022_2023_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
     LU_change_2023_2024_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
 
-    LU_summary_block = np.zeros(LC_2015_block.shape, dtype=np.uint32)
+    LU_summary_block = np.zeros(LC_2015_block.shape, dtype=np.uint64) #TODO: Switch back to 32
 
     # for year in cn.years_annual:
     #     out_dict[f"{cn.IPCC_class_pattern}_{year}"] =  np.zeros(LC_2015_block.shape, dtype=np.uint8)
@@ -550,7 +550,7 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
 
     # If a particular tile doesn't exist for an input, an array of 0s of the correct size and datatype is returned instead.
     futures = uu.prepare_to_download_chunk(bounds, updated_download_dict, chunk_length_pixels, is_large_run, logger_worker, False)
-    print(futures)
+    #print(futures)
 
     lu.print_and_log(f"Waiting for requests for data in chunk {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker)
 
@@ -587,7 +587,7 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
     ipcc_start = time.time()
 
     out_dict = IPCC_land_use(layers)
-    print("out_dict:", out_dict)
+    #print("out_dict:", out_dict)
 
     ipcc_end = time.time()
     lu.print_and_log(f"Done assigning IPCC land use in {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker)
@@ -650,7 +650,13 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
             print("matched_output_s3_folders:", matched_output_s3_folders)
 
             # Second, finds the output folder with the right interval for that pattern
-            matched_output_s3_folder_list = [item for item in matched_output_s3_folders if year_range in item]
+            if out_pattern_without_pixel_meaning == cn.IPCC_summary_pattern:
+                matched_output_s3_folder_list = matched_output_s3_folders
+            else:
+                matched_output_s3_folder_list = [
+                    item for item in matched_output_s3_folders
+                    if year_range in item
+                ]
             print("matched_output_s3_folder_list:", matched_output_s3_folder_list)
 
             # Output paths without bucket (s3://gfw2-data).
@@ -669,7 +675,7 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
         with ThreadPoolExecutor(max_workers=5) as executor:
             executor.map(lambda args: uu.upload_raster_to_s3(*args), upload_tasks)
 
-        lu.print_and_log(f"Uploads completed for {bounds_str} in {tile_id} using {cn.outputs_path}: {uu.timestr()}", is_large_run, logger_worker)
+        lu.print_and_log(f"Uploads completed for {bounds_str} in {tile_id} using {cn.IPCC_outputs_path}: {uu.timestr()}", is_large_run, logger_worker)
 
     chunk_end_time = time.time()
     lu.print_and_log(f"{bounds_str} took {round(chunk_end_time - chunk_start_time)} seconds: {uu.timestr()}", False, logger_worker)
@@ -716,7 +722,7 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
     main_logger.info(f"no_upload: {no_upload}")
 
     # Calculates the interval type, difference between start and end years of intervals, and the model output years for the model run
-    interval_type, interval_year_diff_list, interval_length_list, interval_end_years = uu.get_interval_info(end_year, main_logger, start_year)
+    interval_type, interval_year_diff_list, interval_length_list, interval_end_years = uu.get_interval_info(start_year, end_year, main_logger)
 
     # Returns a dataframe of chunk_ids and iso code from the GADM4.1 1x1 deg fishnet used for chunk stats.
     fishnet_iso_df = uu.fishnet_with_GADM_iso(chunk_shapefile_uri)
@@ -761,12 +767,27 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
     main_logger.info(f"Getting tile_id of first tile in each tile set: {uu.timestr()}")
     first_tiles = uu.first_file_name_in_s3_folder(download_dict)
 
+    # Creates a download dictionary with the datatype of each input in the values.
+    main_logger.info(f"Getting datatype of first tile in each tile set: {uu.timestr()}")
+    download_dict_with_data_types = uu.add_file_type_to_dict(first_tiles)
+    main_logger.info(f"download_dict_with_data_types for {stage}:")
+    for key, value in download_dict_with_data_types.items():
+        main_logger.info(f"  {key}: {value}")
 
     # Creates a list of output directories for all outputs
-    output_dir_list_core_intermediate = [cn.IPCC_class_dir, cn.IPCC_node_dir, cn.IPCC_change_dir, cn.IPCC_summary_dir]
-    output_dir_list = uu.create_output_dir_name_list(output_dir_list_core_intermediate, interval_type, start_year, chunk_size_pixels,
-                            model_type, interval_end_years, interval_year_diff_list, run_date, False)
-    output_dir_list.sort()  # Alphabetically order the outputs (modifies output_dir_list)
+    class_node_output_dirs = uu.create_output_dir_name_list( [cn.IPCC_class_dir, cn.IPCC_node_dir], interval_type,
+                                                             start_year, chunk_size_pixels, model_type, cn.IPCC_LU_version,
+                                                             stage, cn.years_annual, interval_year_diff_list, run_date, False)
+
+    change_years = [f"{a}_{b}" for a, b in zip(cn.years_annual[:-1], cn.years_annual[1:])]
+    change_output_dirs = uu.create_output_dir_name_list( [cn.IPCC_change_dir], interval_type, start_year, chunk_size_pixels,
+                                                         model_type, cn.IPCC_LU_version, stage,
+                                                         change_years, interval_year_diff_list, run_date, False)
+
+
+    summary_dir = ( cn.IPCC_summary_dir .replace("RUN_DATE", run_date) .replace("CHUNK_SIZE", str(chunk_size_pixels)))
+
+    output_dir_list = sorted(class_node_output_dirs + change_output_dirs + [summary_dir])
 
     main_logger.info(f"output_dir_list for {stage}:")
     for item in output_dir_list:
@@ -797,21 +818,15 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
         uu.create_s3_task_files(stage, chunk_batch)
 
         if run_local:
-            batch_results = [calculate_and_upload_IPCC_land_use(chunk, download_dict, True, no_upload, output_dir_list, stage)
+            batch_results = [calculate_and_upload_IPCC_land_use(chunk, download_dict_with_data_types, True, no_upload, output_dir_list, stage)
                              for chunk in chunk_batch]
             all_results.extend(batch_results)
 
-            del batch_results
-
         else:
-            futures = [client.submit(calculate_and_upload_IPCC_land_use, chunk, download_dict, True, no_upload, output_dir_list, stage)
+            futures = [client.submit(calculate_and_upload_IPCC_land_use, chunk, download_dict_with_data_types, True, no_upload, output_dir_list, stage)
                        for chunk in chunk_batch]
             batch_results = client.gather(futures)
             all_results.extend(batch_results)
-
-            del futures
-            del batch_results
-            client.run(gc.collect)
 
         success_count, batch_stats = uu.count_successful_chunks(chunk_batch, True, main_logger, batch_results)
         all_1x1_stats.extend(batch_stats)
@@ -825,6 +840,11 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
             local_spreadsheet = f"{cn.local_chunk_stats_path}{out_spreadsheet}"
             with pd.ExcelWriter(local_spreadsheet) as writer:
                 df_batch_stats.to_excel(writer, sheet_name=f'stats__batch_{i}', index=False)
+
+        del batch_results
+        if client is not None:
+            del futures
+            client.run(gc.collect)
 
         uu.stage_duration(start_time, uu.timestr(), f"{stage}, batch {i}", main_logger)
 
