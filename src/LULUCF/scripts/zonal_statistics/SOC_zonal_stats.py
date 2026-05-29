@@ -199,7 +199,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     KBA_xr = xr.open_zarr(cn.KBA_zarr_path, consolidated=False).rename_vars(band_data=cn.KBA_pattern)
     watersheds_xr = xr.open_zarr(cn.watersheds_zarr_path, consolidated=False).rename_vars(band_data=cn.watersheds_pattern)
     drivers_xr = xr.open_zarr(cn.drivers_of_loss_zarr_path, consolidated=False).rename_vars(band_data=cn.drivers_of_loss_pattern)
-    BRA_biomes_xr = xr.open_zarr(cn.BRA_biomes_zarr_path, consolidated=False).rename_vars(band_data=cn.BRA_biomes_pattern)
+    # BRA_biomes_xr = xr.open_zarr(cn.BRA_biomes_zarr_path, consolidated=False).rename_vars(band_data=cn.BRA_biomes_pattern)
     # managed_land_CAN_xr = xr.open_zarr(cn.managed_land_CAN_zarr_path, consolidated=False).rename_vars(band_data=cn.managed_land_CAN_pattern)  # Alignment issues below, so not using it.     # Tried in https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69c09184-06dc-8332-a90f-7bf0e803ea16
     # managed_land_USA_xr = xr.open_zarr(cn.managed_land_USA_zarr_path, consolidated=False).rename_vars(band_data=cn.managed_land_USA_pattern)
 
@@ -229,7 +229,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     watersheds_xr = zsu.round_coords(watersheds_xr)
     drivers_xr = zsu.round_coords(drivers_xr)
     # forest_age_xr = zsu.round_coords(forest_age_xr)
-    BRA_biomes_xr = zsu.round_coords(BRA_biomes_xr)
+    # BRA_biomes_xr = zsu.round_coords(BRA_biomes_xr)
     # managed_land_CAN_xr = zsu.round_coords(managed_land_CAN_xr)
     # managed_land_USA_xr = zsu.round_coords(managed_land_USA_xr)
     # land_state_node = zsu.round_coords(ds[cn.land_state_pattern])
@@ -245,7 +245,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     watersheds_aligned = zsu.safe_crop(watersheds_xr, reference)
     drivers_aligned = zsu.safe_crop(drivers_xr, reference)
     # forest_age_aligned = zsu.safe_crop(forest_age_xr, reference)
-    BRA_biomes_aligned = zsu.safe_crop(BRA_biomes_xr, reference)
+    # BRA_biomes_aligned = zsu.safe_crop(BRA_biomes_xr, reference)
     # managed_land_CAN_aligned = zsu.safe_crop(managed_land_CAN_xr, reference)
     # managed_land_USA_aligned = zsu.safe_crop(managed_land_USA_xr, reference)
     # land_state_node_aligned = zsu.safe_crop(land_state_node, reference)
@@ -380,7 +380,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
         watersheds_aligned_subset = watersheds_aligned.sel(x=slice(west, east), y=slice(north, south))
         drivers_aligned_subset = drivers_aligned.sel(x=slice(west, east), y=slice(north, south))
         # forest_age_cat_subset = forest_age_cat_xr.sel(x=slice(west, east), y=slice(north, south))
-        BRA_biomes_aligned_subset = BRA_biomes_aligned.sel(x=slice(west, east), y=slice(north, south))
+        # BRA_biomes_aligned_subset = BRA_biomes_aligned.sel(x=slice(west, east), y=slice(north, south))
         # managed_land_CAN_aligned_subset = managed_land_CAN_aligned.sel(x=slice(west, east), y=slice(north, south))  # Alignment issue below, so not using it
         # managed_land_USA_aligned_subset = managed_land_USA_aligned.sel(x=slice(west, east), y=slice(north, south))
         # land_state_node_aligned_subset = land_state_node_aligned.sel(x=slice(west, east), y=slice(north, south))
@@ -438,11 +438,11 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
         # else:
         #     forest_age_cat_da = forest_age_cat_subset[cn.forest_age_category_pattern]
 
-        if BRA_biomes_aligned_subset[cn.BRA_biomes_pattern].sizes.get("x", 0) == 0 or BRA_biomes_aligned_subset[cn.BRA_biomes_pattern].sizes.get("y", 0) == 0:
-            bra_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(cn.BRA_biomes_pattern)
-            main_logger.info(f"  {cn.BRA_biomes_pattern} not in {tile_id}. Creating xarray of all 0s.")
-        else:
-            bra_da = BRA_biomes_aligned_subset[cn.BRA_biomes_pattern]
+        # if BRA_biomes_aligned_subset[cn.BRA_biomes_pattern].sizes.get("x", 0) == 0 or BRA_biomes_aligned_subset[cn.BRA_biomes_pattern].sizes.get("y", 0) == 0:
+        #     bra_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(cn.BRA_biomes_pattern)
+        #     main_logger.info(f"  {cn.BRA_biomes_pattern} not in {tile_id}. Creating xarray of all 0s.")
+        # else:
+        #     bra_da = BRA_biomes_aligned_subset[cn.BRA_biomes_pattern]
 
         # if managed_land_CAN_aligned_subset[cn.managed_land_CAN_pattern].sizes.get("x", 0) == 0 or managed_land_CAN_aligned_subset[cn.managed_land_CAN_pattern].sizes.get("y", 0) == 0:
         #     managed_land_CAN_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(cn.managed_land_CAN_pattern)
@@ -483,7 +483,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
          watersheds_da,
          drivers_da,
          # forest_age_cat_da,
-         bra_da,
+         # bra_da,
          # managed_land_CAN_da,
          # managed_land_USA_da,
          # land_state_node_aligned_subset,
@@ -499,7 +499,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
             watersheds_da,
             drivers_da,
             # forest_age_cat_da,
-            bra_da,
+            # bra_da,
             # managed_land_CAN_da,
             # managed_land_USA_da,
             # land_state_node_aligned_subset,
@@ -520,7 +520,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
                 watersheds_da,
                 drivers_da,
                 # forest_age_cat_da,
-                bra_da,
+                # bra_da,
                 # managed_land_CAN_da,
                 # managed_land_USA_da,
                 flux_cube_subset["year"]
@@ -537,7 +537,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
                 cn.watershed_codes,
                 cn.drivers_codes,
                 # cn.forest_age_category_codes,
-                cn.BRA_biomes_codes,
+                # cn.BRA_biomes_codes,
                 # cn.managed_land_codes,  # For Canada
                 # cn.managed_land_codes,  # For USA
                 flux_cube_subset.year.values,
@@ -559,7 +559,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
             cn.watersheds_pattern,
             cn.drivers_of_loss_pattern,
             # cn.forest_age_category_pattern,
-            cn.BRA_biomes_pattern,
+            # cn.BRA_biomes_pattern,
             # cn.managed_land_CAN_pattern,
             # cn.managed_land_USA_pattern,
             'year'
