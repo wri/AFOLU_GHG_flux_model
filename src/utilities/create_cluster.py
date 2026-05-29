@@ -73,8 +73,12 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
 
     elif worker_memory == 16:
         idle_timeout = 25
-        scheduler_vm_type = "x2gd.medium"   # 1 vCPU/worker
-        worker_vm_type = "x2gd.medium"
+        if zonal_stats == True:
+            scheduler_vm_type = "r7g.medium"    # 2 vCPU/worker, same series as Solomon used for zonal stats
+            worker_vm_type = "r7g.large"
+        else:
+            scheduler_vm_type = "x2gd.medium"   # 1 vCPU/worker
+            worker_vm_type = "x2gd.medium"
 
     elif worker_memory == 8:
         idle_timeout = 25

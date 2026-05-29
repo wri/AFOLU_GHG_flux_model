@@ -270,17 +270,19 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
             "United States of America (the)": "USA"
         })
 
-    # Maps cont_eco to continent and ecozone-continent if the contextual layer is used
+    # Maps cont_eco to continent, ecozone, ecozone-continent, and climate domain if the contextual layer is used
     # From https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/698a53aa-8674-832c-b734-4bd8afc6a6df
     if cn.cont_eco_zstats_pattern in df_with_areas.columns:
         df_with_areas['continent'] = df_with_areas[cn.cont_eco_zstats_pattern].map(lambda x: cn.cont_eco_to_text.get(x, {}).get('continent'))
-        df_with_areas['continent_ecozone'] = df_with_areas[cn.cont_eco_zstats_pattern].map(lambda x: cn.cont_eco_to_text.get(x, {}).get('ecozone'))
+        df_with_areas['ecozone'] = df_with_areas[cn.cont_eco_zstats_pattern].map(lambda x: cn.cont_eco_to_text.get(x, {}).get('ecozone'))
+        df_with_areas['continent_ecozone'] = df_with_areas['continent'] + "-" + df_with_areas['ecozone']
 
         # Assigns climate domain
         df_with_areas = assign_climate_domain(df_with_areas)
 
         # Because some rows for contextual layers may be blank
         df_with_areas["continent"] = df_with_areas["continent"].fillna("Unassigned")
+        df_with_areas["ecozone"] = df_with_areas["ecozone"].fillna("Unassigned")
         df_with_areas["continent_ecozone"] = df_with_areas["continent_ecozone"].fillna("Unassigned")
 
     # Maps watershed codes to names if the contextual layer is used
@@ -296,7 +298,7 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
         df_with_areas["WDPA_high_protection"] = "Other protection status"
 
         df_with_areas.loc[df_with_areas["WDPA_type"] == "NA", "WDPA_high_protection"] = "Not protected"
-        df_with_areas.loc[df_with_areas["WDPA_type"].isin(["Cateogry Ia", "Category Ib", "Category II", "Category III"]), "WDPA_high_protection"] = "High protection"
+        df_with_areas.loc[df_with_areas["WDPA_type"].isin(["Category Ia", "Category Ib", "Category II", "Category III"]), "WDPA_high_protection"] = "High protection"
 
     # Maps driver of loss codes to names if the contextual layer is used
     if cn.drivers_of_loss_pattern in df_with_areas.columns:
