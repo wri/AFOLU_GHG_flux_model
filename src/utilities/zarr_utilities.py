@@ -3,6 +3,7 @@ import boto3
 import fsspec
 import pandas as pd
 import sys
+import dask
 from dask.distributed import print
 import dask.array as da
 import xarray as xr
@@ -302,16 +303,81 @@ def populate_zarr(bounds, bounds_str, create_zarr, interval_end_years, is_large_
     lu.print_and_log(f"Wrote outputs to global zarr for {bounds_str} in {tile_id} in {round(zarr_end - zarr_start)} seconds: {uu.timestr()}",False, logger_worker)
 
 
+# Checks composite ds for each tile against the original geotif to make sure geotifs haven't been flipped north-south
+# (as happened for pixel area once).
+# This doesn't actually check the final zarr but the two checks included here should be sufficient to
+# detect issues in the creation of the global ds from the geotif tile set.
+# Per Claude session 'SOC chunk stats mismatch investigation'
+def validate_xarray_assembly(ds, tile_uris, main_logger):
+    """
+    Confirms that open_mfdataset assembled tiles with correct north-south orientation.
+    Raises ValueError if any tile's top-left pixel value in the assembled dataset
+    doesn't match the value read directly from the source GeoTIF via rasterio.
+    """
+
+    var_name = list(ds.data_vars)[0]
+
+    # Check 1: global y-axis should decrease north→south
+    y_vals = ds.y.values
+    if not np.all(np.diff(y_vals) < 0):
+        raise ValueError(
+            "Assembled dataset y-coordinates are not monotonically decreasing (north→south). "
+            "open_mfdataset may have flipped or misordered latitude bands."
+        )
+
+    # Check 2: per-tile northwest corner pixel comparison (single pixel only, but would detect a north-south inversion).
+    # Reading northwest pixel of geotifs serially but reading corresponding pixels of global ds in parallel to speed things up.
+    # Reading the northwest pixel of each geotif still takes several minutes and doesn't use Dask at all.
+    uris = []
+    geotif_vals = []
+    assembled_selects = []
+
+    main_logger.info(f"Starting pixel-level check: {uu.timestr()}")
+    for i, uri in enumerate(tile_uris.values):
+        main_logger.info(f"Reading {uri} for y-axis inversion, tile {i} of {len(tile_uris)}")
+        with rasterio.open(uri) as src:
+            geotif_val = float(src.read(1, window=rasterio.windows.Window(0, 0, 1, 1))[0, 0])
+            lat = src.transform.f + src.transform.e * 0.5
+            lon = src.transform.c + src.transform.a * 0.5
+
+        uris.append(uri)
+        geotif_vals.append(geotif_val)
+        assembled_selects.append(ds[var_name].sel(y=lat, x=lon, method='nearest'))
+
+    assembled_vals = dask.compute(*assembled_selects)
+
+    errors = []
+    for uri, geotif_val, assembled_val in zip(uris, geotif_vals, assembled_vals):
+        if not np.isclose(geotif_val, float(assembled_val), rtol=1e-4):
+            errors.append(
+                f"  {uri}\n"
+                f"    rasterio NW corner: {geotif_val:.6f}\n"
+                f"    assembled:          {float(assembled_val):.6f}"
+            )
+        else:
+            main_logger.info(f"Northwest pixels match for {uri}: geotif={geotif_val:.6f}, ds={float(assembled_val):.6f}")
+
+    main_logger.info(f"Ending pixel-level check: {uu.timestr()}")
+
+    if errors:
+        raise ValueError(
+            f"Tile assembly mismatch for {len(errors)} of {len(tile_uris)} tiles:\n"
+            + "\n".join(errors)
+        )
+
+
 # Makes xarray dataframe (I think not a dataset) from list of s3 uris.
 # This came from Solomon Negusse and I haven't really changed it.
 # He said that an online forum suggested using xr.open_mfdataset to open non-overlapping geotifs.
-def make_xarray_chunks(tile_uris, chunk_size):
+def make_xarray_chunks(tile_uris, chunk_size, main_logger):
 
     xarray_chunks = xr.open_mfdataset(
         tile_uris.values.tolist(),
         parallel=True,
         chunks={'x': chunk_size, 'y':chunk_size}
     ).squeeze()
+
+    validate_xarray_assembly(xarray_chunks, tile_uris, main_logger)
 
     return xarray_chunks
 

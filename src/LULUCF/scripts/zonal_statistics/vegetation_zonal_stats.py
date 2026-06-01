@@ -571,7 +571,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
         combined_wide_df.to_csv(f"{local_zonal_stats_folder}/{combined_wide_df_name}.csv", index=False)
 
     # Uploads outputs to s3 if the run is large enough
-    zsu.upload_zstats_to_s3(stage, local_zonal_stats_folder, main_logger,
+    zsu.upload_zstats_to_s3(stage, local_zonal_stats_folder, cn.veg_outputs_path, main_logger,
                         model_path_description, model_type, cn.veg_model_version_underscore, tiles_processed)
 
     end_time = time.time()

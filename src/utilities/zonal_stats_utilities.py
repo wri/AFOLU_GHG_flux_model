@@ -363,14 +363,14 @@ def create_wide_df(combined_df, main_logger):
 
 
 # Uploads output tables (parquet and csv) if the run is large enough
-def upload_zstats_to_s3(stage, local_zonal_stats_folder, main_logger, model_path_description, model_type,
+def upload_zstats_to_s3(stage, local_zonal_stats_folder, s3_output_folder, main_logger, model_path_description, model_type,
                         model_version, tiles_processed):
 
     run_date = date.today().strftime("%Y%m%d")
 
     # Uploads output tables to s3 if it's a larger run where I might plausibly want to save the results
     if tiles_processed > 3:
-        s3_zonal_stats_folder = cn.veg_outputs_path.replace(cn.model_version_type_description_placeholder,
+        s3_zonal_stats_folder = s3_output_folder.replace(cn.model_version_type_description_placeholder,
                                                             f"version_{model_version}__{model_type}__{model_path_description}") + f"zonal_statistics/{run_date}_{stage}/"
 
         files_to_upload = [

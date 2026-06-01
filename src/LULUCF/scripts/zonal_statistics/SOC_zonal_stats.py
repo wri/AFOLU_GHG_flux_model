@@ -639,13 +639,13 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     # Converts from long to wide df
     combined_wide_df = zsu.create_wide_df(combined_df, main_logger)
 
-    combined_wide_df_name = f'SOC_model_zonal_stats_wide_v{cn.SOC_model_version_underscore}_{time.strftime('%Y%m%d_%H_%M_%S')}'
+    combined_wide_df_name = f'SOC_zonal_stats_wide_v{cn.SOC_model_version_underscore}_{time.strftime('%Y%m%d_%H_%M_%S')}'
     combined_wide_df.to_parquet(f"{local_zonal_stats_folder}/{combined_wide_df_name}.parquet")
     if len(combined_wide_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
         combined_wide_df.to_csv(f"{local_zonal_stats_folder}/{combined_wide_df_name}.csv", index=False)
 
     # Uploads outputs to s3 if the run is large enough
-    zsu.upload_zstats_to_s3(stage, local_zonal_stats_folder, main_logger,
+    zsu.upload_zstats_to_s3(stage, local_zonal_stats_folder, cn.SOC_outputs_path, main_logger,
                         model_path_description, model_type, cn.SOC_model_version_underscore, tiles_processed)
 
     end_time = time.time()
