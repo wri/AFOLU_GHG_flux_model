@@ -1055,7 +1055,7 @@ adm0_pattern = 'adm0'
 
 pixel_area_zarr_date = '20260531'
 pixel_area_zarr_dtype = 'float32'
-pixel_area_geotif_path = "s3://gfw2-data/analyses/umd_area_2013__from_gfw-data-lake/v1.10/raster/epsg-4326/10/40000/area_m/gdal-geotiff/"
+pixel_area_geotif_path = pixel_area_dir
 pixel_area_zarr_path = f"{contextual_zarr_path}pixel_area/{pixel_area_zarr_date}_fillValue_removed/global_pixel_area_{pixel_area_zarr_date}.zarr"
 pixel_area_test_chunk = [13, 48, 14, 49]  # 50N_010E
 pixel_area_zstats_pattern = 'pixel_area'
