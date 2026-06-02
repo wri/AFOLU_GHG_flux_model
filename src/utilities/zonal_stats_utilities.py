@@ -274,9 +274,19 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
 
     # Maps cont_eco to continent, ecozone, ecozone-continent, and climate domain if the contextual layer is used
     # From https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/698a53aa-8674-832c-b734-4bd8afc6a6df
+    # Tiles without any ecozone information at all, e.g., 00N_020W, were causing errors for continent and ecozone.
+    # Fix per Claude session 'vegetation_zonal_stats performance'
     if cn.cont_eco_zstats_pattern in df_with_areas.columns:
-        df_with_areas['continent'] = df_with_areas[cn.cont_eco_zstats_pattern].map(lambda x: cn.cont_eco_to_text.get(x, {}).get('continent'))
-        df_with_areas['ecozone'] = df_with_areas[cn.cont_eco_zstats_pattern].map(lambda x: cn.cont_eco_to_text.get(x, {}).get('ecozone'))
+        df_with_areas['continent'] = pd.Series(
+            [cn.cont_eco_to_text.get(int(v), {}).get('continent') or 'Unassigned'
+             for v in df_with_areas[cn.cont_eco_zstats_pattern]],
+            index=df_with_areas.index, dtype=object
+        )
+        df_with_areas['ecozone'] = pd.Series(
+            [cn.cont_eco_to_text.get(int(v), {}).get('ecozone') or 'Unassigned'
+             for v in df_with_areas[cn.cont_eco_zstats_pattern]],
+            index=df_with_areas.index, dtype=object
+        )
         df_with_areas['continent_ecozone'] = df_with_areas['continent'] + "-" + df_with_areas['ecozone']
 
         # Assigns climate domain
