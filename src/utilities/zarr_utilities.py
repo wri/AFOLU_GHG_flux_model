@@ -915,48 +915,54 @@ def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_b
     if y0_pixel_area > y1_pixel_area:
         y0_pixel_area, y1_pixel_area = y1_pixel_area, y0_pixel_area
 
-    pixel_area = pixel_area_zarr_store['band_data'][y0_pixel_area:y1_pixel_area, x0_pixel_area:x1_pixel_area]
-    # print("y0:", y0_pixel_area)
-    # print("y1:", y1_pixel_area)
-    # print("x0:", x0_pixel_area)
-    # print("x1:", x1_pixel_area)
-    # print(pixel_area)
-    # sys.quit()
+    # Only calculates per-pixel and aggregated geotifs if output is float32 (skips outputs like land_state)
+    if model_zarr_store[var_with_unit].dtype == np.float32:
+        pixel_area = pixel_area_zarr_store['band_data'][y0_pixel_area:y1_pixel_area, x0_pixel_area:x1_pixel_area]
+        # print("y0:", y0_pixel_area)
+        # print("y1:", y1_pixel_area)
+        # print("x0:", x0_pixel_area)
+        # print("x1:", x1_pixel_area)
+        # print(pixel_area)
+        # sys.quit()
 
-    # Converts per-ha to per-pixel
-    data_per_pixel = data_per_ha * pixel_area * cn.m2_to_ha
+        # Converts per-ha to per-pixel
+        data_per_pixel = data_per_ha * pixel_area * cn.m2_to_ha
 
-    # Cleanup. Without this, memory exceeds 24GB/worker and eventually tasks get repeated because of too much memory spillage or something
-    del pixel_area
+        # Cleanup. Without this, memory exceeds 24GB/worker and eventually tasks get repeated because of too much memory spillage or something
+        del pixel_area
 
-    # Creates 0.04x0.04 deg geotif in Mg CO2(e)/0.04x0.04deg pixel/yr
-    # per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c/c/69d50592-48b8-8329-b529-2babe02f7f27
-    # Should write NaN when there are no valid pixels.
+        # Creates 0.04x0.04 deg geotif in Mg CO2(e)/0.04x0.04deg pixel/yr
+        # per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c/c/69d50592-48b8-8329-b529-2babe02f7f27
+        # Should write NaN when there are no valid pixels.
 
-    # Trims fine grid so it splits evenly into coarse blocks
-    ny, nx = data_per_pixel.shape
-    ny_trim = ny - (ny % cn.global_aggregation_factor)
-    nx_trim = nx - (nx % cn.global_aggregation_factor)
-    data_fine_trim = data_per_pixel[:ny_trim, :nx_trim]
+        # Trims fine grid so it splits evenly into coarse blocks
+        ny, nx = data_per_pixel.shape
+        ny_trim = ny - (ny % cn.global_aggregation_factor)
+        nx_trim = nx - (nx % cn.global_aggregation_factor)
+        data_fine_trim = data_per_pixel[:ny_trim, :nx_trim]
 
-    # Reshape into coarse blocks
-    reshaped = data_fine_trim.reshape(
-        ny_trim // cn.global_aggregation_factor, cn.global_aggregation_factor,
-        nx_trim // cn.global_aggregation_factor, cn.global_aggregation_factor
-    )
+        # Reshape into coarse blocks
+        reshaped = data_fine_trim.reshape(
+            ny_trim // cn.global_aggregation_factor, cn.global_aggregation_factor,
+            nx_trim // cn.global_aggregation_factor, cn.global_aggregation_factor
+        )
 
-    # Sum valid values within each coarse block
-    coarse_agg = np.nansum(reshaped, axis=(1, 3)).astype(np.float32)
+        # Sum valid values within each coarse block
+        coarse_agg = np.nansum(reshaped, axis=(1, 3)).astype(np.float32)
 
-    # Count how many valid fine pixels contributed to each coarse block
-    valid_counts = np.sum(~np.isnan(reshaped), axis=(1, 3))
+        # Count how many valid fine pixels contributed to each coarse block
+        valid_counts = np.sum(~np.isnan(reshaped), axis=(1, 3))
 
-    # If no fine pixels contributed, restore NoData
-    coarse_agg[valid_counts == 0] = np.nan
+        # If no fine pixels contributed, restore NoData
+        coarse_agg[valid_counts == 0] = np.nan
 
-    # Warning if there are no valid aggregated pixels
-    if not np.isfinite(coarse_agg).any():
-        logger_worker.warning(f"All-NaN coarse aggregation for {tile_id}, {var}, {year}")
+        # Warning if there are no valid aggregated pixels
+        if not np.isfinite(coarse_agg).any():
+            logger_worker.warning(f"All-NaN coarse aggregation for {tile_id}, {var}, {year}")
+
+    else:
+        data_per_pixel = None
+        coarse_agg = None
 
     extract_end_time = time.time()
     lu.print_and_log(f"  Calculated {var_with_unit} for {year} for {tile_id} in {round(extract_end_time - extract_start_time)} seconds: {uu.timestr()}", False, logger_worker)

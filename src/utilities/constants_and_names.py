@@ -1130,7 +1130,7 @@ drivers_of_loss_pattern = 'drivers_of_TCL_1_km'
 
 state_node_lookup_table_local = "/mnt/c/GIS/git/AFOLU_GHG_flux_model/src/LULUCF/LULUCF_state_node_lookup_table.xlsx"
 state_node_lookup_table_s3 = "http://gfw2-data.s3.amazonaws.com/climate/AFOLU_flux_model/LULUCF/state_node_lookup_tables/LULUCF_state_node_lookup_table.xlsx"
-sheet = "v105_20260518"
+sheet = "v105_20260601"
 
 primary_forest_IFL_codes = np.array([0, 1], dtype=np.uint8)
 
@@ -1219,8 +1219,8 @@ drivers_codes = np.array([0, 1, 2, 3, 4, 5, 6, 7], dtype=np.uint8)
 
 managed_land_codes = np.array([0, 1, 2], dtype=np.uint8)
 
-forest_age_category_pattern = 'forest_age_category'
-forest_age_category_codes = np.array([0, 1, 21, 41, 61, 81, 101], dtype=np.uint8)
+forest_age_category_pattern = 'forest_age_category_end_of_interval'
+forest_age_category_codes = np.array([0, 1, 6, 21, 41, 61, 81, 101], dtype=np.uint8)
 
 # Converts numeric ISO values to ISO codes
 # From https://github.com/wri/project-zeno-data-infra/blob/main/notebooks/grasslands_areas_gadm_2000-2022.ipynb
@@ -1841,7 +1841,8 @@ managed_land_to_text = {
 
 forest_age_category_to_text = {
     0: 'non_forest',
-    1: '1_20yr',
+    1: '1_5yr',
+    6: '6_20yr',
     21: '21_40yr',
     41: '41_60yr',
     61: '61_80yr',

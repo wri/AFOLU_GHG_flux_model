@@ -52,11 +52,12 @@ def round_coords(ds, decimals=5):
 def categorize_age(da):
     """Reclassify raw forest age (integer years) into 20-year category codes."""
     return xr.where(da == 0, 0,
-                    xr.where(da <= 20, 1,
+                    xr.where(da <= 5, 1,
+                    xr.where(da <= 20, 6,
                     xr.where(da <= 40, 21,
                     xr.where(da <= 60, 41,
                     xr.where(da <= 80, 61,
-                    xr.where(da <= 100, 81, 101))))))
+                    xr.where(da <= 100, 81, 101)))))))
 
 
 # Converts results of flox to coordinate dictionary.
@@ -226,10 +227,11 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
     df_with_areas["gas"] = "Unassigned"
     df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("CH4", na=False), "gas"] = "CH4"
     df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("N2O", na=False), "gas"] = "N2O"
-    df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("CO2_only", na=False), "gas"] = "CO2"
+    df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("CO2_only__MgCO2", na=False), "gas"] = "CO2"
     df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("non_CO2", na=False), "gas"] = "non-CO2"
     df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("all_gases", na=False), "gas"] = "all gases"
     df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("SOC", na=False), "gas"] = "CO2"
+    df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("C__MgCO2", na=False), "gas"] = "CO2"  # Captures individual carbon pools
 
     # Replaces the year index with the actual reporting year (differs for vegetation and SOC)
     if flux_type == "vegetation":
@@ -323,6 +325,7 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
     df_with_areas = df_with_areas.rename(columns={'pixel_area_ha': 'area_ha'})
 
     return df_with_areas
+
 
 # Converts long-format df to wide-format df
 # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69fe3161-edb8-832e-a90d-d9e75e4012d3

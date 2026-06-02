@@ -397,11 +397,20 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     output_dir_list_aggreg = [path.replace("PER_HA_OR_PIXEL", cn.flux_aggreg_pixel_meaning) for path in output_dir_list]
     output_dir_list_aggreg = [path.replace(str(cn.full_raster_dims), str(cn.global_aggregation_factor)) for path in output_dir_list_aggreg]  # Need to replace the tile dimensions
     # print("output_dir_list_per_pixel:", output_dir_list_aggreg)
+
     output_dir_list_aggreg.sort()
     if not no_upload:
         for output_folder in output_dir_list_aggreg:
             geotiff_files, file_count = uu.list_raster_full_paths_in_s3_folder_and_count(output_folder)
             main_logger.info(f"Output aggregated rasters in {output_folder}: {file_count}")
+            # print(geotiff_files)
+
+    if not no_upload and is_large_run:
+        for output_folder in output_dir_list_aggreg:
+            geotiff_files, file_count = uu.list_raster_full_paths_in_s3_folder_and_count(output_folder)
+            main_logger.info(f"Output aggregated rasters in {output_folder}: {file_count}")
+            if file_count != len(tile_ids_to_process):
+                main_logger.warning(f"WARNING: Output file count in {output_folder} does not match expectations!")
             # print(geotiff_files)
 
     uu.stage_duration(start_time, uu.timestr(), f"{stage} with output counts", main_logger)

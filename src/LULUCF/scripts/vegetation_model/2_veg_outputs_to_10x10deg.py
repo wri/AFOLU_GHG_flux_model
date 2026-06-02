@@ -51,6 +51,7 @@ Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/690a21cd-2ea0-8333
 import argparse
 import pandas as pd
 import os
+from distributed import KilledWorker
 from dask.distributed import print
 
 # Project imports
@@ -227,7 +228,18 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
         # 'pattern': 'gross_emissions__all_C_pools__CO2_only__MgCO2', 'years': 2016, 'min_value': 'no data', 'mean_value': 'no data',
         # 'max_value': 'no data', 'count_value': 7912448, 'sum_value': 'no data', 'data_type': 'no data'}]),
         # ([{'chunk_id': 'N/A', ... 'data_type': 'no data'}])]
-        batch_results = client.gather(futures)
+        # Theoretically, catches cluster failure due to exceeded memory so that failures are clearer. Not fully tested.
+        # Per Claude session 'Cluster task retry failures in vegetation outputs'
+        try:
+            batch_results = client.gather(futures)
+        except KilledWorker as e:
+            main_logger.error(
+                f"BATCH {i + 1} FAILED: A task was killed after 4 worker deaths — "
+                f"almost certainly out of memory. Check peak memory logs for the affected tile. "
+                f"Consider re-running with larger worker memory (-m 64). "
+                f"Dask error: {e}"
+            )
+            raise
         # print(batch_results)
 
         all_results.extend(batch_results)
