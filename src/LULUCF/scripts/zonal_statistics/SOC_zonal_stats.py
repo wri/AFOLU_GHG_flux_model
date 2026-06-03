@@ -66,7 +66,7 @@ from src.utilities import log_utilities as lu
 from src.utilities import universal_utilities as uu
 from src.utilities import zarr_utilities as zu
 from src.utilities import zonal_stats_utilities as zsu
-from src.utilities import resize_cluster
+from src.utilities import terminate_cluster
 
 
 def main(cluster_name, input_date, model_type, no_upload, zonal_stats_description,
@@ -80,6 +80,8 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
 
     # Model stage being run
     stage = 'SOC_zonal_statistics'
+    model_version = cn.SOC_model_version_underscore
+    output_path = cn.SOC_outputs_path
 
     # Connects to Coiled cluster if not running locally and the named cluster exists
     cluster, client, run_local = uu.connect_to_Coiled_cluster(cluster_name, False)
@@ -592,16 +594,10 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     else:
         main_logger.info("No tiles processed")
 
-    workers = client.scheduler_info()["workers"]
-    n_workers = len(workers)
+    # # Terminates cluster because all further processing is done locally
+    # terminate_cluster.terminate_cluster(cluster_name)
 
-    # Reduces number of workers in the cluster down to 1 if there is more than 10
-    if n_workers > 25:
-        main_logger.info("Resizing cluster to 1 worker")
-
-        resize_cluster.resize_coiled_cluster(cluster_name, 1)
-
-    # Collect all tile parquet files
+    # Collects all tile parquet files
     parquet_files = sorted(
         str(local_zonal_stats_folder / f)
         for f in os.listdir(local_zonal_stats_folder)
@@ -615,38 +611,62 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     # List of dataframes from each tile, to be combined
     df_list = []
 
-    # Converts parquets to csvs, and makes a list of all the dataframes to combine them into one giant table.
-    # Does it here with 1 worker because writing csvs is slow and not a good use of a full cluster
+    # Rows in all output tables
+    total_rows = 0
+
+    # Iterates through all tiles to sum rows
+    main_logger.info(f"Counting rows in all output tables: {uu.timestr()}")
+    for parquet_output in parquet_files:
+        main_logger.info(f"Getting row count in {parquet_output}: {uu.timestr()}")
+        df = pd.read_parquet(parquet_output)
+        total_rows += len(df.index)
+
+    main_logger.info(f"Total rows: {total_rows}")
+
+    # Only tries to combine tables into one table if less than specified number of rows
+    if total_rows > 30_000_000:
+        main_logger.info("Too many rows to aggregate into global df. Skipping.")
+    else:
+        main_logger.info(f"Combining all parquets: {uu.timestr()}")
+        for parquet_output in parquet_files:
+            main_logger.info(f"Reading {parquet_output}: {uu.timestr()}")
+            df = pd.read_parquet(parquet_output)
+            df_list.append(df)
+            total_rows += len(df.index)
+
+        # Combines all the tile-level dfs in the list into a single df
+        main_logger.info(f"Combining dataframes: {uu.timestr()}")
+        combined_df = pd.concat(df_list, axis=0, ignore_index=True)
+
+        main_logger.info(f"Rows in combined dataframe: {len(combined_df.index)}")
+        if len(combined_df.index) != total_rows:
+            main_logger.warning("Sum of row count from individual tables and row count in combined table do not match!")
+        main_logger.info(combined_df.head())
+
+        combined_df_name = f'SOC_model_zonal_stats_v{model_version}_{time.strftime('%Y%m%d_%H_%M_%S')}'
+        combined_df.to_parquet(f"{local_zonal_stats_folder}/{combined_df_name}.parquet")
+        if len(combined_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
+            combined_df.to_csv(f"{local_zonal_stats_folder}/{combined_df_name}.csv", index=False)
+
+        # Converts combined df from long to wide
+        combined_wide_df = zsu.create_wide_df(combined_df, main_logger)
+
+        combined_wide_df_name = f'SOC_model_zonal_stats_v{model_version}_wide_{time.strftime('%Y%m%d_%H_%M_%S')}'
+        combined_wide_df.to_parquet(f"{local_zonal_stats_folder}/{combined_wide_df_name}.parquet")
+        if len(combined_wide_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
+            combined_wide_df.to_csv(f"{local_zonal_stats_folder}/{combined_wide_df_name}.csv", index=False)
+
+    # Converts each parquet to csv
     main_logger.info(f"Converting parquet files to csvs: {uu.timestr()}")
     for parquet_output in parquet_files:
+        main_logger.info(f"Converting {parquet_output} to csv: {uu.timestr()}")
         df = pd.read_parquet(parquet_output)
         csv_output = parquet_output.replace('parquet', 'csv')
         df.to_csv(csv_output, index=False)
-        df_list.append(df)
-
-    # Combines all the tile-level df_list in the list into a single df
-    main_logger.info(f"Combining dataframes: {uu.timestr()}")
-    combined_df = pd.concat(df_list, axis=0, ignore_index=True)
-
-    main_logger.info(f"Rows in combined dataframe: {len(combined_df.index)}")
-    main_logger.info(combined_df.head())
-
-    combined_df_name = f'SOC_zonal_stats_v{cn.SOC_model_version_underscore}_{time.strftime('%Y%m%d_%H_%M_%S')}'
-    combined_df.to_parquet(f"{local_zonal_stats_folder}/{combined_df_name}.parquet")
-    if len(combined_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
-        combined_df.to_csv(f"{local_zonal_stats_folder}/{combined_df_name}.csv", index=False)
-
-    # Converts from long to wide df
-    combined_wide_df = zsu.create_wide_df(combined_df, main_logger)
-
-    combined_wide_df_name = f'SOC_zonal_stats_wide_v{cn.SOC_model_version_underscore}_{time.strftime('%Y%m%d_%H_%M_%S')}'
-    combined_wide_df.to_parquet(f"{local_zonal_stats_folder}/{combined_wide_df_name}.parquet")
-    if len(combined_wide_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
-        combined_wide_df.to_csv(f"{local_zonal_stats_folder}/{combined_wide_df_name}.csv", index=False)
 
     # Uploads outputs to s3 if the run is large enough
-    zsu.upload_zstats_to_s3(stage, local_zonal_stats_folder, cn.SOC_outputs_path, main_logger,
-                        model_path_description, model_type, cn.SOC_model_version_underscore, tiles_processed)
+    zsu.upload_zstats_to_s3(stage, local_zonal_stats_folder, output_path, main_logger,
+                        model_path_description, model_type, model_version, tiles_processed)
 
     end_time = time.time()
     main_logger.info(f"Finished zonal stats, took {round(end_time - prep_start_time)} seconds: {uu.timestr()}")

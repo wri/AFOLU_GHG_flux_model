@@ -25,12 +25,12 @@ from src.utilities.constants_and_names import intervals_annual
 
 ### Settings-- modify these
 
-# # For vegetation model outputs
+# For vegetation model outputs
 # bounds = [23, -4, 24, -3]
-# bounds = [-83, 54, -82, 55]
-# zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/mega_zarr/annual_intervals/4000_pixels/20260130/vegetation_zarr.zarr'
-# var_name = 'net_flux__all_C_pools__all_gases__MgCO2e_ha_yr'
-# interval_end_years = cn.interval_end_years_annual
+bounds = [-111, 60, -110, 61]
+zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/mega_zarr/annual_intervals/4000_pixels/20260130/vegetation_zarr.zarr'
+var_name = 'gross_emissions__all_C_pools__all_gases__MgCO2e_ha_yr'
+interval_end_years = cn.interval_end_years_annual
 
 # # For carbon density timeseries
 # bounds = [110, -1 ,111, 0]
@@ -57,11 +57,11 @@ from src.utilities.constants_and_names import intervals_annual
 # var_name = 'starting_composite_primary_forest'
 # interval_end_years = [2015]
 
-# For AGC RF (added to vegetation zarr later)
-bounds = [10, 48, 11, 49]
-zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/mega_zarr/annual_intervals/4000_pixels/20260130/vegetation_zarr.zarr'
-var_name = 'removal_factor__AGC__MgC_ha_yr'
-interval_end_years = [2024]
+# # For AGC RF (added to vegetation zarr later)
+# bounds = [10, 48, 11, 49]
+# zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/mega_zarr/annual_intervals/4000_pixels/20260130/vegetation_zarr.zarr'
+# var_name = 'removal_factor__AGC__MgC_ha_yr'
+# interval_end_years = [2024]
 
 # # For flox contextual layers
 # bounds = [119, -6, 120, -5]  # For continent-ecozone: mix of 0, 4018 and 4020, with 4020 in upper right (00N_110E)

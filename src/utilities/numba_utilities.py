@@ -617,11 +617,17 @@ def calc_partial_disturbance_EFs(drivers_cell, continent_ecozone_cell, partial_d
         partial_disturbance_EF = partial_disturbance_EF_array[row_index, col_index]
     else:
         # Manual mean of the specified column (col_index) because numba has all kinds of restrictions!
+        # Handles errant NaN in EF tables by calculating EF from the rest of the values
+        # Per Claude session 'Flux statistics comparison: chunk vs. flox'
         total = 0.0
         n_rows = partial_disturbance_EF_array.shape[0]
+        count = 0
         for i in range(n_rows):
-            total += partial_disturbance_EF_array[i, col_index]
-        partial_disturbance_EF = total / n_rows
+            val = partial_disturbance_EF_array[i, col_index]
+            if not np.isnan(val):
+                total += val
+                count += 1
+        partial_disturbance_EF = total / count if count > 0 else 0.0
 
     return partial_disturbance_EF
 
