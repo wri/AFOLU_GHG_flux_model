@@ -5,8 +5,8 @@ Local test:
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 119.5 -5.75 119.75 -5.5 -cs 0.25 --run_local --no_upload --run_date 20268888
 
 Coiled small tests (0.25x0.25 deg chunk):
-python -m src.utilities.create_cluster -n 1 -m 16 -cn IPCC_land_use_change
-python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_change -bb 119.5 -5.75 119.75 -5.5 -cs 0.25 --run_date 20268888
+python -m src.utilities.create_cluster -n 1 -m 16 -cn IPCC_land_use
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use -bb 119.5 -5.75 119.75 -5.5 -cs 0.25 --run_date 20268888
 
 Coiled small tests (1x1 deg chunk):
 python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn IPCC_land_use_change
@@ -35,7 +35,6 @@ import xarray as xr
 from concurrent.futures import ThreadPoolExecutor
 
 from dask.distributed import print
-from numba import jit
 
 # Project imports
 from src.utilities import constants_and_names as cn

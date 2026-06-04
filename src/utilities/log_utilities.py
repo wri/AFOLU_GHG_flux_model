@@ -51,7 +51,7 @@ def populate_main_log_header(client, cluster, log_note, run_local, model_type, s
         n_workers = "N/A- local run"
         nthreads = "N/A- local run"
     else:
-        worker_memory, n_workers, nthreads = uu.get_cluster_info(client, cluster)
+        worker_memory, n_workers, nthreads, *_ = uu.get_cluster_info(client, cluster)
 
     main_logger.info(f"Model type: {model_type}")
     main_logger.info(f"Stage: {stage}")
