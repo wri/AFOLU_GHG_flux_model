@@ -56,15 +56,16 @@ def get_sdpt_status(sdpt_type):
     return sdpt_planted_forest, sdpt_tree_crop
 
 # Returns boolean values for whether a pixel is oil palm using SDPT simpleName, Descals oil palm planting year, or pre-2000 plantation
-def get_oil_palm_status(pre_2000_plantation, sdpt_name, descals_planting_year,  year):
-
-    pre_2000 = not np.isnan(pre_2000_plantation) and int(pre_2000_plantation) == 1
-    sdpt_oil_palm = not np.isnan(sdpt_name) and int(sdpt_name) == 1
-    descals_oil_palm = not np.isnan(descals_planting_year) and 0 < int(descals_planting_year) <= int(year)
-
-    oil_palm = (pre_2000 or sdpt_oil_palm or descals_oil_palm)
-
-    return oil_palm
+# def get_oil_palm_status(pre_2000_plantation, sdpt_name, descals_planting_year,  year):
+#
+#     pre_2000 = not np.isnan(pre_2000_plantation) and int(pre_2000_plantation) == 1
+#     sdpt_oil_palm = not np.isnan(sdpt_name) and int(sdpt_name) == 1
+#     descals_oil_palm = not np.isnan(descals_planting_year) and 0 < int(descals_planting_year) <= int(year)
+#
+#     oil_palm = (pre_2000 or sdpt_oil_palm or descals_oil_palm)
+#
+#     return oil_palm
+# TODO: Delete
 
 
 # Move general utilities from here up to UU
@@ -218,7 +219,7 @@ def apply_extent_rules(lu_dict):
     if lu_dict["oil_palm"]:
         set_tokens(tokens, node_codes, crop_reclass_idx, "C", node_code_map["crop_oil_palm"])
         return True
-    if lu_dict["sdpt_tree_crop"]:
+    if lu_dict["sdpt_tree_crop"] or :
         set_tokens(tokens, node_codes, crop_reclass_idx, "C", node_code_map["crop_sdpt_tree_crop"])
         return True
 
@@ -266,19 +267,21 @@ def apply_all_short_veg(lu_dict):
         set_tokens(lu_dict["tokens"], lu_dict["node_codes"], all_idx, "F", driver_to_forest_node[driver])
 
 
-def apply_regex_rules(lc_timeseries, driver, tcl_year, oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove, gpw_cultiv_grass):
+def apply_regex_rules(lc_timeseries, driver, tcl_year, pre_2000_plantation, descals_planting_year, sdpt_oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove, gpw_cultiv_grass):
 
     # Create default token array and default node code array from LC timeseries
     tokens = [token_for_lc(v) for v in lc_timeseries]               #char array representing land use timeseries
     node_codes = [default_node_code(token) for token in tokens]     #int array representing class definition rules applied throughout the timeseries
 
-    lu_dict ={
+    lu_dict = {
         "tokens": tokens,
         "node_codes": node_codes,
         "driver": driver,
         "tcl_year": tcl_year,
-        "tcl_prior": (tcl_year != 0 and tcl_year <= 2015),
-        "oil_palm": oil_palm,
+        "tcl_prior": (tcl_year != 0 and tcl_year <= 2015),  # convert to bool
+        "pre_2000_plantation": (pre_2000_plantation == 1),
+        "descals_planting_year": descals_planting_year,
+        "sdpt_oil_palm": (sdpt_oil_palm == 1),
         "sdpt_tree_crop": sdpt_tree_crop,
         "sdpt_planted_forest": sdpt_planted_forest,
         "gmw_mangrove": gmw_mangrove,
@@ -425,11 +428,9 @@ def IPCC_land_use(in_dict):
             planted_forest_tree_crop = planted_forest_tree_crop_block[row, col]     # simpleName
             sdpt_planted_forest, sdpt_tree_crop = get_sdpt_status(planted_forest_tree_crop)
 
-            oil_palm_2000_extent = oil_palm_2000_extent_block[row, col]
-            planted_forest_type = planted_forest_type_block[row, col]  # simpleType
-            oil_palm_first_year = oil_palm_first_year_block[row, col]
-            oil_palm = get_oil_palm_status(oil_palm_2000_extent, planted_forest_type, oil_palm_first_year, 2024)
-            #TODO: Come back to this if allowing oil_palm planting year logic (i.e. F -> C in tall veg remaining tall veg).
+            pre_2000_plantation = oil_palm_2000_extent_block[row, col]
+            sdpt_oil_palm = planted_forest_type_block[row, col]        # simpleType
+            descals_planting_year = oil_palm_first_year_block[row, col]
 
             # Mangrove extent years (1 = mangrove, 0 = no mangrove)
             mang_1996 = mangrove_extent_1996_block[row, col]
@@ -450,7 +451,7 @@ def IPCC_land_use(in_dict):
 
             # Pass in values for regex rules
             LU_timeseries, node_code_timeseries, LU_change_timeseries, summary = (
-                apply_regex_rules(LC_timeseries, driver, tcl_year, oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove, False))
+                apply_regex_rules(LC_timeseries, driver, tcl_year, pre_2000_plantation, descals_planting_year, sdpt_oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove, False))
             #TODO: Add gpw_cultiv_grass (currently set to False)
 
             # Write out results
