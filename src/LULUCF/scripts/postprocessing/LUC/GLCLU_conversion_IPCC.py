@@ -55,18 +55,40 @@ def get_sdpt_status(sdpt_type):
 
     return sdpt_planted_forest, sdpt_tree_crop
 
-# Returns boolean values for whether a pixel is oil palm using SDPT simpleName, Descals oil palm planting year, or pre-2000 plantation
-# def get_oil_palm_status(pre_2000_plantation, sdpt_name, descals_planting_year,  year):
-#
-#     pre_2000 = not np.isnan(pre_2000_plantation) and int(pre_2000_plantation) == 1
-#     sdpt_oil_palm = not np.isnan(sdpt_name) and int(sdpt_name) == 1
-#     descals_oil_palm = not np.isnan(descals_planting_year) and 0 < int(descals_planting_year) <= int(year)
-#
-#     oil_palm = (pre_2000 or sdpt_oil_palm or descals_oil_palm)
-#
-#     return oil_palm
-# TODO: Delete
+# Checks if an oil palm planting year related transition happens in the timeseries.
+def has_planting_transition(lu_dict):
+    planting_year = lu_dict.get("planting_year", 0)
+    return (planting_year > min(cn.years_annual) and planting_year <= max(cn.years_annual))
 
+# Gets oil palm planting year index in timeseries.
+def planting_idx(planting_year):
+    if planting_year <= min(cn.years_annual):
+        return 0
+    if planting_year > max(cn.years_annual):
+        return None
+    return int(planting_year - min(cn.years_annual))
+
+# Checks if there was TCL up to 5 years before oil palm planting year. If so, considered F->C transition.
+def tcl_prior_to_planting(tcl_year, planting_year):
+    n_years = 5     # number of years between TCL and oil palm planting year allowed to be considered F -> C conversion
+    return (tcl_year > 0 and planting_year > 0 and planting_year - n_years <= tcl_year < planting_year)
+
+# Checks that there is only one land use transition during the entire timeseries. If not, prints pixel information.
+def check_single_lu_transition(lu_dict, lu_ts):
+    transition_count = sum(lu_ts[i] != lu_ts[i - 1] for i in range(1, len(lu_ts)))
+
+    if transition_count > 1:
+        debug_info = {
+            k: v for k, v in lu_dict.items()
+            if k not in {"node_codes"}
+        }
+
+        print(
+            f"\nWARNING: More than one LU transition detected.\n"
+            f"transition_count: {transition_count}\n"
+            f"lu_ts: {lu_ts}\n"
+            f"debug_info: {debug_info}\n"
+        )
 
 # Move general utilities from here up to UU
 #######################################################################################################################
@@ -79,38 +101,63 @@ These rules replace the default land use classes.
 Node codes used here:
 1) Settlements and Infrastructure:
     10 = Built from GLAD data
+    11 = Built from vegetation/bare to built transition rule
+
 
 2) Cropland:
-    20  = Crop from GLAD data
-    21  = Crop from oil palm extent
-    22  = Crop from SDPT tree crop extent
-    23X = Crop from permanent agriculture driver
-         - 233 = TV after TCL where driver is permanent agriculture (assume tree crops)
-         - 234 = SV after TCL outside GPW extent (i.e. "rangeland") where driver is permanent agriculture (assume crops)
+    20 = Crop from GLAD data
+    21 = Crop from oil palm extent or planting year
+    22 = Crop from SDPT tree crop extent
+    23 = Crop from permanent agriculture driver
+    24 = Crop from vegetation/bare to crop transition rule
+
 
 3) Forest:
-    30  = Tall veg from GLAD data
+    30  = Forest from GLAD tall vegetation
     31  = Forest from SDPT planted forest extent
     32  = Forest from GMW mangrove extent
-    33X = Short vegetation or bare reclassified as Forest using drivers rules (assume unstocked forest)
+    33X = Unstocked forest from TCL + drivers rules
         333 = Forest from shifting cultivation driver
         334 = Forest from logging driver
         335 = Forest from wildfire driver
         337 = Forest from natural disturbance driver
+    34 = Unstocked forest after TCL and before oil palm planting
+    35 = Forest from vegetation/bare to built transition rule
+    36 = Forest from vegetation/bare to crop transition rule
+    37 = Forest from mixed tall/short vegetation rule
+    38 = Forest from mixed vegetation/water rule
+    39 = Forest from majority years in mixed class rule
+
 
 4) Grassland:
-    40 = Short veg from GLAD data
-    41 = Short veg from permanent agriculture driver
-        - SV after TCL inside GPW extent where driver is permanent agriculture (assume rangeland)
+    40 = Grass from GLAD short vegetation
+    41 = Grass from TCL + permanent agriculture driver + GPW cultivated grassland extent (assume rangeland)
+    42x = Grass from TCL + driver rule
+        420 = Grass from unknown driver
+        422 = Grass from hard commodities driver
+        426 = Grass from settlements/infrastructure driver
+    43 = Grass from vegetation/bare to built transition rule
+    44 = Grass from vegetation/bare to crop transition rule
+    45 = Grass from mixed tall/short vegetation rule
+    46 = Grass from mixed vegetation/water rule
+    47 = Grass from majority years in mixed class rule
 
 
 5) Wetland:
     50 = Wetland from GLAD data
+    51 = Wetland from vegetation/water transition rule
+    52 = Wetland from majority years in mixed water rule
+
 
 6) Other
     60 = Bare from GLAD data
-    61 = Water from GLAD data
-    62 = Snow/ice from GLAD data
+    61 = Bare from majority years in mixed bare/grass rule
+
+    70 = Water from GLAD data
+    71 = Water from vegetation/water transition rule
+    72 = Water from majority years in mixed water rule
+
+    80 = Snow/ice from GLAD data
 """
 
 # IPCC Land use hierarchy: Settlements > Cropland > Forest Land > Grassland > Wetlands > Other
@@ -145,28 +192,53 @@ def token_for_lc(v):
 # Node code values based on what exception was applied
 node_code_map = {
     "built_glad": 10,
+    "built_veg_bare_built_mix": 11,
+
 
     "crop_glad": 20,
     "crop_oil_palm": 21,
     "crop_sdpt_tree_crop": 22,
     "crop_perm_ag_driver": 23,
+    "crop_veg_bare_crop_mix": 24,
 
     "forest_glad": 30,
-    "forest_gmw_mangrove": 31,
-    "forest_sdpt_planted_forest": 32,
+    "forest_sdpt_planted_forest": 31,
+    "forest_gmw_mangrove": 32,
     "forest_shift_cult_driver": 333,
     "forest_logging_driver": 334,
     "forest_wildfire_driver": 335,
     "forest_nat_dist_driver": 337,
+    "forest_unstocked_pre_oil_palm": 34,
+    "forest_veg_bare_built_mix": 35,
+    "forest_veg_bare_crop_mix": 36,
+    "forest_tall_short_mix": 37,
+    "forest_veg_water_mix": 38,
+    "forest_glad_majority_years": 39,
 
     "grass_glad": 40,
     "grass_gpw": 41,
+    "grass_hard_commod_driver": 422,
+    "grass_settlement_driver": 426,
+    "grass_unknown_driver": 420,
+    "grass_veg_bare_built_mix": 43,
+    "grass_veg_bare_crop_mix": 44,
+    "grass_tall_short_mix": 45,
+    "grass_veg_water_mix": 46,
+    "grass_glad_majority_years": 47,
+
 
     "wetland_glad": 50,
+    "wetland_veg_water_mix": 51,
+    "wetland_glad_majority_years": 52,
 
     "bare_glad": 60,
-    "water_glad": 61,
-    "ice_glad": 62,
+    "bare_glad_majority_years": 61,
+
+    "water_glad": 70,
+    "water_veg_water_mix": 71,
+    "water_glad_majority_years": 72,
+
+    "ice_glad": 80,
 }
 
 # Default node codes before rules are applied
@@ -190,10 +262,17 @@ def default_node_code(token):
     return None
 
 # Function to override default values based on regex rules
-def set_tokens(tokens, node_codes, indices, new_token, node_code):
+def set_tokens(tokens, node_codes, indices, new_token, node_code, initial_tokens=None):
     for i in indices:
+        old_token = initial_tokens[i] if initial_tokens is not None else tokens[i]
         tokens[i] = new_token
-        node_codes[i] = node_code
+
+        # Only overwrite node code if LU token changed from original LC token
+        if old_token != new_token:
+            node_codes[i] = node_code
+
+def apply_tokens(lu_dict, indices, new_token, node_code):
+    set_tokens(lu_dict["tokens"], lu_dict["node_codes"], indices, new_token, node_code, lu_dict["initial_tokens"])
 
 # Converts char tokens to final int values in LU map
 lu_token_map = {
@@ -206,47 +285,124 @@ lu_token_map = {
     "O": 6,
     "I": 6,
 }
+#TODO: Separate out ice, water, and bare?
+
+
 
 def apply_extent_rules(lu_dict):
     tokens = lu_dict["tokens"]
-    node_codes = lu_dict["node_codes"]
 
-    crop_reclass_idx = [i for i, token in enumerate(tokens) if token in {"F", "G", "W", "B"}]
-    forest_reclass_idx = [i for i, token in enumerate(tokens) if token in {"G", "W", "B"}]
-    # TODO: May want to consider not including wetland?
+    crop_reclass_idx = [i for i, token in enumerate(tokens) if token in {"F", "G", "W", "B", "O"}]
+    forest_reclass_idx = [i for i, token in enumerate(tokens) if token in {"G", "W", "B", "O"}]
+    # TODO: May want to consider not including wetland? Include O?
 
-    # Crop is highest priority and extents are applied in this order: oil palm -> SDPT tree crop --> pre-2000 plantation
-    if lu_dict["oil_palm"]:
-        set_tokens(tokens, node_codes, crop_reclass_idx, "C", node_code_map["crop_oil_palm"])
+    # Get oil palm planting year
+    crop_extent = lu_dict["sdpt_tree_crop"] or lu_dict["sdpt_oil_palm"]
+    planting_year = lu_dict.get("planting_year", 0)
+    planting_later = planting_year > min(cn.years_annual)
+
+    # Crop is highest priority and extents are applied in this order: pre-2000 oil palm plantation -> Descals oil palm -> SDPT tree crop
+    if lu_dict["pre_2000_plantation"]:
+        apply_tokens(lu_dict, crop_reclass_idx, "C", node_code_map["crop_oil_palm"])
         return True
-    if lu_dict["sdpt_tree_crop"] or :
-        set_tokens(tokens, node_codes, crop_reclass_idx, "C", node_code_map["crop_sdpt_tree_crop"])
+    if crop_extent and planting_later:
+        return False  # Don't apply oil palm exception in SDPT extent if planting year hasn't happened yet
+    if crop_extent:
+        node_code = node_code_map["crop_oil_palm"] if lu_dict["sdpt_oil_palm"] else node_code_map["crop_sdpt_tree_crop"]
+        apply_tokens(lu_dict, crop_reclass_idx, "C", node_code)
         return True
 
     # If no crop extent applies, forest extents are applied by this order: GMW mangrove -> SDPT planted forest
     if lu_dict["gmw_mangrove"]:
-        set_tokens(tokens, node_codes, forest_reclass_idx, "F", node_code_map["forest_gmw_mangrove"])
+        apply_tokens(lu_dict, forest_reclass_idx, "F", node_code_map["forest_gmw_mangrove"])
         return True
     if lu_dict["sdpt_planted_forest"]:
-        set_tokens(tokens, node_codes, forest_reclass_idx, "F", node_code_map["forest_sdpt_planted_forest"])
+        apply_tokens(lu_dict, forest_reclass_idx, "F", node_code_map["forest_sdpt_planted_forest"])
         return True
     return False
 
+# Mix of tall > short and/or bare -> built
+def apply_veg_bare_built(lu_dict):
+    tokens = lu_dict["tokens"]
+    token_seq = "".join(tokens)
+
+    # If F is present, use first F -> S/G/B  as transition. Everything before first F loss is considered forest and everything after is considered settlements/ infrastructure.
+    if "F" in token_seq:
+        transition_match = re.search(r"F+[SGB]", token_seq)
+        if not transition_match:
+            return
+
+        transition_idx = transition_match.end() - 1
+        apply_tokens(lu_dict, range(0, transition_idx), "F", node_code_map["forest_veg_bare_built_mix"])
+        apply_tokens(lu_dict, range(transition_idx, len(tokens)), "S", node_code_map["built_veg_bare_built_mix"])
+        return
+
+    # If no F but G is present, use first G -> S/B as transition.
+    if "G" in token_seq:
+        transition_match = re.search(r"G+[SB]", token_seq)
+        if not transition_match:
+            return
+
+        transition_idx = transition_match.end() - 1
+        apply_tokens(lu_dict, range(0, transition_idx), "G", node_code_map["grass_veg_bare_built_mix"])
+        apply_tokens(lu_dict, range(transition_idx, len(tokens)), "S", node_code_map["built_veg_bare_built_mix"])
+        return
+#TODO: Use TCL up to 5 years prior for F->S exception?
+
+# Mix of tall, short and/or bare -> crop
+def apply_veg_bare_crop(lu_dict):
+    tokens = lu_dict["tokens"]
+    token_seq = "".join(tokens)
+
+    # If F is present, use the first F -> C/G/B as transition. Everything before first F loss is considered forest and everything after is considered crop.
+    if "F" in token_seq:
+        transition_match = re.search(r"F+[CGB]", token_seq)
+        if not transition_match:
+            return
+
+        transition_idx = transition_match.end() - 1
+        apply_tokens(lu_dict, range(0, transition_idx), "F", node_code_map["forest_veg_bare_crop_mix"])
+        apply_tokens(lu_dict, range(transition_idx, len(tokens)), "C", node_code_map["crop_veg_bare_crop_mix"])
+        return
+
+    # If no F but G is present, use first G -> C/B as transition.
+    if "G" in token_seq:
+        transition_match = re.search(r"G+[CB]", token_seq)
+        if not transition_match:
+            return
+
+        transition_idx = transition_match.end() - 1
+        apply_tokens(lu_dict, range(0, transition_idx), "G", node_code_map["grass_veg_bare_crop_mix"])
+        apply_tokens(lu_dict, range(transition_idx, len(tokens)), "C", node_code_map["crop_veg_bare_crop_mix"])
+        return
+#TODO: Use TCL up to 5 years prior for F->C exception?
+
+# Tall vegetation all years
 def apply_all_tall_veg(lu_dict):
     tcl_prior = lu_dict["tcl_prior"]
     driver = lu_dict["driver"]
 
-    all_idx = range(len(lu_dict["tokens"]))
+    tokens = lu_dict["tokens"]
+    all_idx = range(len(tokens))
 
     # If TCL has occurred by the start of timeseries and the driver is permanent ag, assume tall veg is tree crops
     if tcl_prior and driver == 1:
-        set_tokens(lu_dict["tokens"], lu_dict["node_codes"], all_idx, "C", node_code_map["crop_perm_ag_driver"])
+        apply_tokens(lu_dict, all_idx, "C", node_code_map["crop_perm_ag_driver"])
+
+    # # If oil palm planting year in interval, allows for F -> C transitions assuming establishment of tree crops
+    # if has_planting_transition(lu_dict):
+    #     idx = planting_idx(lu_dict["planting_year"])
+    #     apply_tokens(lu_dict, range(idx, len(tokens)), "C", node_code_map["crop_oil_palm"])
+    #     return
+    #TODO: Do we want to allow for F->C transition based on oil palm planting year?
 
 # Short vegetation all years
 def apply_all_short_veg(lu_dict):
     tcl_prior = lu_dict["tcl_prior"]
     driver = lu_dict["driver"]
+    planting_year = lu_dict["planting_year"]
 
+    tokens = lu_dict["tokens"]
     all_idx = range(len(lu_dict["tokens"]))
 
     driver_to_forest_node = {
@@ -256,31 +412,265 @@ def apply_all_short_veg(lu_dict):
         7: node_code_map["forest_nat_dist_driver"],
     }
 
-    # If TCL has occurred by the start of the timeseries and the driver is permanent ag and not in cultivated grass extent, assume crop
+    # If oil palm planting year occurs during interval: If TCL up to 5 years prior, assume F -> C transition. Otherwise, assume G -> C transition.
+    if has_planting_transition(lu_dict):
+        idx = planting_idx(planting_year)
+        if tcl_prior_to_planting(lu_dict["tcl_year"], planting_year):
+            pre_token = "F"
+            pre_node = node_code_map["forest_unstocked_pre_oil_palm"]
+            apply_tokens(lu_dict, range(0, idx), pre_token, pre_node)
+
+        apply_tokens(lu_dict, range(idx, len(tokens)), "C", node_code_map["crop_oil_palm"])
+        return
+
+    # If TCL has occurred by the start of the timeseries and the driver is permanent ag and not in cultivated grass extent, assume crop the entire timeseries
+    elif tcl_prior and driver == 1:
+        if not lu_dict["gpw_cultiv_grass"]:
+            apply_tokens(lu_dict, all_idx, "C", node_code_map["crop_perm_ag_driver"])
+        else:
+            apply_tokens(lu_dict, all_idx, "G", node_code_map["grass_gpw"])
+
+    # If TCL has occurred by the start of the timeseries and the driver is shifting cultivation, logging, wildfire, or other natural disturbances, assume unstocked forest the entire timeseries
+    elif tcl_prior and driver in driver_to_forest_node:
+        apply_tokens(lu_dict, all_idx, "F", driver_to_forest_node[driver])
+
+
+# Mix of short veg and tall veg
+def apply_tall_short(lu_dict):
+    tcl_prior = lu_dict["tcl_prior"]
+    tcl_year = lu_dict["tcl_year"]
+    tcl_any = tcl_year > 0
+    driver = lu_dict["driver"]
+    planting_year = lu_dict["planting_year"]
+
+    tokens = lu_dict["tokens"]
+    token_seq = "".join(tokens)
+    all_idx = range(len(tokens))
+
+    driver_to_forest_node = {
+        3: node_code_map["forest_shift_cult_driver"],
+        4: node_code_map["forest_logging_driver"],
+        5: node_code_map["forest_wildfire_driver"],
+        7: node_code_map["forest_nat_dist_driver"],
+    }
+
+    driver_to_grass_node = {
+        2: node_code_map["grass_hard_commod_driver"],
+        6: node_code_map["grass_settlement_driver"],
+    }
+
+    # 1) Check if oil palm planting year occurs during interval (regardless of driver + TCL)
+    if has_planting_transition(lu_dict):
+        # If oil palm planting year in interval, use the first F -> G transition. Else, use oil palm planting year.
+        transition_match = re.search(r"F+G", token_seq)
+        if transition_match:
+            idx = transition_match.end() - 1
+        else:
+            idx = planting_idx(planting_year)
+        pre_plant_tokens = tokens[:idx]
+
+        # If F present before transition or TCL within 5 years before planting, consider it F -> C
+        forest_before_planting = ("F" in pre_plant_tokens or tcl_prior_to_planting(tcl_year, planting_year))
+        if forest_before_planting:
+            pre_token = "F"
+            pre_node = node_code_map["forest_unstocked_pre_oil_palm"]
+            apply_tokens(lu_dict, range(0, idx), pre_token, pre_node)
+
+        apply_tokens(lu_dict, range(idx, len(tokens)), "C", node_code_map["crop_oil_palm"])
+        return
+
+    # 2) If TCL occurred before the timeseries, use permanent agriculture driver to determine LU for all years.
+    # If the driver is permanent ag and not in cultivated grass extent, assume crop. Else, assume grass.
     if tcl_prior and driver == 1:
         if not lu_dict["gpw_cultiv_grass"]:
-            set_tokens(lu_dict["tokens"], lu_dict["node_codes"], all_idx, "C", node_code_map["crop_perm_ag_driver"])
+            apply_tokens(lu_dict, all_idx, "C", node_code_map["crop_perm_ag_driver"])
         else:
-            set_tokens(lu_dict["tokens"], lu_dict["node_codes"], all_idx, "G", node_code_map["grass_gpw"])
-    # If TCL has occurred by the start of the timeseries and the driver is shifting cultivation, logging, wildfire, or other natural disturbances, assume unstocked forest
-    elif tcl_prior and driver in driver_to_forest_node:
-        set_tokens(lu_dict["tokens"], lu_dict["node_codes"], all_idx, "F", driver_to_forest_node[driver])
+            apply_tokens(lu_dict, all_idx, "G", node_code_map["grass_gpw"])
+        return
+
+    # 3) If TCL during the timeseries, use permanent agriculture driver and first F -> G transition to determine LU transitions:
+    # If the driver is permanent ag and not in cultivated grass extent, assume F -> C transition. Else, assume F -> G transition.
+    if tcl_any and not tcl_prior and driver == 1:
+        match = re.search(r"F+G", token_seq)
+        if match:
+            transition_idx = match.end() - 1
+            # apply_tokens(lu_dict, range(0, transition_idx), "F", node_code_map["forest_glad"])
+            # Note: if not using first F->G transition switch node code to forest_tall_short_mix
+            if lu_dict["gpw_cultiv_grass"]:
+                apply_tokens(lu_dict, range(transition_idx, len(tokens)), "G", node_code_map["grass_gpw"])
+            else:
+                apply_tokens(lu_dict, range(transition_idx, len(tokens)), "C", node_code_map["crop_perm_ag_driver"])
+            return
+
+    # 4) If TCL in any year and driver is temporary, assume forest all years.
+    # Temporary drivers are: shifting cultivation, logging, wildfire, and other natural disturbances
+    if tcl_any and driver in driver_to_forest_node:
+        apply_tokens(lu_dict, all_idx, "F", driver_to_forest_node[driver])
+        return
+
+    # 5) If TCL during timeseries, use hard commodities, settlements/ infrastructure, and unknown driver and an F->G transition where it stays G until the end. There must be at least 3 Fs, and at least 3 consecutive Gs until the end to determine LU transitions:
+    if tcl_any and not tcl_prior and driver not in {1, 3, 4, 5, 7}:
+        terminal_match = re.search(r"F{3,}G{3,}$", token_seq)
+
+        if terminal_match:
+            transition_match = re.search(r"F+G", token_seq)  # Get the first F->G transition
+
+            if transition_match:
+                transition_idx = transition_match.end() - 1
+                apply_tokens(lu_dict, range(0, transition_idx), "F", node_code_map["forest_tall_short_mix"])
+
+                if driver in driver_to_grass_node:
+                    grass_node = driver_to_grass_node[driver]
+                else:
+                    grass_node = node_code_map["grass_unknown_driver"]
+                apply_tokens(lu_dict, range(transition_idx, len(tokens)), "G", grass_node)
+
+                return
+
+    # 6) Otherwise use regex fallback (if no oil palm or TCL + driver, LU can only be forest or grass)
+    # If there is not at least 3 years F or 3 years G, not enough evidence for a true F/G transition. Use majority land use instead.
+    f_count = tokens.count("F")
+    g_count = tokens.count("G")
+    if g_count < 3:
+        apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_glad_majority_years"])
+        return
+    elif f_count < 3:
+        apply_tokens(lu_dict, all_idx, "G", node_code_map["grass_glad_majority_years"])
+        return
+
+    # Otherwise F-> G transition needs a terminal G phase that start with 3 consecutive Gs, allow at most one F, end on G.
+    # Option to set total number of G years in terminal phase to >= #.
+    # TODO: GGGFGG and GGFGGG allowed but not GGFGG?
+    else:
+        terminal_match = re.search(r"(?P<g>G{3,}(?:F?G*)?)$", token_seq)
+
+        # If no valid terminal G phase, set all years to F
+        if not terminal_match:
+            apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_tall_short_mix"])
+            return
+
+        # Option to make number of Gs in terminal G phase > 3
+        terminal_g_start_idx = terminal_match.start("g")
+        terminal_g_count = tokens[terminal_g_start_idx:].count("G")
+        if terminal_g_count < 3:
+            apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_tall_short_mix"])
+            return
+
+        # If there is a valid terminal G phase, look for the first F->G transition and sets that as the transition year since that is when the majority of emissions will occur in the vegetation model.
+        transition_match = re.search(r"F+G", token_seq)
+
+        if not transition_match:
+            apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_tall_short_mix"])
+            return
+
+        transition_idx = transition_match.end() - 1
+        # apply_tokens(lu_dict, range(0, transition_idx), "F", node_code_map["forest_glad"])
+        # Note: if not using first F->G transition switch node code to forest_tall_short_mix
+        apply_tokens(lu_dict, range(transition_idx, len(tokens)), "G", node_code_map["grass_tall_short_mix"])
+
+# Mix of short veg and bare
+def apply_short_bare(lu_dict):
+    tokens = lu_dict["tokens"]
+    token_seq = "".join(tokens)
+    all_idx = range(len(tokens))
+
+    # Only considered a LU transition if initial landcover >= 3 consecutive years and final land cover >= 3 consecutive years and there is only 1 transition (i.e. GGGBBBBBBB OR BBBBGGGGGG)
+    if re.fullmatch(r"(G{3,}B{3,}|B{3,}G{3,})", token_seq):
+        return
+
+    # Otherwise collapse to majority class across all years
+    g_count = tokens.count("G")
+    b_count = tokens.count("B")
+
+    # If G and B have the same number of years, assume G
+    if g_count >= b_count:
+        apply_tokens(lu_dict, all_idx, "G", node_code_map["grass_glad_majority_years"])
+    else:
+        apply_tokens(lu_dict, all_idx, "B", node_code_map["bare_glad_majority_years"])
+
+# Mix of vegetation and water/wetland
+def apply_veg_water(lu_dict):
+    tokens = lu_dict["tokens"]
+    token_seq = "".join(tokens)
+    all_idx = range(len(tokens))
+
+    veg_tokens = {"F", "G"}
+    water_tokens = {"W", "O"}
+
+    veg_count = sum(t in veg_tokens for t in tokens)
+    water_count = sum(t in water_tokens for t in tokens)
+
+    f_count = tokens.count("F")
+    g_count = tokens.count("G")
+    w_count = tokens.count("W")
+    o_count = tokens.count("O")
+
+    # If there are <3 vegetation years, collapse to majority water/wetland. Tie goes to wetland.
+    if veg_count < 3:
+        if w_count >= o_count:
+            apply_tokens(lu_dict, all_idx, "W", node_code_map["wetland_glad_majority_years"])
+        else:
+            apply_tokens(lu_dict, all_idx, "O", node_code_map["water_glad_majority_years"])
+        return
+
+    # If there are <3 water/wetland years, collapse to majority tall/short veg. Tie goes to forest.
+    if water_count < 3:
+        if f_count >= g_count:
+            apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_glad_majority_years"])
+        else:
+            apply_tokens(lu_dict, all_idx, "G", node_code_map["grass_glad_majority_years"])
+        return
+
+    # Vegetation -> water/wetland transition:
+    # 3+ consecutive vegetation years followed by 3+ consecutive water/wetland years until the end.
+    transition_match = re.search(r"(?P<veg>[FG]{3,})(?P<water>[WO]{3,})$", token_seq)
+
+    if transition_match:
+        transition_idx = transition_match.start("water")
+        pre_tokens = tokens[:transition_idx]
+        final_tokens = tokens[transition_idx:]
+
+        # Prominent vegetation class: if F > 2, forest; otherwise grass.
+        if pre_tokens.count("F") > 2:
+            pre_token = "F"
+            pre_node = node_code_map["forest_veg_water_mix"]
+        else:
+            pre_token = "G"
+            pre_node = node_code_map["grass_veg_water_mix"]
+
+        # Majority water class: if W > 2, wetland; otherwise water.
+        if final_tokens.count("W") > 2:
+            final_token = "W"
+            final_node = node_code_map["wetland_veg_water_mix"]
+        else:
+            final_token = "O"
+            final_node = node_code_map["water_veg_water_mix"]
+
+        apply_tokens(lu_dict, range(0, transition_idx), pre_token, pre_node)
+        apply_tokens(lu_dict, range(transition_idx, len(tokens)), final_token, final_node)
+        return
+
+   # If enough evidence of both groups (both groups >=3) but no valid transition, consider it wetland all years.
+    apply_tokens(lu_dict, all_idx, "W", node_code_map["wetland_veg_water_mix"])
+    return
 
 
-def apply_regex_rules(lc_timeseries, driver, tcl_year, pre_2000_plantation, descals_planting_year, sdpt_oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove, gpw_cultiv_grass):
+
+def apply_regex_rules(lc_timeseries, driver, tcl_year, pre_2000_plantation, planting_year, sdpt_oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove, gpw_cultiv_grass):
 
     # Create default token array and default node code array from LC timeseries
     tokens = [token_for_lc(v) for v in lc_timeseries]               #char array representing land use timeseries
     node_codes = [default_node_code(token) for token in tokens]     #int array representing class definition rules applied throughout the timeseries
 
     lu_dict = {
+        "initial_tokens": tokens.copy(),
         "tokens": tokens,
         "node_codes": node_codes,
         "driver": driver,
         "tcl_year": tcl_year,
-        "tcl_prior": (tcl_year != 0 and tcl_year <= 2015),  # convert to bool
+        "tcl_prior": (tcl_year != 0 and tcl_year <= min(cn.years_annual)),  # convert to bool
         "pre_2000_plantation": (pre_2000_plantation == 1),
-        "descals_planting_year": descals_planting_year,
+        "planting_year": planting_year,
         "sdpt_oil_palm": (sdpt_oil_palm == 1),
         "sdpt_tree_crop": sdpt_tree_crop,
         "sdpt_planted_forest": sdpt_planted_forest,
@@ -293,10 +683,20 @@ def apply_regex_rules(lc_timeseries, driver, tcl_year, pre_2000_plantation, desc
 
     if not extent_rule_applied:
         token_seq = "".join(lu_dict["tokens"]) #Creates a concat string
-        if re.fullmatch(r"F+", token_seq):
+        if re.fullmatch(r"[FGBS]+", token_seq) and "S" in token_seq and re.search(r"[FGB]", token_seq):
+            apply_veg_bare_built(lu_dict)
+        elif re.fullmatch(r"[FGBC]+", token_seq) and "C" in token_seq and re.search(r"[FGB]", token_seq):
+            apply_veg_bare_crop(lu_dict)
+        elif re.fullmatch(r"F+", token_seq):
             apply_all_tall_veg(lu_dict)
         elif re.fullmatch(r"G+", token_seq):
             apply_all_short_veg(lu_dict)
+        elif re.fullmatch(r"[FG]+", token_seq):
+            apply_tall_short(lu_dict)
+        elif re.fullmatch(r"[GB]+", token_seq):
+            apply_short_bare(lu_dict)
+        elif re.fullmatch(r"[FGWO]+", token_seq) and re.search(r"[FG]", token_seq) and re.search(r"[WO]", token_seq):
+            apply_veg_water(lu_dict)
 
     # Final token and node code timeseries
     final_tokens = lu_dict["tokens"]
@@ -304,6 +704,9 @@ def apply_regex_rules(lc_timeseries, driver, tcl_year, pre_2000_plantation, desc
 
     # Convert final tokens to numeric LU codes
     lu_ts = [lu_token_map[token] for token in final_tokens]
+
+    # Check that there is only one land use transition during the timeseries
+    check_single_lu_transition(lu_dict, lu_ts)
 
     # Create transition timeseries: 2015_2016 through 2023_2024
     transition_ts = [int(f"{lu_ts[i]}{lu_ts[i + 1]}") for i in range(len(lu_ts) - 1)]
@@ -317,7 +720,7 @@ def apply_regex_rules(lc_timeseries, driver, tcl_year, pre_2000_plantation, desc
     return lu_ts, node_code_ts, transition_ts, summary
 
 
-# TODO: Does this need to use numba?
+
 def IPCC_land_use(in_dict):
 
     # Dictionary for output arrays: IPCC land use class, land use node code, land use change, and land use summary
@@ -423,6 +826,8 @@ def IPCC_land_use(in_dict):
             LC_timeseries = np.array([LC_2015, LC_2016, LC_2017, LC_2018, LC_2019, LC_2020, LC_2021, LC_2022, LC_2023, LC_2024]).astype('uint8')
 
             tcl_year = tcl_block[row, col]
+            if tcl_year != 0:
+                tcl_year += 2000
             driver = drivers_block[row, col]
 
             planted_forest_tree_crop = planted_forest_tree_crop_block[row, col]     # simpleName
