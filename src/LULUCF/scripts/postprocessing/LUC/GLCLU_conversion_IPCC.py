@@ -2,7 +2,7 @@
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Local test:
-python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 119.5 -5.75 119.75 -5.5 -cs 0.25 --run_local --no_upload --run_date 20268888
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 119.5 -5.75 119.75 -5.5 -cs 0.25 --run_local --run_date 20268888
 
 Coiled small tests (0.25x0.25 deg chunk):
 python -m src.utilities.create_cluster -n 1 -m 16 -cn IPCC_land_use
@@ -101,7 +101,7 @@ These rules replace the default land use classes.
 Node codes used here:
 1) Settlements and Infrastructure:
     10 = Built from GLAD data
-    11 = Built from vegetation/bare to built transition rule
+    11 = Built following tall veg loss before built LC
 
 
 2) Cropland:
@@ -109,7 +109,8 @@ Node codes used here:
     21 = Crop from oil palm extent or planting year
     22 = Crop from SDPT tree crop extent
     23 = Crop from permanent agriculture driver
-    24 = Crop from vegetation/bare to crop transition rule
+    24 = Crop following tall veg loss before crop LC
+    25 = Crop from majority years in mixed LC prior to built LC
 
 
 3) Forest:
@@ -192,14 +193,14 @@ def token_for_lc(v):
 # Node code values based on what exception was applied
 node_code_map = {
     "built_glad": 10,
-    "built_veg_bare_built_mix": 11,
-
+    "built_tall_veg_loss": 11,
 
     "crop_glad": 20,
     "crop_oil_palm": 21,
     "crop_sdpt_tree_crop": 22,
     "crop_perm_ag_driver": 23,
-    "crop_veg_bare_crop_mix": 24,
+    "crop_tall_veg_loss": 24,
+    "crop_glad_majority_years": 25,
 
     "forest_glad": 30,
     "forest_sdpt_planted_forest": 31,
@@ -239,6 +240,7 @@ node_code_map = {
     "water_glad_majority_years": 72,
 
     "ice_glad": 80,
+    "ice_glad_majority_years": 81,
 }
 
 # Default node codes before rules are applied
@@ -274,6 +276,11 @@ def set_tokens(tokens, node_codes, indices, new_token, node_code, initial_tokens
 def apply_tokens(lu_dict, indices, new_token, node_code):
     set_tokens(lu_dict["tokens"], lu_dict["node_codes"], indices, new_token, node_code, lu_dict["initial_tokens"])
 
+# Select pre-transition token by count. Ties go to the earlier token in priority_order.
+def majority_token(tokens, candidates, priority_order):
+    present = [t for t in candidates if t in tokens]
+    return max(present, key=lambda t: (tokens.count(t), -priority_order.index(t)))
+
 # Converts char tokens to final int values in LU map
 lu_token_map = {
     "S": 1,
@@ -282,19 +289,18 @@ lu_token_map = {
     "G": 4,
     "W": 5,
     "B": 6,
-    "O": 6,
-    "I": 6,
+    "O": 7,
+    "I": 8,
 }
-#TODO: Separate out ice, water, and bare?
 
 
 
 def apply_extent_rules(lu_dict):
     tokens = lu_dict["tokens"]
 
-    crop_reclass_idx = [i for i, token in enumerate(tokens) if token in {"F", "G", "W", "B", "O"}]
-    forest_reclass_idx = [i for i, token in enumerate(tokens) if token in {"G", "W", "B", "O"}]
-    # TODO: May want to consider not including wetland? Include O?
+    crop_reclass_idx = [i for i, token in enumerate(tokens) if token in {"F", "G", "W", "B", "O", "I"}]
+    forest_reclass_idx = [i for i, token in enumerate(tokens) if token in {"G", "W", "B", "O", "I"}]
+    # TODO: May want to consider not including wetland? water? ice?
 
     # Get oil palm planting year
     crop_extent = lu_dict["sdpt_tree_crop"] or lu_dict["sdpt_oil_palm"]
@@ -321,59 +327,105 @@ def apply_extent_rules(lu_dict):
         return True
     return False
 
-# Mix of tall > short and/or bare -> built
-def apply_veg_bare_built(lu_dict):
+# Mix of 2 or more LC classes -> built
+def apply_built_transition(lu_dict):
     tokens = lu_dict["tokens"]
     token_seq = "".join(tokens)
 
-    # If F is present, use first F -> S/G/B  as transition. Everything before first F loss is considered forest and everything after is considered settlements/ infrastructure.
-    if "F" in token_seq:
-        transition_match = re.search(r"F+[SGB]", token_seq)
-        if not transition_match:
-            return
-
-        transition_idx = transition_match.end() - 1
-        apply_tokens(lu_dict, range(0, transition_idx), "F", node_code_map["forest_veg_bare_built_mix"])
-        apply_tokens(lu_dict, range(transition_idx, len(tokens)), "S", node_code_map["built_veg_bare_built_mix"])
+    if "S" not in token_seq:
         return
 
-    # If no F but G is present, use first G -> S/B as transition.
-    if "G" in token_seq:
-        transition_match = re.search(r"G+[SB]", token_seq)
-        if not transition_match:
-            return
-
-        transition_idx = transition_match.end() - 1
-        apply_tokens(lu_dict, range(0, transition_idx), "G", node_code_map["grass_veg_bare_built_mix"])
-        apply_tokens(lu_dict, range(transition_idx, len(tokens)), "S", node_code_map["built_veg_bare_built_mix"])
+    # Require at least 2 non-S LC classes
+    non_s_classes = set(tokens) - {"S"}
+    if len(non_s_classes) < 2:
         return
+
+    pre_node_map = {
+        "C": node_code_map["crop_glad_majority_years"],
+        "F": node_code_map["forest_glad_majority_years"],
+        "G": node_code_map["grass_glad_majority_years"],
+        "W": node_code_map["wetland_glad_majority_years"],
+        "B": node_code_map["bare_glad_majority_years"],
+        "O": node_code_map["water_glad_majority_years"],
+        "I": node_code_map["ice_glad_majority_years"],
+    }
+
+    first_s_idx = token_seq.find("S")
+
+    # Go down hierarchy. C is handled as tie-breaker when present.
+    for candidate in ["F", "G", "W", "B", "O", "I"]:
+        if candidate not in token_seq:
+            continue
+
+        pre_token = candidate
+
+        # Count majority pre-token. Tie goes to C.
+        if "C" in token_seq:
+            c_count = tokens.count("C")
+            candidate_count = tokens.count(candidate)
+            if c_count >= candidate_count:
+                pre_token = "C"
+
+        # F uses first F loss; everything else uses first S.
+        if candidate == "F" and pre_token == "F":
+            transition_match = re.search(r"F+[SCGWBOI]", token_seq)
+            if not transition_match:
+                transition_idx = first_s_idx
+            else:
+                transition_idx = transition_match.end() - 1
+        else:
+            transition_idx = first_s_idx
+
+        apply_tokens(lu_dict, range(0, transition_idx), pre_token, pre_node_map[pre_token])
+        apply_tokens(lu_dict, range(transition_idx, len(tokens)), "S", node_code_map["built_tall_veg_loss"])
+
+        return
+
 #TODO: Use TCL up to 5 years prior for F->S exception?
 
-# Mix of tall, short and/or bare -> crop
-def apply_veg_bare_crop(lu_dict):
+# Mix of 2 or more LC classes -> crop
+def apply_crop_transition(lu_dict):
     tokens = lu_dict["tokens"]
     token_seq = "".join(tokens)
 
-    # If F is present, use the first F -> C/G/B as transition. Everything before first F loss is considered forest and everything after is considered crop.
-    if "F" in token_seq:
-        transition_match = re.search(r"F+[CGB]", token_seq)
-        if not transition_match:
-            return
-
-        transition_idx = transition_match.end() - 1
-        apply_tokens(lu_dict, range(0, transition_idx), "F", node_code_map["forest_veg_bare_crop_mix"])
-        apply_tokens(lu_dict, range(transition_idx, len(tokens)), "C", node_code_map["crop_veg_bare_crop_mix"])
+    if "C" not in token_seq:
         return
 
-    # If no F but G is present, use first G -> C/B as transition.
-    if "G" in token_seq:
-        transition_match = re.search(r"G+[CB]", token_seq)
-        if not transition_match:
-            return
+    # Require at least 2 non-C LC classes
+    non_c_classes = set(tokens) - {"C"}
+    if len(non_c_classes) < 2:
+        return
 
-        transition_idx = transition_match.end() - 1
-        apply_tokens(lu_dict, range(0, transition_idx), "G", node_code_map["grass_veg_bare_crop_mix"])
-        apply_tokens(lu_dict, range(transition_idx, len(tokens)), "C", node_code_map["crop_veg_bare_crop_mix"])
+    pre_node_map = {
+        "F": node_code_map["forest_glad_majority_years"],
+        "G": node_code_map["grass_glad_majority_years"],
+        "W": node_code_map["wetland_glad_majority_years"],
+        "B": node_code_map["bare_glad_majority_years"],
+        "O": node_code_map["water_glad_majority_years"],
+        "I": node_code_map["ice_glad_majority_years"],
+    }
+
+    first_c_idx = token_seq.find("C")
+
+    # Go down hierarchy. F uses first F loss; everything else uses first C.
+    for candidate in ["F", "G", "W", "B", "O", "I"]:
+        if candidate not in token_seq:
+            continue
+
+        pre_token = candidate
+
+        if candidate == "F":
+            transition_match = re.search(r"F+[CGWBOI]", token_seq)
+            if transition_match:
+                transition_idx = transition_match.end() - 1
+            else:
+                transition_idx = first_c_idx
+        else:
+            transition_idx = first_c_idx
+
+        apply_tokens(lu_dict, range(0, transition_idx), pre_token, pre_node_map[pre_token])
+        apply_tokens(lu_dict, range(transition_idx, len(tokens)), "C", node_code_map["crop_tall_veg_loss"])
+
         return
 #TODO: Use TCL up to 5 years prior for F->C exception?
 
@@ -588,13 +640,13 @@ def apply_short_bare(lu_dict):
     else:
         apply_tokens(lu_dict, all_idx, "B", node_code_map["bare_glad_majority_years"])
 
-# Mix of vegetation and water/wetland
-def apply_veg_water(lu_dict):
+# Mix of vegetation/bare and water/wetland
+def apply_veg_bare_water(lu_dict):
     tokens = lu_dict["tokens"]
     token_seq = "".join(tokens)
     all_idx = range(len(tokens))
 
-    veg_tokens = {"F", "G"}
+    veg_tokens = {"F", "G", "B"}
     water_tokens = {"W", "O"}
 
     veg_count = sum(t in veg_tokens for t in tokens)
@@ -602,10 +654,11 @@ def apply_veg_water(lu_dict):
 
     f_count = tokens.count("F")
     g_count = tokens.count("G")
+    b_count = tokens.count("B")
     w_count = tokens.count("W")
     o_count = tokens.count("O")
 
-    # If there are <3 vegetation years, collapse to majority water/wetland. Tie goes to wetland.
+    # If there are <3 vegetation/bare years, collapse to majority water/wetland. Tie goes to wetland.
     if veg_count < 3:
         if w_count >= o_count:
             apply_tokens(lu_dict, all_idx, "W", node_code_map["wetland_glad_majority_years"])
@@ -613,47 +666,73 @@ def apply_veg_water(lu_dict):
             apply_tokens(lu_dict, all_idx, "O", node_code_map["water_glad_majority_years"])
         return
 
-    # If there are <3 water/wetland years, collapse to majority tall/short veg. Tie goes to forest.
+    # If there are <3 water/wetland years, collapse to majority vegetation/bare class. Tie goes to forest.
     if water_count < 3:
-        if f_count >= g_count:
+        if f_count >= g_count and f_count >= b_count:
             apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_glad_majority_years"])
-        else:
+        elif g_count >= b_count:
             apply_tokens(lu_dict, all_idx, "G", node_code_map["grass_glad_majority_years"])
+        else:
+            apply_tokens(lu_dict, all_idx, "B", node_code_map["bare_glad_majority_years"])
         return
+    #TODO: May want to consider F even when its not majority?
 
     # Vegetation -> water/wetland transition:
-    # 3+ consecutive vegetation years followed by 3+ consecutive water/wetland years until the end.
-    transition_match = re.search(r"(?P<veg>[FG]{3,})(?P<water>[WO]{3,})$", token_seq)
+    # 3+ consecutive vegetation/bare years followed by 3+ consecutive water/wetland years until the end.
+    transition_match = re.search(r"(?P<veg>[FGB]{3,})(?P<water>[WO]{3,})$", token_seq)
 
     if transition_match:
         transition_idx = transition_match.start("water")
         pre_tokens = tokens[:transition_idx]
         final_tokens = tokens[transition_idx:]
 
-        # Prominent vegetation class: if F > 2, forest; otherwise grass.
+        # Prominent vegetation/bare class: if F > 2 forest, elif G > 2 grass, else bare.
         if pre_tokens.count("F") > 2:
             pre_token = "F"
-            pre_node = node_code_map["forest_veg_water_mix"]
-        else:
+            pre_node = node_code_map["forest_glad_majority_years"]
+        elif pre_tokens.count("G") > 2:
             pre_token = "G"
-            pre_node = node_code_map["grass_veg_water_mix"]
+            pre_node = node_code_map["grass_glad_majority_years"]
+        else:
+            pre_token = "B"
+            pre_node = node_code_map["bare_glad_majority_years"]
 
         # Majority water class: if W > 2, wetland; otherwise water.
         if final_tokens.count("W") > 2:
             final_token = "W"
-            final_node = node_code_map["wetland_veg_water_mix"]
+            final_node = node_code_map["wetland_glad_majority_years"]
         else:
             final_token = "O"
-            final_node = node_code_map["water_veg_water_mix"]
+            final_node = node_code_map["water_glad_majority_years"]
 
         apply_tokens(lu_dict, range(0, transition_idx), pre_token, pre_node)
         apply_tokens(lu_dict, range(transition_idx, len(tokens)), final_token, final_node)
         return
 
    # If enough evidence of both groups (both groups >=3) but no valid transition, consider it wetland all years.
-    apply_tokens(lu_dict, all_idx, "W", node_code_map["wetland_veg_water_mix"])
+    apply_tokens(lu_dict, all_idx, "W", node_code_map["wetland_glad_majority_years"])
     return
+#TODO: change node_codes to veg_water_mix?
 
+# Mix of wetland and water only
+def apply_wetland_water(lu_dict):
+    tokens = lu_dict["tokens"]
+    token_seq = "".join(tokens)
+    all_idx = range(len(tokens))
+
+    # Only considered a LU transition if initial landcover >= 3 consecutive years and final land cover >= 3 consecutive years and there is only 1 transition (i.e. WWWOOOOOOO OR OOOOWWWWWW)
+    if re.fullmatch(r"(W{3,}O{3,}|O{3,}W{3,})", token_seq):
+        return
+
+    # Otherwise collapse to majority class across all years
+    w_count = tokens.count("W")
+    o_count = tokens.count("O")
+
+    # If W and O have the same number of years, assume W
+    if  w_count >= o_count:
+        apply_tokens(lu_dict, all_idx, "W", node_code_map["wetland_glad_majority_years"])
+    else:
+        apply_tokens(lu_dict, all_idx, "O", node_code_map["water_glad_majority_years"])
 
 
 def apply_regex_rules(lc_timeseries, driver, tcl_year, pre_2000_plantation, planting_year, sdpt_oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove, gpw_cultiv_grass):
@@ -683,10 +762,10 @@ def apply_regex_rules(lc_timeseries, driver, tcl_year, pre_2000_plantation, plan
 
     if not extent_rule_applied:
         token_seq = "".join(lu_dict["tokens"]) #Creates a concat string
-        if re.fullmatch(r"[FGBS]+", token_seq) and "S" in token_seq and re.search(r"[FGB]", token_seq):
-            apply_veg_bare_built(lu_dict)
-        elif re.fullmatch(r"[FGBC]+", token_seq) and "C" in token_seq and re.search(r"[FGB]", token_seq):
-            apply_veg_bare_crop(lu_dict)
+        if "S" in token_seq and not re.fullmatch(r"S+", token_seq):
+            apply_built_transition(lu_dict)
+        elif "C" in token_seq and not re.fullmatch(r"C+", token_seq):
+            apply_crop_transition(lu_dict)
         elif re.fullmatch(r"F+", token_seq):
             apply_all_tall_veg(lu_dict)
         elif re.fullmatch(r"G+", token_seq):
@@ -695,8 +774,10 @@ def apply_regex_rules(lc_timeseries, driver, tcl_year, pre_2000_plantation, plan
             apply_tall_short(lu_dict)
         elif re.fullmatch(r"[GB]+", token_seq):
             apply_short_bare(lu_dict)
-        elif re.fullmatch(r"[FGWO]+", token_seq) and re.search(r"[FG]", token_seq) and re.search(r"[WO]", token_seq):
-            apply_veg_water(lu_dict)
+        elif re.fullmatch(r"[FGBWO]+", token_seq) and re.search(r"[FGB]", token_seq) and re.search(r"[WO]", token_seq):
+            apply_veg_bare_water(lu_dict)
+        elif re.fullmatch(r"[WO]+", token_seq):
+            apply_wetland_water(lu_dict)
 
     # Final token and node code timeseries
     final_tokens = lu_dict["tokens"]
@@ -825,7 +906,7 @@ def IPCC_land_use(in_dict):
             LC_2024 = LC_2024_block[row, col]
             LC_timeseries = np.array([LC_2015, LC_2016, LC_2017, LC_2018, LC_2019, LC_2020, LC_2021, LC_2022, LC_2023, LC_2024]).astype('uint8')
 
-            tcl_year = tcl_block[row, col]
+            tcl_year = np.int16(tcl_block[row, col])
             if tcl_year != 0:
                 tcl_year += 2000
             driver = drivers_block[row, col]
@@ -1043,16 +1124,16 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
 
             # Retrieves the file name pattern and date(s) covered for the output file for use in s3 folder construction
             out_pattern, year_range = uu.strip_and_extract_years(key)
-            print("out_pattern:", out_pattern)
-            print("year_range:", year_range)
+            # print("out_pattern:", out_pattern)
+            # print("year_range:", year_range)
 
             # Gets the core filename pattern and pixel meaning
             out_pattern_without_pixel_meaning, pixel_meaning = uu.strip_pixel_meaning(out_pattern)
-            print("out_pattern_without_pixel_meaning:", out_pattern_without_pixel_meaning)
+            # print("out_pattern_without_pixel_meaning:", out_pattern_without_pixel_meaning)
 
             # Retrieves the relevant output s3 path for this specific output
             matched_output_s3_folders = [item for item in output_folders if out_pattern_without_pixel_meaning in item]
-            print("matched_output_s3_folders:", matched_output_s3_folders)
+            # print("matched_output_s3_folders:", matched_output_s3_folders)
 
             # Second, finds the output folder with the right interval for that pattern
             if out_pattern_without_pixel_meaning == cn.IPCC_summary_pattern:
@@ -1062,11 +1143,11 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
                     item for item in matched_output_s3_folders
                     if year_range in item
                 ]
-            print("matched_output_s3_folder_list:", matched_output_s3_folder_list)
+            # print("matched_output_s3_folder_list:", matched_output_s3_folder_list)
 
             # Output paths without bucket (s3://gfw2-data).
             s3_path_without_bucket = f"{matched_output_s3_folder_list[0][cn.full_bucket_prefix_length:]}"
-            print("s3_path_without_bucket:", s3_path_without_bucket)
+            # print("s3_path_without_bucket:", s3_path_without_bucket)
 
             # Dictionary with metadata for each array
             out_dict[key] = [value, data_type, out_pattern, year_range, s3_path_without_bucket]
