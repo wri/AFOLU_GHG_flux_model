@@ -3,7 +3,8 @@ Ingests wide-format LULUCF parquet table with all contextual rows and all column
 It creates the table schema directly from the parquet file, so there's no need to write out a long Postgres command
 with all the columns and their datatypes.
 Imports in batches to monitor progress.
-Takes about 25 minutes to run locally.
+Takes about 25 minutes to run locally (15 minutes to ingest table and 10 minutes to create indexes).
+Total size is 17 GB
 
 Run in Windows command prompt, not WSL, because Postgres is in Windows, not WSL
 
