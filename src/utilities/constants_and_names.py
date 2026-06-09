@@ -26,6 +26,8 @@ organic_soil_model_version_underscore = organic_soil_model_version.replace(".", 
 SOC_model_version = "1.0.1"
 SOC_model_version_underscore = SOC_model_version.replace(".", "_")
 
+LULUCF_full_version_underscore = (f"LULUCF_version_{LULUCF_model_version_underscore}_MODEL_TYPE__MODEL_PATH_DESCRIPTION__veg_v{veg_model_version_underscore}__org_soil_v{organic_soil_model_version_underscore}__min_soil_v{SOC_model_version_underscore}")
+
 
 ### s3 buckets
 s3 = boto3.resource('s3')
@@ -58,6 +60,7 @@ last_model_year_annual = 2024   # Last year of annual data
 
 years_annual = [2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
 interval_end_years_annual = years_annual[1:]
+end_year_count = len(interval_end_years_annual)
 
 possible_task_statuses = ["pending_", "loading_", "preprocessing_", "calculating_",
                           "zarr_population_", "uploading_", "error_"]
@@ -703,6 +706,10 @@ GPW_MVH_pattern = f"GPW_height"
 # Erin confirmed that it didn't matter which interval I used for the organic soil mask; all are equivalent.
 organic_soil_extent_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/outputs/version_{organic_soil_model_version_underscore}/organic_soil/ogh_mixed_f1_f15_f2_20260513/five_year_intervals/2021_2024/40000_pixels/20260525/"
 organic_soil_extent_pattern = "organic_soil__2021_2024"
+organic_soil_burned_pattern   = "burned_total_Mg_CO2e"
+organic_soil_drained_pattern  = "drained_total_Mg_CO2e"
+
+organic_soil_zarr_path = f"s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/outputs/version_{organic_soil_model_version_underscore}/mega_zarr/ogh_mixed_f1_f15_f2_20260513/five_year/4000_pixels/20260525/mega.zarr"
 
 
 # Cropland emissions
@@ -1017,8 +1024,8 @@ soil_output_dirs = [
 
 ### LULUCF summative outputs
 
-LULUCF_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs_LULUCF/{model_version_type_description_placeholder}/"
-LULUCF_outputs_path_mega_zarr = f"{LULUCF_outputs_path}mega_zarr/MODEL_INTERVAL_TYPE_intervals/CHUNK_SIZE_pixels/RUN_DATE/"
+LULUCF_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs_LULUCF_totals/{model_version_type_description_placeholder}/"
+LULUCF_outputs_path_zarr = f"{LULUCF_outputs_path}zarr/MODEL_INTERVAL_TYPE_intervals/CHUNK_SIZE_pixels/RUN_DATE/"
 
 LULUCF_output_patterns = [
     gross_emis_all_C_pools_CO2_only_LULUCF_pattern,
@@ -1036,6 +1043,9 @@ LULUCF_output_dirs = [
     f"{LULUCF_outputs_path}{net_flux_all_C_pools_CO2_only_LULUCF_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
     f"{LULUCF_outputs_path}{net_flux_all_C_pools_all_gases_LULUCF_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
 ]
+
+LULUCF_annual_zarr_name = "LULUCF_annual.zarr"
+LULUCF_avg_zarr_name = f"LULUCF_avg_{interval_end_years_annual[0]}_{interval_end_years_annual[-1]}.zarr"
 
 
 #######

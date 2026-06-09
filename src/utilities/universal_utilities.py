@@ -587,16 +587,16 @@ def get_interval_info(start_year, end_year, main_logger):
         output_years = cn.interval_end_years_5_years
     elif start_year == 2015 and end_year == cn.last_model_year_annual:
         interval_type = cn.intervals_annual
-        interval_length = [1] * len(cn.interval_end_years_annual)
+        interval_length = [1] * cn.end_year_count
         # interval_length = [1, 1, 1, 1, 1, 1, 1, 1, 1]  # Expected for 2015-2024
-        interval_year_diff = [1] * len(cn.interval_end_years_annual)
+        interval_year_diff = [1] * cn.end_year_count
         # interval_year_diff = [1, 1, 1, 1, 1, 1, 1, 1, 1]  # Expected for 2015-2024
         output_years = cn.interval_end_years_annual
     elif start_year == 2000 and end_year == cn.last_model_year_annual:  # Hybrid model (2000-2024)
         interval_type = cn.intervals_hybrid
-        interval_length = [cn.five_year_interval_duration] * len(cn.interval_end_years_5_years[:-1]) + [1] * len(cn.interval_end_years_annual)
+        interval_length = [cn.five_year_interval_duration] * len(cn.interval_end_years_5_years[:-1]) + [1] * cn.end_year_count
         # interval_length = [5, 5, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1]  # Expected for 2000-2024
-        interval_year_diff = [cn.five_year_interval_duration - 1] * len(cn.interval_end_years_5_years[:-1]) + [1] * len(cn.interval_end_years_annual)
+        interval_year_diff = [cn.five_year_interval_duration - 1] * len(cn.interval_end_years_5_years[:-1]) + [1] * cn.end_year_count
         # interval_year_diff = [4, 4, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1]  # Expected for 2000-2024
         output_years = cn.interval_end_years_5_years[:-1] + cn.interval_end_years_annual
     else:

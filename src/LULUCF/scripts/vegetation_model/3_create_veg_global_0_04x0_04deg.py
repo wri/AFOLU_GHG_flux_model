@@ -84,8 +84,8 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
     if first_years_to_process:
         years_to_process = first_years_to_process
     else:
-        years_to_process = len(cn.interval_end_years_annual)
-    main_logger.info(f"Years to aggregate to 10x10 deg and compare chunk stats for: {years_to_process} out of {len(cn.interval_end_years_annual)}")
+        years_to_process = cn.end_year_count
+    main_logger.info(f"Years to aggregate to 10x10 deg and compare chunk stats for: {years_to_process} out of {cn.end_year_count}")
 
     # Determines if the output file names for final versions of outputs should be used
     is_large_run = False

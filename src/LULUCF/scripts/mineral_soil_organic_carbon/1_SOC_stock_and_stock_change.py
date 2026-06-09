@@ -508,7 +508,7 @@ def main(cluster_name, model_type,
 
         # Creates the global mega-zarr with metadata only
         zu.initialize_global_zarr(zarr_path, outputs_to_zarr_with_unit, len(cn.SOC_density_intervals),
-                                  ((len(cn.interval_end_years_annual)), chunk_size_pixels, chunk_size_pixels), main_logger)
+                                  ((cn.end_year_count), chunk_size_pixels, chunk_size_pixels), main_logger)
 
         fs = fsspec.filesystem("s3", anon=False)
         mapper = fs.get_mapper(zarr_path)
