@@ -3,6 +3,8 @@ Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Local test:
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 119.5 -5.75 119.75 -5.5 -cs 0.25 --run_local --run_date 20268888
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 119 -6 120 -5 -cs 1 --run_local --run_date 20268888
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 110 -10 120 0 -cs 10 --run_local --run_date 20268888
 
 Coiled small tests (0.25x0.25 deg chunk):
 python -m src.utilities.create_cluster -n 1 -m 16 -cn IPCC_land_use
@@ -15,6 +17,11 @@ python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_l
 Coiled test (10x10 deg chunk):
 
 Full run:
+
+Notes:
+    - Took 2 minutes to run for 0.25 degree chunk locally
+    - Took 10 minutes to run for 1 degree chunk locally
+    - Took x minutes to run for 10 degree area in 1 degree chunks
 
 """
 
@@ -199,7 +206,7 @@ node_code_map = {
     "crop_oil_palm": 21,
     "crop_sdpt_tree_crop": 22,
     "crop_perm_ag_driver": 23,
-    "crop_tall_veg_loss": 24,
+    "crop_other_lc_post_c": 24,
     "crop_glad_majority_years": 25,
 
     "forest_glad": 30,
@@ -225,7 +232,8 @@ node_code_map = {
     "grass_veg_bare_crop_mix": 44,
     "grass_tall_short_mix": 45,
     "grass_veg_water_mix": 46,
-    "grass_glad_majority_years": 47,
+    "grass_unstocked_pre_oil_palm": 47,
+    "grass_glad_majority_years": 48,
 
 
     "wetland_glad": 50,
@@ -327,18 +335,46 @@ def apply_extent_rules(lu_dict):
         return True
     return False
 
-# Mix of 2 or more LC classes -> built
+# Mix of LC classes -> built
 def apply_built_transition(lu_dict):
     tokens = lu_dict["tokens"]
     token_seq = "".join(tokens)
+    all_idx = range(len(tokens))
 
-    if "S" not in token_seq:
+    # Confusion between S/O in coastal areas. Use majority class unless true transition.
+    # Allow O -> S or S -> O only if both groups have >= 3 consecutive years and there is exactly one transition.
+    if re.fullmatch(r"[OS]+", token_seq):
+        # O -> S: Water to Settlement/ Infrastructure
+        transition_match = re.fullmatch(r"(O{3,})(S{3,})", token_seq)
+        if transition_match:
+            transition_idx = transition_match.start(2)
+            apply_tokens(lu_dict, range(0, transition_idx), "O", node_code_map["water_glad_majority_years"])
+            apply_tokens(lu_dict, range(transition_idx, len(tokens)), "S", node_code_map["built_tall_veg_loss"])
+            return
+
+        # S -> O: Settlement/ Infrastructure to water
+        transition_match = re.fullmatch(r"(S{3,})(O{3,})", token_seq)
+        if transition_match:
+            transition_idx = transition_match.start(2)
+            apply_tokens(lu_dict, range(0, transition_idx), "S", node_code_map["built_glad"])
+            apply_tokens(lu_dict, range(transition_idx, len(tokens)), "O", node_code_map["water_glad_majority_years"])
+            return
+
+        # Otherwise collapse to majority class
+        o_count = tokens.count("O")
+        s_count = tokens.count("S")
+
+        if s_count >= o_count:
+            apply_tokens(lu_dict, all_idx, "S", node_code_map["built_glad"])
+        else:
+            apply_tokens(lu_dict, all_idx, "O", node_code_map["water_glad_majority_years"])
         return
 
     # Require at least 2 non-S LC classes
     non_s_classes = set(tokens) - {"S"}
     if len(non_s_classes) < 2:
         return
+    #TODO: Delete?
 
     pre_node_map = {
         "C": node_code_map["crop_glad_majority_years"],
@@ -378,7 +414,6 @@ def apply_built_transition(lu_dict):
 
         apply_tokens(lu_dict, range(0, transition_idx), pre_token, pre_node_map[pre_token])
         apply_tokens(lu_dict, range(transition_idx, len(tokens)), "S", node_code_map["built_tall_veg_loss"])
-
         return
 
 #TODO: Use TCL up to 5 years prior for F->S exception?
@@ -387,14 +422,6 @@ def apply_built_transition(lu_dict):
 def apply_crop_transition(lu_dict):
     tokens = lu_dict["tokens"]
     token_seq = "".join(tokens)
-
-    if "C" not in token_seq:
-        return
-
-    # Require at least 2 non-C LC classes
-    non_c_classes = set(tokens) - {"C"}
-    if len(non_c_classes) < 2:
-        return
 
     pre_node_map = {
         "F": node_code_map["forest_glad_majority_years"],
@@ -424,7 +451,7 @@ def apply_crop_transition(lu_dict):
             transition_idx = first_c_idx
 
         apply_tokens(lu_dict, range(0, transition_idx), pre_token, pre_node_map[pre_token])
-        apply_tokens(lu_dict, range(transition_idx, len(tokens)), "C", node_code_map["crop_tall_veg_loss"])
+        apply_tokens(lu_dict, range(transition_idx, len(tokens)), "C", node_code_map["crop_other_lc_post_c"])
 
         return
 #TODO: Use TCL up to 5 years prior for F->C exception?
@@ -487,8 +514,8 @@ def apply_all_short_veg(lu_dict):
         apply_tokens(lu_dict, all_idx, "F", driver_to_forest_node[driver])
 
 
-# Mix of short veg and tall veg
-def apply_tall_short(lu_dict):
+# Mix of short veg, tall veg, and bare
+def apply_tall_short_bare(lu_dict):
     tcl_prior = lu_dict["tcl_prior"]
     tcl_year = lu_dict["tcl_year"]
     tcl_any = tcl_year > 0
@@ -514,7 +541,7 @@ def apply_tall_short(lu_dict):
     # 1) Check if oil palm planting year occurs during interval (regardless of driver + TCL)
     if has_planting_transition(lu_dict):
         # If oil palm planting year in interval, use the first F -> G transition. Else, use oil palm planting year.
-        transition_match = re.search(r"F+G", token_seq)
+        transition_match = re.search(r"F+[GB]", token_seq)
         if transition_match:
             idx = transition_match.end() - 1
         else:
@@ -524,15 +551,16 @@ def apply_tall_short(lu_dict):
         # If F present before transition or TCL within 5 years before planting, consider it F -> C
         forest_before_planting = ("F" in pre_plant_tokens or tcl_prior_to_planting(tcl_year, planting_year))
         if forest_before_planting:
-            pre_token = "F"
-            pre_node = node_code_map["forest_unstocked_pre_oil_palm"]
-            apply_tokens(lu_dict, range(0, idx), pre_token, pre_node)
-
+            apply_tokens(lu_dict, range(0, idx), "F", node_code_map["forest_unstocked_pre_oil_palm"])
+        elif "G" in pre_plant_tokens:
+            apply_tokens(lu_dict, range(0, idx), "G", node_code_map["grass_unstocked_pre_oil_palm"])
+        else:
+            apply_tokens(lu_dict, range(0, idx), "B", node_code_map["bare_glad_majority_years"])
         apply_tokens(lu_dict, range(idx, len(tokens)), "C", node_code_map["crop_oil_palm"])
         return
 
     # 2) If TCL occurred before the timeseries, use permanent agriculture driver to determine LU for all years.
-    # If the driver is permanent ag and not in cultivated grass extent, assume crop. Else, assume grass.
+        # If the driver is permanent ag and not in cultivated grass extent, assume crop. Else, assume grass.
     if tcl_prior and driver == 1:
         if not lu_dict["gpw_cultiv_grass"]:
             apply_tokens(lu_dict, all_idx, "C", node_code_map["crop_perm_ag_driver"])
@@ -541,13 +569,12 @@ def apply_tall_short(lu_dict):
         return
 
     # 3) If TCL during the timeseries, use permanent agriculture driver and first F -> G transition to determine LU transitions:
-    # If the driver is permanent ag and not in cultivated grass extent, assume F -> C transition. Else, assume F -> G transition.
+        # If the driver is permanent ag and not in cultivated grass extent, assume F -> C transition. Else, assume F -> G transition.
     if tcl_any and not tcl_prior and driver == 1:
-        match = re.search(r"F+G", token_seq)
+        match = re.search(r"F+[GB]", token_seq)
         if match:
             transition_idx = match.end() - 1
-            # apply_tokens(lu_dict, range(0, transition_idx), "F", node_code_map["forest_glad"])
-            # Note: if not using first F->G transition switch node code to forest_tall_short_mix
+            apply_tokens(lu_dict, range(0, transition_idx), "F", node_code_map["forest_tall_short_mix"])
             if lu_dict["gpw_cultiv_grass"]:
                 apply_tokens(lu_dict, range(transition_idx, len(tokens)), "G", node_code_map["grass_gpw"])
             else:
@@ -555,70 +582,86 @@ def apply_tall_short(lu_dict):
             return
 
     # 4) If TCL in any year and driver is temporary, assume forest all years.
-    # Temporary drivers are: shifting cultivation, logging, wildfire, and other natural disturbances
+        # Temporary drivers are: shifting cultivation, logging, wildfire, and other natural disturbances
     if tcl_any and driver in driver_to_forest_node:
         apply_tokens(lu_dict, all_idx, "F", driver_to_forest_node[driver])
         return
 
-    # 5) If TCL during timeseries, use hard commodities, settlements/ infrastructure, and unknown driver and an F->G transition where it stays G until the end. There must be at least 3 Fs, and at least 3 consecutive Gs until the end to determine LU transitions:
+    # 5) If TCL during timeseries, use hard commodities, settlements/ infrastructure, and unknown driver and an F->G/B transition.
+    # There must be at least 3 consecutiveFs, and at least 3 consecutive G/Bs until the end to determine LU transitions:
     if tcl_any and not tcl_prior and driver not in {1, 3, 4, 5, 7}:
-        terminal_match = re.search(r"F{3,}G{3,}$", token_seq)
+        terminal_match = re.search(r"F{3,}[GB]{3,}$", token_seq)
 
         if terminal_match:
-            transition_match = re.search(r"F+G", token_seq)  # Get the first F->G transition
+            transition_match = re.search(r"F+[GB]", token_seq)     # Get the first F->G/B transition
 
             if transition_match:
                 transition_idx = transition_match.end() - 1
                 apply_tokens(lu_dict, range(0, transition_idx), "F", node_code_map["forest_tall_short_mix"])
 
-                if driver in driver_to_grass_node:
-                    grass_node = driver_to_grass_node[driver]
+                final_idx = range(transition_idx, len(tokens))
+                final_tokens = tokens[transition_idx:]
+                if "G" in final_tokens:
+                    if driver in driver_to_grass_node:
+                        final_node = driver_to_grass_node[driver]
+                    else:
+                        final_node = node_code_map["grass_unknown_driver"]
+                    apply_tokens(lu_dict, final_idx, "G", final_node)
                 else:
-                    grass_node = node_code_map["grass_unknown_driver"]
-                apply_tokens(lu_dict, range(transition_idx, len(tokens)), "G", grass_node)
-
+                    apply_tokens(lu_dict, final_idx, "B", node_code_map["bare_glad_majority_years"])
                 return
 
-    # 6) Otherwise use regex fallback (if no oil palm or TCL + driver, LU can only be forest or grass)
-    # If there is not at least 3 years F or 3 years G, not enough evidence for a true F/G transition. Use majority land use instead.
+    # 6) Otherwise use regex fallback if no oil palm and no TCL + driver.
+
+    # If there is not at least 3 years F or 3 years G/B, not enough evidence for a true F -> G/B transition. Use majority land use instead.
     f_count = tokens.count("F")
     g_count = tokens.count("G")
-    if g_count < 3:
+    b_count = tokens.count("B")
+    if g_count + b_count < 3:
         apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_glad_majority_years"])
         return
     elif f_count < 3:
-        apply_tokens(lu_dict, all_idx, "G", node_code_map["grass_glad_majority_years"])
+        if g_count >= b_count:
+            apply_tokens(lu_dict, all_idx, "G", node_code_map["grass_glad_majority_years"])
+        else:
+            apply_tokens(lu_dict, all_idx, "B", node_code_map["bare_glad_majority_years"])
         return
+        #TODO: Make G if any G present?
 
-    # Otherwise F-> G transition needs a terminal G phase that start with 3 consecutive Gs, allow at most one F, end on G.
-    # Option to set total number of G years in terminal phase to >= #.
-    # TODO: GGGFGG and GGFGGG allowed but not GGFGG?
+    # Otherwise F -> G/B transition needs a terminal G/B phase that starts with 3 consecutive G/Bs, allows at most one F, and ends on G/B.
+    # If any Gs in terminal phase, assume grass; otherwise assume bare.
     else:
-        terminal_match = re.search(r"(?P<g>G{3,}(?:F?G*)?)$", token_seq)
+        terminal_match = re.search(r"(?P<gb>[GB]{3,}(?:F?[GB]*)?)$", token_seq)
 
-        # If no valid terminal G phase, set all years to F
+        # If no valid terminal G/B phase, set all years to F
         if not terminal_match:
             apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_tall_short_mix"])
             return
 
-        # Option to make number of Gs in terminal G phase > 3
-        terminal_g_start_idx = terminal_match.start("g")
-        terminal_g_count = tokens[terminal_g_start_idx:].count("G")
-        if terminal_g_count < 3:
+        # Option to make number of G/Bs in terminal phase > 3
+        terminal_gb_start_idx = terminal_match.start("gb")
+        terminal_tokens = tokens[terminal_gb_start_idx:]
+        terminal_gb_count = sum(t in {"G", "B"} for t in terminal_tokens)
+        if terminal_gb_count < 3:
             apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_tall_short_mix"])
             return
 
-        # If there is a valid terminal G phase, look for the first F->G transition and sets that as the transition year since that is when the majority of emissions will occur in the vegetation model.
-        transition_match = re.search(r"F+G", token_seq)
+        # If there is a valid terminal G/B phase, look for the first F->G/B transition and sets that as the transition year.
+        # If any Gs in terminal phase assume grass, otherwise assume bare.
+        transition_match = re.search(r"F+[GB]", token_seq)
 
         if not transition_match:
             apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_tall_short_mix"])
             return
 
         transition_idx = transition_match.end() - 1
-        # apply_tokens(lu_dict, range(0, transition_idx), "F", node_code_map["forest_glad"])
-        # Note: if not using first F->G transition switch node code to forest_tall_short_mix
-        apply_tokens(lu_dict, range(transition_idx, len(tokens)), "G", node_code_map["grass_tall_short_mix"])
+        apply_tokens(lu_dict, range(0, transition_idx), "F", node_code_map["forest_tall_short_mix"])
+
+        final_tokens = tokens[transition_idx:]
+        if "G" in final_tokens:
+            apply_tokens(lu_dict, range(transition_idx, len(tokens)), "G", node_code_map["grass_tall_short_mix"])
+        else:
+            apply_tokens( lu_dict, range(transition_idx, len(tokens)), "B", node_code_map["bare_glad_majority_years"])
 
 # Mix of short veg and bare
 def apply_short_bare(lu_dict):
@@ -760,18 +803,20 @@ def apply_regex_rules(lc_timeseries, driver, tcl_year, pre_2000_plantation, plan
     # Check if oil palm, tree crop or forest based on special cases
     extent_rule_applied = apply_extent_rules(lu_dict)
 
+    # Built and cropland rules apply to both special cases and regex LC-based rules
+    token_seq = "".join(lu_dict["tokens"])  # Creates a concat string
+    if "S" in token_seq and not re.fullmatch(r"S+", token_seq):
+        apply_built_transition(lu_dict)
+    elif "C" in token_seq and not re.fullmatch(r"C+", token_seq):
+        apply_crop_transition(lu_dict)
+
     if not extent_rule_applied:
-        token_seq = "".join(lu_dict["tokens"]) #Creates a concat string
-        if "S" in token_seq and not re.fullmatch(r"S+", token_seq):
-            apply_built_transition(lu_dict)
-        elif "C" in token_seq and not re.fullmatch(r"C+", token_seq):
-            apply_crop_transition(lu_dict)
-        elif re.fullmatch(r"F+", token_seq):
+        if re.fullmatch(r"F+", token_seq):
             apply_all_tall_veg(lu_dict)
         elif re.fullmatch(r"G+", token_seq):
             apply_all_short_veg(lu_dict)
-        elif re.fullmatch(r"[FG]+", token_seq):
-            apply_tall_short(lu_dict)
+        elif re.fullmatch(r"[FGB]+", token_seq) and "F" in token_seq:
+            apply_tall_short_bare(lu_dict)
         elif re.fullmatch(r"[GB]+", token_seq):
             apply_short_bare(lu_dict)
         elif re.fullmatch(r"[FGBWO]+", token_seq) and re.search(r"[FGB]", token_seq) and re.search(r"[WO]", token_seq):
@@ -1114,12 +1159,12 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
     # Only saves arrays to geotifs and uploads them to s3 if enabled
     if no_upload == False:
         out_no_data_val = 0
-        print("output_folders:", output_folders)
+        #print("output_folders:", output_folders)
 
         # Adds metadata used for uploading outputs to s3 to the dictionary
         for key, value in out_dict.items():
             data_type = value.dtype.name
-            print("key", key)
+            print("key:", key)
             print("data_type:", data_type)
 
             # Retrieves the file name pattern and date(s) covered for the output file for use in s3 folder construction
@@ -1239,12 +1284,6 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
     for year in cn.mangrove_extent_years:
         download_dict[f"{cn.mangrove_extent_processed_pattern}_{year}"] = f"{cn.mangrove_extent_processed_dir}{year}/{sample_tile_id}__{cn.mangrove_extent_processed_pattern}_{year}.tif"
 
-
-    # Replaces the placeholder parts of the input paths with relevant values
-    # download_dict = {key: value.replace("CHUNK_SIZE", '40000') for key, value in download_dict.items()}
-    # download_dict = {key: value.replace("PER_HA_OR_PIXEL", cn.C_density_pixel_meaning) for key, value in download_dict.items()}
-    #TODO: Delete?
-
     print("Download dictionary::")
     for key, item in download_dict.items():
         print(f"{key}: {item}")
@@ -1294,8 +1333,6 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
     all_results = []
     all_1x1_stats = []
     success_count = 0  # Count of successful chunks
-
-    # TODO: Run locally or in coiled
 
     # Iterates through the batches
     for i, chunk_batch in enumerate(chunk_batches):

@@ -777,7 +777,7 @@ otherland_IPCC = 6
 
 #IPCC_class_max_val = 6  # Maximum value of IPCC class codes
 
-IPCC_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/land_use/{IPCC_LU_version}/"
+IPCC_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/land_use/{IPCC_LU_version}"
 IPCC_class_dir = f"{IPCC_outputs_path}/{IPCC_class_path}/YEAR/CHUNK_SIZE_pixels/RUN_DATE/"
 IPCC_node_dir = f"{IPCC_outputs_path}/{IPCC_node_path}/YEAR/CHUNK_SIZE_pixels/RUN_DATE/"
 IPCC_change_dir = f"{IPCC_outputs_path}/{IPCC_change_path}/START_END/CHUNK_SIZE_pixels/RUN_DATE/"
