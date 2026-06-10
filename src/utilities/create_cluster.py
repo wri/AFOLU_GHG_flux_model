@@ -4,7 +4,7 @@ python -m src.utilities.create_cluster -n 1 -t 1 -m 16 -cn LULUCF_model
 python -m src.utilities.create_cluster -n 5 -t 1 -m 32 -cn LULUCF_model
 python -m src.utilities.create_cluster -n 20 -t 1 -m 64 -cn LULUCF_model
 
-Table of instance types: https://aws.amazon.com/ec2/instance-types/
+Table of instance types (and pricing): https://instances.vantage.sh/?id=9c1a108b13a45889fc00951e867ca5295e82dd2c
 Table of spot pricing: https://aws.amazon.com/ec2/spot/pricing/
 These are the cheapest worker types and they have fewer vCPUs than usual for the memory.
 This makes them less costly on AWS and use fewer Coiled credits.
@@ -36,6 +36,12 @@ def write_gcp_creds():
 
 def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=None, on_demand=False, zonal_stats=False, gcp=None):
 
+    if zonal_stats or ("zonal" in cluster_name) or ("stats" in cluster_name):
+        print("Using zonal stats worker configuration")
+        zonal_stats = True
+    else:
+        zonal_stats = False
+
     # Converts worker_memory from an integer to the required format (e.g., 8 to "8GiB")
     worker_memory_str = f"{worker_memory}GiB"
     scheduler_memory_str = f"{worker_memory}GiB"
@@ -47,24 +53,32 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
 
     elif worker_memory == 64:
         idle_timeout = 15
-        # scheduler_vm_type = "x8g.xlarge"    # 4 vCPU/worker
-        # worker_vm_type = "x8g.xlarge"
-        scheduler_vm_type = "r7g.xlarge"    # 8 vCPU/worker, what Solomon used for zonal stats
-        worker_vm_type = "r7g.2xlarge"
+        if zonal_stats == True:
+            scheduler_vm_type = "r7g.xlarge"  # 8 vCPU/worker, what Solomon used for zonal stats
+            worker_vm_type = "r7g.2xlarge"
+        else:
+            scheduler_vm_type = "x8g.xlarge"    # 4 vCPU/worker
+            worker_vm_type = "x8g.xlarge"
 
     elif worker_memory == 32:
         idle_timeout = 20
-        # scheduler_vm_type = "r7g.large"    # 4 vCPU/worker, same series as Solomon used for zonal stats
-        # worker_vm_type = "r7g.xlarge"
-        scheduler_vm_type = "x8g.large"   # 2 vCPU/worker. x2gd.large also has this ratio, and theoretically lower interruption rates but has worse hardware.
-        worker_vm_type = "x8g.large"      # per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/694bfc7f-fab0-8332-b903-d5efa84b61c3
+        if zonal_stats == True:
+            scheduler_vm_type = "r7g.large"    # 4 vCPU/worker, same series as Solomon used for zonal stats
+            worker_vm_type = "r7g.xlarge"
+        else:
+            scheduler_vm_type = "x8g.large"   # 2 vCPU/worker. x2gd.large also has this ratio, and theoretically lower interruption rates but has worse hardware.
+            worker_vm_type = "x8g.large"      # per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/694bfc7f-fab0-8332-b903-d5efa84b61c3
         # scheduler_vm_type = "x2gd.large"   # 2 vCPU/worker. x8g.large also has this ratio. x2gd.large theoretically has a lower interruption rate but seems older and slower.
         # worker_vm_type = "x2gd.large"      # per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/694bfc7f-fab0-8332-b903-d5efa84b61c3
 
     elif worker_memory == 16:
         idle_timeout = 25
-        scheduler_vm_type = "x2gd.medium"   # 1 vCPU/worker
-        worker_vm_type = "x2gd.medium"
+        if zonal_stats == True:
+            scheduler_vm_type = "r7g.medium"    # 2 vCPU/worker, same series as Solomon used for zonal stats
+            worker_vm_type = "r7g.large"
+        else:
+            scheduler_vm_type = "x2gd.medium"   # 1 vCPU/worker
+            worker_vm_type = "x2gd.medium"
 
     elif worker_memory == 8:
         idle_timeout = 25
@@ -98,14 +112,13 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
         worker_options["nthreads"] = threads_per_worker
 
     # Special settings for zonal stats clusters: can't have workers across zones (to prevent inter-zone data transfer), and need to set zarr version
-    if zonal_stats or ("zonal" in cluster_name) or ("stats" in cluster_name):
-        print("Using zonal stats worker configuration")
+    if zonal_stats == True:
         purchase_option = "on-demand"
         use_best_zone = False
         allow_cross_zone = False
         software = "afolu-env_coiled_20251119"  # pins zarr==3.1.3 for xr.open_zarr compatibility
     else:
-        print("Not using zonal stats workder configuration")
+        print("Not using zonal stats worker configuration")
         software = None  # use default package sync (uploads local src wheel)
         # Uses on-demand workers for large jobs. Otherwise, prefers spot workers.
         if n_workers > 120:

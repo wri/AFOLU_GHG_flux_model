@@ -9,15 +9,22 @@ from src.utilities import universal_utilities as uu
 ### Constants
 ########
 
-### Model version
+### Model versions. Written order should be as below for consistency.
+
+AFOLU_model_version = "1.0.0"
+AFOLU_model_version_underscore = AFOLU_model_version.replace(".", "_")
+
+LULUCF_model_version = "1.0.0"
+LULUCF_model_version_underscore = LULUCF_model_version.replace(".", "_")
+
 veg_model_version = "1.0.5"
 veg_model_version_underscore = veg_model_version.replace(".", "_")
 
-SOC_model_version = "1.0.0"
-SOC_model_version_underscore = SOC_model_version.replace(".", "_")
-
-organic_soil_model_version = "0.9.7"
+organic_soil_model_version = "1.0.1"
 organic_soil_model_version_underscore = organic_soil_model_version.replace(".", "_")
+
+SOC_model_version = "1.0.1"
+SOC_model_version_underscore = SOC_model_version.replace(".", "_")
 
 
 ### s3 buckets
@@ -684,6 +691,16 @@ mangrove_1x1deg_smoothed_dir = f"{full_bucket_prefix}/global-mangrove-extent/ver
 mangrove_extent_processed_dir = f"{full_bucket_prefix}/global-mangrove-extent/version3/smoothed/raster/"
 mangrove_extent_processed_pattern = f"GMW{GMW_version}_smoothed_mangrove_extent"
 
+# Global pasture watch grasslands extent (1 = cultivated grassland, 2 = natural/semi-natural grassland)
+GPW_version = "v1.1"
+GPW_years = range(2000, 2025)
+
+GPW_extent_raw_dir = f"{full_bucket_prefix}/lcl/gpw/grasslands/{GPW_version}/raw/"
+GPW_extent_raw_pattern = "grasslands"
+
+GPW_extent_processed_dir = f"{full_bucket_prefix}/lcl/gpw/grasslands/{GPW_version}/processed/"
+GPW_extent_processed_pattern = f"GPW_grasslands_extent"
+
 # Global Pasture Watch median vegetation height (https://stac.openlandmap.org/gpw_gsvh-30m/collection.json?.language=en,
 # from Hunter et al. 2025 (https://www.nature.com/articles/s41597-025-05739-6)
 GPW_MVH_uri = f"https://s3.opengeohub.org/gpw/arco/gpw_short.veg.height_egbt_m_30m_s_YYYY0101_YYYY1231_go_epsg.4326_v1.tif"
@@ -691,10 +708,11 @@ GPW_MVH_pattern = f"GPW_height"
 
 
 # Organic Soils
-# Organic soil mask, from Hengl et al. under review (https://essd.copernicus.org/preprints/essd-2025-336/)
-# Per Erin's Slack message 2025-12-23, she is using >10 for organic soil extent, so mineral soil is <=10.
-organic_soil_extent_dir = "s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/inputs/processed/peat_mask/OGH/tiles_unthresholded/20251110/"
-organic_soil_extent_pattern = "ogh_unthresholded_mask"
+# Organic soil mask, created by Erin Glen based on Hengl et al. 2026 and
+# https://opengeohub.medium.com/global-organic-soils-extent-and-peat-depth-at-30-m-spatial-resolution-based-on-multisource-eo-data-c6e00f390069
+# Erin confirmed that it didn't matter which interval I used for the organic soil mask; all are equivalent.
+organic_soil_extent_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/outputs/version_{organic_soil_model_version_underscore}/organic_soil/ogh_mixed_f1_f15_f2_20260513/five_year_intervals/2021_2024/40000_pixels/20260525/"
+organic_soil_extent_pattern = "organic_soil__2021_2024"
 
 
 # Cropland emissions
@@ -950,8 +968,8 @@ veg_summative_for_LULUCF_output_dirs = [
 
 ### Soil organic carbon (SOC) timeseries from OpenGeoHub (OGH) (URIs from https://github.com/openlandmap/soildb/blob/main/tables/OpenLandMap_soildb_COGS.csv)
 
-# Threshold probabiltiy for counting pixel as organic soil (per Erin Glen via Slack 2026-04-07)
-organic_soil_prob_threshold = 10
+# Value for organic soil, from Erin Glen's organic soil mask
+organic_soil_mask_val = 1
 
 # From Hengl et al. 2026 (https://essd.copernicus.org/articles/18/989/2026/)
 # Confirmed to be up-to-date by Tom Hengl on 2025-12-19 via email.
@@ -977,21 +995,21 @@ SOC_path_zarr = f"{SOC_outputs_path}zarr/CHUNK_SIZE_pixels/RUN_DATE/SOC_zarr.zar
 # Extent of raw COGs
 SOC_density_full_extent_pattern = "SOC_density__full_extent__0-30cm_MgC"
 SOC_density_full_extent_dir = f"{SOC_outputs_path}{SOC_density_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_loss_full_extent_pattern = "SOC_loss__full_extent__0-30cm_MgC"
+SOC_loss_full_extent_pattern = "SOC_loss__full_extent__0-30cm_MgCO2"
 SOC_loss_full_extent_dir = f"{SOC_outputs_path}{SOC_loss_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_gain_full_extent_pattern = "SOC_gain__full_extent__0-30cm_MgC"
+SOC_gain_full_extent_pattern = "SOC_gain__full_extent__0-30cm_MgCO2"
 SOC_gain_full_extent_dir = f"{SOC_outputs_path}{SOC_gain_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_net_full_extent_pattern = "SOC_net__full_extent__0-30cm_MgC"
+SOC_net_full_extent_pattern = "SOC_net__full_extent__0-30cm_MgCO2"
 SOC_net_full_extent_dir = f"{SOC_outputs_path}{SOC_net_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
 
 # Extent of mineral soil (excludes thresholded organic soil extent created by Erin Glen)
 SOC_density_min_soil_extent_pattern = "SOC_density__mineral_soil_extent__0-30cm_MgC"
 SOC_density_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_density_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_loss_min_soil_extent_pattern = "SOC_loss__mineral_soil_extent__0-30cm_MgC"
+SOC_loss_min_soil_extent_pattern = "SOC_loss__mineral_soil_extent__0-30cm_MgCO2"
 SOC_loss_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_loss_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_gain_min_soil_extent_pattern = "SOC_gain__mineral_soil_extent__0-30cm_MgC"
+SOC_gain_min_soil_extent_pattern = "SOC_gain__mineral_soil_extent__0-30cm_MgCO2"
 SOC_gain_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_gain_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_net_min_soil_extent_pattern = "SOC_net__mineral_soil_extent__0-30cm_MgC"
+SOC_net_min_soil_extent_pattern = "SOC_net__mineral_soil_extent__0-30cm_MgCO2"
 SOC_net_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_net_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
 
 SOC_outputs_to_zarr = [
@@ -1058,9 +1076,9 @@ adm0_zarr_path = f"{contextual_zarr_path}GADM4_1_adm0_global/{adm0_zarr_date}_fi
 adm0_test_chunk = [13, 48, 14, 49]  # Three countries meet in Europe, with different values in three corners (50N_010E)
 adm0_pattern = 'adm0'
 
-pixel_area_zarr_date = '20251209'
+pixel_area_zarr_date = '20260531'
 pixel_area_zarr_dtype = 'float32'
-pixel_area_geotif_path = "s3://gfw2-data/analyses/umd_area_2013__from_gfw-data-lake/v1.10/raster/epsg-4326/10/40000/area_m/gdal-geotiff/"
+pixel_area_geotif_path = pixel_area_dir
 pixel_area_zarr_path = f"{contextual_zarr_path}pixel_area/{pixel_area_zarr_date}_fillValue_removed/global_pixel_area_{pixel_area_zarr_date}.zarr"
 pixel_area_test_chunk = [13, 48, 14, 49]  # 50N_010E
 pixel_area_zstats_pattern = 'pixel_area'
@@ -1100,7 +1118,8 @@ KBA_zarr_path = f"{contextual_zarr_path}KBA/v20240903/{KBA_zarr_date}_fillValue_
 KBA_test_chunk = [29, -1, 30, 0]  # 1 in upper right; roughly 1/3-1/2 of chunk is KBA (00N_020E)
 KBA_pattern = 'KBA'
 
-watersheds_zarr_date = '20260213'
+# watersheds_zarr_date = '20260213'
+watersheds_zarr_date = '20260508'
 watersheds_zarr_dtype = 'uint16'
 watersheds_geotif_path = "s3://gfw2-data/water/mapbox_river_basins__from_gfw-data-lake/v2018/raster/epsg-4326/10/40000/id/gdal-geotiff/"
 watersheds_zarr_path = f"{contextual_zarr_path}river_basins/v2018/{watersheds_zarr_date}_fillValue_removed/river_basins_{watersheds_zarr_date}.zarr"
@@ -1118,15 +1137,23 @@ managed_land_USA_zarr_date = '20260219'
 managed_land_USA_zarr_dtype = 'uint8'  # 1=managed, 2=unmanaged
 managed_land_USA_geotif_path = "s3://gfw2-data/climate/jrc_managed_land_usa__from_gfw-data-lake/v20260218/raster/epsg-4326/10/40000/managed_land_extent/geotiff/"
 managed_land_USA_zarr_path = f"{contextual_zarr_path}jrc_managed_land_USA/v20260218/{managed_land_USA_zarr_date}_fillValue_removed/jrc_managed_land_USA_{managed_land_USA_zarr_date}.zarr"
-managed_USA_test_chunk = [-143, 61, -142, 62]  # 1 (managed) in top right, 2 (unmanaged) in other corners. Should have full coverage. (70N_150W)
+managed_land_USA_test_chunk = [-143, 61, -142, 62]  # 1 (managed) in top right, 2 (unmanaged) in other corners. Should have full coverage. (70N_150W)
 managed_land_USA_pattern = 'managed_land_USA'
+
+drivers_of_loss_zarr_date = '20260507'
+drivers_of_loss_zarr_dtype = 'uint8'
+drivers_of_loss_geotif_path = drivers_processed_dir
+drivers_of_loss_zarr_path = f"{contextual_zarr_path}drivers_of_TCL_1_km/v{drivers_run_date}/update2023_20241218__run_{drivers_of_loss_zarr_date}_fillValue_removed/drivers_of_TCL_1_km_{drivers_of_loss_zarr_date}.zarr"
+drivers_of_loss_test_chunk = [27, -9, 28, -8]  # 7 in top-left, 3 in top-right, 1 in bottom-right, NoData in bottom-left (00N_020E)
+drivers_of_loss_pattern = 'drivers_of_TCL_1_km'
+
 
 ### Value options for contextual layer values.
 ### Every contextual layer needs to have all possible values listed here.
 
 state_node_lookup_table_local = "/mnt/c/GIS/git/AFOLU_GHG_flux_model/src/LULUCF/LULUCF_state_node_lookup_table.xlsx"
 state_node_lookup_table_s3 = "http://gfw2-data.s3.amazonaws.com/climate/AFOLU_flux_model/LULUCF/state_node_lookup_tables/LULUCF_state_node_lookup_table.xlsx"
-sheet = "v102_20251027"
+sheet = "v105_20260601"
 
 primary_forest_IFL_codes = np.array([0, 1], dtype=np.uint8)
 
@@ -1211,7 +1238,12 @@ watershed_codes = np.array([0,
     8001, 8002, 8003, 8004, 8005, 8006, 8007, 8008, 8009
 ], dtype=np.uint16)
 
+drivers_codes = np.array([0, 1, 2, 3, 4, 5, 6, 7], dtype=np.uint8)
+
 managed_land_codes = np.array([0, 1, 2], dtype=np.uint8)
+
+forest_age_category_pattern = 'forest_age_category_end_of_interval'
+forest_age_category_codes = np.array([0, 1, 6, 21, 41, 61, 81, 101], dtype=np.uint8)
 
 # Converts numeric ISO values to ISO codes
 # From https://github.com/wri/project-zeno-data-infra/blob/main/notebooks/grasslands_areas_gadm_2000-2022.ipynb
@@ -1310,6 +1342,157 @@ iso_to_region = {
     'USA': 'North America', 'UZB': 'Non-tropical Asia', 'VAT': 'Europe', 'VCT': 'Tropical LAC', 'VEN': 'Tropical LAC', 'VGB': 'Tropical LAC', 'VIR': 'Tropical LAC', 'VNM': 'Tropical Asia',
     'VUT': 'Tropical Asia', 'XAD': 'Not tropical misc', 'XCA': 'Not tropical misc', 'XCL': 'Not tropical misc', 'XKO': 'Not tropical misc', 'XNC': 'Not tropical misc', 'XPI': 'Not tropical misc',
     'XSP': 'Not tropical misc', 'YEM': 'Non-tropical Asia', 'ZAF': 'Non-tropical Africa', 'ZMB': 'Tropical Africa', 'ZWE': 'Tropical Africa', 'NA': 'no_country'
+}
+
+# UN geoscheme regions from https://unstats.un.org/unsd/methodology/m49/ ("geographic regions" tab)
+# Converted to dictionary by https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6a0bc6ac-dc2c-8327-9154-3e49e70c5022
+iso_to_region_UN_geoscheme_L1 = {
+
+    # Africa
+    "DZA": "Africa", "EGY": "Africa", "LBY": "Africa", "MAR": "Africa", "SDN": "Africa", "TUN": "Africa", "ESH": "Africa", "IOT": "Africa",
+    "BDI": "Africa", "COM": "Africa", "DJI": "Africa", "ERI": "Africa", "ETH": "Africa", "ATF": "Africa", "KEN": "Africa", "MDG": "Africa",
+    "MWI": "Africa", "MUS": "Africa", "MYT": "Africa", "MOZ": "Africa", "REU": "Africa", "RWA": "Africa", "SYC": "Africa", "SOM": "Africa",
+    "SSD": "Africa", "UGA": "Africa", "TZA": "Africa", "ZMB": "Africa", "ZWE": "Africa", "AGO": "Africa", "CMR": "Africa", "CAF": "Africa",
+    "TCD": "Africa", "COG": "Africa", "COD": "Africa", "GNQ": "Africa", "GAB": "Africa", "STP": "Africa", "BWA": "Africa", "SWZ": "Africa",
+    "LSO": "Africa", "NAM": "Africa", "ZAF": "Africa", "BEN": "Africa", "BFA": "Africa", "CPV": "Africa", "CIV": "Africa", "GMB": "Africa",
+    "GHA": "Africa", "GIN": "Africa", "GNB": "Africa", "LBR": "Africa", "MLI": "Africa", "MRT": "Africa", "NER": "Africa", "NGA": "Africa",
+    "SHN": "Africa", "SEN": "Africa", "SLE": "Africa", "TGO": "Africa",
+
+    # North America
+    "AIA": "North America", "ATG": "North America", "ABW": "North America", "BHS": "North America", "BRB": "North America", "BES": "North America",
+    "VGB": "North America", "CYM": "North America", "CUB": "North America", "CUW": "North America", "DMA": "North America", "DOM": "North America",
+    "GRD": "North America", "GLP": "North America", "HTI": "North America", "JAM": "North America", "MTQ": "North America", "MSR": "North America",
+    "PRI": "North America", "BLM": "North America", "KNA": "North America", "LCA": "North America", "MAF": "North America", "VCT": "North America",
+    "SXM": "North America", "TTO": "North America", "TCA": "North America", "VIR": "North America", "BLZ": "North America", "CRI": "North America",
+    "SLV": "North America", "GTM": "North America", "HND": "North America", "MEX": "North America", "NIC": "North America", "PAN": "North America",
+    "BMU": "North America", "CAN": "North America", "GRL": "North America", "SPM": "North America", "USA": "North America",
+
+    # South America
+    "ARG": "South America", "BOL": "South America", "BVT": "South America", "BRA": "South America", "CHL": "South America", "COL": "South America",
+    "ECU": "South America", "FLK": "South America", "GUF": "South America", "GUY": "South America", "PRY": "South America", "PER": "South America",
+    "SGS": "South America", "SUR": "South America", "URY": "South America", "VEN": "South America",
+
+    # Antarctica
+    "ATA": "Antarctica",
+
+    # Asia
+    "KAZ": "Asia", "KGZ": "Asia", "TJK": "Asia", "TKM": "Asia", "UZB": "Asia", "CHN": "Asia", "HKG": "Asia", "MAC": "Asia",
+    "PRK": "Asia", "JPN": "Asia", "MNG": "Asia", "KOR": "Asia", "BRN": "Asia", "KHM": "Asia", "IDN": "Asia", "LAO": "Asia",
+    "MYS": "Asia", "MMR": "Asia", "PHL": "Asia", "SGP": "Asia", "THA": "Asia", "TLS": "Asia", "VNM": "Asia", "AFG": "Asia",
+    "BGD": "Asia", "BTN": "Asia", "IND": "Asia", "IRN": "Asia", "MDV": "Asia", "NPL": "Asia", "PAK": "Asia", "LKA": "Asia",
+    "ARM": "Asia", "AZE": "Asia", "BHR": "Asia", "CYP": "Asia", "GEO": "Asia", "IRQ": "Asia", "ISR": "Asia", "JOR": "Asia",
+    "KWT": "Asia", "LBN": "Asia", "OMN": "Asia", "QAT": "Asia", "SAU": "Asia", "PSE": "Asia", "SYR": "Asia", "TUR": "Asia",
+    "ARE": "Asia", "YEM": "Asia",
+
+    # Europe
+    "BLR": "Europe", "BGR": "Europe", "CZE": "Europe", "HUN": "Europe", "POL": "Europe", "MDA": "Europe", "ROU": "Europe", "RUS": "Europe",
+    "SVK": "Europe", "UKR": "Europe", "ALA": "Europe", "DNK": "Europe", "EST": "Europe", "FRO": "Europe", "FIN": "Europe", "GGY": "Europe",
+    "ISL": "Europe", "IRL": "Europe", "IMN": "Europe", "JEY": "Europe", "LVA": "Europe", "LTU": "Europe", "NOR": "Europe", "SJM": "Europe",
+    "SWE": "Europe", "GBR": "Europe", "ALB": "Europe", "AND": "Europe", "BIH": "Europe", "HRV": "Europe", "GIB": "Europe", "GRC": "Europe",
+    "VAT": "Europe", "ITA": "Europe", "MLT": "Europe", "MNE": "Europe", "MKD": "Europe", "PRT": "Europe", "SMR": "Europe", "SRB": "Europe",
+    "SVN": "Europe", "ESP": "Europe", "AUT": "Europe", "BEL": "Europe","FRA": "Europe", "DEU": "Europe", "LIE": "Europe", "LUX": "Europe",
+    "MCO": "Europe", "NLD": "Europe", "CHE": "Europe",
+
+    # Oceania
+    "AUS": "Oceania", "CXR": "Oceania", "CCK": "Oceania", "HMD": "Oceania", "NZL": "Oceania", "NFK": "Oceania", "FJI": "Oceania", "NCL": "Oceania",
+    "PNG": "Oceania", "SLB": "Oceania", "VUT": "Oceania", "GUM": "Oceania", "KIR": "Oceania", "MHL": "Oceania", "FSM": "Oceania", "NRU": "Oceania",
+    "MNP": "Oceania", "PLW": "Oceania", "UMI": "Oceania", "ASM": "Oceania", "COK": "Oceania", "PYF": "Oceania", "NIU": "Oceania", "PCN": "Oceania",
+    "WSM": "Oceania", "TKL": "Oceania", "TON": "Oceania", "TUV": "Oceania","WLF": "Oceania",
+}
+
+iso_to_region_UN_geoscheme_L2_L3 = {
+
+    # Northern Africa
+    "DZA": "Northern Africa", "EGY": "Northern Africa", "LBY": "Northern Africa", "MAR": "Northern Africa", "SDN": "Northern Africa", "TUN": "Northern Africa", "ESH": "Northern Africa",
+
+    # Eastern Africa
+    "IOT": "Eastern Africa", "BDI": "Eastern Africa", "COM": "Eastern Africa", "DJI": "Eastern Africa", "ERI": "Eastern Africa", "ETH": "Eastern Africa", "ATF": "Eastern Africa", "KEN": "Eastern Africa",
+    "MDG": "Eastern Africa", "MWI": "Eastern Africa", "MUS": "Eastern Africa", "MYT": "Eastern Africa", "MOZ": "Eastern Africa", "REU": "Eastern Africa", "RWA": "Eastern Africa", "SYC": "Eastern Africa",
+    "SOM": "Eastern Africa", "SSD": "Eastern Africa", "UGA": "Eastern Africa", "TZA": "Eastern Africa", "ZMB": "Eastern Africa", "ZWE": "Eastern Africa",
+
+    # Middle Africa
+    "AGO": "Middle Africa", "CMR": "Middle Africa", "CAF": "Middle Africa", "TCD": "Middle Africa", "COG": "Middle Africa", "COD": "Middle Africa",
+    "GNQ": "Middle Africa", "GAB": "Middle Africa", "STP": "Middle Africa",
+
+    # Southern Africa
+    "BWA": "Southern Africa", "SWZ": "Southern Africa", "LSO": "Southern Africa", "NAM": "Southern Africa", "ZAF": "Southern Africa",
+
+    # Western Africa
+    "BEN": "Western Africa", "BFA": "Western Africa", "CPV": "Western Africa", "CIV": "Western Africa", "GMB": "Western Africa", "GHA": "Western Africa",
+    "GIN": "Western Africa", "GNB": "Western Africa", "LBR": "Western Africa", "MLI": "Western Africa", "MRT": "Western Africa", "NER": "Western Africa",
+    "NGA": "Western Africa", "SHN": "Western Africa", "SEN": "Western Africa", "SLE": "Western Africa", "TGO": "Western Africa",
+
+    # Caribbean
+    "AIA": "Caribbean", "ATG": "Caribbean", "ABW": "Caribbean", "BHS": "Caribbean", "BRB": "Caribbean", "BES": "Caribbean", "VGB": "Caribbean", "CYM": "Caribbean",
+    "CUB": "Caribbean", "CUW": "Caribbean", "DMA": "Caribbean", "DOM": "Caribbean", "GRD": "Caribbean", "GLP": "Caribbean", "HTI": "Caribbean", "JAM": "Caribbean",
+    "MTQ": "Caribbean", "MSR": "Caribbean", "PRI": "Caribbean", "BLM": "Caribbean", "KNA": "Caribbean", "LCA": "Caribbean", "MAF": "Caribbean", "VCT": "Caribbean",
+    "SXM": "Caribbean", "TTO": "Caribbean", "TCA": "Caribbean", "VIR": "Caribbean",
+
+    # Central America
+    "BLZ": "Central America", "CRI": "Central America", "SLV": "Central America", "GTM": "Central America", "HND": "Central America", "MEX": "Central America",
+    "NIC": "Central America", "PAN": "Central America",
+
+    # South America
+    "ARG": "South America", "BOL": "South America", "BVT": "South America", "BRA": "South America", "CHL": "South America", "COL": "South America",
+    "ECU": "South America", "FLK": "South America", "GUF": "South America", "GUY": "South America", "PRY": "South America", "PER": "South America",
+    "SGS": "South America", "SUR": "South America", "URY": "South America", "VEN": "South America",
+
+    # Northern America
+    "BMU": "Northern America", "CAN": "Northern America", "GRL": "Northern America", "SPM": "Northern America", "USA": "Northern America",
+
+    # Antarctica
+    "ATA": "Antarctica",
+
+    # Central Asia
+    "KAZ": "Central Asia", "KGZ": "Central Asia", "TJK": "Central Asia", "TKM": "Central Asia", "UZB": "Central Asia",
+
+    # Eastern Asia
+    "CHN": "Eastern Asia", "HKG": "Eastern Asia", "MAC": "Eastern Asia", "PRK": "Eastern Asia", "JPN": "Eastern Asia", "MNG": "Eastern Asia", "KOR": "Eastern Asia",
+
+    # South-eastern Asia
+    "BRN": "South-eastern Asia", "KHM": "South-eastern Asia", "IDN": "South-eastern Asia", "LAO": "South-eastern Asia", "MYS": "South-eastern Asia", "MMR": "South-eastern Asia",
+    "PHL": "South-eastern Asia", "SGP": "South-eastern Asia", "THA": "South-eastern Asia", "TLS": "South-eastern Asia", "VNM": "South-eastern Asia",
+
+    # Southern Asia
+    "AFG": "Southern Asia", "BGD": "Southern Asia", "BTN": "Southern Asia", "IND": "Southern Asia", "IRN": "Southern Asia", "MDV": "Southern Asia",
+    "NPL": "Southern Asia", "PAK": "Southern Asia", "LKA": "Southern Asia",
+
+    # Western Asia
+    "ARM": "Western Asia", "AZE": "Western Asia", "BHR": "Western Asia", "CYP": "Western Asia", "GEO": "Western Asia", "IRQ": "Western Asia", "ISR": "Western Asia", "JOR": "Western Asia",
+    "KWT": "Western Asia", "LBN": "Western Asia", "OMN": "Western Asia", "QAT": "Western Asia", "SAU": "Western Asia", "PSE": "Western Asia",
+    "SYR": "Western Asia", "TUR": "Western Asia", "ARE": "Western Asia", "YEM": "Western Asia",
+
+    # Eastern Europe
+    "BLR": "Eastern Europe", "BGR": "Eastern Europe", "CZE": "Eastern Europe", "HUN": "Eastern Europe", "POL": "Eastern Europe", "MDA": "Eastern Europe",
+    "ROU": "Eastern Europe", "RUS": "Eastern Europe", "SVK": "Eastern Europe", "UKR": "Eastern Europe",
+
+    # Northern Europe
+    "ALA": "Northern Europe", "DNK": "Northern Europe", "EST": "Northern Europe", "FRO": "Northern Europe", "FIN": "Northern Europe", "GGY": "Northern Europe",
+    "ISL": "Northern Europe", "IRL": "Northern Europe", "IMN": "Northern Europe", "JEY": "Northern Europe", "LVA": "Northern Europe", "LTU": "Northern Europe",
+    "NOR": "Northern Europe", "SJM": "Northern Europe", "SWE": "Northern Europe", "GBR": "Northern Europe",
+
+    # Southern Europe
+    "ALB": "Southern Europe", "AND": "Southern Europe", "BIH": "Southern Europe", "HRV": "Southern Europe", "GIB": "Southern Europe", "GRC": "Southern Europe",
+    "VAT": "Southern Europe", "ITA": "Southern Europe", "MLT": "Southern Europe", "MNE": "Southern Europe", "MKD": "Southern Europe", "PRT": "Southern Europe",
+    "SMR": "Southern Europe", "SRB": "Southern Europe", "SVN": "Southern Europe", "ESP": "Southern Europe",
+
+    # Western Europe
+    "AUT": "Western Europe", "BEL": "Western Europe", "FRA": "Western Europe", "DEU": "Western Europe", "LIE": "Western Europe", "LUX": "Western Europe",
+    "MCO": "Western Europe", "NLD": "Western Europe", "CHE": "Western Europe",
+
+    # Australia and New Zealand
+    "AUS": "Australia and New Zealand", "CXR": "Australia and New Zealand", "CCK": "Australia and New Zealand", "HMD": "Australia and New Zealand",
+    "NZL": "Australia and New Zealand", "NFK": "Australia and New Zealand",
+
+    # Melanesia
+    "FJI": "Melanesia", "NCL": "Melanesia", "PNG": "Melanesia", "SLB": "Melanesia", "VUT": "Melanesia",
+
+    # Micronesia
+    "GUM": "Micronesia", "KIR": "Micronesia", "MHL": "Micronesia", "FSM": "Micronesia", "NRU": "Micronesia", "MNP": "Micronesia", "PLW": "Micronesia", "UMI": "Micronesia",
+
+    # Polynesia
+    "ASM": "Polynesia", "COK": "Polynesia", "PYF": "Polynesia", "NIU": "Polynesia", "PCN": "Polynesia", "WSM": "Polynesia", "TKL": "Polynesia", "TON": "Polynesia",
+    "TUV": "Polynesia", "WLF": "Polynesia",
 }
 
 # Converts continent-ecozone codes to continent and ecozone labels
@@ -1635,6 +1818,15 @@ watershed_to_text = {
     8008: "New Zealand",
     8009: "Tasmania"
 }
+drivers_to_text = {
+    1: "Permanent agriculture",
+    2: "Hard commodities",
+    3: "Shifting cultivation",
+    4: "Logging",
+    5: "Wildfire",
+    6: "Settlements and infrastructure",
+    7: "Other natural disturbances"
+}
 
 # Converts the WDPA code to type
 WDPA_to_text = {
@@ -1668,6 +1860,17 @@ managed_land_to_text = {
     0: "NA",
     1: "managed",
     2: "unmanaged",
+}
+
+forest_age_category_to_text = {
+    0: 'non_forest',
+    1: '1_5yr',
+    6: '6_20yr',
+    21: '21_40yr',
+    41: '41_60yr',
+    61: '61_80yr',
+    81: '81_100yr',
+    101: '>100yr'
 }
 
 veg_local_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/vegetation_v{veg_model_version_underscore}_standard_global/"
@@ -1731,5 +1934,8 @@ legend_percentile_disclaimer = f"Legend value range represents 1 and 99 percenti
 
 # Output global aggregated jpeg names
 three_panel_jpeg_base = f"three_panels__4km_aggregation__v{veg_model_version}"
+
+# Colors for jpegs showing the fraction of gross emissions from LULUCF components
+fraction_base_cmap = 'RdPu'
 
 

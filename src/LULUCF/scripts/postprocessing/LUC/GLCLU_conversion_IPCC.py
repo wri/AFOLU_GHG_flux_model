@@ -2,9 +2,16 @@
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Local test:
+Indonesia
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 119.5 -5.75 119.75 -5.5 -cs 0.25 --run_local --run_date 20268888
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 119 -6 120 -5 -cs 1 --run_local --run_date 20268888
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 110 -10 120 0 -cs 10 --run_local --run_date 20268888
+
+Canada
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb -110 59 -109 60 -cs 1 --run_local --run_date 20268888
+
+Russia
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 110 69 111 70 -cs 1 --run_local --run_date 20268888
 
 Coiled small tests (0.25x0.25 deg chunk):
 python -m src.utilities.create_cluster -n 1 -m 16 -cn IPCC_land_use
@@ -457,23 +464,25 @@ def apply_crop_transition(lu_dict):
 #TODO: Use TCL up to 5 years prior for F->C exception?
 
 # Tall vegetation all years
-def apply_all_tall_veg(lu_dict):
-    tcl_prior = lu_dict["tcl_prior"]
-    driver = lu_dict["driver"]
-
-    tokens = lu_dict["tokens"]
-    all_idx = range(len(tokens))
-
-    # If TCL has occurred by the start of timeseries and the driver is permanent ag, assume tall veg is tree crops
-    if tcl_prior and driver == 1:
-        apply_tokens(lu_dict, all_idx, "C", node_code_map["crop_perm_ag_driver"])
-
-    # # If oil palm planting year in interval, allows for F -> C transitions assuming establishment of tree crops
-    # if has_planting_transition(lu_dict):
-    #     idx = planting_idx(lu_dict["planting_year"])
-    #     apply_tokens(lu_dict, range(idx, len(tokens)), "C", node_code_map["crop_oil_palm"])
-    #     return
-    #TODO: Do we want to allow for F->C transition based on oil palm planting year?
+# def apply_all_tall_veg(lu_dict):
+#     tcl_prior = lu_dict["tcl_prior"]
+#     driver = lu_dict["driver"]
+#
+#     tokens = lu_dict["tokens"]
+#     all_idx = range(len(tokens))
+#
+#     # If TCL has occurred by the start of timeseries and the driver is permanent ag, assume tall veg is tree crops
+#     if tcl_prior and driver == 1:
+#         apply_tokens(lu_dict, all_idx, "C", node_code_map["crop_perm_ag_driver"])
+#
+#     # # If oil palm planting year in interval, allows for F -> C transitions assuming establishment of tree crops
+#     # if has_planting_transition(lu_dict):
+#     #     idx = planting_idx(lu_dict["planting_year"])
+#     #     apply_tokens(lu_dict, range(idx, len(tokens)), "C", node_code_map["crop_oil_palm"])
+#     #     return
+#TODO: Do we want to allow for all F to be called anything other than forest?
+# If all F and TCL prior to 2015 from permanent ag, assume this will be captured by SDPT + Descals?
+# If all F and oil palm planting year during timeseries, allow F->C transition?
 
 # Short vegetation all years
 def apply_all_short_veg(lu_dict):
@@ -811,9 +820,9 @@ def apply_regex_rules(lc_timeseries, driver, tcl_year, pre_2000_plantation, plan
         apply_crop_transition(lu_dict)
 
     if not extent_rule_applied:
-        if re.fullmatch(r"F+", token_seq):
-            apply_all_tall_veg(lu_dict)
-        elif re.fullmatch(r"G+", token_seq):
+        # if re.fullmatch(r"F+", token_seq):
+        #     apply_all_tall_veg(lu_dict)
+        if re.fullmatch(r"G+", token_seq):
             apply_all_short_veg(lu_dict)
         elif re.fullmatch(r"[FGB]+", token_seq) and "F" in token_seq:
             apply_tall_short_bare(lu_dict)
@@ -875,12 +884,6 @@ def IPCC_land_use(in_dict):
 
 
     # Mangrove extent
-    # TODO: Read in as a union so only 1 tile set needed
-    mangrove_extent_1996_block = in_dict[f"{cn.mangrove_extent_processed_pattern}_1996"]
-    mangrove_extent_2007_block = in_dict[f"{cn.mangrove_extent_processed_pattern}_2007"]
-    mangrove_extent_2008_block = in_dict[f"{cn.mangrove_extent_processed_pattern}_2008"]
-    mangrove_extent_2009_block = in_dict[f"{cn.mangrove_extent_processed_pattern}_2009"]
-    mangrove_extent_2010_block = in_dict[f"{cn.mangrove_extent_processed_pattern}_2010"]
     mangrove_extent_2015_block = in_dict[f"{cn.mangrove_extent_processed_pattern}_2015"]
     mangrove_extent_2016_block = in_dict[f"{cn.mangrove_extent_processed_pattern}_2016"]
     mangrove_extent_2017_block = in_dict[f"{cn.mangrove_extent_processed_pattern}_2017"]
@@ -888,9 +891,17 @@ def IPCC_land_use(in_dict):
     mangrove_extent_2019_block = in_dict[f"{cn.mangrove_extent_processed_pattern}_2019"]
     mangrove_extent_2020_block = in_dict[f"{cn.mangrove_extent_processed_pattern}_2020"]
 
-    # GPW cultivated grassland extent
-    # TODO: Add gpw_cultiv_grass here
-    # TODO: Read in as a union so only 1 tile set needed
+    # GPW grassland extent
+    gpw_extent_2015_block = in_dict[f"{cn.GPW_extent_processed_pattern}_2015"]
+    gpw_extent_2016_block = in_dict[f"{cn.GPW_extent_processed_pattern}_2016"]
+    gpw_extent_2017_block = in_dict[f"{cn.GPW_extent_processed_pattern}_2017"]
+    gpw_extent_2018_block = in_dict[f"{cn.GPW_extent_processed_pattern}_2018"]
+    gpw_extent_2019_block = in_dict[f"{cn.GPW_extent_processed_pattern}_2019"]
+    gpw_extent_2020_block = in_dict[f"{cn.GPW_extent_processed_pattern}_2020"]
+    gpw_extent_2021_block = in_dict[f"{cn.GPW_extent_processed_pattern}_2021"]
+    gpw_extent_2022_block = in_dict[f"{cn.GPW_extent_processed_pattern}_2022"]
+    gpw_extent_2023_block = in_dict[f"{cn.GPW_extent_processed_pattern}_2023"]
+    gpw_extent_2024_block = in_dict[f"{cn.GPW_extent_processed_pattern}_2024"]
 
     # Creat empty arrays for output datasets
     LU_2015_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
@@ -925,14 +936,7 @@ def IPCC_land_use(in_dict):
     LU_change_2022_2023_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
     LU_change_2023_2024_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
 
-    LU_summary_block = np.zeros(LC_2015_block.shape, dtype=np.uint64) #TODO: Switch back to 32
-
-    # for year in cn.years_annual:
-    #     out_dict[f"{cn.IPCC_class_pattern}_{year}"] =  np.zeros(LC_2015_block.shape, dtype=np.uint8)
-    #     out_dict[f"{cn.IPCC_node_pattern}_{year}"] = np.zeros(LC_2015_block.shape, dtype=np.uint16)
-    # for year in cn.years_annual[:-1]:
-    #     out_dict[f"{cn.IPCC_change_pattern}_{year}_{year+1}"] = np.zeros(LC_2015_block.shape, dtype=np.uint16)
-    # out_dict[f"{cn.IPCC_summary_pattern}"] = np.zeros(LC_2016_block.shape, dtype=np.uint32)
+    LU_summary_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
 
     # Iterates through all pixels in the chunk
     for row in range(LC_2015_block.shape[0]):
@@ -964,26 +968,32 @@ def IPCC_land_use(in_dict):
             descals_planting_year = oil_palm_first_year_block[row, col]
 
             # Mangrove extent years (1 = mangrove, 0 = no mangrove)
-            mang_1996 = mangrove_extent_1996_block[row, col]
-            mang_2007 = mangrove_extent_2007_block[row, col]
-            mang_2008 = mangrove_extent_2008_block[row, col]
-            mang_2009 = mangrove_extent_2009_block[row, col]
-            mang_2010 = mangrove_extent_2010_block[row, col]
             mang_2015 = mangrove_extent_2015_block[row, col]
             mang_2016 = mangrove_extent_2016_block[row, col]
             mang_2017 = mangrove_extent_2017_block[row, col]
             mang_2018 = mangrove_extent_2018_block[row, col]
             mang_2019 = mangrove_extent_2019_block[row, col]
             mang_2020 = mangrove_extent_2020_block[row, col]
-            mang_timeseries = np.array([mang_1996, mang_2007, mang_2008, mang_2009, mang_2010, mang_2015, mang_2016, mang_2017, mang_2018, mang_2019, mang_2020]).astype('uint8')
+            mang_timeseries = np.array([mang_2015, mang_2016, mang_2017, mang_2018, mang_2019, mang_2020]).astype('uint8')
             gmw_mangrove = bool(np.any(mang_timeseries == 1))
 
-            #TODO: Add gpw_cultiv_grass here
+            # GPW grasslands (1 = cultivated grassland, 2 = natural / seminatural grassland)
+            gpw_2015 = gpw_extent_2015_block[row, col]
+            gpw_2016 = gpw_extent_2016_block[row, col]
+            gpw_2017 = gpw_extent_2017_block[row, col]
+            gpw_2018 = gpw_extent_2018_block[row, col]
+            gpw_2019 = gpw_extent_2019_block[row, col]
+            gpw_2020 = gpw_extent_2020_block[row, col]
+            gpw_2021 = gpw_extent_2021_block[row, col]
+            gpw_2022 = gpw_extent_2022_block[row, col]
+            gpw_2023 = gpw_extent_2023_block[row, col]
+            gpw_2024 = gpw_extent_2024_block[row, col]
+            gpw_timeseries = np.array([gpw_2015, gpw_2016, gpw_2017, gpw_2018, gpw_2019, gpw_2020, gpw_2021, gpw_2022, gpw_2023, gpw_2024]).astype('uint8')
+            gpw_cultiv_grass = bool(np.any(gpw_timeseries == 1))    # any year cultivated grassland
 
             # Pass in values for regex rules
             LU_timeseries, node_code_timeseries, LU_change_timeseries, summary = (
-                apply_regex_rules(LC_timeseries, driver, tcl_year, pre_2000_plantation, descals_planting_year, sdpt_oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove, False))
-            #TODO: Add gpw_cultiv_grass (currently set to False)
+                apply_regex_rules(LC_timeseries, driver, tcl_year, pre_2000_plantation, descals_planting_year, sdpt_oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove, gpw_cultiv_grass))
 
             # Write out results
             LU_2015_block[row, col] = LU_timeseries[0]
@@ -1243,7 +1253,7 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
         chunk_shapefile_uri = cn.fishnet_1x1deg_uri
 
     # Creates the log for the main function and populates it with basic run information
-    main_logger, main_log_local_path = lu.populate_main_log_header(client, cluster, log_note, run_local, model_type, stage)
+    main_logger, main_log_local_path, n_workers= lu.populate_main_log_header(client, cluster, log_note, run_local, model_type, stage)
 
     start_time = uu.timestr()  # Starting time for stage
     main_logger.info(f"Stage {stage} started at: {start_time}")
@@ -1278,10 +1288,10 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
     # GLCLU timeseries
     for year in cn.years_annual:
         download_dict[f"{cn.land_cover_pattern}_{year}"] = f"{cn.land_cover_annual_path}{year}/{sample_tile_id}.tif"
-        #TODO: Add global pasture watch data
+        download_dict[f"{cn.GPW_extent_processed_pattern}_{year}"] = f"{cn.GPW_extent_processed_dir}{year}/{sample_tile_id}_{cn.GPW_extent_processed_pattern}_{year}.tif"
 
     # GMW mangrove extent timeseries
-    for year in cn.mangrove_extent_years:
+    for year in [2015, 2016, 2017, 2018, 2019, 2020]:
         download_dict[f"{cn.mangrove_extent_processed_pattern}_{year}"] = f"{cn.mangrove_extent_processed_dir}{year}/{sample_tile_id}__{cn.mangrove_extent_processed_pattern}_{year}.tif"
 
     print("Download dictionary::")

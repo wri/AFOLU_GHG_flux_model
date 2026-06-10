@@ -147,15 +147,17 @@ def create_typed_dicts(layers):
     return typed_dict_uint8, typed_dict_uint16, typed_dict_int16, typed_dict_int32, typed_dict_float32
 
 
-# Classifies GLCLU as short (<5 m) or tall (>= 5 m) vegetation
+# Classifies GLCLU composite as bare ground, short vegetation (<5 m), or tall vegetation (>= 5 m)
 @jit(nopython=True)
-def classify_veg_height(LC):
-    short_veg = (((LC >= cn.short_veg_dry_min_code) and (LC <= cn.short_veg_dry_max_code)) or
-                      ((LC >= cn.short_veg_wet_min_code) and (LC <= cn.short_veg_wet_max_code)))
-    tall_veg = (((LC >= cn.tall_veg_dry_min_code) and (LC <= cn.tall_veg_dry_max_code)) or
-                ((LC >= cn.tall_veg_wet_min_code) and (LC <= cn.tall_veg_wet_max_code)))
+def classify_GLAD_composite(LC):
+    bare_ground = (((LC >= cn.bare_ground_dry_min_code) and (LC <= cn.bare_ground_dry_max_code)) or
+                   ((LC >= cn.bare_ground_wet_min_code) and (LC <= cn.bare_ground_wet_max_code)))
+    short_veg =   (((LC >= cn.short_veg_dry_min_code) and (LC <= cn.short_veg_dry_max_code)) or
+                   ((LC >= cn.short_veg_wet_min_code) and (LC <= cn.short_veg_wet_max_code)))
+    tall_veg =    (((LC >= cn.tall_veg_dry_min_code) and (LC <= cn.tall_veg_dry_max_code)) or
+                   ((LC >= cn.tall_veg_wet_min_code) and (LC <= cn.tall_veg_wet_max_code)))
 
-    return short_veg, tall_veg
+    return bare_ground, short_veg, tall_veg
 
 
 # Checks if pixel does not have tall vegetation. If so, updates the value to the most recent year without tall vegetation.
@@ -615,11 +617,17 @@ def calc_partial_disturbance_EFs(drivers_cell, continent_ecozone_cell, partial_d
         partial_disturbance_EF = partial_disturbance_EF_array[row_index, col_index]
     else:
         # Manual mean of the specified column (col_index) because numba has all kinds of restrictions!
+        # Handles errant NaN in EF tables by calculating EF from the rest of the values
+        # Per Claude session 'Flux statistics comparison: chunk vs. flox'
         total = 0.0
         n_rows = partial_disturbance_EF_array.shape[0]
+        count = 0
         for i in range(n_rows):
-            total += partial_disturbance_EF_array[i, col_index]
-        partial_disturbance_EF = total / n_rows
+            val = partial_disturbance_EF_array[i, col_index]
+            if not np.isnan(val):
+                total += val
+                count += 1
+        partial_disturbance_EF = total / count if count > 0 else 0.0
 
     return partial_disturbance_EF
 

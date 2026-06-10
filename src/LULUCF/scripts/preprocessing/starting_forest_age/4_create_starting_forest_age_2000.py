@@ -52,7 +52,7 @@ from src.utilities import resize_cluster
 
 
 def create_starting_forest_age_2000(bounds, download_dict_with_data_types, year, chunk_size_pixels,
-                                    is_final, no_upload, output_dir_list, stage):
+                                    is_large_run, no_upload, output_dir_list, stage):
 
     chunk_stats = []
 
@@ -62,7 +62,7 @@ def create_starting_forest_age_2000(bounds, download_dict_with_data_types, year,
 
     chunk_start_time = time.time()
 
-    uu.rename_s3_task_file(stage, bounds, "preprocessing_", is_final, logger_worker)
+    uu.rename_s3_task_file(stage, bounds, "preprocessing_", is_large_run, logger_worker)
 
     bounds_str = uu.boundstr(bounds)
     tile_id = uu.xy_to_tile_id(bounds[0], bounds[3])
@@ -85,10 +85,10 @@ def create_starting_forest_age_2000(bounds, download_dict_with_data_types, year,
     # Thus, this returns a complete set of inputs (missing chunks filled).
     # Note: If running in a local Dask cluster, prints to console may be duplicated. Doesn't happen with a Coiled cluster of the same size (1 worker).
     # Seems to be a problem with local Dask getting overwhelmed by so many futures being created and downloaded from s3.
-    futures = uu.prepare_to_download_chunk(bounds, updated_download_dict, chunk_length_pixels, is_final, logger_worker, False)
+    futures = uu.prepare_to_download_chunk(bounds, updated_download_dict, chunk_length_pixels, is_large_run, logger_worker, False)
     # print(futures)
 
-    lu.print_and_log(f"Waiting for requests for data in chunk {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger_worker)
+    lu.print_and_log(f"Waiting for requests for data in chunk {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
 
     # Dictionary that stores the dataset name (key) and downloaded data and download status (values)
     layers = {}
@@ -215,10 +215,10 @@ def create_starting_forest_age_2000(bounds, download_dict_with_data_types, year,
     with rasterio.open(forest_age_2010_path) as src:
         profile = src.profile.copy()
 
-    lu.print_and_log(f" Saving and uploading {bounds_str}: {uu.timestr()}", is_final, logger_worker)
-    uu.rename_s3_task_file(stage, bounds, "uploading_", is_final, logger_worker)
+    lu.print_and_log(f" Saving and uploading {bounds_str}: {uu.timestr()}", is_large_run, logger_worker)
+    uu.rename_s3_task_file(stage, bounds, "uploading_", is_large_run, logger_worker)
 
-    if is_final:
+    if is_large_run:
         age_2000_name = f"{tile_id}__{bounds_str}__{cn.forest_age_2000_gap_filled_pattern}.tif"
         age_2000_source_flag_name = f"{tile_id}__{bounds_str}__{cn.forest_age_2000_gap_filled_source_flag_pattern}.tif"
     else:
@@ -269,7 +269,7 @@ def create_starting_forest_age_2000(bounds, download_dict_with_data_types, year,
         os.remove(age_2000_source_flag_tmp_path)
 
     # Removes task tracking file from S3 once task is successful
-    uu.delete_s3_task_file(stage, bounds, is_final, logger_worker)
+    uu.delete_s3_task_file(stage, bounds, is_large_run, logger_worker)
 
     return return_message, chunk_stats
 
@@ -292,7 +292,7 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
         chunk_shapefile_uri = cn.fishnet_1x1deg_uri
 
     # Creates the log for the main function and populates it with basic run information
-    main_logger, main_log_local_path = lu.populate_main_log_header(client, cluster, log_note, run_local, model_type, stage)
+    main_logger, main_log_local_path, n_workers = lu.populate_main_log_header(client, cluster, log_note, run_local, model_type, stage)
 
     # Starting time for stage
     start_time = uu.timestr()
@@ -310,9 +310,9 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
     main_logger.info(f"Chunks to process: {len(chunk_list)}")
 
     # Determines if the output file names for final versions of outputs should be used
-    is_final = False
+    is_large_run = False
     if len(chunk_list) > 20:
-        is_final = True
+        is_large_run = True
         main_logger.info("Running as final model.")
 
     # This is just a placeholder tile_id that is used to obtain the datatype of each tile set.
@@ -365,13 +365,13 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
     uu.create_s3_task_files(stage, chunk_list)
 
     delayed_results_1x1_deg = [dask.delayed(create_starting_forest_age_2000)
-                       (chunk, download_dict_with_data_types, year, chunk_size_pixels, is_final, no_upload, output_dir_list, stage)
+                       (chunk, download_dict_with_data_types, year, chunk_size_pixels, is_large_run, no_upload, output_dir_list, stage)
                        for chunk in chunk_list]
 
     # Runs analysis and gathers results
     results_1x1_deg = dask.compute(*delayed_results_1x1_deg)
 
-    success_count_1x1, all_1x1_stats = uu.count_successful_chunks(chunk_list, is_final, main_logger, results_1x1_deg)
+    success_count_1x1, all_1x1_stats = uu.count_successful_chunks(chunk_list, is_large_run, main_logger, results_1x1_deg)
 
     # Iterates through output folders and counts the number of output rasters (only if uploads enabled)
     if not no_upload:

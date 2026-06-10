@@ -18,8 +18,8 @@ from src.utilities import constants_and_names as cn
 from src.utilities import universal_utilities as uu
 
 # Input and output root folders
-input_s3_prefix = f'{cn.cropland_dir}raw__from_Cornell/20250512/year_2020/'
-output_s3_prefix = f'{cn.cropland_dir}processed/Cornell_v20250512/year_2020/global_COG/'
+input_s3_prefix = f'{cn.cropland_dir}raw__from_Cornell/20250828/year_2020/'
+output_s3_prefix = f'{cn.cropland_dir}processed/Cornell_v20250828/year_2020/global_COG/'
 
 # Local temp directories
 local_input_dir = '/tmp/input_tifs'

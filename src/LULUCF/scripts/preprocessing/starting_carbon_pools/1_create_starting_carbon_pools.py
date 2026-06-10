@@ -2,30 +2,31 @@
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model/
 
 Local:
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -bb 116 -3 116.25 -2.75 -cs 0.25 --run_local --no_stats --no_upload --year YYYY
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -bb 116 -3 116.25 -2.75 -cs 0.25 --run_local --no_stats --no_upload --year 2015
 
 Needs 8GB Coiled workers with 1 thread for 1x1 deg chunks; 4GB workers are too small.
 
 Coiled small test:
-python -m src.utilities.create_cluster -n 1 -t 1 -m 8 -cn vegetation_preprocessing
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn vegetation_preprocessing -bb 114 -4 115 -3 -cs 1  --year YYYY
+python -m src.utilities.create_cluster -n 1 -t 1 -m 8 -cn starting_carbon_pools
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools -bb 23 -4 24 -3 -cs 1  --create_zarr -mt standard -mpd test_23_-4_24_-3 --year 2015
 
 Coiled shapefile test:
-python -m src.utilities.create_cluster -n 1 -t 1 -m 8 -cn vegetation_preprocessing
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn vegetation_preprocessing -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -f 1 --year YYYY
+python -m src.utilities.create_cluster -n 1 -t 1 -m 8 -cn starting_carbon_pools
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools --create_zarr -mt standard -mpd test_feature --year 2015 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -f 1
 
-Full run 2000:
-python -m src.utilities.create_cluster -n 200 -t 1 -m 8 -cn vegetation_preprocessing
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn vegetation_preprocessing --year 2000 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive global run for carbon pool 2000 creation using GADM v4.1, raw and LC masked versions."
+Full run 2000 (using 200 workers seems to overload requests to s3):
+python -m src.utilities.create_cluster -n 100 -t 1 -m 8 -cn starting_carbon_pools
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools --create_zarr -mt standard -mpd global --year 2000 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive global run for carbon pool 2000 creation using ESA CCI AGB v6, raw and adjusted versions."
 
-Full run 2015:
-python -m src.utilities.create_cluster -n 200 -t 1 -m 8 -cn vegetation_preprocessing
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn vegetation_preprocessing --year 2015 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive global run for carbon pool 2015 creation using GADM v4.1, raw and LC masked versions."
-
+Full run 2015 (using 200 workers seems to overload requests to s3)::
+python -m src.utilities.create_cluster -n 100 -t 1 -m 8 -cn starting_carbon_pools
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools --create_zarr -mt standard -mpd global --year 2015 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive global run for carbon pool 2015 creation using ESA CCI AGB v6, raw and adjusted versions."
 
 To create a vrt of the 10x10 deg outputs, do:
 aws s3 ls s3://gfw2-data/climate/ESA_CCI_biomass/v5_01/2015/year_2015_derived_carbon_pools/litter_C_density_MgC_ha/40000_pixels/ --recursive | grep .tif$ | awk '{print "/vsis3/gfw2-data/"$4}' > litter_C_2015_file_list.txt
 gdalbuildvrt -input_file_list litter_C_2015_file_list.txt deadwood_C2015_mosaic.vrt
+
+TODO Correct starting BGC, deadwood C and litter C for oil palm. Those are currently using natural forest ratios but should use oil palm specifically (Mokany et al for BGC, 0 for deadwood and litter). Make sure veg flux calcs are consistent with this.
 """
 
 import argparse
@@ -36,6 +37,10 @@ import os
 import psutil
 import sys
 import time
+import fsspec
+import math
+import xarray as xr
+import resource
 from concurrent.futures import ThreadPoolExecutor
 
 from dask.distributed import print
@@ -46,6 +51,7 @@ from src.utilities import constants_and_names as cn
 from src.utilities import log_utilities as lu
 from src.utilities import numba_utilities as nu
 from src.utilities import universal_utilities as uu
+from src.utilities import zarr_utilities as zu
 from src.utilities import resize_cluster
 
 
@@ -59,6 +65,7 @@ def create_starting_C_densities(in_dict_uint8, in_dict_uint16, in_dict_int16,
     # This is because a dictionary in a Numba function cannot have arrays with multiple data types, so each dictionary has to store only one data type,
     # just like inputs to the function.
     out_dict_float32 = {}
+    out_dict_uint8 = {}
 
     # print(in_dict_uint8)
     # print(in_dict_uint16)
@@ -74,8 +81,39 @@ def create_starting_C_densities(in_dict_uint8, in_dict_uint16, in_dict_int16,
     continent_ecozone_block = in_dict_int16[cn.continent_ecozone_pattern]
     climate_zone_block = in_dict_uint8[cn.climate_zone_pattern]
     LC_composite_block = in_dict_uint8[cn.land_cover_pattern]  # LC composite of the year being processed. Pattern is the same regardless of starting year.
-    veg_height_block = in_dict_uint8[cn.vegetation_height_pattern]  # Veg height of the year being processed. Pattern is the same regardless of starting year.
+    veg_height_block = in_dict_uint8[f"{cn.vegetation_height_pattern}_start_year"]  # Veg height of the year being processed. Pattern is the same regardless of starting year.
     mangrove_extent_block = in_dict_uint8[cn.mangrove_extent_processed_pattern]  # Veg height of the year being processed. Pattern is the same regardless of starting year.
+
+    # Used only to determine starting C pools for pixels with TCL 2001-2014
+    TCL_block = in_dict_uint8[cn.TCL_pattern]
+    planted_forest_AGC_RF_block = in_dict_float32[cn.planted_forest_AGC_removal_factor_pattern]
+    oil_palm_2000_extent_block = in_dict_uint8[cn.oil_palm_2000_extent_pattern]
+    oil_palm_first_year_block = in_dict_int16[cn.oil_palm_first_year_pattern]
+    # NOTE: Uses just the 0-5 year Robinson regrowth rate, regardless of how many years of regrowth there are. This just keeps things simpler than using the different age rates.
+    natural_forest_growth_curve_pattern_block = in_dict_float32[cn.natural_forest_growth_curve_pattern]
+
+    # Counts how many times each pixel experiences tall vegetation loss during the model,
+    # so that starting carbon density can be adjusted.
+    # List of arrays of height in the chunk for each year
+    model_years = list(range(cn.first_model_year_annual, cn.last_model_year_annual + 1))
+    vegetation_heights_block = [
+        in_dict_uint8[f"{cn.vegetation_height_pattern}_{model_year}"]
+        for model_year in model_years
+    ]
+    # print(vegetation_heights_block)
+
+    # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6978fc47-951c-8332-94a5-24b0a2036c24
+    # Count of instances of tree loss in each pixel during the model run
+    loss_count_block = np.zeros_like(vegetation_heights_block[0], dtype=np.uint8)
+
+    # Iterates through year pairs to count up tall vegetation losses
+    for t in range(len(vegetation_heights_block) - 1):
+        current = vegetation_heights_block[t]
+        next = vegetation_heights_block[t + 1]
+
+        loss = (current >= int(cn.tree_threshold)) & (next < int(cn.tree_threshold))
+        loss_count_block += loss.astype(np.uint8)
+    # print("loss_count_block:", loss_count_block)
 
     # AGB block sources (mangrove and non-mangrove) depend on the starting year
     # Numba can't handle two different possible datatypes for agb_non_mang_block,
@@ -87,8 +125,7 @@ def create_starting_C_densities(in_dict_uint8, in_dict_uint16, in_dict_int16,
         agb_non_mang_block = in_dict_uint16[cn.agb_2015_pattern].astype(np.int16)
         mangrove_agb_block = np.zeros(in_dict_float32[cn.r_s_ratio_non_mang_pattern].shape).astype('float32')
     else:
-        out_dict_float32[f"{cn.agc_raw_dens_pattern}_{year}"] = np.full(in_dict_float32[cn.r_s_ratio_non_mang_pattern].shape, 9999).astype('float32')
-        return out_dict_float32
+        raise ValueError("invalid start year: must be 2000 or 2015")
 
     # Output blocks
     # Need to specify the output datatype or it will default to float32
@@ -104,6 +141,9 @@ def create_starting_C_densities(in_dict_uint8, in_dict_uint16, in_dict_int16,
     litter_c_LC_masked_out_block = np.zeros(in_dict_float32[cn.r_s_ratio_non_mang_pattern].shape).astype('float32')
     non_soil_c_LC_masked_out_block = np.zeros(in_dict_float32[cn.r_s_ratio_non_mang_pattern].shape).astype('float32')
 
+    # Code that describes the source for the starting carbon densities in the landcover-masked outputs
+    LC_masked_state_block = np.zeros(in_dict_uint8[cn.oil_palm_2000_extent_pattern].shape).astype('uint8')
+
     # Gets a fallback value for continent_ecozone for the chunk in case some pixels don't have one
     continent_ecozone_fallback = nu.fallback_conteco_climzone_value(continent_ecozone_block, 2020)
 
@@ -115,7 +155,7 @@ def create_starting_C_densities(in_dict_uint8, in_dict_uint16, in_dict_int16,
     for row in range(continent_ecozone_block.shape[0]):
         for col in range(continent_ecozone_block.shape[1]):
 
-            ### Part 1: Pixel-level values
+            ### Part 1: Pixel-level input values
 
             # Input values for this specific cell
             agb_non_mang_cell = agb_non_mang_block[row, col]
@@ -130,6 +170,13 @@ def create_starting_C_densities(in_dict_uint8, in_dict_uint16, in_dict_int16,
             veg_height_cell = veg_height_block[row, col]
             mangrove_extent_cell = mangrove_extent_block[row, col]
 
+            TCL_cell = TCL_block[row, col]
+            planted_forest_AGC_RF_cell = planted_forest_AGC_RF_block[row, col]
+            oil_palm_2000_extent_cell = oil_palm_2000_extent_block[row, col]
+            oil_palm_first_year_cell = oil_palm_first_year_block[row, col]
+            natural_forest_growth_curve_pattern_cell = natural_forest_growth_curve_pattern_block[row, col]
+            loss_count_cell = loss_count_block[row, col]
+
             # Applies the continent_ecozne fallback value when there isn't a value for the pixel
             if continent_ecozone_cell == 0:
                 continent_ecozone_cell = continent_ecozone_fallback
@@ -142,7 +189,7 @@ def create_starting_C_densities(in_dict_uint8, in_dict_uint16, in_dict_int16,
             mangrove_pixel = (mangrove_agb_cell > 0) or (mangrove_extent_cell > 0)
 
 
-            ### Part 2: Calculation of raw carbon density outputs (not masked by veg height/land cover)
+            ### Part 2: Calculation of raw carbon density outputs (not masked by veg height/land cover/TCL history)
 
             # If mangrove pixel, AGC is calculated from it, overwriting any AGC that is based on non-mang AGB that is already there
             if mangrove_pixel == True:  # Checks if it's a mangrove pixel
@@ -160,17 +207,16 @@ def create_starting_C_densities(in_dict_uint8, in_dict_uint16, in_dict_int16,
             else:
                 agc_raw_out_cell = 0
 
+
             # Separate branches for assigning BGC, deadwood C, and litter C ratios depending on whether the pixel has mangroves.
             # Calculation of BGC, deadwood C, and litter C are done after the decision tree assigns the ratios.
 
             # Mangrove carbon pool ratio branch
             # From IPCC 2013 Wetland Supplement
-            if mangrove_pixel == True:  # Only replaces non-mangrove AGB if mangrove chunk exists and if mangrove value in that pixel
+            if mangrove_pixel == True:  # Only replaces non-mangrove AGB if mangrove value in that pixel
 
-                bgc_ratio = mangrove_C_ratio_array[np.where(mangrove_C_ratio_array[:, 0] == continent_ecozone_cell)][0, 1]
-                deadwood_c_ratio = mangrove_C_ratio_array[np.where(mangrove_C_ratio_array[:, 0] == continent_ecozone_cell)][0, 2]
-                litter_c_ratio = mangrove_C_ratio_array[np.where(mangrove_C_ratio_array[:, 0] == continent_ecozone_cell)][0, 3]
-
+                mangrove_AGC_RF, bgc_ratio, deadwood_c_ratio, litter_c_ratio = (
+                    nu.calc_mangrove_RF_and_ratios(continent_ecozone_cell, mangrove_C_ratio_array))
 
             # Non-mangrove carbon pool ratio branch
             # Deadwood and litter carbon as fractions of AGC are from
@@ -179,7 +225,8 @@ def create_starting_C_densities(in_dict_uint8, in_dict_uint16, in_dict_int16,
             # Estimation of carbon stocks and change in carbon stocks in dead wood and litter in A/R CDM project activities version 03.0"
             # Tables on pages 18 (deadwood) and 19 (litter).
             # They depend on the climate domain, elevation, and precipitation.
-            elif agb_non_mang_cell > 0:  # Non-mangrove
+            # elif agb_non_mang_cell > 0:  # Non-mangrove
+            else:
 
                 # If no mapped R:S (=0), uses the global default value instead
                 if r_s_ratio == 0:
@@ -204,50 +251,87 @@ def create_starting_C_densities(in_dict_uint8, in_dict_uint16, in_dict_int16,
                     deadwood_c_ratio = cn.non_tropical_deadwood_c_ratio
                     litter_c_ratio = cn.non_tropical_litter_c_ratio
 
-            else:
-
-                # Ridiculous default BGC, deadwood C, and litter C ratios that will make it very clear if they are being used instead of
-                # something being assigned in the decision tree above
-                bgc_ratio = -5
-                deadwood_c_ratio = -10
-                litter_c_ratio = -20
-
             # Actually calculates BGC, deadwood C, and litter C using the ratios assigned in the above decision tree for raw outputs
             bgc_raw_out_cell = agc_raw_out_cell * bgc_ratio
             deadwood_c_raw_out_cell = agc_raw_out_cell * deadwood_c_ratio
             litter_c_raw_out_cell = agc_raw_out_cell * litter_c_ratio
 
 
-            ### Part 3: Calculation of carbon density outputs masked by veg height/land cover
+            ### Part 3: Calculation of carbon density outputs masked by veg height/land cover/TCL history/repeat loss
 
-            short_veg_LC, tall_veg_LC = nu.classify_veg_height(LC_composite_cell)
+            bare_ground_LC, short_veg_LC, tall_veg_LC = nu.classify_GLAD_composite(LC_composite_cell)
 
             # Carbon density for short vegetation (Mg C/ha) based on climate zone (IPCC default)
             # and adjusted for vegetation cover fraction
             short_veg_AGC_adj, short_veg_BGC_adj = nu.calc_short_veg_removals(climate_zone_cell, LC_composite_cell)
 
+
             # Assigns carbon densities based on vegetation height and composite landcover.
             # Tall vegetation and/or mangrove (i.e. mangrove pixels without tall vegetation keep all C pools)
             if (veg_height_cell >= cn.tree_threshold) or (mangrove_pixel == True):
-                agc_LC_masked_out_cell = agc_raw_out_cell
-                bgc_LC_masked_out_cell = bgc_raw_out_cell
-                deadwood_c_LC_masked_out_cell = deadwood_c_raw_out_cell
-                litter_c_LC_masked_out_cell = litter_c_raw_out_cell
+
+                # When tall veg pixels had TCL before model start, starting C densities are adjusted
+                if (TCL_cell > 0) and (TCL_cell < (cn.first_model_year_annual-2000)):
+                    years_of_regrowth = math.floor(((cn.first_model_year_annual-2000)-TCL_cell)/2)
+                    if mangrove_extent_cell:  # For mangroves
+                        agc_LC_masked_out_cell = years_of_regrowth * mangrove_AGC_RF
+                        r_s_ratio = mangrove_C_ratio_array[np.where(mangrove_C_ratio_array[:, 0] == continent_ecozone_cell)][0, 1]
+                        deadwood_c_ratio = mangrove_C_ratio_array[np.where(mangrove_C_ratio_array[:, 0] == continent_ecozone_cell)][0, 2]
+                        litter_c_ratio = mangrove_C_ratio_array[np.where(mangrove_C_ratio_array[:, 0] == continent_ecozone_cell)][0, 3]
+                        LC_masked_state = 1
+                    elif (oil_palm_2000_extent_cell > 0) or ((oil_palm_first_year_cell > 0) and (oil_palm_first_year_cell < (cn.first_model_year_annual-2000))):   # For oil palm
+                        agc_LC_masked_out_cell = years_of_regrowth * cn.oil_palm_agc_rf
+                        LC_masked_state = 2
+                    elif planted_forest_AGC_RF_cell > 0:   # For planted trees
+                        agc_LC_masked_out_cell = years_of_regrowth * planted_forest_AGC_RF_cell
+                        LC_masked_state = 3
+                    elif not tall_veg_LC:   # For trees in other land uses
+                        agc_LC_masked_out_cell = years_of_regrowth * cn.trees_outside_forests_agc_rf_max
+                        LC_masked_state = 4
+                    else:   # For everything else
+                        agc_LC_masked_out_cell = years_of_regrowth * natural_forest_growth_curve_pattern_cell
+                        LC_masked_state = 5
+
+                    bgc_LC_masked_out_cell = agc_LC_masked_out_cell * r_s_ratio
+                    deadwood_c_LC_masked_out_cell = agc_LC_masked_out_cell * deadwood_c_ratio
+                    litter_c_LC_masked_out_cell = agc_LC_masked_out_cell * litter_c_ratio
+
+                # When there is repeat loss during the model (2016 onwards), starting carbon densities are set to 0.
+                # Rationale is that this is shifting cultivation or some rapid cycle harvest area and
+                # whatever high ESA CCI starting value there is, is likely much too high.
+                elif loss_count_cell >= 2:
+                    agc_LC_masked_out_cell = 0
+                    bgc_LC_masked_out_cell = 0
+                    deadwood_c_LC_masked_out_cell = 0
+                    litter_c_LC_masked_out_cell = 0
+                    LC_masked_state = 6
+
+                # No TCL before 2015 or repeat loss during the model- uses raw tall veg carbon densities
+                else:
+                    agc_LC_masked_out_cell = agc_raw_out_cell
+                    bgc_LC_masked_out_cell = bgc_raw_out_cell
+                    deadwood_c_LC_masked_out_cell = deadwood_c_raw_out_cell
+                    litter_c_LC_masked_out_cell = litter_c_raw_out_cell
+                    LC_masked_state = 7
+
             elif short_veg_LC:  # Short vegetation
                 agc_LC_masked_out_cell = short_veg_AGC_adj
                 bgc_LC_masked_out_cell = short_veg_BGC_adj
                 deadwood_c_LC_masked_out_cell = 0
                 litter_c_LC_masked_out_cell = 0
+                LC_masked_state = 8
             elif LC_composite_cell == cn.cropland:  # Cropland
                 agc_LC_masked_out_cell = cn.cropland_agc_dens
                 bgc_LC_masked_out_cell = 0
                 deadwood_c_LC_masked_out_cell = 0
                 litter_c_LC_masked_out_cell = 0
+                LC_masked_state = 9
             else:  # Anything else
                 agc_LC_masked_out_cell = 0
                 bgc_LC_masked_out_cell = 0
                 deadwood_c_LC_masked_out_cell = 0
                 litter_c_LC_masked_out_cell = 0
+                LC_masked_state = 10
 
             # Assigns cell outputs to blocks
             agc_raw_out_block[row, col] = agc_raw_out_cell
@@ -264,6 +348,8 @@ def create_starting_C_densities(in_dict_uint8, in_dict_uint16, in_dict_int16,
             non_soil_c_LC_masked_out_block[row, col] = (agc_LC_masked_out_cell + bgc_LC_masked_out_cell +
                                                         deadwood_c_LC_masked_out_cell + litter_c_LC_masked_out_cell)
 
+            LC_masked_state_block[row, col] = LC_masked_state
+
     # Adds the output arrays to the dictionary with the appropriate data type
     # Outputs need .copy() so that previous intervals' arrays in dictionary aren't overwritten because arrays in dictionaries are mutable (courtesy of ChatGPT).
     out_dict_float32[f"{cn.agc_raw_dens_pattern}{cn.C_density_pixel_meaning}_{year}"] = agc_raw_out_block.copy()
@@ -278,14 +364,18 @@ def create_starting_C_densities(in_dict_uint8, in_dict_uint16, in_dict_int16,
     out_dict_float32[f"{cn.litter_c_LC_masked_dens_pattern}{cn.C_density_pixel_meaning}_{year}"] = litter_c_LC_masked_out_block.copy()
     out_dict_float32[f"{cn.non_soil_c_LC_masked_dens_pattern}{cn.C_density_pixel_meaning}_{year}"] = non_soil_c_LC_masked_out_block.copy()
 
-    # return output dictionary/ies
-    return out_dict_float32
+    out_dict_uint8[f"{cn.starting_C_pools_LC_masked_source_flag_pattern}_{year}"] = LC_masked_state_block.copy()
 
+    # print(out_dict_uint8)
+
+    # return output dictionary/ies
+    return out_dict_uint8, out_dict_float32
 
 
 # All steps for creating starting non-soil carbon pools in a chunk: download chunks, calculate carbon densities, upload to s3
 def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, download_dict_with_data_types, year,
-                                           is_final, no_upload, output_folders, stage):
+                                           is_large_run, no_upload, create_zarr,
+                                           output_folders, stage, model_type, mega_zarr_path=None, outputs_to_zarr=None):
 
     # Stores the min, mean, and max chunks for inputs and outputs for the chunk
     chunk_stats = []
@@ -296,7 +386,7 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
 
     chunk_start_time = time.time()
 
-    uu.rename_s3_task_file(stage, bounds, "preprocessing_", is_final, logger_worker)
+    uu.rename_s3_task_file(stage, bounds, "preprocessing_", is_large_run, logger_worker)
 
     bounds_str = uu.boundstr(bounds)  # String form of chunk bounds
     tile_id = uu.xy_to_tile_id(bounds[0], bounds[3])  # tile_id in YYN/S_XXXE/W
@@ -313,10 +403,10 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
     # Thus, this returns a complete set of inputs (missing chunks filled).
     # Note: If running in a local Dask cluster, prints to console may be duplicated. Doesn't happen with a Coiled cluster of the same size (1 worker).
     # Seems to be a problem with local Dask getting overwhelmed by so many futures being created and downloaded from s3.
-    futures = uu.prepare_to_download_chunk(bounds, updated_download_dict, chunk_length_pixels, is_final, logger_worker, False)
+    futures = uu.prepare_to_download_chunk(bounds, updated_download_dict, chunk_length_pixels, is_large_run, logger_worker, False)
     # print(futures)
 
-    lu.print_and_log(f"Waiting for requests for data in chunk {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger_worker)
+    lu.print_and_log(f"Waiting for requests for data in chunk {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
 
     # Dictionary that stores the dataset name (key) and downloaded data and download status (values)
     layers = {}
@@ -342,14 +432,13 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
     # Calculates stats for the input layers
     for key, array in layers.items():
         chunk_stats.append(uu.calculate_stats(array, key, bounds_str, tile_id, 'input_layer'))
-    # print(chunk_stats)
 
 
     ### Part 3: Creates a separate dictionary for each chunk datatype so that they can be passed to Numba as separate arguments.
     ### Numba functions can accept (and return) dictionaries of arrays as long as each dictionary only has arrays of one data type (e.g., uint8, float32).
     ### Note: need to add new code if inputs with other data types are added
 
-    lu.print_and_log(f"Creating typed dictionaries for chunk {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger_worker)
+    lu.print_and_log(f"Creating typed dictionaries for chunk {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
 
     # Creates the typed dictionaries for all input layers (including those that originally had no data)
     typed_dict_uint8, typed_dict_uint16, typed_dict_int16, typed_dict_int32, typed_dict_float32 = nu.create_typed_dicts(layers)
@@ -364,19 +453,19 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
     ### Part 4: Creates starting carbon pool densities
 
     lu.print_and_log(f"Creating starting C densities for {year} in {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker) # Prints during full runs
-    uu.rename_s3_task_file(stage, bounds, "calculating_", is_final, logger_worker)
+    uu.rename_s3_task_file(stage, bounds, "calculating_", is_large_run, logger_worker)
     numba_start = time.time()
 
     # Create AGC, BGC, deadwood C and litter C densities in selected starting year
-    out_dict_float32 = create_starting_C_densities(
+    out_dict_uint8, out_dict_float32 = create_starting_C_densities(
         typed_dict_uint8, typed_dict_uint16, typed_dict_int16, typed_dict_int32, typed_dict_float32,
         mangrove_C_ratio_array, year
     )
 
     numba_end = time.time()
     lu.print_and_log(f"Done calculating carbon densities in {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker)
-    lu.print_and_log(f"Memory usage after numba calculations completed for {bounds_str}: {process.memory_info().rss / 1024 ** 2:.2f} MB", is_final, logger_worker)
-    lu.print_and_log(f"Calculated carbon densities in {bounds_str} in {tile_id} in {round(numba_end-numba_start)} seconds: {uu.timestr()}", False, logger_worker)
+    lu.print_and_log(f"Memory usage after numba calculations completed for {bounds_str}: {process.memory_info().rss / 1024 ** 2:.2f} MB", is_large_run, logger_worker)
+    lu.print_and_log(f"Calculated carbon densities for {bounds_str} in {tile_id} in {round(numba_end-numba_start)} seconds: {uu.timestr()}", False, logger_worker)
 
 
     # Fresh non-Numba-constrained dictionary that stores all output numpy arrays of all datatypes.
@@ -386,7 +475,7 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
     out_dict_all_dtypes = {}
 
     # Transfers the dictionaries of numpy arrays for each data type to a new, Pythonic array
-    out_dicts = [out_dict_float32]
+    out_dicts = [out_dict_uint8, out_dict_float32]
 
     # Loop through each dictionary and update out_dict_all_dtypes
     for out_dict in out_dicts:
@@ -396,8 +485,16 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
         # Clear memory of unneeded arrays
         del out_dict
 
+    # print("out_dict:", out_dicts)
 
-    ### Part 5: Calculates per ha min, per ha mean, per ha max, and per pixel sum for each output chunk.
+
+    ### Part 5: Writes outputs to pre-existing global mega-zarr (only if activated)
+
+    zu.populate_zarr(bounds, bounds_str, create_zarr, [1], is_large_run, logger_worker, mega_zarr_path,
+                  out_dict_all_dtypes, outputs_to_zarr, stage, tile_id)
+
+
+    ### Part 6: Calculates per ha min, per ha mean, per ha max, and per pixel sum for each output chunk.
     ### Useful for QC-- to see if there are any egregiously incorrect or unexpected values.
     ### Also useful for a quick sum of outputs without doing zonal stats
 
@@ -410,7 +507,7 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
     pixel_area_uri = f"{cn.pixel_area_dir}{cn.pixel_area_pattern}_{tile_id}.tif"
 
     # Gets numpy arrays of the model output being analyzed and the area (m^2) per pixel
-    pixel_area_chunk = uu.get_tile_dataset_rio(pixel_area_uri, bounds, chunk_length_pixels, 'Float32')
+    pixel_area_chunk = uu.get_tile_dataset_rio(pixel_area_uri, bounds, chunk_length_pixels,logger_worker, 'Float32')
     pixel_area_chunk = pixel_area_chunk[0]  # Converts downloaded tuple (array, status) to just the array
 
     # Calculates stats for the output layers from create_starting_C_densities as a dictionary with chunk attributes
@@ -420,22 +517,25 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
         output_per_pixel = array_per_ha * pixel_area_chunk * cn.m2_to_ha
 
         chunk_stats.append(uu.calculate_stats(array_per_ha, key, bounds_str, tile_id, 'output_layer', output_per_pixel))
+    # print(chunk_stats)
 
 
-    ### Part 6: Saves numpy arrays as rasters and uploads to s3
+    ### Part 7: Saves numpy arrays as rasters and uploads to s3
 
-    uu.rename_s3_task_file(stage, bounds, "uploading_", is_final, logger_worker)
+    uu.rename_s3_task_file(stage, bounds, "uploading_", is_large_run, logger_worker)
 
     # Only saves arrays to geotifs and uploads them to s3 if enabled
     if not no_upload:
 
         out_no_data_val = 0  # NoData value for output raster (optional)
+        upload_start_time = time.time()
 
         # Adds metadata used for uploading outputs to s3 to the dictionary
         for key, value in out_dict_all_dtypes.items():
 
             data_type = value.dtype.name
             # print("key:", key)
+            # print("output_folders:", output_folders)
 
             # Retrieves the file name pattern and date(s) covered for the output file for use in s3 folder construction
             out_pattern, year_range = uu.strip_and_extract_years(key)
@@ -458,40 +558,47 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
 
         # Converts output numpy arrays to local rasters and puts them in a list of files to upload in parallel
         upload_tasks = uu.save_and_upload_small_raster_set(bounds, chunk_length_pixels, tile_id, bounds_str,
-                                                           out_dict_all_dtypes, is_final, logger_worker, out_no_data_val)
+                                                           out_dict_all_dtypes, is_large_run, logger_worker, out_no_data_val)
 
         # Only prints if not a final run
-        lu.print_and_log(f"Upload tasks created for {bounds_str} in {tile_id}. Uploading now: {uu.timestr()}", is_final, logger_worker)
+        lu.print_and_log(f"Upload tasks created for {bounds_str} in {tile_id}. Uploading now: {uu.timestr()}", is_large_run, logger_worker)
 
         # Executes uploads in parallel
         with ThreadPoolExecutor(max_workers=5) as executor:
             executor.map(lambda args: uu.upload_raster_to_s3(*args), upload_tasks)
 
         # Only prints if not a final run
-        lu.print_and_log(f"Uploads completed for {bounds_str} in {tile_id}: {uu.timestr()}", is_final, logger_worker)
+        upload_end_time = time.time()
+        lu.print_and_log(f"Uploads completed for {bounds_str} in {tile_id} {round(upload_end_time - upload_start_time)} seconds: {uu.timestr()}", False, logger_worker)
 
     # Clears memory of unneeded arrays
     del out_dict_all_dtypes
 
     chunk_end_time = time.time()
-    lu.print_and_log(f"{bounds_str} took {round(chunk_end_time - chunk_start_time)} seconds: {uu.timestr()}", False, logger_worker)
+    lu.print_and_log(f"Total chunk processing for {bounds_str} in {round(chunk_end_time - chunk_start_time)} seconds: {uu.timestr()}", False, logger_worker)
 
     return_message = f"Success creating initial carbon pools for {bounds_str}: {uu.timestr()}"
 
     # Removes task tracking file from S3 once task is successful
-    uu.delete_s3_task_file(stage, bounds, is_final, logger_worker)
+    uu.delete_s3_task_file(stage, bounds, is_large_run, logger_worker)
+
+    # To track peak memory usage
+    # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6949a74e-1388-832d-8f8e-5e9bf084ecb8
+    peak_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    peak_gb = peak_kb / 1024 ** 2
+    lu.print_and_log(f"Peak memory for {bounds_str} in {tile_id}: {peak_gb:.2f} GB", False, logger_worker)
 
     return return_message, chunk_stats  # Return both the success message and the statistics
 
 
-def main(cluster_name, year, run_local=False, no_stats=False, no_log=False, no_upload= False,
-         chunk_shapefile_uri=False, bounding_box=None, chunk_size=None, first_chunks=None, log_note=None):
+def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log=False, no_upload= False, create_zarr=False,
+         chunk_shapefile_uri=False, bounding_box=None, chunk_size=None, first_chunks=None,
+         model_path_description=None, log_note=None):
 
     ### Step 1: Preparation
 
     # Model stage being run
     stage = f'starting_carbon_pools_{year}_1x1_deg'
-    model_type = 'standard'
 
     # Determines if argument for year is valid
     if year in [2000, 2015]:
@@ -508,12 +615,22 @@ def main(cluster_name, year, run_local=False, no_stats=False, no_log=False, no_u
         chunk_shapefile_uri = cn.fishnet_1x1deg_uri
 
     # Creates the log for the main function and populates it with basic run information
-    main_logger, main_log_local_path = lu.populate_main_log_header(client, cluster, log_note, run_local, model_type, stage)
+    main_logger, main_log_local_path, n_workers = lu.populate_main_log_header(client, cluster, log_note, run_local, model_type, stage)
+
+    if year == 2000:
+        run_date = cn.carbon_2000_creation_date
+    elif year == 2015:
+        run_date = cn.carbon_2015_creation_date
+    else:
+        print("Year selection not valid")
+        sys.exit()
 
     # Starting time for stage
     start_time = uu.timestr()
     main_logger.info(f"Stage {stage} started at: {start_time}")
     main_logger.info(f"Year for carbon pools: {year}")
+    main_logger.info(f"Model path descriptor: {model_path_description}")
+    main_logger.info(f"ESA CCI AGB version: {cn.esa_AGB_v}")
 
     # Returns a dataframe of chunk_id and ISO for the GADM4.1 1x1 deg fishnet.
     # chunk_ids for making chunk list if shapefile is supplied in command line.
@@ -526,11 +643,16 @@ def main(cluster_name, year, run_local=False, no_stats=False, no_log=False, no_u
     main_logger.info(f"Chunks to process: {len(chunk_list)}")
 
     # Determines if the output file names for final versions of outputs should be used
-    is_final = False
-    # is_final = True  # For simulating a large run
+    # is_large_run = False
+    is_large_run = True  # For simulating a large run
     if len(chunk_list) > 20:
-        is_final = True
+        is_large_run = True
         main_logger.info("Running as final model.")
+
+    # Whenever the run is large-scale (final), force zarr creation
+    if is_large_run:
+        create_zarr = True
+    main_logger.info(f"Create and populate global mega-zarr: {create_zarr}")
 
     # This is just a placeholder tile_id that is used to obtain the datatype of each tile set.
     # It is overwritten when chunks are assigned and analyzed.
@@ -554,25 +676,40 @@ def main(cluster_name, year, run_local=False, no_stats=False, no_log=False, no_u
         download_dict[cn.agb_2000_pattern] = f"{cn.agb_2000_dir}{sample_tile_id}_{cn.agb_2000_pattern}.tif"
         download_dict[cn.mangrove_agb_2000_pattern] = f"{cn.mangrove_agb_2000_dir}{sample_tile_id}_{cn.mangrove_agb_2000_pattern}.tif"
         download_dict[cn.land_cover_pattern] = f"{cn.land_cover_5_year_path}2000/{sample_tile_id}.tif"
-        download_dict[cn.vegetation_height_pattern] = f"{cn.vegetation_height_5_year_path}2000/{sample_tile_id}_{cn.vegetation_height_5_year_pattern}_2000.tif"
+        download_dict[f"{cn.vegetation_height_pattern}_start_year"] = f"{cn.vegetation_height_5_year_path}2000/{sample_tile_id}_{cn.vegetation_height_5_year_pattern}_2000.tif"
         download_dict[cn.mangrove_extent_processed_pattern] = f"{cn.mangrove_extent_processed_dir}1996/{sample_tile_id}__{cn.mangrove_extent_processed_pattern}_1996.tif"
 
         output_dir_list = [cn.agc_2000_raw_dir, cn.bgc_2000_raw_dir, cn.deadwood_c_2000_raw_dir, cn.litter_c_2000_raw_dir, cn.non_soil_c_2000_raw_dir,
                            cn.agc_2000_LC_masked_dir, cn.bgc_2000_LC_masked_dir, cn.deadwood_c_2000_LC_masked_dir, cn.litter_c_2000_LC_masked_dir, cn.non_soil_c_2000_LC_masked_dir]
 
-    elif year == 2015:   # No mangrove-specific AGB for 2015
+    elif year == 2015:   # No mangrove-specific AGB for 2015-- uses ESA CCI everywhere
         download_dict[cn.agb_2015_pattern] = f"{cn.agb_2015_dir_processed}{sample_tile_id}_{cn.agb_2015_pattern}.tif"
         download_dict[cn.land_cover_pattern] = f"{cn.land_cover_annual_path}2015/{sample_tile_id}.tif"
-        download_dict[cn.vegetation_height_pattern] = f"{cn.vegetation_height_annual_path}2015/{sample_tile_id}.tif"
+        download_dict[f"{cn.vegetation_height_pattern}_start_year"] = f"{cn.vegetation_height_annual_path}2015/{sample_tile_id}.tif"
         download_dict[cn.mangrove_extent_processed_pattern] = f"{cn.mangrove_extent_processed_dir}2015/{sample_tile_id}__{cn.mangrove_extent_processed_pattern}_2015.tif"
 
+        # These inputs are exclusively used to adjust C pools in 2015 for TCL that occurred 2001-2014.
+        # NOTE: Uses just the 0-5 year Robinson regrowth rate, regardless of how many years of regrowth there are. This just keeps things simpler than using the different age rates.
+        download_dict[cn.TCL_pattern] = f"{cn.TCL_dir}{cn.TCL_pattern}_{sample_tile_id}.tif"
+        download_dict[cn.planted_forest_AGC_removal_factor_pattern] = f"{cn.planted_forest_AGC_removal_factor_dir}{sample_tile_id}_{cn.planted_forest_AGC_removal_factor_pattern}.tif"
+        download_dict[cn.oil_palm_2000_extent_pattern] = f"{cn.oil_palm_2000_extent_dir}{sample_tile_id}_{cn.oil_palm_2000_extent_pattern}.tif"
+        download_dict[cn.oil_palm_first_year_pattern] = f"{cn.oil_palm_first_year_dir}{cn.oil_palm_first_year_pattern}_{sample_tile_id}.tif"   # Pattern is before tile_id for this input
+        download_dict[f"{cn.natural_forest_growth_curve_pattern}"] = \
+            f"{cn.natural_forest_growth_curve_dir}rate_0_5/{sample_tile_id}_{cn.natural_forest_growth_curve_pattern}__0_5_years__nibble_{cn.secondary_forest_curve_run_date}.tif"
+
+        # Land cover and vegetation height rasters (annual intervals)
+        for LC_year in range(cn.first_model_year_annual, cn.last_model_year_annual + 1):
+            download_dict[f"{cn.vegetation_height_pattern}_{LC_year}"] = f"{cn.vegetation_height_annual_path}{LC_year}/{sample_tile_id}.tif"
+
         output_dir_list = [cn.agc_2015_raw_dir, cn.bgc_2015_raw_dir, cn.deadwood_c_2015_raw_dir, cn.litter_c_2015_raw_dir, cn.non_soil_c_2015_raw_dir,
-                           cn.agc_2015_LC_masked_dir, cn.bgc_2015_LC_masked_dir, cn.deadwood_c_2015_LC_masked_dir, cn.litter_c_2015_LC_masked_dir, cn.non_soil_c_2015_LC_masked_dir]
+                           cn.agc_2015_LC_masked_dir, cn.bgc_2015_LC_masked_dir, cn.deadwood_c_2015_LC_masked_dir, cn.litter_c_2015_LC_masked_dir, cn.non_soil_c_2015_LC_masked_dir,
+                           cn.starting_C_pools_LC_masked_state_dir]
 
     else:
         print(f"Year input {year} not valid. Terminating.")
         sys.exit()
     # print(download_dict)
+
 
     # Creates list of output directories specific to the run
     output_dir_list = [path.replace("CHUNK_SIZE", str(chunk_size_pixels)) for path in output_dir_list]
@@ -595,43 +732,170 @@ def main(cluster_name, year, run_local=False, no_stats=False, no_log=False, no_u
 
     # Creates numpy array of ratios of BGC, deadwood C, and litter C relative to AGC. Relevant columns must be specified.
     mangrove_C_ratio_array = uu.convert_lookup_table_to_array(cn.RF_C_ratio_spreadsheet_full_path, cn.mangrove_rate_ratio_tab,
-                                                              ['gainEcoCon', 'BGC_AGC', 'deadwood_AGC', 'litter_AGC'])
+                                                              ['gainEcoCon', 'AGB_gain_tons_ha_yr',
+                                                               'BGC_AGC', 'deadwood_AGC', 'litter_AGC'])
 
     # Makes a txt for each task in the list. These are deleted as tasks are completed.
     main_logger.info("Creating task txts in s3...")
     uu.create_s3_task_files(stage, chunk_list)
 
 
-    ### Step 2: Create 1x1 degree outputs
+    ### Step 2: Create empty (metadata-only), global mega-zarr in s3.
+    ### Zarr approach from https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/68f984c6-9aa0-8327-a910-5ad9a8d170fc
+
+    # These variables are added to the mega-zarr
+    outputs_to_zarr = [cn.agc_raw_dens_pattern, cn.bgc_raw_dens_pattern,
+                       cn.deadwood_c_raw_dens_pattern, cn.litter_c_raw_dens_pattern, cn.non_soil_c_raw_dens_pattern,
+                       cn.agc_LC_masked_dens_pattern, cn.bgc_LC_masked_dens_pattern,
+                       cn.deadwood_c_LC_masked_dens_pattern, cn.litter_c_LC_masked_dens_pattern,
+                       cn.non_soil_c_LC_masked_dens_pattern, cn.starting_C_pools_LC_masked_source_flag_pattern]
+    # Adds units and year to zarr variable names
+    outputs_to_zarr_with_unit_year = [pattern.replace("MgC", f"MgC{cn.C_density_pixel_meaning}") for pattern in outputs_to_zarr]
+    outputs_to_zarr_with_unit_year = [pattern + f"_{year}" for pattern in outputs_to_zarr_with_unit_year]
+
+    # Only creates the global mega-zarr if needed (large runs or otherwise specified)
+    if create_zarr:
+
+        # Creates s3 paths for the raw mega-zarr
+        mega_zarr_path = zu.create_zarr_path(cn.starting_C_densities_2015_path_mega_zarr, chunk_size_pixels, str(year),
+                                             model_type, cn.veg_model_version_underscore, model_path_description,
+                                             run_date, main_logger)
+
+        # Creates the global mega-zarr with metadata only
+        zu.initialize_global_zarr(mega_zarr_path, outputs_to_zarr_with_unit_year, 1,
+                                  (1, chunk_size_pixels, chunk_size_pixels), main_logger)
+
+        # Checks the zarr coordinates and extent
+        fs = fsspec.filesystem("s3", anon=False)
+        mapper = fs.get_mapper(mega_zarr_path)
+        ds = xr.open_zarr(mapper, consolidated=False)
+        main_logger.info(f"mega-zarr coords: {ds.coords}")
+        main_logger.info(f"y range: {ds.y.values.min()}, {ds.y.values.max()}")
+        main_logger.info(f"x range: {ds.x.values.min()}, {ds.x.values.max()}")
+        main_logger.info(f"mega-zarr chunk size (years, y, x): {ds.chunksizes}")
+
+    else:
+        mega_zarr_path = None
+        outputs_to_zarr_with_unit_year = False
+
+
+    ### Step 3: Create 1x1 degree outputs
 
     # Creates list of tasks to run (1 task = 1 chunk)
     main_logger.info(f"Creating tasks and starting processing: {uu.timestr()}")
     main_logger.info("Workers' logs to be appended after main function log"+ "\n")
 
-    C_pool_1x1_deg_delayed_results = [dask.delayed(create_and_upload_starting_C_densities)
+    delayed_results_1x1deg = [dask.delayed(create_and_upload_starting_C_densities)
                        (chunk, mangrove_C_ratio_array, download_dict_with_data_types, year,
-                        is_final, no_upload, output_dir_list, stage)
+                        is_large_run, no_upload, create_zarr, output_dir_list, stage,
+                        model_type, mega_zarr_path, outputs_to_zarr_with_unit_year)
                        for chunk in chunk_list]
 
     # Runs analysis and gathers results
-    C_pool_1x1_deg_results = dask.compute(*C_pool_1x1_deg_delayed_results)
+    results_1x1deg = dask.compute(*delayed_results_1x1deg)
 
-    success_count_1x1, all_1x1_stats = uu.count_successful_chunks(chunk_list, is_final, main_logger, C_pool_1x1_deg_results)
-
-    # Iterates through output folders and counts the number of output rasters (only if uploads enabled)
-    if not no_upload:
-        for output_folder in output_dir_list:
-            geotiff_files, file_count = uu.list_raster_full_paths_in_s3_folder_and_count(output_folder)
-            main_logger.info(f"Output rasters in {output_folder}: {file_count}")
-            # print(geotiff_files)
+    success_count, all_stats = uu.count_successful_chunks(chunk_list, is_large_run, main_logger, results_1x1deg)
 
     uu.stage_duration(start_time, uu.timestr(), stage, main_logger)
 
 
-    ### Step 3: Chunk stats for 1x1 degree outputs, aggregates logs
+    ### Step 4: Consolidate chunk stats and export
 
-    # Resizes cluster down to 1 worker for chunk stats and log aggregation since that only needs a minimal remainder of the
-    # cluster, not all the workers.
+    if not no_stats:
+        model_chunk_stats_path = uu.compile_1x1_chunk_stats(all_stats, chunk_shapefile_uri, stage, no_upload, main_logger)
+        uu.stage_duration(start_time, uu.timestr(), f"{stage} with chunk stats", main_logger)
+
+
+
+    # ### Step 5: Compare model output chunk stats to zarr chunk stats for each variable (only if chunk stats and zarr created)
+    # ### 2016-02-10: This may work now, based on changes I made for starting_composite_primary_forest. Need to test again.
+    # ### OLD NOTE: Not running zarr chunk stats comparison. I was having trouble getting it to work because of problems with
+    # ### variable names and years, and I don't think it's worth fiddling with more.
+    # ### Leaving the code in here just in case I do want to revisit it, but for now I'm not worried about zarr population.
+    #
+    # # Prepares chunk stats spreadsheet: min, mean, max, and sum for all input and output chunks,
+    # # and min and max values across all chunks for all inputs and outputs
+    # # only if not suppressed by the --no_stats flag and at least one chunk was successful (wasn't skipped).
+    # if (not no_stats) and create_zarr:
+    #
+    #     main_logger.info(f"Starting zarr chunk stats comparison: {uu.timestr()}")
+    #
+    #     # Text added to output chunk stats table name(s) (Excel or Parquet)
+    #     comparison_insert = "_original_zarr_comparison"
+    #
+    #     # The name of the chunk stats table from the model
+    #     model_chunk_stats_table_name = os.path.basename(model_chunk_stats_path)
+    #     # print(model_chunk_stats_table_name)
+    #
+    #     tables_to_compare_dict, zarr_comparison_stats_name, zarr_comparison_stats_path = zu.get_table_names_for_zarr_stats_comparison(
+    #         comparison_insert, main_logger, model_chunk_stats_path)
+    #
+    #     # List of dataframes with original and zarr chunk stats and their difference for each dataset-year combination
+    #     all_merged_tables = []
+    #
+    #     # Number of chunks with differences between original and zarr exceeding tolerance
+    #     chunks_count_exceeding_total = 0
+    #
+    #     # Number of chunks that have model chunk stats but not corresponding zarr chunk stats
+    #     chunks_without_zarr_stats_total = 0
+    #
+    #     # Iterates through select variables/datasets for chunk stats comparison. Can modify as needed.
+    #     for var_name_with_pattern_year, var_name in zip(outputs_to_zarr_with_unit_year, outputs_to_zarr):
+    #
+    #         main_logger.info(f"Starting {var_name_with_pattern_year}: {uu.timestr()}")
+    #         var_start_time = time.time()
+    #
+    #         # Runs chunk stats for a dataset (all years) in the zarr in parallel
+    #         chunk_stats_variable_year_zarr = zu.run_parallel_stats(
+    #             client=client,
+    #             chunk_list=chunk_list,
+    #             var=var_name_with_pattern_year,
+    #             zarr_path=mega_zarr_path,
+    #             interval_end_years=[year]
+    #         )
+    #         print("chunk_stats_variable_year_zarr:", chunk_stats_variable_year_zarr)
+    #
+    #         # After all zarr chunk stats is done for the dataset-year combination,
+    #         # the chunk stats from the zarr are compared to the chunk stats from the model.
+    #         # This is done with Pandas dataframes and is not parallelized because it's just table manipulation
+    #         # for each dataset-year combination.
+    #         # The model output vs. zarr comparison is done after each dataset-year combination
+    #         # to get more real-time feedback on how the datasets compare (rather than waiting until after
+    #         # all zarr chunk stats have been calculated to do the metric comparisons).
+    #         chunks_count_exceeding, chunks_without_zarr_stats = zu.compare_dataset_year_chunk_stats(all_merged_tables,
+    #                                                                                 chunk_stats_variable_year_zarr,
+    #                                                                                 main_logger,
+    #                                                                                 tables_to_compare_dict,
+    #                                                                                 var_name,
+    #                                                                                 zarr_comparison_stats_path)
+    #
+    #         # Total number of chunks that have differences in metrics between the model and zarr
+    #         # that exceed the tolerance
+    #         chunks_count_exceeding_total += chunks_count_exceeding
+    #         chunks_without_zarr_stats_total += chunks_without_zarr_stats
+    #
+    #         var_end_time = time.time()
+    #         main_logger.info(f"  Processed {var_name_with_pattern_year} in {round(var_end_time - var_start_time)} seconds: {uu.timestr()}")
+    #
+    #     # Counts up chunks that had differences exceeding the tolerance and uploads chunk stats comparisons.
+    #     zu.upload_zarr_chunk_stat_comparisons(chunks_count_exceeding_total, chunks_without_zarr_stats_total,
+    #                                           main_logger, model_chunk_stats_table_name,
+    #                                           stage, start_time, zarr_comparison_stats_name, zarr_comparison_stats_path)
+
+
+    ### Step 6: Gather worker logs
+
+    # Collects worker logs before moving to processing that doesn't need the cluster
+    if not run_local:
+
+        # Creates combined log from all workers if not deactivated
+        worker_log_local_path = lu.compile_worker_logs(no_log, cluster, stage, start_time, main_logger)
+        uu.stage_duration(start_time, uu.timestr(), f"{stage} with worker log compilation", main_logger)
+
+
+    ### Step 7: Resize cluster down to 1 worker for remaining steps since they only need a minimal remainder of the
+    ### cluster, not all the workers.
+
     if not run_local:
         workers = client.scheduler_info()["workers"]
         n_workers = len(workers)
@@ -642,23 +906,25 @@ def main(cluster_name, year, run_local=False, no_stats=False, no_log=False, no_u
 
             resize_cluster.resize_coiled_cluster(cluster_name, 1)
 
-    # Prepares 1x1 deg chunk stats spreadsheet: min, mean, max, and sum for all input and output chunks,
-    # and min and max values across all chunks for all inputs and outputs
-    # only if not suppressed by the --no_stats flag and at least one chunk was successfully (wasn't skipped).
-    if (not no_stats) and (success_count_1x1 > 0):
-        chunk_stats_path = uu.compile_1x1_chunk_stats(all_1x1_stats, chunk_shapefile_uri, stage, no_upload, main_logger)
 
-    uu.stage_duration(start_time, uu.timestr(), f"{stage} with tile stats", main_logger)
+    ### Step 8: Count output geotifs in s3
 
-    # Sets it so that no worker logs are created if doing a local run
+    # Iterates through output folders and counts the number of output rasters (only if uploads enabled)
+    if not no_upload and is_large_run:
+        for output_folder in output_dir_list:
+            geotiff_files, file_count = uu.list_raster_full_paths_in_s3_folder_and_count(output_folder)
+            main_logger.info(f"Output rasters in {output_folder}: {file_count}")
+            # print(geotiff_files)
+
+    uu.stage_duration(start_time, uu.timestr(), f"{stage} with output counts", main_logger)
+
+
+    ### Step 9: Merge compiled worker log and main log
     if not run_local:
-
-        # Creates combined log from all workers if not deactivated
-        worker_log_local_path = lu.compile_worker_logs(no_log, cluster, stage, start_time, main_logger)
-        uu.stage_duration(start_time, uu.timestr(), f"{stage} with tile stats, and worker log compilation", main_logger)
 
         # Adds the workers' logs to the main log and uploads to s3
         lu.merge_main_and_worker_upload_logs(no_log, main_log_local_path, worker_log_local_path, stage)
+
 
     # Closes the Dask client if not running locally
     if not run_local:
@@ -673,12 +939,15 @@ if __name__ == "__main__":
     parser.add_argument('-cshp', '--chunk_shapefile_uri', help='s3 location for shapefile of 1x1 deg chunk footprints')
     parser.add_argument('-f', '--first_chunks', type=int, help='Number of chunks to process from shapefile')
     parser.add_argument('--year', type=int, required=True, help='Year for carbon pools: must be 2000 or 2015')
+    parser.add_argument('-mt', '--model_type', default='standard', help='Type of model run (e.g., standard). Not currently using.')
+    parser.add_argument('-mpd', '--model_path_description', help='Description of model run (e.g., global, test, X_area). Not currently using.')
     parser.add_argument('-ln', '--log_note', help='Note to include in the log.')
 
     parser.add_argument('--run_local', action='store_true', help='Run locally without Dask/Coiled')
     parser.add_argument('--no_stats', action='store_true', help='Do not create the chunk stats spreadsheet')
     parser.add_argument('--no_log', action='store_true', help='Do not create the combined log')
     parser.add_argument('--no_upload', action='store_true', help='Do not save and upload outputs to s3')
+    parser.add_argument('--create_zarr', action='store_true', help='Create and populate global mega-zarr with model outputs')
 
     args = parser.parse_args()
 
@@ -688,14 +957,17 @@ if __name__ == "__main__":
     chunk_shapefile_uri = args.chunk_shapefile_uri
     first_chunks = args.first_chunks
     year = args.year
+    model_type = args.model_type
+    model_path_description = args.model_path_description
     log_note = args.log_note
 
     run_local = args.run_local
     no_stats = args.no_stats
     no_log = args.no_log
     no_upload = args.no_upload
+    create_zarr = args.create_zarr
 
-    main(cluster_name, year, run_local, no_stats, no_log, no_upload, chunk_shapefile_uri,
+    main(cluster_name, year, model_type, run_local, no_stats, no_log, no_upload, create_zarr, chunk_shapefile_uri,
          bounding_box=bounding_box, chunk_size=chunk_size,
-         first_chunks=first_chunks, log_note=log_note)
+         first_chunks=first_chunks,  model_path_description=model_path_description, log_note=log_note)
 
