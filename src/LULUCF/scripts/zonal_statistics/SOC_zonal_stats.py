@@ -46,6 +46,7 @@ python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stat
 -mcstn KEEP_definitive_runs/SOC_density/v1_0_1__2000_2022_revised_org_soil__20260526/soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__KEEP.xlsx
 
 #TODO Add permafrost as contextual layer
+#TODO Add GLAD land cover category in 2015 as contextual layer
 """
 
 import argparse

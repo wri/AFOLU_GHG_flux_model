@@ -19,19 +19,19 @@ Thus, when consecutive densities are the same, net, loss, and gain will all have
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Local test:
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.1_SOC_stock_and_stock_change -bb 110 -1 111 0 -cs 1 -mt standard -mpd test_box
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.1_SOC_stock_and_stock_change__annual_data -bb 110 -1 111 0 -cs 1 -mt standard -mpd test_box
 
 Coiled small test (1x1 deg):
 python -m src.utilities.create_cluster -n 1 -t 1 -m 8 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.1_SOC_stock_and_stock_change -cn mineral_soil -bb 110 -1 111 0 -cs 1 -mt standard -mpd test_box --create_zarr
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.1_SOC_stock_and_stock_change__annual_data -cn mineral_soil -bb 110 -1 111 0 -cs 1 -mt standard -mpd test_box --create_zarr
 
 Coiled large shapefile test:
 python -m src.utilities.create_cluster -n 100 -t 1 -m 8 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.1_SOC_stock_and_stock_change -cn mineral_soil -mt standard -mpd 1884_features-cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp -ln "SOC timeseries for 1884-feature shapefile."
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.1_SOC_stock_and_stock_change__annual_data -cn mineral_soil -mt standard -mpd 1884_features-cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp -ln "SOC timeseries for 1884-feature shapefile."
 
 Full run:
 python -m src.utilities.create_cluster -n 200 -t 1 -m 8 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.1_SOC_stock_and_stock_change -cn mineral_soil -mt standard -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive SOC timeseries creation for 2000-2022."
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.1_SOC_stock_and_stock_change__annual_data -cn mineral_soil -mt standard -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive SOC timeseries creation for 2000-2022."
 
 Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/6877a34b-02cc-800a-88cc-a123cdc9ed1b
 """
@@ -82,7 +82,18 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
     chunk_length_pixels = uu.calc_chunk_length_pixels(bounds)  # Chunk length in pixels (as opposed to decimal degrees)
 
     # Download dictionary is the SOC global COGs
-    download_dict = cn.SOC_COGS
+    # download_dict = cn.SOC_COGS
+    download_dict = {
+        "2015": ["https://s3.opengeohub.org/global-soil/global_soil_props_v20250204_mosaics/oc_iso.10694.1995.mg.cm3_m_30m_b0cm..30cm_20140101_20151231_g_epsg.4326_v20250204.tif"],
+        "2016": ["https://s3.opengeohub.org/global-soil/global_soil_props_v20250204_mosaics/oc_iso.10694.1995.mg.cm3_m_30m_b0cm..30cm_20150101_20161231_g_epsg.4326_v20250204.tif"],
+        "2017": ["https://s3.opengeohub.org/global-soil/global_soil_props_v20250204_mosaics/oc_iso.10694.1995.mg.cm3_m_30m_b0cm..30cm_20160101_20171231_g_epsg.4326_v20250204.tif"],
+        "2018": ["https://s3.opengeohub.org/global-soil/global_soil_props_v20250204_mosaics/oc_iso.10694.1995.mg.cm3_m_30m_b0cm..30cm_20170101_20181231_g_epsg.4326_v20250204.tif"],
+        "2019": ["https://s3.opengeohub.org/global-soil/global_soil_props_v20250204_mosaics/oc_iso.10694.1995.mg.cm3_m_30m_b0cm..30cm_20180101_20191231_g_epsg.4326_v20250204.tif"],
+        "2020": ["https://s3.opengeohub.org/global-soil/global_soil_props_v20250204_mosaics/oc_iso.10694.1995.mg.cm3_m_30m_b0cm..30cm_20190101_20201231_g_epsg.4326_v20250204.tif"],
+        "2021": ["https://s3.opengeohub.org/global-soil/global_soil_props_v20250204_mosaics/oc_iso.10694.1995.mg.cm3_m_30m_b0cm..30cm_20200101_20211231_g_epsg.4326_v20250204.tif"],
+        "2022": ["https://s3.opengeohub.org/global-soil/global_soil_props_v20250204_mosaics/oc_iso.10694.1995.mg.cm3_m_30m_b0cm..30cm_20210101_20221231_g_epsg.4326_v20250204.tif"]
+
+    }
 
     # Converts the raw COG's kg C/m^3 (top 30 cm) that is rescaled by 10 -> Mg C/ha without the rescaling.
     # OGH rescaled the global COGs by 10 to make them ints instead of floats to save storage.
@@ -175,16 +186,12 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
     # Computes and save deltas. Iterates through both full extent and mineral soil extent
     # print(year_ranges)
     lu.print_and_log(f"Calculating consecutive SOC changes for {bounds_str}: {uu.timestr()}", False, logger_worker)
-    for i, start_year in enumerate(cn.SOC_density_intervals[:-1]):  # Stops iterating at year before last because year_diff is based on the next year
-        end_year = cn.SOC_density_intervals[i+1]
+    for i, start_year in enumerate(cn.SOC_density_intervals_annual[:-1]):  # Stops iterating at year before last because year_diff is based on the next year
+        end_year = cn.SOC_density_intervals_annual[i+1]
         year_diff = end_year-start_year
         # print(f"start_year: {start_year}; end_year: {end_year}; year_diff: {year_diff}")
 
-        # Final interval is 3.5 years (2015-2020 vs. 2020-2022, midpoints are 2017.5 and 2021, difference is 3.5)
-        if end_year == cn.SOC_density_intervals[-1]:
-            year_diff = 3.5
-
-        lu.print_and_log(f"Calculating SOC change for {end_year} to {start_year} using {year_diff} for {bounds_str}: {uu.timestr()}", is_large_run, logger_worker)
+        lu.print_and_log(f"Calculating SOC change for {end_year} to {start_year} for {bounds_str}: {uu.timestr()}", is_large_run, logger_worker)
 
         # Multiplies difference by -1 to make net loss positive and net gain negative (as for vegetation)
         # Interval arrays must be unsigned so difference can be negative
@@ -240,7 +247,7 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
     out_dict_combined = out_dict_full_extent_ordered | out_dict_min_soil_extent_ordered
     # print(out_dict_combined)
 
-    zu.populate_zarr(bounds, bounds_str, create_zarr, cn.SOC_density_intervals, is_large_run, logger_worker, mega_zarr_path,
+    zu.populate_zarr(bounds, bounds_str, create_zarr, cn.SOC_density_intervals_annual, is_large_run, logger_worker, mega_zarr_path,
                   out_dict_combined, outputs_to_zarr, stage, tile_id)
 
 
@@ -459,13 +466,13 @@ def main(cluster_name, model_type,
     # Replaces the placeholder intervals with the actual intervals
     for output_dir in outputs_dir_list:
         if "density" in output_dir:
-            for SOC_density_interval in cn.SOC_density_intervals:
+            for SOC_density_interval in cn.SOC_density_intervals_annual:
                 output_dir_interval = output_dir.replace("START_END", str(SOC_density_interval))
                 output_dir_interval = output_dir_interval.replace("PER_HA_OR_PIXEL", cn.C_density_pixel_meaning)
                 outputs_by_interval_dir_list = outputs_by_interval_dir_list + [output_dir_interval]
 
         if ("net" in output_dir) or ("loss" in output_dir) or ("gain" in output_dir):
-            for SOC_change_interval in cn.SOC_change_intervals:
+            for SOC_change_interval in cn.SOC_change_intervals_annual:
                 output_dir_interval = output_dir.replace("START_END", str(SOC_change_interval))
                 output_dir_interval = output_dir_interval.replace("PER_HA_OR_PIXEL", cn.flux_density_pixel_meaning)
                 outputs_by_interval_dir_list = outputs_by_interval_dir_list + [output_dir_interval]
@@ -515,7 +522,7 @@ def main(cluster_name, model_type,
         ]
 
         # Creates the global mega-zarr with metadata only
-        zu.initialize_global_zarr(zarr_path, outputs_to_zarr_with_unit, len(cn.SOC_density_intervals),
+        zu.initialize_global_zarr(zarr_path, outputs_to_zarr_with_unit, len(cn.SOC_density_intervals_annual),
                                   ((cn.end_year_count), chunk_size_pixels, chunk_size_pixels), main_logger)
 
         fs = fsspec.filesystem("s3", anon=False)
@@ -672,7 +679,7 @@ def main(cluster_name, model_type,
                 chunk_list=chunk_list,
                 var=test_var_name,
                 zarr_path=zarr_path,
-                interval_end_years=cn.SOC_density_intervals
+                interval_end_years=cn.SOC_density_intervals_annual
             )
 
             # After all zarr chunk stats is done for the dataset-year combination,

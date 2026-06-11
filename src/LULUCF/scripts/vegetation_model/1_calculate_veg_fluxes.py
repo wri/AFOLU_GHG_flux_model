@@ -1968,12 +1968,16 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
 
     # Ensures futures stores Future objects
     # Revised with https://chatgpt.com/share/e/67bde66c-d9a0-800a-a524-a9ef88c641a2 to return status messages for chunks
-    for future in concurrent.futures.as_completed(futures):
-        layer = futures[future]  # Gets the corresponding key
-        data, status = future.result()  # Unpacks the tuple result
-        # if 'success' not in status: # Prints and logs any inputs that couldn't be accessed (downloaded as all 0s) or had to be padded
-        #     lu.print_and_log(f"{status}: {uu.timestr()}", is_large_run, logger_worker)
-        layers[layer] = data
+    # Revised with Claude session 'SOC stock script hang at task 3799'
+    try:
+        for future in concurrent.futures.as_completed(futures, timeout=cn.download_timeout):
+            layer = futures[future]
+            data, status = future.result()
+            if 'success' not in status:
+                lu.print_and_log(f"{status}: {uu.timestr()}", False, logger_worker)
+            layers[layer] = data
+    except concurrent.futures.TimeoutError:
+        raise RuntimeError(f"Download timed out after {cn.download_timeout}s for {bounds_str} ({tile_id}): {uu.timestr()}")
 
     # Test prints
     # print(layers)
@@ -2485,7 +2489,7 @@ def main(cluster_name, year_range, model_type,
 
         # Creates the global mega-zarr with metadata only
         zu.initialize_global_zarr(zarr_path, outputs_to_zarr_with_unit, len(interval_year_diff_list),
-                                  ((cn.end_year_count)), chunk_size_pixels, chunk_size_pixels), main_logger)
+                                  ((cn.end_year_count), chunk_size_pixels, chunk_size_pixels), main_logger)
 
         # Checks the zarr coordinates and extent
         fs = fsspec.filesystem("s3", anon=False)

@@ -23,7 +23,7 @@ veg_model_version_underscore = veg_model_version.replace(".", "_")
 organic_soil_model_version = "1.0.1"
 organic_soil_model_version_underscore = organic_soil_model_version.replace(".", "_")
 
-SOC_model_version = "1.0.1"
+SOC_model_version = "1.0.2"
 SOC_model_version_underscore = SOC_model_version.replace(".", "_")
 
 LULUCF_full_version_underscore = (f"LULUCF_version_{LULUCF_model_version_underscore}_MODEL_TYPE__MODEL_PATH_DESCRIPTION__veg_v{veg_model_version_underscore}__org_soil_v{organic_soil_model_version_underscore}__min_soil_v{SOC_model_version_underscore}")
@@ -69,6 +69,9 @@ possible_task_statuses = ["pending_", "loading_", "preprocessing_", "calculating
 intervals_five_years = "five_years"
 intervals_annual = "annual"
 intervals_hybrid = "hybrid"
+
+# Seconds until a file download timeouts (and potentially retries)
+download_timeout = 300
 
 
 ### Carbon constants
@@ -973,6 +976,9 @@ SOC_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/output
 SOC_density_intervals = [2005, 2010, 2015, 2020, 2022]
 # Value refers to the end year of the second OGH reporting block, e.g., 2010 is the comparison of 2000-2005 block vs. 2005-2010 block
 SOC_change_intervals = [2010, 2015, 2020, 2022]
+
+SOC_density_intervals_annual = [2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022]
+SOC_change_intervals_annual = [2016, 2017, 2018, 2019, 2020, 2021, 2022]
 
 SOC_path_zarr = f"{SOC_outputs_path}zarr/CHUNK_SIZE_pixels/RUN_DATE/SOC_zarr.zarr"
 

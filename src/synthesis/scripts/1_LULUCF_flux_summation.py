@@ -121,6 +121,8 @@ LULUCF_EMIS_VAR     = f"{cn.gross_emis_all_C_pools_all_gases_LULUCF_pattern}{cn.
 LULUCF_REMOVALS_VAR = f"{cn.gross_removals_all_C_pools_LULUCF_pattern}{cn.flux_density_pixel_meaning}"
 LULUCF_NET_VAR      = f"{cn.net_flux_all_C_pools_all_gases_LULUCF_pattern}{cn.flux_density_pixel_meaning}"
 
+AVG_YR = f"{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}"  # "2016_2024"
+
 
 # ---------------------------------------------------------------------------
 # Helper: combine components, treating NaN as absent (not missing)
@@ -143,6 +145,17 @@ def _combine_components(*arrays):
         total    += np.where(nan_mask, np.float32(0), arr)
         has_data |= (~nan_mask & (arr != 0))   # present = non-NaN AND non-zero
     return np.where(has_data, total, np.nan).astype(np.float32)
+
+
+def period_mean(arr_3d):
+    """
+    Computes annual average over the full 9-year period by always dividing by cn.end_year_count,
+    not by the count of non-NaN years. A pixel with data only in 2016 gets value/9, not value/1.
+    Pixels that are NaN in all 9 years remain NaN.
+    """
+    total = np.nansum(arr_3d, axis=0).astype(np.float32)  # NaN treated as 0 in sum
+    all_nan = np.all(np.isnan(arr_3d), axis=0)  # True where no data in any year
+    return np.where(all_nan, np.nan, total / cn.end_year_count).astype(np.float32)
 
 
 # ---------------------------------------------------------------------------
@@ -186,10 +199,10 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
     # -----------------------------------------------------------------------
     # Phase 1: process each 1x1 sub-chunk
     # -----------------------------------------------------------------------
-    for i, bounds in enumerate(sub_chunks):
+    for chunk_idx, bounds in enumerate(sub_chunks):
     # for i, bounds in enumerate(sub_chunks[92:97]): #TODO for testing
 
-        lu.print_and_log(f"Processing chunk {i} ({bounds}) of {len(sub_chunks)} in {tile_id}", is_large_run, logger_worker)
+        lu.print_and_log(f"Processing chunk {chunk_idx} ({bounds}) of {len(sub_chunks)} in {tile_id}", is_large_run, logger_worker)
 
         bounds_str       = uu.boundstr(bounds)
         subtile_id       = uu.xy_to_tile_id(bounds[0], bounds[3])
@@ -255,16 +268,6 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
              soc_loss_b1, soc_loss_b2, soc_gain_b1, soc_gain_b2, soc_net_b1, soc_net_b2,
              org_total_b1, org_total_b2)
 
-        def period_mean(arr_3d):
-            """
-            Computes annual average over the full 9-year period by always dividing by cn.end_year_count,
-            not by the count of non-NaN years. A pixel with data only in 2016 gets value/9, not value/1.
-            Pixels that are NaN in all 9 years remain NaN.
-            """
-            total = np.nansum(arr_3d, axis=0).astype(np.float32)  # NaN treated as 0 in sum
-            all_nan = np.all(np.isnan(arr_3d), axis=0)  # True where no data in any year
-            return np.where(all_nan, np.nan, total / cn.end_year_count).astype(np.float32)
-
         # --- Annual averages for this sub-chunk across all 9 years---
         lulucf_emis_avg = period_mean(lulucf_emis)
         lulucf_removals_avg = period_mean(lulucf_removals)
@@ -307,11 +310,11 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
                 upload_dict[f"{LULUCF_REMOVALS_VAR}_{year}"] = [lulucf_removals[i], 'float32', cn.flux_density_pixel_meaning, year, rem_dir[cn.full_bucket_prefix_length:]]
                 upload_dict[f"{LULUCF_NET_VAR}_{year}"]      = [lulucf_net[i],      'float32', cn.flux_density_pixel_meaning, year, net_dir[cn.full_bucket_prefix_length:]]
 
-            upload_dict[f"{LULUCF_EMIS_VAR}_avg"]  = [lulucf_emis_avg, 'float32', cn.flux_density_pixel_meaning,
+            upload_dict[f"{LULUCF_EMIS_VAR}_avg_{AVG_YR}"]  = [lulucf_emis_avg, 'float32', cn.flux_density_pixel_meaning,
                                                       'avg', outputs_1x1_avg_dirs[cn.gross_emis_all_C_pools_all_gases_LULUCF_pattern][cn.full_bucket_prefix_length:]]
-            upload_dict[f"{LULUCF_REMOVALS_VAR}_avg"] = [lulucf_removals_avg, 'float32', cn.flux_density_pixel_meaning,
+            upload_dict[f"{LULUCF_REMOVALS_VAR}_avg_{AVG_YR}"] = [lulucf_removals_avg, 'float32', cn.flux_density_pixel_meaning,
                                                          'avg', outputs_1x1_avg_dirs[cn.gross_removals_all_C_pools_LULUCF_pattern][cn.full_bucket_prefix_length:]]
-            upload_dict[f"{LULUCF_NET_VAR}_avg"] = [lulucf_net_avg, 'float32', cn.flux_density_pixel_meaning,
+            upload_dict[f"{LULUCF_NET_VAR}_avg_{AVG_YR}"] = [lulucf_net_avg, 'float32', cn.flux_density_pixel_meaning,
                                                     'avg', outputs_1x1_avg_dirs[cn.net_flux_all_C_pools_all_gases_LULUCF_pattern][cn.full_bucket_prefix_length:]]
 
             lu.print_and_log(f"Saving 1x1 deg outputs in cluster for {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
@@ -336,9 +339,9 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
                 chunk_stats_combined.append(uu.calculate_stats(arr, key, bounds_str, subtile_id, 'output_layer', per_pixel))
 
         for key, arr in [
-            (f"{LULUCF_EMIS_VAR}_avg",     lulucf_emis_avg),
-            (f"{LULUCF_REMOVALS_VAR}_avg", lulucf_removals_avg),
-            (f"{LULUCF_NET_VAR}_avg",      lulucf_net_avg),
+            (f"{LULUCF_EMIS_VAR}_avg_{AVG_YR}",     lulucf_emis_avg),
+            (f"{LULUCF_REMOVALS_VAR}_avg_{AVG_YR}", lulucf_removals_avg),
+            (f"{LULUCF_NET_VAR}_avg_{AVG_YR}",      lulucf_net_avg),
         ]:
             per_pixel = arr * pixel_area_chunk * cn.m2_to_ha
             chunk_stats_combined.append(uu.calculate_stats(arr, key, bounds_str, subtile_id, 'output_layer', per_pixel))
@@ -421,9 +424,9 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
             )
             run_date_str = outputs_1x1_avg_dirs[pattern].rstrip('/').split('/')[-1]
 
-            s3_ha  = f"{base}{pattern}/annual_intervals/avg_{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}/{cn.flux_density_pixel_meaning}/{cn.full_raster_dims}_pixels/{run_date_str}/{tile_id}__{var_with_unit}_avg.tif"
-            s3_px  = f"{base}{pattern}/annual_intervals/avg_{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}/{cn.flux_per_pixel_pixel_meaning}/{cn.full_raster_dims}_pixels/{run_date_str}/{tile_id}__{var_with_unit.replace(cn.flux_density_pixel_meaning, cn.flux_per_pixel_pixel_meaning)}_avg.tif"
-            s3_crs = f"{base}{pattern}/annual_intervals/avg_{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}/{cn.flux_aggreg_pixel_meaning}/{cn.global_aggregation_factor}_pixels/{run_date_str}/{tile_id}__{var_with_unit.replace(cn.flux_density_pixel_meaning, cn.flux_aggreg_pixel_meaning)}_avg.tif"
+            s3_ha  = f"{base}{pattern}/annual_intervals/avg_{AVG_YR}/{cn.flux_density_pixel_meaning}/{cn.full_raster_dims}_pixels/{run_date_str}/{tile_id}__{var_with_unit}_avg_{AVG_YR}.tif"
+            s3_px  = f"{base}{pattern}/annual_intervals/avg_{AVG_YR}/{cn.flux_per_pixel_pixel_meaning}/{cn.full_raster_dims}_pixels/{run_date_str}/{tile_id}__{var_with_unit.replace(cn.flux_density_pixel_meaning, cn.flux_per_pixel_pixel_meaning)}_avg_{AVG_YR}.tif"
+            s3_crs = f"{base}{pattern}/annual_intervals/avg_{AVG_YR}/{cn.flux_aggreg_pixel_meaning}/{cn.global_aggregation_factor}_pixels/{run_date_str}/{tile_id}__{var_with_unit.replace(cn.flux_density_pixel_meaning, cn.flux_aggreg_pixel_meaning)}_avg_{AVG_YR}.tif"
 
             uu.write_single_geotiff_to_s3(pattern, 'avg', tile_id, avg_arr,        np.nan, tile_transform,   s3_ha,  logger_worker)
             uu.write_single_geotiff_to_s3(pattern, 'avg', tile_id, data_per_pixel, np.nan, tile_transform,   s3_px,  logger_worker)
@@ -535,7 +538,11 @@ def main(cluster_name, model_type,
 
     # Keeps underscore, matching the 10x10 outputs
     def s3_dir_1x1(pattern, year_or_avg):
-        return f"{LULUCF_base_path}{pattern}/annual_intervals/{year_or_avg}_{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}/{cn.flux_density_pixel_meaning}/{cn.chunk_dims}_pixels/{run_date}/"
+        if year_or_avg == 'avg':
+            yr_str = f"{year_or_avg}_{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}"
+        else:
+            yr_str = str(year_or_avg)
+        return f"{LULUCF_base_path}{pattern}/annual_intervals/{yr_str}/{cn.flux_density_pixel_meaning}/{cn.chunk_dims}_pixels/{run_date}/"
 
     outputs_1x1_dir_by_year = {
         (pattern, year): s3_dir_1x1(pattern, year)

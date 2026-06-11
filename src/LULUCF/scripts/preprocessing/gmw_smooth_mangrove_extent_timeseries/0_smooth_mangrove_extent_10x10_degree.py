@@ -238,13 +238,17 @@ def process_smoothed_mangrove_data(bounds, download_dict_with_data_types, area_d
     layers = {}
 
     # Ensures futures stores Future objects
-    for future in concurrent.futures.as_completed(futures):
-        layer = futures[future]
-        data, status = future.result()
-        if 'success' not in status: # Prints and logs any inputs that couldn't be accessed and are downloaded as all 0s
-            lu.print_and_log(f"{status}", False, logger_worker)
-        layers[layer] = data
-    #print(f"layers: {layers}")
+    # Revised with https://chatgpt.com/share/e/67bde66c-d9a0-800a-a524-a9ef88c641a2 to return status messages for chunks
+    # Revised with Claude session 'SOC stock script hang at task 3799'
+    try:
+        for future in concurrent.futures.as_completed(futures, timeout=cn.download_timeout):
+            layer = futures[future]
+            data, status = future.result()
+            if 'success' not in status:
+                lu.print_and_log(f"{status}: {uu.timestr()}", False, logger_worker)
+            layers[layer] = data
+    except concurrent.futures.TimeoutError:
+        raise RuntimeError(f"Download timed out after {cn.download_timeout}s for {bounds_str} ({tile_id}): {uu.timestr()}")
 
     # Get maximum values across all years to use as a check on whether to process data
     max_list = []
