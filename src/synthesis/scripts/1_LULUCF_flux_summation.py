@@ -1,10 +1,14 @@
 """
 Creates global LULUCF-level 30m outputs by summing vegetation (annual, 2016-2024), mineral SOC (block-based),
 and organic soil (block-based) components.
+With Claude session 'LULUCF 30-m outputs script'
 
 Temporal block mapping:
-  Veg years 2016-2020  →  SOC 2015-2020 block (zarr idx 3)  +  org soil 2016-2020 block (zarr idx 3)
-  Veg years 2021-2024  →  SOC 2020-2022 block (zarr idx 4)  +  org soil 2021-2024 block (zarr idx 4)
+  Veg years 2016-2020  →  SOC 2010-2015 block vs. 2015-2020 block (i.e. change interval 2020, zarr idx 3)  +  org soil 2016-2020 block (zarr idx 3)
+  Veg years 2021-2024  →  SOC 2010-2015 block vs. 2015-2020 block (i.e. change interval 2020, zarr idx 3)  +  org soil 2021-2024 block (zarr idx 4)
+  We are using the mineral soil 2020 change interval for all years because the 2022 change interval had
+  much higher gross loss and gain than preceding intervals and we didn't trust it.
+  Best to just use the 2020 interval for all years for now.
 
 SOC zarr index notes:
   The SOC zarr has 5 time slices keyed by cn.SOC_density_intervals = [2005, 2010, 2015, 2020, 2022].
@@ -92,7 +96,6 @@ SPLIT_YEAR = 2021  # First year of second soil block
 # SOC zarr time axis = cn.SOC_density_intervals = [2005, 2010, 2015, 2020, 2022].
 # Change ending 2020 (2015-2020 interval) is at idx 3; change ending 2022 is at idx 4.
 SOC_BLOCK1_ZARR_IDX = 3   # 2016-2020 years → SOC 2015-2020 interval (end year 2020)
-SOC_BLOCK2_ZARR_IDX = 4   # 2021-2024 years → SOC 2020-2022 interval (end year 2022)
 
 # Organic soil zarr time indices for the two LULUCF-relevant blocks.
 ORG_SOIL_BLOCK1_ZARR_IDX = 3   # 2016-2020 block
@@ -223,13 +226,10 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
         veg_removals_all = veg_zarr[VEG_REMOVALS_VAR][0:cn.end_year_count, lat0:lat1, lon0:lon1].astype(np.float32)
         veg_net_all      = veg_zarr[VEG_NET_VAR      ][0:cn.end_year_count, lat0:lat1, lon0:lon1].astype(np.float32)
 
-        # --- Read SOC blocks (direct zarr indices: 3 and 4) ---
+        # --- Read SOC blocks (direct zarr index: 3) ---
         soc_loss_b1 = soc_zarr[SOC_LOSS_VAR][SOC_BLOCK1_ZARR_IDX, lat0:lat1, lon0:lon1].astype(np.float32)
-        soc_loss_b2 = soc_zarr[SOC_LOSS_VAR][SOC_BLOCK2_ZARR_IDX, lat0:lat1, lon0:lon1].astype(np.float32)
         soc_gain_b1 = soc_zarr[SOC_GAIN_VAR][SOC_BLOCK1_ZARR_IDX, lat0:lat1, lon0:lon1].astype(np.float32)
-        soc_gain_b2 = soc_zarr[SOC_GAIN_VAR][SOC_BLOCK2_ZARR_IDX, lat0:lat1, lon0:lon1].astype(np.float32)
         soc_net_b1  = soc_zarr[SOC_NET_VAR ][SOC_BLOCK1_ZARR_IDX, lat0:lat1, lon0:lon1].astype(np.float32)
-        soc_net_b2  = soc_zarr[SOC_NET_VAR ][SOC_BLOCK2_ZARR_IDX, lat0:lat1, lon0:lon1].astype(np.float32)
 
         # --- Read org soil blocks (indices 3 and 4) ---
         org_burned_b1  = org_zarr[ORG_BURNED_VAR ][ORG_SOIL_BLOCK1_ZARR_IDX, lat0:lat1, lon0:lon1].astype(np.float32)
@@ -250,22 +250,17 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
         lulucf_net      = np.full((cn.end_year_count, ny, nx), np.nan, dtype=np.float32)
 
         for i, year in enumerate(cn.interval_end_years_annual):
-            if year < SPLIT_YEAR:   # 2016-2020: block 1
-                soc_loss = soc_loss_b1;  soc_gain = soc_gain_b1;  soc_net = soc_net_b1
-                org_total = org_total_b1
-            else:                   # 2021-2024: block 2
-                soc_loss = soc_loss_b2;  soc_gain = soc_gain_b2;  soc_net = soc_net_b2
-                org_total = org_total_b2
+            # SOC: always use the 2015-2020 block for all years
+            soc_loss = soc_loss_b1;  soc_gain = soc_gain_b1;  soc_net = soc_net_b1
+            # Org soil: split which block to use at SPLIT_YEAR
+            org_total = org_total_b1 if year < SPLIT_YEAR else org_total_b2
 
-            # All three components are treated symmetrically:
-            # NaN in any component → treat as 0 for that component.
-            # Output is NaN only where all components are NaN for that pixel.
             lulucf_emis[i]     = _combine_components(veg_emis_all[i],     soc_loss,  org_total)
             lulucf_removals[i] = _combine_components(veg_removals_all[i], soc_gain)
             lulucf_net[i]      = _combine_components(veg_net_all[i],      soc_net,   org_total)
 
         del (veg_emis_all, veg_removals_all, veg_net_all,
-             soc_loss_b1, soc_loss_b2, soc_gain_b1, soc_gain_b2, soc_net_b1, soc_net_b2,
+             soc_loss_b1, soc_gain_b1, soc_net_b1,
              org_total_b1, org_total_b2)
 
         # --- Annual averages for this sub-chunk across all 9 years---
@@ -479,7 +474,6 @@ def main(cluster_name, model_type,
     main_logger.info(f"Organic soil zarr: {cn.organic_soil_zarr_path}")
     main_logger.info(f"no_upload: {no_upload};  create_zarr: {create_zarr}")
     main_logger.info(f"SOC block 1 zarr idx: {SOC_BLOCK1_ZARR_IDX} (SOC_density_intervals[3]=2020, 2015-2020 interval, veg 2016-2020)")
-    main_logger.info(f"SOC block 2 zarr idx: {SOC_BLOCK2_ZARR_IDX} (SOC_density_intervals[4]=2022, 2020-2022 interval, veg 2021-2024)")
     main_logger.info(f"Org soil block 1 idx: {ORG_SOIL_BLOCK1_ZARR_IDX};  block 2 idx: {ORG_SOIL_BLOCK2_ZARR_IDX}")
 
     # Verify org soil zarr year coordinate
