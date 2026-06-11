@@ -184,7 +184,7 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
         if end_year == cn.SOC_density_intervals[-1]:
             year_diff = 3.5
 
-        lu.print_and_log(f"Calculating SOC change for {end_year} to {start_year} using {year_diff} for {bounds_str}: {uu.timestr()}", is_large_run, logger_worker)
+        lu.print_and_log(f"Calculating SOC change for {end_year} to {start_year} using {year_diff} years for {bounds_str}: {uu.timestr()}", is_large_run, logger_worker)
 
         # Multiplies difference by -1 to make net loss positive and net gain negative (as for vegetation)
         # Interval arrays must be unsigned so difference can be negative

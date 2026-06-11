@@ -156,6 +156,15 @@ def main(cluster_name, layers_to_process, no_upload, log_note=None):
             'test_chunk': cn.drivers_of_loss_test_chunk
         }
 
+    if 'first_year_LC_composite' in layers_to_process:
+        layers_to_zarr["first_year_LC_composite"] = {
+            'zarr_date': cn.first_year_LC_composite_zarr_date,
+            'zarr_dtype': cn.first_year_LC_composite_zarr_dtype,
+            'geotif_dir': cn.first_year_LC_composite_geotif_path,
+            'zarr_dir': cn.first_year_LC_composite_zarr_path,
+            'test_chunk': cn.first_year_LC_composite_test_chunk
+        }
+
     main_logger.info(f"Contextual layers to zarr ({len(layers_to_zarr)} layers): {layers_to_zarr}")
 
     # Iterates through supplied contextual layers

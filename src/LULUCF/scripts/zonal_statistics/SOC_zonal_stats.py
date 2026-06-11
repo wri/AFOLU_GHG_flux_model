@@ -202,6 +202,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     KBA_xr = xr.open_zarr(cn.KBA_zarr_path, consolidated=False).rename_vars(band_data=cn.KBA_pattern)
     watersheds_xr = xr.open_zarr(cn.watersheds_zarr_path, consolidated=False).rename_vars(band_data=cn.watersheds_pattern)
     drivers_xr = xr.open_zarr(cn.drivers_of_loss_zarr_path, consolidated=False).rename_vars(band_data=cn.drivers_of_loss_pattern)
+    first_LC_xr = xr.open_zarr(cn.first_year_LC_composite_zarr_path, consolidated=False).rename_vars(band_data=cn.first_year_LC_composite_pattern)
     # BRA_biomes_xr = xr.open_zarr(cn.BRA_biomes_zarr_path, consolidated=False).rename_vars(band_data=cn.BRA_biomes_pattern)
     # managed_land_CAN_xr = xr.open_zarr(cn.managed_land_CAN_zarr_path, consolidated=False).rename_vars(band_data=cn.managed_land_CAN_pattern)  # Alignment issues below, so not using it.     # Tried in https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69c09184-06dc-8332-a90f-7bf0e803ea16
     # managed_land_USA_xr = xr.open_zarr(cn.managed_land_USA_zarr_path, consolidated=False).rename_vars(band_data=cn.managed_land_USA_pattern)
@@ -231,6 +232,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     KBA_xr = zsu.round_coords(KBA_xr)
     watersheds_xr = zsu.round_coords(watersheds_xr)
     drivers_xr = zsu.round_coords(drivers_xr)
+    first_LC_xr = zsu.round_coords(first_LC_xr)
     # forest_age_xr = zsu.round_coords(forest_age_xr)
     # BRA_biomes_xr = zsu.round_coords(BRA_biomes_xr)
     # managed_land_CAN_xr = zsu.round_coords(managed_land_CAN_xr)
@@ -247,6 +249,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     KBA_aligned = zsu.safe_crop(KBA_xr, reference)
     watersheds_aligned = zsu.safe_crop(watersheds_xr, reference)
     drivers_aligned = zsu.safe_crop(drivers_xr, reference)
+    first_LC_xr_aligned = zsu.safe_crop(first_LC_xr, reference)
     # forest_age_aligned = zsu.safe_crop(forest_age_xr, reference)
     # BRA_biomes_aligned = zsu.safe_crop(BRA_biomes_xr, reference)
     # managed_land_CAN_aligned = zsu.safe_crop(managed_land_CAN_xr, reference)

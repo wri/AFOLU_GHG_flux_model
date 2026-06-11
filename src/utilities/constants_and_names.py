@@ -23,7 +23,7 @@ veg_model_version_underscore = veg_model_version.replace(".", "_")
 organic_soil_model_version = "1.0.1"
 organic_soil_model_version_underscore = organic_soil_model_version.replace(".", "_")
 
-SOC_model_version = "1.0.2"
+SOC_model_version = "1.0.1"
 SOC_model_version_underscore = SOC_model_version.replace(".", "_")
 
 LULUCF_full_version_underscore = (f"LULUCF_version_{LULUCF_model_version_underscore}_MODEL_TYPE__MODEL_PATH_DESCRIPTION__veg_v{veg_model_version_underscore}__org_soil_v{organic_soil_model_version_underscore}__min_soil_v{SOC_model_version_underscore}")
@@ -1064,81 +1064,88 @@ contextual_zarr_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/contextua
 
 adm0_zarr_date = '20251209'
 adm0_zarr_dtype = 'uint16'
+adm0_pattern = 'adm0'
 adm0_geotif_path = "s3://gfw2-data/gadm_administrative_boundaries/v4.1/v4.1.64__from_gfw-data-lake/raster/epsg-4326/10/40000/adm0/gdal-geotiff/"
 adm0_zarr_path = f"{contextual_zarr_path}GADM4_1_adm0_global/{adm0_zarr_date}_fillValue_removed/global_GADM41_adm0_{adm0_zarr_date}.zarr"
 adm0_test_chunk = [13, 48, 14, 49]  # Three countries meet in Europe, with different values in three corners (50N_010E)
-adm0_pattern = 'adm0'
 
 pixel_area_zarr_date = '20260531'
 pixel_area_zarr_dtype = 'float32'
+pixel_area_zstats_pattern = 'pixel_area'
 pixel_area_geotif_path = pixel_area_dir
 pixel_area_zarr_path = f"{contextual_zarr_path}pixel_area/{pixel_area_zarr_date}_fillValue_removed/global_pixel_area_{pixel_area_zarr_date}.zarr"
 pixel_area_test_chunk = [13, 48, 14, 49]  # 50N_010E
-pixel_area_zstats_pattern = 'pixel_area'
 
 WDPA_zarr_date = '20251229'
 WDPA_zarr_dtype = 'uint8'
+WDPA_pattern = 'WDPA'
 WDPA_geotif_path = "s3://gfw2-data/conservation/wdpa_licensed_proteced_areas__from_data_lake/v202511/raster/epsg-4326/10/40000/detailed_iucn_cat/gdal-geotiff/"
 WDPA_zarr_path = f"{contextual_zarr_path}WDPAv202511/{WDPA_zarr_date}_fillValue_removed/wdpa_{WDPA_zarr_date}.zarr"
 WDPA_test_chunk = [21, -3, 22, -2]  # Has WDPA 0, 3 (bottom left, top right), and 9 (top left) (00N_020E)
-WDPA_pattern = 'WDPA'
 
 BRA_biomes_zarr_date = '20251229'
 BRA_biomes_zarr_dtype = 'uint8'
+BRA_biomes_pattern = 'BRA_biomes'
 BRA_biomes_geotif_path = "s3://gfw2-data/country/bra/bra_biomes_geotif/"
 BRA_biomes_zarr_path = f"{contextual_zarr_path}BRA_biomes/{BRA_biomes_zarr_date}_fillValue_removed/BRA_biomes_{BRA_biomes_zarr_date}.zarr"
 BRA_biomes_test_chunk = [-58, -16, -57, -15]  # Three biomes meet, with different values in three corners (10S_060W)
-BRA_biomes_pattern = 'BRA_biomes'
 
 cont_eco_zarr_date = '20260206'
 cont_eco_zarr_dtype = 'uint16'
+cont_eco_zstats_pattern = 'cont_eco'
 cont_eco_geotif_path = "s3://gfw2-data/climate/carbon_model/fao_ecozones/ecozone_continent/20190116/processed/"
 cont_eco_zarr_path = f"{contextual_zarr_path}FAO_ecozone_continents/{cont_eco_zarr_date}_fillValue_removed/FAO_ecozone_continents_{cont_eco_zarr_date}.zarr"
-cont_eco_test_chunk = [119, -6, 120, -5]  # Mix of 0, 4018 and 4020, with 4020 in upper right (00N_110E)
-cont_eco_zstats_pattern = 'cont_eco'
+cont_eco_test_chunk = [119, -6, 120, -5]  # Mix of 0, 4018 and 4020, with 4020 in upper right (00N_110E)=
 
 landmark_zarr_date = '20260213'
 landmark_zarr_dtype = 'uint8'
+landmark_pattern = 'Landmark'
 landmark_geotif_path = "s3://gfw2-data/landmark/gfw-data-lake/landmark_ip_lc_and_indicative_poly/v20250909/raster/epsg-4326/10/40000/is/geotiff/"
 landmark_zarr_path = f"{contextual_zarr_path}landmark/v20250909/{landmark_zarr_date}_fillValue_removed/landmark_{landmark_zarr_date}.zarr"
 landmark_test_chunk = [29, -1, 30, 0]  # 1 in upper left and lower left (00N_020E)
-landmark_pattern = 'Landmark'
 
 KBA_zarr_date = '20260213'
 KBA_zarr_dtype = 'uint16'
+KBA_pattern = 'KBA'
 KBA_geotif_path = "s3://gfw2-data/conservation/Key_Biodiversity_Areas/KBA_2024_09/KBA_v20240903__from_gfw-data-lake/raster/epsg-4326/10/40000/is/geotiff/"
 KBA_zarr_path = f"{contextual_zarr_path}KBA/v20240903/{KBA_zarr_date}_fillValue_removed/KBA_{KBA_zarr_date}.zarr"
 KBA_test_chunk = [29, -1, 30, 0]  # 1 in upper right; roughly 1/3-1/2 of chunk is KBA (00N_020E)
-KBA_pattern = 'KBA'
 
 # watersheds_zarr_date = '20260213'
 watersheds_zarr_date = '20260508'
 watersheds_zarr_dtype = 'uint16'
+watersheds_pattern = 'watershed'
 watersheds_geotif_path = "s3://gfw2-data/water/mapbox_river_basins__from_gfw-data-lake/v2018/raster/epsg-4326/10/40000/id/gdal-geotiff/"
 watersheds_zarr_path = f"{contextual_zarr_path}river_basins/v2018/{watersheds_zarr_date}_fillValue_removed/river_basins_{watersheds_zarr_date}.zarr"
 watersheds_test_chunk = [29, -1, 30, 0]  # 7005 in upper and lower left corners, 7003 in upper and lower right corners; should have nearly full coverage (00N_020E)
-watersheds_pattern = 'watershed'
 
 managed_land_CAN_zarr_date = '20260322'
 managed_land_CAN_zarr_dtype = 'uint8'  # 1=managed, 2=unmanaged
+managed_land_CAN_pattern = 'managed_land_Canada'
 managed_land_CAN_geotif_path = "s3://gfw2-data/climate/jrc_managed_land_can__from_gfw-data-lake/v20260218/raster/epsg-4326/10/40000/managed_land_extent/geotiff/"
 managed_land_CAN_zarr_path = f"{contextual_zarr_path}jrc_managed_land_can/v20260218/{managed_land_CAN_zarr_date}_fillValue_removed/jrc_managed_land_can_{managed_land_CAN_zarr_date}.zarr"
 managed_land_CAN_test_chunk = [-141, 61, -140, 62]  # 1 (managed) in bottom corners, 2 (unmanaged) in top corners. Should have full coverage. (70N_150W)
-managed_land_CAN_pattern = 'managed_land_Canada'
 
 managed_land_USA_zarr_date = '20260219'
 managed_land_USA_zarr_dtype = 'uint8'  # 1=managed, 2=unmanaged
+managed_land_USA_pattern = 'managed_land_USA'
 managed_land_USA_geotif_path = "s3://gfw2-data/climate/jrc_managed_land_usa__from_gfw-data-lake/v20260218/raster/epsg-4326/10/40000/managed_land_extent/geotiff/"
 managed_land_USA_zarr_path = f"{contextual_zarr_path}jrc_managed_land_USA/v20260218/{managed_land_USA_zarr_date}_fillValue_removed/jrc_managed_land_USA_{managed_land_USA_zarr_date}.zarr"
 managed_land_USA_test_chunk = [-143, 61, -142, 62]  # 1 (managed) in top right, 2 (unmanaged) in other corners. Should have full coverage. (70N_150W)
-managed_land_USA_pattern = 'managed_land_USA'
 
 drivers_of_loss_zarr_date = '20260507'
 drivers_of_loss_zarr_dtype = 'uint8'
+drivers_of_loss_pattern = 'drivers_of_TCL_1_km'
 drivers_of_loss_geotif_path = drivers_processed_dir
 drivers_of_loss_zarr_path = f"{contextual_zarr_path}drivers_of_TCL_1_km/v{drivers_run_date}/update2023_20241218__run_{drivers_of_loss_zarr_date}_fillValue_removed/drivers_of_TCL_1_km_{drivers_of_loss_zarr_date}.zarr"
 drivers_of_loss_test_chunk = [27, -9, 28, -8]  # 7 in top-left, 3 in top-right, 1 in bottom-right, NoData in bottom-left (00N_020E)
-drivers_of_loss_pattern = 'drivers_of_TCL_1_km'
+
+first_year_LC_composite_zarr_date = '20260611'
+first_year_LC_composite_zarr_dtype = 'uint8'
+first_year_LC_composite_pattern = 'first_year_LC_composite'
+first_year_LC_composite_geotif_path = f'{land_cover_annual_path}{first_model_year_annual}/'
+first_year_LC_composite_zarr_path = f"{contextual_zarr_path}{first_year_LC_composite_pattern}/v2/{first_year_LC_composite_zarr_date}_fillValue_removed/{first_year_LC_composite_pattern}_{first_year_LC_composite_zarr_date}.zarr"
+first_year_LC_composite_test_chunk = [19, 44, 20, 45] # 145 in top-left, 244 in top right, 24 in bottom right, 24 in bottom left
 
 
 ### Value options for contextual layer values.

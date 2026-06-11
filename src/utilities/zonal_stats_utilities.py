@@ -60,6 +60,22 @@ def categorize_age(da):
                     xr.where(da <= 100, 81, 101)))))))
 
 
+# # Reclassifies composite landcover zarr for a given year into basic landcover classes
+# # Adapted Claude session 'Forest age categorization in zonal stats'
+# def categorize_composite_LC(da):
+#     return xr.where(da <= 4, 6,
+#                     xr.where(da <= 26, 5,
+#                     xr.where(da <= 48, ,
+#                     xr.where(da <= 104, ,
+#                     xr.where(da <= 126, ,
+#                     xr.where(da <= 148, ,
+#                     xr.where(da <= 204, ,
+#                     xr.where(da <= 207, ,
+#                     xr.where(da <= 241, ,
+#                     xr.where(da <= 244, ,
+#                     xr.where(da <= 250, ,
+#                     xr.where(da <= 254, , )))))))
+
 # Converts results of flox to coordinate dictionary.
 # This code came from Solomon Negusse and I haven't changed it in any substantial way.
 def convert_to_coord_dict(flux_results, tile_id, main_logger):
