@@ -514,128 +514,130 @@ def main(cluster_name, model_type,
             for pattern in outputs_to_zarr_with_unit
         ]
 
-        # Creates the global mega-zarr with metadata only
-        zu.initialize_global_zarr(zarr_path, outputs_to_zarr_with_unit, len(cn.SOC_density_intervals),
-                                  ((cn.end_year_count), chunk_size_pixels, chunk_size_pixels), main_logger)
-
-        fs = fsspec.filesystem("s3", anon=False)
-        mapper = fs.get_mapper(zarr_path)
-        z = zarr.open_group(mapper, mode="r")
-        test_var_name = list(z.array_keys())[0]  # Chooses first dataset just to check properties
-        arr = z[test_var_name]
-        main_logger.info(f"Inspecting variable: {test_var_name}")
-        main_logger.info(f"Zarr dtype: {arr.dtype}")
-        main_logger.info(f"Zarr fill_value: {arr.fill_value}")
-        main_logger.info(f"Zarr shape: {arr.shape}")
-        main_logger.info(f"Zarr chunks: {arr.chunks}")
-
-    else:
-        zarr_path = None
-        outputs_to_zarr = False
-
-
-    ### Step 3: Create 1x1 deg outputs
-
-    # Creates list of tasks to run (1 task = 1 chunk)
-    main_logger.info("Workers' logs to be appended after main function log"+ "\n")
-
-    chunk_batches = [chunk_list[i:i + batch_size] for i in range(0, len(chunk_list), batch_size)]
-    main_logger.info(f"There are {len(chunk_batches)} batches to process: {uu.timestr()}")
-
-    # Accumulates all output messages and statistics across batches
-    # From https://chatgpt.com/share/e/5599b6b0-1aaa-4d54-98d3-c720a436dd9a
-    all_results = []
-    all_stats = []
-    success_count = 0  # Count of successful chunks
-
-    # Iterates through the batches
-    for i, chunk_batch in enumerate(chunk_batches):
-        main_logger.info(f"Processing batch {i + 1}/{len(chunk_batches)} ({len(chunk_batch)} chunks): {uu.timestr()}")
-        main_logger.info("Creating batch task txts in s3...")
-        uu.create_s3_task_files(stage, chunk_batch)
-
-        # This approach handles large task lists (graphs) better than [dask.delayed(calculate_and_upload_LULUCF_fluxes ... )]
-        futures = []
-        for chunk in chunk_batch:
-
-            future = client.submit(create_soil_C_density_and_change, chunk,
-                                   is_large_run, stage, no_upload, create_zarr, nodata_val, outputs_by_interval_dir_list,
-                                   zarr_path, outputs_to_zarr)
-            futures.append(future)
-
-        batch_results = client.gather(futures)
-
-        all_results.extend(batch_results)
-
-        success_count, batch_stats = uu.count_successful_chunks(chunk_batch, is_large_run, main_logger, batch_results)
-        all_stats.extend(batch_stats)
-
-        # Saves stats from batch in Excel locally in case the run fails, but only if there are multiple batches.
-        # That way there are some basic chunk stats (not sorted or anything) to fall back on.
-        if len(chunk_batches) > 1:
-
-            main_logger.info(f"Writing batch stats to disk: {uu.timestr()}")
-            df_batch_stats = pd.DataFrame(batch_stats)
-
-            timestamp = uu.timestr()
-
-            # Writes batch output to parquet file if output is large
-            if len(df_batch_stats) > 900_000:
-                out_file = f"TEMP_BATCH_{stage}__batch_{i}_{timestamp}.parquet"
-                local_path = f"{cn.local_chunk_stats_path}{out_file}"
-
-                # Coerce output to string so there aren't mismatched types
-                # https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/694c44d0-19e8-8330-8098-a7ec93366e44
-                for col in ['min_value', 'max_value', 'mean_value', 'sum_value', 'count_value']:
-                    if col in df_batch_stats.columns:
-                        df_batch_stats[col] = df_batch_stats[col].astype(str)
-
-                df_batch_stats.to_parquet(
-                    local_path,
-                    engine="pyarrow",
-                    index=False
-                )
-
-            # Otherwise, writes output to spreadsheet
-            else:
-                out_file = f"TEMP_BATCH_{stage}__batch_{i}_{timestamp}.xlsx"
-                local_path = f"{cn.local_chunk_stats_path}{out_file}"
-
-                with pd.ExcelWriter(local_path) as writer:
-                    df_batch_stats.to_excel(
-                        writer,
-                        sheet_name=f"stats__batch_{i}",
-                        index=False
-                    )
-
-        del futures
-        del batch_results
-        client.run(gc.collect)
-
-        uu.stage_duration(start_time, uu.timestr(), f"{stage}, batch {i}", main_logger)
-
-
-    ### Step 4: Gather worker logs (preliminary, just in case later step goes awry)
-
-    # Collects worker logs before moving to processing that doesn't need the cluster
-    if not run_local:
-
-        # Creates combined log from all workers if not deactivated
-        worker_log_local_path_prelim = lu.compile_worker_logs(no_log, cluster, stage, start_time, main_logger)
-        uu.stage_duration(start_time, uu.timestr(), f"{stage} with preliminary worker log compilation", main_logger)
-
-
-    ### Step 5: Consolidate chunk stats and export
-
-    # Prepares chunk stats spreadsheet: min, mean, max, and sum for all input and output chunks,
-    # and min and max values across all chunks for all inputs and outputs
-    # only if not suppressed by the --no_stats flag and at least one chunk was successful (wasn't skipped).
-    if (not no_stats) and (success_count > 0):
-        model_chunk_stats_path = uu.compile_1x1_chunk_stats(all_stats, chunk_shapefile_uri, stage, no_upload, main_logger)
-        uu.stage_duration(start_time, uu.timestr(), f"{stage} with tile stats", main_logger)
+    #     # Creates the global mega-zarr with metadata only
+    #     zu.initialize_global_zarr(zarr_path, outputs_to_zarr_with_unit, len(cn.SOC_density_intervals),
+    #                               ((cn.end_year_count), chunk_size_pixels, chunk_size_pixels), main_logger)
+    #
+    #     fs = fsspec.filesystem("s3", anon=False)
+    #     mapper = fs.get_mapper(zarr_path)
+    #     z = zarr.open_group(mapper, mode="r")
+    #     test_var_name = list(z.array_keys())[0]  # Chooses first dataset just to check properties
+    #     arr = z[test_var_name]
+    #     main_logger.info(f"Inspecting variable: {test_var_name}")
+    #     main_logger.info(f"Zarr dtype: {arr.dtype}")
+    #     main_logger.info(f"Zarr fill_value: {arr.fill_value}")
+    #     main_logger.info(f"Zarr shape: {arr.shape}")
+    #     main_logger.info(f"Zarr chunks: {arr.chunks}")
+    #
+    # else:
+    #     zarr_path = None
+    #     outputs_to_zarr = False
+    #
+    #
+    # ### Step 3: Create 1x1 deg outputs
+    #
+    # # Creates list of tasks to run (1 task = 1 chunk)
+    # main_logger.info("Workers' logs to be appended after main function log"+ "\n")
+    #
+    # chunk_batches = [chunk_list[i:i + batch_size] for i in range(0, len(chunk_list), batch_size)]
+    # main_logger.info(f"There are {len(chunk_batches)} batches to process: {uu.timestr()}")
+    #
+    # # Accumulates all output messages and statistics across batches
+    # # From https://chatgpt.com/share/e/5599b6b0-1aaa-4d54-98d3-c720a436dd9a
+    # all_results = []
+    # all_stats = []
+    # success_count = 0  # Count of successful chunks
+    #
+    # # Iterates through the batches
+    # for i, chunk_batch in enumerate(chunk_batches):
+    #     main_logger.info(f"Processing batch {i + 1}/{len(chunk_batches)} ({len(chunk_batch)} chunks): {uu.timestr()}")
+    #     main_logger.info("Creating batch task txts in s3...")
+    #     uu.create_s3_task_files(stage, chunk_batch)
+    #
+    #     # This approach handles large task lists (graphs) better than [dask.delayed(calculate_and_upload_LULUCF_fluxes ... )]
+    #     futures = []
+    #     for chunk in chunk_batch:
+    #
+    #         future = client.submit(create_soil_C_density_and_change, chunk,
+    #                                is_large_run, stage, no_upload, create_zarr, nodata_val, outputs_by_interval_dir_list,
+    #                                zarr_path, outputs_to_zarr)
+    #         futures.append(future)
+    #
+    #     batch_results = client.gather(futures)
+    #
+    #     all_results.extend(batch_results)
+    #
+    #     success_count, batch_stats = uu.count_successful_chunks(chunk_batch, is_large_run, main_logger, batch_results)
+    #     all_stats.extend(batch_stats)
+    #
+    #     # Saves stats from batch in Excel locally in case the run fails, but only if there are multiple batches.
+    #     # That way there are some basic chunk stats (not sorted or anything) to fall back on.
+    #     if len(chunk_batches) > 1:
+    #
+    #         main_logger.info(f"Writing batch stats to disk: {uu.timestr()}")
+    #         df_batch_stats = pd.DataFrame(batch_stats)
+    #
+    #         timestamp = uu.timestr()
+    #
+    #         # Writes batch output to parquet file if output is large
+    #         if len(df_batch_stats) > 900_000:
+    #             out_file = f"TEMP_BATCH_{stage}__batch_{i}_{timestamp}.parquet"
+    #             local_path = f"{cn.local_chunk_stats_path}{out_file}"
+    #
+    #             # Coerce output to string so there aren't mismatched types
+    #             # https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/694c44d0-19e8-8330-8098-a7ec93366e44
+    #             for col in ['min_value', 'max_value', 'mean_value', 'sum_value', 'count_value']:
+    #                 if col in df_batch_stats.columns:
+    #                     df_batch_stats[col] = df_batch_stats[col].astype(str)
+    #
+    #             df_batch_stats.to_parquet(
+    #                 local_path,
+    #                 engine="pyarrow",
+    #                 index=False
+    #             )
+    #
+    #         # Otherwise, writes output to spreadsheet
+    #         else:
+    #             out_file = f"TEMP_BATCH_{stage}__batch_{i}_{timestamp}.xlsx"
+    #             local_path = f"{cn.local_chunk_stats_path}{out_file}"
+    #
+    #             with pd.ExcelWriter(local_path) as writer:
+    #                 df_batch_stats.to_excel(
+    #                     writer,
+    #                     sheet_name=f"stats__batch_{i}",
+    #                     index=False
+    #                 )
+    #
+    #     del futures
+    #     del batch_results
+    #     client.run(gc.collect)
+    #
+    #     uu.stage_duration(start_time, uu.timestr(), f"{stage}, batch {i}", main_logger)
+    #
+    #
+    # ### Step 4: Gather worker logs (preliminary, just in case later step goes awry)
+    #
+    # # Collects worker logs before moving to processing that doesn't need the cluster
+    # if not run_local:
+    #
+    #     # Creates combined log from all workers if not deactivated
+    #     worker_log_local_path_prelim = lu.compile_worker_logs(no_log, cluster, stage, start_time, main_logger)
+    #     uu.stage_duration(start_time, uu.timestr(), f"{stage} with preliminary worker log compilation", main_logger)
+    #
+    #
+    # ### Step 5: Consolidate chunk stats and export
+    #
+    # # Prepares chunk stats spreadsheet: min, mean, max, and sum for all input and output chunks,
+    # # and min and max values across all chunks for all inputs and outputs
+    # # only if not suppressed by the --no_stats flag and at least one chunk was successful (wasn't skipped).
+    # if (not no_stats) and (success_count > 0):
+    #     model_chunk_stats_path = uu.compile_1x1_chunk_stats(all_stats, chunk_shapefile_uri, stage, no_upload, main_logger)
+    #     uu.stage_duration(start_time, uu.timestr(), f"{stage} with tile stats", main_logger)
 
 
     ### Step 6: Compares model output chunk stats to zarr chunk stats for each variable-year (only if chunk stats created)
+
+    model_chunk_stats_path = 'chunk_stats/soil_carbon_densities_and_changes_1x1_chunk_statistics_20260611_20_36_25__with_pivot__KEEP.xlsx' #TODO for testing
 
     if (not no_stats) and create_zarr:
 

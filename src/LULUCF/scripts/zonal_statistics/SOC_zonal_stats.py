@@ -24,26 +24,26 @@ Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Coiled small tests:
 python -m src.utilities.create_cluster -n 1 -m 32 -cn SOC_zonal_stats --zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stats -bb 10 49 11 50 -fv 2 -ft 2 -mt standard -mpd global --input_date YYYYMMDD -zd test_box --veg_input_date 20260130 --veg_model_version 1.0.05 --veg_model_type standard --veg_model_path_description global -mcstn KEEP_definitive_runs/SOC_density/v1_0_1__2000_2022_revised_org_soil__20260526/soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__KEEP.xlsx
+python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stats -bb 10 49 11 50 -fv 2 -ft 2 -mt standard -mpd global --input_date YYYYMMDD -zd test_box --veg_input_date 20260130 --veg_model_version 1.0.05 --veg_model_type standard --veg_model_path_description global -mcstn KEEP_definitive_runs/SOC_density/v1_0_1__2000_2022_revised_org_soil__20260526/soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__with_pivots__KEEP.xlsx
 
 Coiled 8-tile test (Central and East Africa):
 python -m src.utilities.create_cluster -n 50 -m 32 -cn SOC_zonal_stats --zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stats -bb 13 -14 44 -3 -fv 3 -ft 3 -mt standard -mpd global --input_date YYYYMMDD -zd Central_Africa_test  -mcstn KEEP_definitive_runs/SOC_density/v1_0_1__2000_2022_revised_org_soil__20260526/soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__KEEP.xlsx
+python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stats -bb 13 -14 44 -3 -fv 3 -ft 3 -mt standard -mpd global --input_date YYYYMMDD -zd Central_Africa_test  -mcstn KEEP_definitive_runs/SOC_density/v1_0_1__2000_2022_revised_org_soil__20260526/soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__with_pivots__KEEP.xlsx
 
 Coiled Cerrado test (174 features):
 python -m src.utilities.create_cluster -n 50 -m 32 -cn SOC_zonal_stats --zonal_stats
 python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd Cerrado_test -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp
--mcstn KEEP_definitive_runs/SOC_density/v1_0_1__2000_2022_revised_org_soil__20260526/soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__KEEP.xlsx
+-mcstn KEEP_definitive_runs/SOC_density/v1_0_1__2000_2022_revised_org_soil__20260526/soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__with_pivots__KEEP.xlsx
 
 Coiled large shapefile test (1884 features):
 python -m src.utilities.create_cluster -n 50 -m 32 -cn SOC_zonal_stats --zonal_stats
 python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd 1884_chunk_test -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp
--mcstn KEEP_definitive_runs/SOC_density/v1_0_1__2000_2022_revised_org_soil__20260526/soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__KEEP.xlsx
+-mcstn KEEP_definitive_runs/SOC_density/v1_0_1__2000_2022_revised_org_soil__20260526/soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__with_pivots__KEEP.xlsx
 
 Full run:
 python -m src.utilities.create_cluster -n 50 -m 32 -cn SOC_zonal_stats --zonal_stats
 python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Zonal stats for vegetation model v1.0.5 (2016-2024)."
--mcstn KEEP_definitive_runs/SOC_density/v1_0_1__2000_2022_revised_org_soil__20260526/soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__KEEP.xlsx
+-mcstn KEEP_definitive_runs/SOC_density/v1_0_1__2000_2022_revised_org_soil__20260526/soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__with_pivots__KEEP.xlsx
 
 #TODO Add permafrost as contextual layer
 #TODO Add GLAD land cover category in 2015 as contextual layer

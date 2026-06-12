@@ -1,5 +1,5 @@
 """
-Creates a Coiled software environment
+Creates specified Coiled software environment from yml package list
 per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6949a74e-1388-832d-8f8e-5e9bf084ecb8
 
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
@@ -13,9 +13,16 @@ Currently, this software environment is used only for zonal stats scripts, which
 
 import coiled
 
+# coiled.create_software_environment(
+#     name="afolu_zonal_stats_20251222",    # Software environment name
+#
+#     # Made manually, with Claude's help. Has the main/key Python packages and specifies versions
+#     conda="/mnt/c/GIS/git/AFOLU_GHG_flux_model/AFOLU_zonal_stats_20251222.yml"
+# )
+
 coiled.create_software_environment(
-    name="afolu-env_coiled_20251119",    # Software environment name
+    name="afolu_not_zonal_stats_20251119",    # Software environment name
 
     # Made manually, with Claude's help. Has the main/key Python packages and specifies versions
-    conda="/mnt/c/GIS/git/AFOLU_GHG_flux_model/AFOLU_vegetation_20251119.yml"
+    conda="/mnt/c/GIS/git/AFOLU_GHG_flux_model/AFOLU_not_zonal_stats_20251119.yml"
 )

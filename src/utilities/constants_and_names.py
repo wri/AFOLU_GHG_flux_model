@@ -1873,6 +1873,17 @@ forest_age_category_to_text = {
     101: '>100yr'
 }
 
+GLAD_LC_to_text = {
+    0: "Unassigned",
+    1: "Forest",
+    2: "Cropland",
+    3: "Settlement",
+    4: "Wetland",
+    5: "Grassland",
+    6: "Other land",
+    7: "Not specified"
+}
+
 veg_local_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/vegetation_v{veg_model_version_underscore}_standard_global/"
 SOC_local_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/SOC_v{SOC_model_version_underscore}_standard_global/"
 
