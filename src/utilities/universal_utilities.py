@@ -1579,51 +1579,75 @@ def calculate_stats(array_per_ha, name, bounds_str, tile_id, in_out, array_per_p
         }
 
 
-#TODO: Print out counts of all land use classes?
+
 def calculate_ipcc_stats(array, name, bounds_str, tile_id, in_out):
-
-    # Sums the per pixel totals if relevant
-    if in_out == 'output_layer':
-        values, counts = np.unique(array, return_counts=True)
-        mode = values[np.argmax(counts)]
-    else:
-        mode = 'N/A- input layer or no array supplied'
-
-    # Gets the output file pattern and year/year_range
     out_pattern, year_range = strip_and_extract_years(name)
 
-    if array is None or not np.any(array):  # Checks if the array is None or empty
+    base = {
+        "chunk_id": bounds_str,
+        "tile_id": tile_id,
+        "layer_name": name,
+        "pattern": out_pattern,
+        "years": year_range,
+        "chunk_name": f"{tile_id}__{bounds_str}__{out_pattern}_{year_range}.tif",
+        "tile_name": f"{tile_id}__{out_pattern}_{year_range}.tif",
+        "in_out": in_out,
+    }
+
+    if array is None or not np.any(array):
         return {
-            'chunk_id': bounds_str,
-            'tile_id': tile_id,
-            'layer_name': name,
-            'pattern': out_pattern,
-            'years': year_range,
-            'chunk_name': f'{tile_id}__{bounds_str}__{out_pattern}_{year_range}.tif',
-            'tile_name': f'{tile_id}__{out_pattern}_{year_range}.tif',
-            'in_out': in_out,
-            'min_value': 'no data',
-            'max_value': 'no data',
-            'count_value': 'no data',
-            'mode_value': mode,
-            'data_type': 'no data'
+            **base,
+            "min_value": "no data",
+            "max_value": "no data",
+            "count_value": "no data",
+            "mode_value": "no data",
+            "unique_values": "no data",
+            "pixel_counts": "no data",
+            "data_type": "no data",
         }
-    else:    # Only calculates stats if there is data in the array
+
+    values, counts = np.unique(array, return_counts=True)
+
+    # Ignore NoData/zero in stats.
+    keep = values != 0
+    values = values[keep]
+    counts = counts[keep]
+
+    if len(values) == 0:
         return {
-            'chunk_id': bounds_str,
-            'tile_id': tile_id,
-            'layer_name': name,
-            'pattern': out_pattern,
-            'years': year_range,
-            'chunk_name': f'{tile_id}__{bounds_str}__{out_pattern}_{year_range}.tif',
-            'tile_name': f'{tile_id}__{out_pattern}_{year_range}.tif',
-            'in_out': in_out,
-            'min_value': float(np.min(array)),
-            'max_value': float(np.max(array)),
-            'count_value': np.count_nonzero(array),
-            'mode_value': mode,
-            'data_type': array.dtype.name
+            **base,
+            "min_value": "no data",
+            "max_value": "no data",
+            "count_value": 0,
+            "mode_value": "no data",
+            "unique_values": "no data",
+            "pixel_counts": "no data",
+            "data_type": array.dtype.name,
         }
+
+    pixel_counts = {
+        int(value): int(count)
+        for value, count in zip(values, counts)
+    }
+
+    count_cols = {
+        f"count_{int(value)}": int(count)
+        for value, count in zip(values, counts)
+    }
+
+    mode_value = int(values[np.argmax(counts)])
+
+    return {
+        **base,
+        "min_value": int(np.min(values)),
+        "max_value": int(np.max(values)),
+        "count_value": int(np.sum(counts)),
+        "mode_value": mode_value,
+        "unique_values": [int(v) for v in values],
+        "pixel_counts": pixel_counts,
+        **count_cols,
+        "data_type": array.dtype.name,
+    }
 
 # Makes sure that all columns in output chunk stats Pandas dataframe are indeed numeric
 # From https://chatgpt.com/c/68751cbe-6888-800a-bf9d-3657b048a810

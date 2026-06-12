@@ -5,7 +5,7 @@ Local test:
 Indonesia
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 119.5 -5.75 119.75 -5.5 -cs 0.25 --run_local --run_date 20268888
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 119 -6 120 -5 -cs 1 --run_local --run_date 20268888
-python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 110 -10 120 0 -cs 10 --run_local --run_date 20268888
+
 
 Canada
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb -110 59 -109 60 -cs 1 --run_local --run_date 20268888
@@ -18,17 +18,19 @@ python -m src.utilities.create_cluster -n 1 -m 16 -cn IPCC_land_use
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use -bb 119.5 -5.75 119.75 -5.5 -cs 0.25 --run_date 20268888
 
 Coiled small tests (1x1 deg chunk):
-python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn IPCC_land_use_change
-python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_change -bb -64 -22 -63 -21 -cs 1 --create_zarr --run_date YYYYMMDD
+python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn IPCC_land_use
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use -bb -64 -22 -63 -21 -cs 1 --create_zarr --run_date YYYYMMDD
 
 Coiled test (10x10 deg chunk):
+python -m src.utilities.create_cluster -n 20 -m 16 -cn IPCC_land_use_10x10
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_10x10 -bb 110 -10 120 0 -cs 10 --run_date 20268888
 
 Full run:
 
 Notes:
     - Took 2 minutes to run for 0.25 degree chunk locally
-    - Took 10 minutes to run for 1 degree chunk locally
-    - Took x minutes to run for 10 degree area in 1 degree chunks
+    - Took 7 minutes to run for 1 degree chunk locally
+    - Took 35 minutes to run for 10 degree area in 1 degree chunks in coiled using 100 workers (30 credits)
 
 """
 
@@ -42,6 +44,7 @@ import sys
 import pandas as pd
 import numpy as np
 import re
+import rasterio
 
 import fsspec
 import xarray as xr
@@ -60,16 +63,15 @@ from src.utilities import resize_cluster
 
 os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "TRUE"
 
-
+print_lu_transition = True  #TODO: Set to False for full global run
 
 # Returns boolean values for whether a pixel is planted forest or tree crop
 def get_sdpt_status(sdpt_type):
     sdpt_planted_forest = not np.isnan(sdpt_type) and int(sdpt_type) == 1
     sdpt_tree_crop      = not np.isnan(sdpt_type) and int(sdpt_type) == 2
-
     return sdpt_planted_forest, sdpt_tree_crop
 
-# Checks if an oil palm planting year related transition happens in the timeseries.
+# Checks if an oil palm planting year transition happens in the timeseries.
 def has_planting_transition(lu_dict):
     planting_year = lu_dict.get("planting_year", 0)
     return (planting_year > min(cn.years_annual) and planting_year <= max(cn.years_annual))
@@ -87,6 +89,10 @@ def tcl_prior_to_planting(tcl_year, planting_year):
     n_years = 5     # number of years between TCL and oil palm planting year allowed to be considered F -> C conversion
     return (tcl_year > 0 and planting_year > 0 and planting_year - n_years <= tcl_year < planting_year)
 
+# Skips stable pixels that don't have a LU transition exception
+def has_lu_exception(driver, tcl_year, pre_2000_plantation, planting_year, sdpt_oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove, gpw_cultiv_grass):
+    return (driver != 0 or tcl_year != 0 or pre_2000_plantation == 1 or planting_year > 0 or sdpt_oil_palm == 1 or sdpt_tree_crop or sdpt_planted_forest or gmw_mangrove or gpw_cultiv_grass)
+
 # Checks that there is only one land use transition during the entire timeseries. If not, prints pixel information.
 def check_single_lu_transition(lu_dict, lu_ts):
     transition_count = sum(lu_ts[i] != lu_ts[i - 1] for i in range(1, len(lu_ts)))
@@ -103,6 +109,102 @@ def check_single_lu_transition(lu_dict, lu_ts):
             f"lu_ts: {lu_ts}\n"
             f"debug_info: {debug_info}\n"
         )
+
+# Gets bounds from 1x1 filename in s3
+def bounds_from_1x1_filename(raster_path):
+    filename = os.path.basename(raster_path).replace(".tif", "")
+    parts = filename.split("__")
+
+    if len(parts) < 3:
+        raise ValueError(f"Unexpected 1x1 raster filename format: {filename}")
+
+    bounds_str = parts[1]
+    bounds = [float(x) for x in bounds_str.split("_")]
+
+    return bounds  # W, S, E, N
+
+# Mosaics uploaded 1x1 IPCC rasters into a 10x10 array. Keeps zeros where 1x1 chunks are missing.
+def mosaic_ipcc_1x1_rasters(tile_rasters, tile_bounds, logger_worker):
+    if not tile_rasters:
+        raise ValueError("No tile rasters supplied for mosaic")
+
+    # Get dtype from first raster
+    with rasterio.open(tile_rasters[0]) as src:
+        dtype = src.dtypes[0]
+
+    mosaic_array = np.zeros((cn.full_raster_dims, cn.full_raster_dims), dtype=dtype)
+    tile_w, tile_s, tile_e, tile_n = tile_bounds
+
+    for raster_path in tile_rasters:
+        chunk_bounds = bounds_from_1x1_filename(raster_path)
+        chunk_w, chunk_s, chunk_e, chunk_n = chunk_bounds
+
+        row0 = int(round((tile_n - chunk_n) / cn.resolution))
+        col0 = int(round((chunk_w - tile_w) / cn.resolution))
+
+        with rasterio.open(raster_path) as src:
+            arr = src.read(1)
+
+        row1 = row0 + arr.shape[0]
+        col1 = col0 + arr.shape[1]
+
+        mosaic_array[row0:row1, col0:col1] = arr
+
+    lu.print_and_log(f"Mosaicked {len(tile_rasters)} rasters into array {mosaic_array.shape}: {uu.timestr()}",False, logger_worker)
+
+    return mosaic_array
+
+def make_10x10_tile_list(chunk_list):
+    tile_ids = sorted(set(uu.xy_to_tile_id(chunk[0], chunk[3]) for chunk in chunk_list))
+    return tile_ids
+
+def filter_stats_for_tile(all_stats, tile_id):
+    return [row for row in all_stats if row.get("tile_id") == tile_id]
+
+def compile_10x10_ipcc_chunk_stats(all_1x1_stats, tile_ids, stage, no_upload, main_logger):
+    all_10x10_stats = []
+
+    for tile_id in tile_ids:
+        tile_stats = filter_stats_for_tile(all_1x1_stats, tile_id)
+
+        if not tile_stats:
+            continue
+
+        df = pd.DataFrame(tile_stats)
+
+        group_cols = ["tile_id", "layer_name", "pattern", "years", "tile_name", "in_out", "data_type"]
+        count_cols = [c for c in df.columns if c.startswith("count_")]
+
+        agg_dict = {
+            "count_value": "sum",
+        }
+
+        for count_col in count_cols:
+            agg_dict[count_col] = "sum"
+
+        df_10x10 = df.groupby(group_cols, dropna=False, as_index=False).agg(agg_dict)
+
+        df_10x10["chunk_id"] = tile_id
+        df_10x10["chunk_name"] = df_10x10["tile_name"]
+        df_10x10["min_value"] = df.groupby(group_cols, dropna=False)["min_value"].min().values
+        df_10x10["max_value"] = df.groupby(group_cols, dropna=False)["max_value"].max().values
+
+        # Mode from summed class counts
+        if count_cols:
+            mode_values = []
+            for _, row in df_10x10.iterrows():
+                counts = {int(c.replace("count_", "")): row[c] for c in count_cols if c in row and pd.notna(row[c])}
+                mode_values.append(max(counts, key=counts.get) if counts else "no data")
+            df_10x10["mode_value"] = mode_values
+        else:
+            df_10x10["mode_value"] = "no data"
+
+        all_10x10_stats.extend(df_10x10.to_dict("records"))
+
+    if all_10x10_stats:
+        return uu.compile_1x1_chunk_stats(all_10x10_stats, cn.fishnet_1x1deg_uri, f"{stage}_10x10", no_upload, main_logger)
+
+    return None
 
 # Move general utilities from here up to UU
 #######################################################################################################################
@@ -198,16 +300,18 @@ lc_token_map = {
     **{v: "I" for v in ice_lc},
 }
 
-# Function to get land use token per land cover numeric value (tokens used for regex exception rules)
+# Function to get land use token per GLCLU numeric value (tokens used for regex exception rules)
+# Returns U for any unknown numeric values (i.e. 223 and 255)
 def token_for_lc(v):
-    if v not in lc_token_map:
-        raise ValueError(f"Unknown GLCLU code: {v}")
-    return lc_token_map[v]
+    # if v not in lc_token_map:
+    #     print(f"Unknown GLCLU code: {v}")
+    return lc_token_map.get(v, "U")
 
 # Node code values based on what exception was applied
 node_code_map = {
     "built_glad": 10,
     "built_tall_veg_loss": 11,
+    "built_post_s": 12,
 
     "crop_glad": 20,
     "crop_oil_palm": 21,
@@ -308,6 +412,16 @@ lu_token_map = {
     "I": 8,
 }
 
+lu_token_reverse_map = {
+    1: "S",
+    2: "C",
+    3: "F",
+    4: "G",
+    5: "W",
+    6: "B",
+    7: "O",
+    8: "I",
+}
 
 
 def apply_extent_rules(lu_dict):
@@ -342,40 +456,58 @@ def apply_extent_rules(lu_dict):
         return True
     return False
 
+def majority_water_wetland_token(seq_tokens):
+    w_count = seq_tokens.count("W")
+    o_count = seq_tokens.count("O")
+
+    # Tie goes to W
+    if w_count >= o_count:
+        return "W", node_code_map["wetland_glad_majority_years"]
+    else:
+        return "O", node_code_map["water_glad_majority_years"]
+
 # Mix of LC classes -> built
 def apply_built_transition(lu_dict):
     tokens = lu_dict["tokens"]
     token_seq = "".join(tokens)
     all_idx = range(len(tokens))
 
-    # Confusion between S/O in coastal areas. Use majority class unless true transition.
-    # Allow O -> S or S -> O only if both groups have >= 3 consecutive years and there is exactly one transition.
-    if re.fullmatch(r"[OS]+", token_seq):
-        # O -> S: Water to Settlement/ Infrastructure
-        transition_match = re.fullmatch(r"(O{3,})(S{3,})", token_seq)
+    # Confusion between S/O/W in coastal areas. Use majority class unless true transition.
+    # Allow O/W -> S or S -> O/W only if both groups have >= 3 consecutive years and there is exactly one transition.
+    if re.fullmatch(r"[OSW]+", token_seq):
+        # O/W -> S: Water/Wetland to Settlement/Infrastructure
+        transition_match = re.fullmatch(r"([OW]{3,})(S{3,})", token_seq)
         if transition_match:
             transition_idx = transition_match.start(2)
-            apply_tokens(lu_dict, range(0, transition_idx), "O", node_code_map["water_glad_majority_years"])
+            pre_token, pre_node = majority_water_wetland_token(tokens[:transition_idx])
+            apply_tokens(lu_dict, range(0, transition_idx), pre_token, pre_node)
             apply_tokens(lu_dict, range(transition_idx, len(tokens)), "S", node_code_map["built_tall_veg_loss"])
             return
 
-        # S -> O: Settlement/ Infrastructure to water
-        transition_match = re.fullmatch(r"(S{3,})(O{3,})", token_seq)
+        # S -> O/W: Settlement/Infrastructure to Water/Wetland
+        transition_match = re.fullmatch(r"(S{3,})([OW]{3,})", token_seq)
         if transition_match:
             transition_idx = transition_match.start(2)
+            final_token, final_node = majority_water_wetland_token(tokens[transition_idx:])
             apply_tokens(lu_dict, range(0, transition_idx), "S", node_code_map["built_glad"])
-            apply_tokens(lu_dict, range(transition_idx, len(tokens)), "O", node_code_map["water_glad_majority_years"])
+            apply_tokens(lu_dict, range(transition_idx, len(tokens)), final_token, final_node)
             return
 
-        # Otherwise collapse to majority class
-        o_count = tokens.count("O")
+        # Otherwise collapse to majority class across S vs O/W.
+        # If O/W wins, choose W vs O by majority, tie goes to W.
         s_count = tokens.count("S")
+        water_wetland_count = tokens.count("O") + tokens.count("W")
 
-        if s_count >= o_count:
+        if s_count >= water_wetland_count:
             apply_tokens(lu_dict, all_idx, "S", node_code_map["built_glad"])
         else:
-            apply_tokens(lu_dict, all_idx, "O", node_code_map["water_glad_majority_years"])
+            final_token, final_node = majority_water_wetland_token(tokens)
+            apply_tokens(lu_dict, all_idx, final_token, final_node)
+
         return
+
+    first_s_idx = tokens.index("S")
+    apply_tokens(lu_dict, range(first_s_idx, len(tokens)),"S", node_code_map["built_post_s"])
 
     # Require at least 2 non-S LC classes
     non_s_classes = set(tokens) - {"S"}
@@ -787,11 +919,7 @@ def apply_wetland_water(lu_dict):
         apply_tokens(lu_dict, all_idx, "O", node_code_map["water_glad_majority_years"])
 
 
-def apply_regex_rules(lc_timeseries, driver, tcl_year, pre_2000_plantation, planting_year, sdpt_oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove, gpw_cultiv_grass):
-
-    # Create default token array and default node code array from LC timeseries
-    tokens = [token_for_lc(v) for v in lc_timeseries]               #char array representing land use timeseries
-    node_codes = [default_node_code(token) for token in tokens]     #int array representing class definition rules applied throughout the timeseries
+def apply_regex_rules(tokens, node_codes, driver, tcl_year, pre_2000_plantation, planting_year, sdpt_oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove, gpw_cultiv_grass):
 
     lu_dict = {
         "initial_tokens": tokens.copy(),
@@ -809,15 +937,15 @@ def apply_regex_rules(lc_timeseries, driver, tcl_year, pre_2000_plantation, plan
         "gpw_cultiv_grass": gpw_cultiv_grass,
     }
 
-    # Check if oil palm, tree crop or forest based on special cases
-    extent_rule_applied = apply_extent_rules(lu_dict)
-
     # Built and cropland rules apply to both special cases and regex LC-based rules
     token_seq = "".join(lu_dict["tokens"])  # Creates a concat string
     if "S" in token_seq and not re.fullmatch(r"S+", token_seq):
         apply_built_transition(lu_dict)
     elif "C" in token_seq and not re.fullmatch(r"C+", token_seq):
         apply_crop_transition(lu_dict)
+
+    # Check if oil palm, tree crop or forest based on special cases
+    extent_rule_applied = apply_extent_rules(lu_dict)
 
     if not extent_rule_applied:
         # if re.fullmatch(r"F+", token_seq):
@@ -841,16 +969,21 @@ def apply_regex_rules(lc_timeseries, driver, tcl_year, pre_2000_plantation, plan
     lu_ts = [lu_token_map[token] for token in final_tokens]
 
     # Check that there is only one land use transition during the timeseries
-    check_single_lu_transition(lu_dict, lu_ts)
+    if print_lu_transition:
+        check_single_lu_transition(lu_dict, lu_ts)
 
     # Create transition timeseries: 2015_2016 through 2023_2024
     transition_ts = [int(f"{lu_ts[i]}{lu_ts[i + 1]}") for i in range(len(lu_ts) - 1)]
 
-    # Create sequential unique LU summary ([3, 3, 3, 4, 4, 4, 2, 2, 2] -> [3, 4, 2] -> Forest to Grass to Crop)
+    # Create sequential unique LU summary
     summary = []
     for lu in lu_ts:
         if not summary or lu != summary[-1]:
             summary.append(lu)
+
+    # Stable LU gets duplicated, e.g. 4 -> 44
+    if len(summary) == 1:
+        summary.append(summary[0])
 
     return lu_ts, node_code_ts, transition_ts, summary
 
@@ -936,7 +1069,7 @@ def IPCC_land_use(in_dict):
     LU_change_2022_2023_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
     LU_change_2023_2024_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
 
-    LU_summary_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
+    LU_summary_block = np.zeros(LC_2015_block.shape, dtype=np.uint32) #TODO: Chnage back to uint 8 after all LU transition have <2
 
     # Iterates through all pixels in the chunk
     for row in range(LC_2015_block.shape[0]):
@@ -953,7 +1086,6 @@ def IPCC_land_use(in_dict):
             LC_2022 = LC_2022_block[row, col]
             LC_2023 = LC_2023_block[row, col]
             LC_2024 = LC_2024_block[row, col]
-            LC_timeseries = np.array([LC_2015, LC_2016, LC_2017, LC_2018, LC_2019, LC_2020, LC_2021, LC_2022, LC_2023, LC_2024]).astype('uint8')
 
             tcl_year = np.int16(tcl_block[row, col])
             if tcl_year != 0:
@@ -974,8 +1106,7 @@ def IPCC_land_use(in_dict):
             mang_2018 = mangrove_extent_2018_block[row, col]
             mang_2019 = mangrove_extent_2019_block[row, col]
             mang_2020 = mangrove_extent_2020_block[row, col]
-            mang_timeseries = np.array([mang_2015, mang_2016, mang_2017, mang_2018, mang_2019, mang_2020]).astype('uint8')
-            gmw_mangrove = bool(np.any(mang_timeseries == 1))
+            gmw_mangrove = (mang_2015 == 1 or mang_2016 == 1 or mang_2017 == 1 or mang_2018 == 1 or mang_2019 == 1 or mang_2020 == 1)
 
             # GPW grasslands (1 = cultivated grassland, 2 = natural / seminatural grassland)
             gpw_2015 = gpw_extent_2015_block[row, col]
@@ -988,12 +1119,77 @@ def IPCC_land_use(in_dict):
             gpw_2022 = gpw_extent_2022_block[row, col]
             gpw_2023 = gpw_extent_2023_block[row, col]
             gpw_2024 = gpw_extent_2024_block[row, col]
-            gpw_timeseries = np.array([gpw_2015, gpw_2016, gpw_2017, gpw_2018, gpw_2019, gpw_2020, gpw_2021, gpw_2022, gpw_2023, gpw_2024]).astype('uint8')
-            gpw_cultiv_grass = bool(np.any(gpw_timeseries == 1))    # any year cultivated grassland
+            gpw_cultiv_grass = (gpw_2015 == 1 or gpw_2016 == 1 or gpw_2017 == 1 or gpw_2018 == 1 or gpw_2019 == 1 or gpw_2020 == 1 or gpw_2021 == 1 or gpw_2022 == 1 or gpw_2023 == 1 or gpw_2024 == 1)
 
-            # Pass in values for regex rules
+            tokens = [
+                token_for_lc(LC_2015),
+                token_for_lc(LC_2016),
+                token_for_lc(LC_2017),
+                token_for_lc(LC_2018),
+                token_for_lc(LC_2019),
+                token_for_lc(LC_2020),
+                token_for_lc(LC_2021),
+                token_for_lc(LC_2022),
+                token_for_lc(LC_2023),
+                token_for_lc(LC_2024),
+            ]
+
+            # If all years are unknown, return nodata
+            if all(t == "U" for t in tokens):
+                return [0] * 10, [0] * 10, [0] * 9, 0
+
+            # Otherwise if unknown, default to G
+            tokens = ["G" if t == "U" else t for t in tokens]
+
+            default_lu = [lu_token_map[token] for token in tokens]
+            node_codes = [default_node_code(token) for token in tokens]
+
+            # Skip stable pixels that don't have an exception
+            stable_lu = all(lu == default_lu[0] for lu in default_lu)
+
+            if stable_lu and not has_lu_exception(driver, tcl_year, pre_2000_plantation, descals_planting_year, sdpt_oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove, gpw_cultiv_grass):
+                lu_code = default_lu[0]
+                node_code = node_codes[0]
+                change_code = lu_code * 10 + lu_code
+
+                LU_2015_block[row, col] = lu_code
+                LU_2016_block[row, col] = lu_code
+                LU_2017_block[row, col] = lu_code
+                LU_2018_block[row, col] = lu_code
+                LU_2019_block[row, col] = lu_code
+                LU_2020_block[row, col] = lu_code
+                LU_2021_block[row, col] = lu_code
+                LU_2022_block[row, col] = lu_code
+                LU_2023_block[row, col] = lu_code
+                LU_2024_block[row, col] = lu_code
+
+                node_code_2015_block[row, col] = node_code
+                node_code_2016_block[row, col] = node_code
+                node_code_2017_block[row, col] = node_code
+                node_code_2018_block[row, col] = node_code
+                node_code_2019_block[row, col] = node_code
+                node_code_2020_block[row, col] = node_code
+                node_code_2021_block[row, col] = node_code
+                node_code_2022_block[row, col] = node_code
+                node_code_2023_block[row, col] = node_code
+                node_code_2024_block[row, col] = node_code
+
+                LU_change_2015_2016_block[row, col] = change_code
+                LU_change_2016_2017_block[row, col] = change_code
+                LU_change_2017_2018_block[row, col] = change_code
+                LU_change_2018_2019_block[row, col] = change_code
+                LU_change_2019_2020_block[row, col] = change_code
+                LU_change_2020_2021_block[row, col] = change_code
+                LU_change_2021_2022_block[row, col] = change_code
+                LU_change_2022_2023_block[row, col] = change_code
+                LU_change_2023_2024_block[row, col] = change_code
+
+                LU_summary_block[row, col] = change_code
+                continue
+
+            # If not stable pixel or exceptions apply, pass default tokens/node codes to regex rules
             LU_timeseries, node_code_timeseries, LU_change_timeseries, summary = (
-                apply_regex_rules(LC_timeseries, driver, tcl_year, pre_2000_plantation, descals_planting_year, sdpt_oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove, gpw_cultiv_grass))
+                apply_regex_rules( tokens, node_codes, driver, tcl_year, pre_2000_plantation, descals_planting_year, sdpt_oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove, gpw_cultiv_grass))
 
             # Write out results
             LU_2015_block[row, col] = LU_timeseries[0]
@@ -1071,7 +1267,7 @@ def IPCC_land_use(in_dict):
 
 
 
-def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is_large_run, no_upload, output_folders, stage):
+def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is_large_run, no_upload, output_folders, stage, no_stats=False,  create_zarr=False, mega_zarr_path=None):
 
     chunk_stats = []
     process = psutil.Process(os.getpid())
@@ -1118,9 +1314,8 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
     # for key, array in layers.items():
     #     chunk_stats.append(uu.calculate_ipcc_stats(array, key, bounds_str, tile_id, 'input_layer'))
     # print(chunk_stats)
-    # TODO: What stats do we want to know for input chunks?
 
-    
+
 
     ### Part 3: IPCC land use assignment
     lu.print_and_log(f"Assigning IPCC land use in {bounds_str} in {tile_id}: {uu.timestr()}",False, logger_worker)
@@ -1139,26 +1334,20 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
     in_dicts = [layers]
     [in_dict.clear() for in_dict in in_dicts]
 
-
-    #TODO: Add Zarr step here
+    ### Part 4: Populate zarr
+    if create_zarr:
+        zu.populate_ipcc_zarr(bounds, bounds_str, create_zarr, is_large_run, logger_worker, mega_zarr_path, out_dict, stage, tile_id)
 
 
     ### Part 5: Calculates chunk stats
-    lu.print_and_log(f"Populating chunk stats for outputs in {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker)
-
-    # # The relevant pixel area (m^2) file in s3
-    # pixel_area_uri = f"{cn.pixel_area_dir}{cn.pixel_area_pattern}_{tile_id}.tif"
-    #
-    # # Gets numpy arrays of the model output being analyzed and the area (m^2) per pixel
-    # pixel_area_chunk = uu.get_tile_dataset_rio(pixel_area_uri, bounds, chunk_length_pixels, 'Float32')
-    # pixel_area_chunk = pixel_area_chunk[0]  # Converts downloaded tuple (array, status) to just the array
-
-    # Calculates stats for the output layers
-    for key, array in out_dict.items():
-        chunk_stats.append(uu.calculate_ipcc_stats(array, key, bounds_str, tile_id, 'output_layer'))
-
-    lu.print_and_log(f"Populated chunk stats for outputs in {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
-    # TODO: updated to pixel counts per class or total pixel area per class. Update with LU_change and LU_summary
+    if not no_stats:
+        lu.print_and_log(f"Populating chunk stats for outputs in {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker)
+        for key, array in out_dict.items():
+            chunk_stats.append(
+                uu.calculate_ipcc_stats(array, key, bounds_str, tile_id, "output_layer")
+            )
+        lu.print_and_log(f"Populated chunk stats for outputs in {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
+    # TODO: Update to total pixel area per class? Update with LU_change and LU_summary
 
 
 
@@ -1174,8 +1363,8 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
         # Adds metadata used for uploading outputs to s3 to the dictionary
         for key, value in out_dict.items():
             data_type = value.dtype.name
-            print("key:", key)
-            print("data_type:", data_type)
+            # print("key:", key)
+            # print("data_type:", data_type)
 
             # Retrieves the file name pattern and date(s) covered for the output file for use in s3 folder construction
             out_pattern, year_range = uu.strip_and_extract_years(key)
@@ -1227,6 +1416,63 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
 
     return return_message, chunk_stats  # Return both the success message and the statistics
 
+def combine_ipcc_1x1_outputs_to_10x10(tile_id, output_dir_list_1x1, output_dir_list_10x10,
+                                      no_upload, stage, no_stats=False):
+    logger_worker = lu.setup_logging_worker()
+    tile_bounds = uu.get_10x10_tile_bounds(tile_id)
+    tile_bounds_str = tile_id
+
+    lu.print_and_log(f"Combining IPCC 1x1 outputs into 10x10 tile {tile_id}: {uu.timestr()}", False, logger_worker)
+
+    tile_stats = []
+
+    for output_dir_1x1 in output_dir_list_1x1:
+        output_dir_10x10_matches = [d for d in output_dir_list_10x10 if d.replace(f"/{cn.full_raster_dims}_pixels/", f"/{cn.chunk_dims}_pixels/") == output_dir_1x1]
+
+        if not output_dir_10x10_matches:
+            lu.print_and_log(f"No matching 10x10 output folder for {output_dir_1x1}", False, logger_worker)
+            continue
+
+        output_dir_10x10 = output_dir_10x10_matches[0]
+
+        raster_paths, file_count = uu.list_raster_full_paths_in_s3_folder_and_count(output_dir_1x1)
+        tile_rasters = sorted([p for p in raster_paths if f"{tile_id}__" in p])
+
+        if not tile_rasters:
+            lu.print_and_log(f"No 1x1 rasters found for {tile_id} in {output_dir_1x1}", False, logger_worker)
+            continue
+
+        # Reuse existing raster mosaic utility if available in your utilities.
+        # If this utility name differs in your repo, replace only this call.
+        mosaic_array = mosaic_ipcc_1x1_rasters(tile_rasters, tile_bounds, logger_worker)
+
+        first_name = os.path.basename(tile_rasters[0])
+        key = first_name.replace(".tif", "").split("__")[-1]
+        out_pattern, year_range = uu.strip_and_extract_years(key)
+
+        key = f"{out_pattern}_{year_range}"
+        data_type = mosaic_array.dtype.name
+        s3_path_without_bucket = output_dir_10x10[cn.full_bucket_prefix_length:]
+
+        out_dict = {key: [mosaic_array, data_type, out_pattern, year_range, s3_path_without_bucket]}
+
+        if not no_upload:
+            upload_tasks = uu.save_and_upload_raster_10x10(tile_bounds, cn.full_raster_dims, tile_id, tile_bounds_str,
+                                                            out_dict, True, logger_worker, no_data_val=0)
+
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                executor.map(lambda args: uu.upload_raster_to_s3(*args), upload_tasks)
+
+        if not no_stats:
+            tile_stats.append(uu.calculate_ipcc_stats(mosaic_array, key, tile_id, tile_id, "output_layer_10x10"))
+
+        del mosaic_array
+        gc.collect()
+
+    lu.print_and_log(f"Finished combining IPCC 10x10 tile {tile_id}: {uu.timestr()}", False, logger_worker)
+
+    return f"Success for 10x10 {tile_id}: {uu.timestr()}", tile_stats
+
 
 def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, no_upload=False, create_zarr=False,
          chunk_shapefile_uri=False, bounding_box=None, chunk_size_deg=None, first_chunks=None, log_note=None):
@@ -1236,10 +1482,6 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
     # Model stage being run
     stage = 'IPCC_land_use'
     model_type = 'standard_model'
-
-    # Runs chunks in batches of specified size.
-    # batch_size = 3200   # 6 batches to cover all chunks
-    batch_size = 5      # For testing batch processing
 
     # Determines if arguments for start and end year are valid
     start_year = cn.first_model_year_annual
@@ -1255,13 +1497,6 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
     # Creates the log for the main function and populates it with basic run information
     main_logger, main_log_local_path, n_workers= lu.populate_main_log_header(client, cluster, log_note, run_local, model_type, stage)
 
-    start_time = uu.timestr()  # Starting time for stage
-    main_logger.info(f"Stage {stage} started at: {start_time}")
-    main_logger.info(f"Start year: {start_year}; end year: {end_year}")
-    main_logger.info(f"Run date: {run_date}")
-    main_logger.info(f"Batch size: {batch_size} chunks")
-    main_logger.info(f"no_upload: {no_upload}")
-
     # Calculates the interval type, difference between start and end years of intervals, and the model output years for the model run
     interval_type, interval_year_diff_list, interval_length_list, interval_end_years = uu.get_interval_info(start_year, end_year, main_logger)
 
@@ -1269,8 +1504,33 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
     fishnet_iso_df = uu.fishnet_with_GADM_iso(chunk_shapefile_uri)
 
     # Creates the list of chunks to process, depending on the approach: shapefile attribute table or a bounding box
-    chunk_list, chunk_size_pixels = uu.create_chunk_list(bounding_box, chunk_shapefile_uri, chunk_size_deg, first_chunks, fishnet_iso_df, main_logger)
+    requested_chunk_size_deg = chunk_size_deg
+    make_10x10_outputs = requested_chunk_size_deg == 10
+    processing_chunk_size_deg = 1 if make_10x10_outputs else chunk_size_deg
+
+    chunk_list, chunk_size_pixels = uu.create_chunk_list( bounding_box, chunk_shapefile_uri, processing_chunk_size_deg, first_chunks, fishnet_iso_df, main_logger)
+
+    tile_ids_10x10 = make_10x10_tile_list(chunk_list) if make_10x10_outputs else []
+
     main_logger.info(f"Chunks to process: {len(chunk_list)}")
+    if make_10x10_outputs:
+        main_logger.info(f"10x10 tiles to combine after 1x1 processing: {tile_ids_10x10}")
+
+    # Runs chunks in batches of specified size.
+    try:
+        n_workers_int = int(n_workers)
+    except (TypeError, ValueError):
+        n_workers_int = 1
+
+    batch_size = min(len(chunk_list), n_workers_int * 5)
+    #TODO: What is the best way to set batch_size?
+
+    start_time = uu.timestr()  # Starting time for stage
+    main_logger.info(f"Stage {stage} started at: {start_time}")
+    main_logger.info(f"Start year: {start_year}; end year: {end_year}")
+    main_logger.info(f"Run date: {run_date}")
+    main_logger.info(f"Batch size: {batch_size} chunks")
+    main_logger.info(f"no_upload: {no_upload}")
 
     # Placeholder tile_id to obtain the datatype of each input tile set. Overwritten when chunks are assigned and analyzed.
     sample_tile_id = "00N_000E"
@@ -1288,15 +1548,18 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
     # GLCLU timeseries
     for year in cn.years_annual:
         download_dict[f"{cn.land_cover_pattern}_{year}"] = f"{cn.land_cover_annual_path}{year}/{sample_tile_id}.tif"
+
+    # GPW grassland extent timeseries
+    for year in cn.years_annual:
         download_dict[f"{cn.GPW_extent_processed_pattern}_{year}"] = f"{cn.GPW_extent_processed_dir}{year}/{sample_tile_id}_{cn.GPW_extent_processed_pattern}_{year}.tif"
 
     # GMW mangrove extent timeseries
     for year in [2015, 2016, 2017, 2018, 2019, 2020]:
         download_dict[f"{cn.mangrove_extent_processed_pattern}_{year}"] = f"{cn.mangrove_extent_processed_dir}{year}/{sample_tile_id}__{cn.mangrove_extent_processed_pattern}_{year}.tif"
 
-    print("Download dictionary::")
-    for key, item in download_dict.items():
-        print(f"{key}: {item}")
+    # print("Download dictionary:")
+    # for key, item in download_dict.items():
+    #     print(f"{key}: {item}")
 
     # Returns the first tile in each input so that the datatype can be determined per dataset
     main_logger.info(f"Getting tile_id of first tile in each tile set: {uu.timestr()}")
@@ -1319,16 +1582,41 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
                                                          model_type, cn.IPCC_LU_version, stage,
                                                          change_years, interval_year_diff_list, run_date, False)
 
+    summary_dir = (cn.IPCC_summary_dir .replace("RUN_DATE", run_date) .replace("CHUNK_SIZE", str(chunk_size_pixels)))
 
-    summary_dir = ( cn.IPCC_summary_dir .replace("RUN_DATE", run_date) .replace("CHUNK_SIZE", str(chunk_size_pixels)))
-
+    # 1x1 output dirs used by the main classification tasks
     output_dir_list = sorted(class_node_output_dirs + change_output_dirs + [summary_dir])
+    output_dir_list_1x1 = output_dir_list
 
-    main_logger.info(f"output_dir_list for {stage}:")
-    for item in output_dir_list:
+    main_logger.info(f"1x1 output_dir_list for {stage}:")
+    for item in output_dir_list_1x1:
         main_logger.info(f"  {item}")
 
-    # TODO: Add zarr step here
+    # 10x10 output dirs used only when user requested -cs 10
+    output_dir_list_10x10 = None
+
+    if make_10x10_outputs:
+        class_node_output_dirs_10x10 = uu.create_output_dir_name_list( [cn.IPCC_class_dir, cn.IPCC_node_dir], interval_type, start_year, cn.full_raster_dims,
+                                            model_type, cn.IPCC_LU_version, stage, cn.years_annual, interval_year_diff_list, run_date, False)
+        change_output_dirs_10x10 = uu.create_output_dir_name_list([cn.IPCC_change_dir], interval_type, start_year, cn.full_raster_dims,
+                                            model_type, cn.IPCC_LU_version, stage, change_years, interval_year_diff_list, run_date, False)
+        summary_dir_10x10 = (cn.IPCC_summary_dir .replace("RUN_DATE", run_date) .replace("CHUNK_SIZE", str(cn.full_raster_dims)))
+
+        output_dir_list_10x10 = sorted(class_node_output_dirs_10x10 + change_output_dirs_10x10 + [summary_dir_10x10])
+
+        main_logger.info(f"10x10 output_dir_list for {stage}:")
+        for item in output_dir_list_10x10:
+            main_logger.info(f"  {item}")
+
+    ### Step 2: Create empty (metadata-only), global zarr in s3.
+    outputs_to_zarr = [cn.IPCC_class_pattern, cn.IPCC_node_pattern, cn.IPCC_change_pattern, cn.IPCC_summary_pattern]
+    raw_mega_zarr_path = None
+
+    if create_zarr:
+        raw_mega_zarr_path = zu.create_zarr_path(cn.IPCC_outputs_path_mega_zarr, cn.chunk_dims, interval_type, model_type,
+                        cn.IPCC_LU_version.replace(".", "_"), "global", run_date, main_logger)
+
+        zu.initialize_ipcc_global_zarr(raw_mega_zarr_path, (1, cn.chunk_dims, cn.chunk_dims), main_logger, fill_value=0)
 
     ### Step 2: Create 1x1 degree outputs
 
@@ -1351,17 +1639,18 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
         uu.create_s3_task_files(stage, chunk_batch)
 
         if run_local:
-            batch_results = [calculate_and_upload_IPCC_land_use(chunk, download_dict_with_data_types, True, no_upload, output_dir_list, stage)
+            batch_results = [calculate_and_upload_IPCC_land_use(chunk, download_dict_with_data_types, True, no_upload, output_dir_list_1x1, stage, no_stats, create_zarr, raw_mega_zarr_path)
                              for chunk in chunk_batch]
             all_results.extend(batch_results)
 
         else:
-            futures = [client.submit(calculate_and_upload_IPCC_land_use, chunk, download_dict_with_data_types, True, no_upload, output_dir_list, stage)
+            futures = [client.submit(calculate_and_upload_IPCC_land_use, chunk, download_dict_with_data_types, True, no_upload, output_dir_list_1x1, stage, no_stats, create_zarr, raw_mega_zarr_path, retries=2)
                        for chunk in chunk_batch]
             batch_results = client.gather(futures)
             all_results.extend(batch_results)
 
-        success_count, batch_stats = uu.count_successful_chunks(chunk_batch, True, main_logger, batch_results)
+        batch_success_count, batch_stats = uu.count_successful_chunks(chunk_batch, True, main_logger, batch_results)
+        success_count += batch_success_count
         all_1x1_stats.extend(batch_stats)
 
         # Saves stats from batch in Excel locally in case the run fails, but only if there are multiple batches.
@@ -1381,7 +1670,156 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
 
         uu.stage_duration(start_time, uu.timestr(), f"{stage}, batch {i}", main_logger)
 
-    #TODO: Add from stage 4 on
+    ### Step 4: Gather worker logs preliminarily
+    worker_log_local_path_prelim = None
+    worker_log_local_path = None
+    model_chunk_stats_path = None
+
+    if not run_local:
+        worker_log_local_path_prelim = lu.compile_worker_logs(no_log, cluster, stage, start_time, main_logger)
+        uu.stage_duration(start_time, uu.timestr(), f"{stage} with preliminary worker log compilation", main_logger)
+
+    ### Step 5: Consolidate chunk stats and export
+
+    if (not no_stats) and (success_count > 0) and all_1x1_stats:
+        model_chunk_stats_path = uu.compile_1x1_chunk_stats(all_1x1_stats, chunk_shapefile_uri, stage, no_upload, main_logger)
+
+        main_logger.info(f"Final IPCC 1x1 chunk stats table: {model_chunk_stats_path}")
+
+        uu.stage_duration(start_time, uu.timestr(), f"{stage} with 1x1 chunk stats", main_logger)
+
+    ### Step 6: Compare model output chunk stats to zarr chunk stats
+
+    if (not no_stats) and create_zarr and model_chunk_stats_path is not None:
+
+        main_logger.info(f"Starting IPCC zarr chunk stats comparison: {uu.timestr()}")
+
+        comparison_insert = "_original_zarr_comparison"
+        model_chunk_stats_table_name = os.path.basename(model_chunk_stats_path)
+
+        tables_to_compare_dict, zarr_comparison_stats_name, zarr_comparison_stats_path = (
+            zu.get_table_names_for_zarr_stats_comparison( comparison_insert, main_logger, model_chunk_stats_path)
+        )
+
+        all_merged_tables = []
+        chunks_count_exceeding_total = 0
+        chunks_without_zarr_stats_total = 0
+
+        outputs_to_compare = [cn.IPCC_class_pattern, cn.IPCC_node_pattern, cn.IPCC_change_pattern, cn.IPCC_summary_pattern]
+
+        for var_name in outputs_to_compare:
+            main_logger.info(f"Starting IPCC zarr stats for {var_name}: {uu.timestr()}")
+            var_start_time = time.time()
+
+            chunk_stats_variable_year_zarr = zu.run_parallel_ipcc_stats(client, chunk_list, var_name, raw_mega_zarr_path)
+
+            chunks_count_exceeding, chunks_without_zarr_stats = zu.compare_dataset_year_chunk_stats(all_merged_tables,
+                    chunk_stats_variable_year_zarr, main_logger, tables_to_compare_dict, var_name, zarr_comparison_stats_path)
+
+            chunks_count_exceeding_total += chunks_count_exceeding
+            chunks_without_zarr_stats_total += chunks_without_zarr_stats
+
+            var_end_time = time.time()
+            main_logger.info(f"  Processed {var_name} in {round(var_end_time - var_start_time)} seconds: {uu.timestr()}")
+
+        zu.upload_zarr_chunk_stat_comparisons(chunks_count_exceeding_total, chunks_without_zarr_stats_total, main_logger,
+                model_chunk_stats_table_name, stage, start_time, zarr_comparison_stats_name, zarr_comparison_stats_path)
+
+    ### Step 6b: Combine 1x1 outputs into 10x10 outputs
+    if make_10x10_outputs and no_upload:
+        main_logger.warning("Skipping 10x10 combine because --no_upload is enabled. The combine step reads uploaded 1x1 rasters from S3.")
+
+    all_10x10_stats = []
+    model_10x10_stats_path = None
+
+    if make_10x10_outputs and not no_upload:
+        main_logger.info(f"Starting 1x1 -> 10x10 IPCC combine for {len(tile_ids_10x10)} tiles: {uu.timestr()}")
+
+        combine_batch_size = min(len(tile_ids_10x10), max(1, n_workers_int * 5))
+        tile_batches = [tile_ids_10x10[i:i + combine_batch_size] for i in range(0, len(tile_ids_10x10), combine_batch_size)]
+
+        for i, tile_batch in enumerate(tile_batches):
+            main_logger.info(f"Processing 10x10 combine batch {i + 1}/{len(tile_batches)} ({len(tile_batch)} tiles): {uu.timestr()}")
+
+            if run_local:
+                tile_batch_results = [
+                    combine_ipcc_1x1_outputs_to_10x10(tile_id, output_dir_list_1x1, output_dir_list_10x10, no_upload, stage, no_stats)
+                    for tile_id in tile_batch
+                ]
+            else:
+                futures = [
+                    client.submit( combine_ipcc_1x1_outputs_to_10x10, tile_id, output_dir_list_1x1, output_dir_list_10x10, no_upload, stage, no_stats, retries=2)
+                    for tile_id in tile_batch
+                ]
+
+                tile_batch_results = client.gather(futures)
+
+            for _, stats in tile_batch_results:
+                all_10x10_stats.extend(stats)
+
+            if client is not None:
+                del futures
+                client.run(gc.collect)
+
+            uu.stage_duration(start_time, uu.timestr(), f"{stage}, 10x10 combine batch {i}", main_logger)
+
+        if (not no_stats) and all_10x10_stats:
+            model_10x10_stats_path = uu.compile_1x1_chunk_stats( all_10x10_stats, chunk_shapefile_uri, f"{stage}_10x10_outputs", no_upload, main_logger)
+            main_logger.info(f"Final IPCC 10x10 output stats table: {model_10x10_stats_path}")
+
+        # Also compile 10x10 summaries from the 1x1 chunk stats.
+        if (not no_stats) and all_1x1_stats:
+            combined_10x10_stats_path = compile_10x10_ipcc_chunk_stats(all_1x1_stats, tile_ids_10x10, stage, no_upload, main_logger)
+
+            main_logger.info(f"Final IPCC 10x10 stats from 1x1 chunks: {combined_10x10_stats_path}")
+
+        uu.stage_duration(start_time, uu.timestr(), f"{stage} with 10x10 combine", main_logger)
+
+    ### Step 7: Gather worker logs
+    if not run_local:
+        worker_log_local_path = lu.compile_worker_logs(no_log, cluster, stage, start_time, main_logger)
+        uu.stage_duration(start_time, uu.timestr(), f"{stage} with worker log compilation", main_logger)
+
+    ### Step 8: Resize cluster down to 1 worker
+    if not run_local:
+        workers = client.scheduler_info()["workers"]
+        current_n_workers = len(workers)
+
+        if current_n_workers > 10:
+            main_logger.info("Resizing cluster to 1 worker")
+            resize_cluster.resize_coiled_cluster(cluster_name, 1)
+
+    ### Step 9: Count output geotifs in s3
+
+    main_logger.info(f"Counting IPCC 1x1 geotifs. Expecting {len(chunk_list)} in each 1x1 folder: {uu.timestr()}")
+
+    if not no_upload:
+        for output_folder in output_dir_list_1x1:
+            geotiff_files, file_count = uu.list_raster_full_paths_in_s3_folder_and_count(output_folder)
+            main_logger.info(f"1x1 output rasters in {output_folder}: {file_count}")
+
+            if file_count != len(chunk_list):
+                main_logger.warning(f"WARNING: 1x1 output file count in {output_folder} does not match expected {len(chunk_list)}!")
+
+        if make_10x10_outputs and output_dir_list_10x10:
+            main_logger.info(f"Counting IPCC 10x10 geotifs. Expecting {len(tile_ids_10x10)} in each 10x10 folder: {uu.timestr()}")
+
+            for output_folder in output_dir_list_10x10:
+                geotiff_files, file_count = uu.list_raster_full_paths_in_s3_folder_and_count(output_folder)
+                main_logger.info(f"10x10 output rasters in {output_folder}: {file_count}")
+
+                if file_count != len(tile_ids_10x10):
+                    main_logger.warning(f"WARNING: 10x10 output file count in {output_folder} does not match expected {len(tile_ids_10x10)}!")
+
+    ### Step 10: Merge compiled worker log and main log
+    if not run_local:
+        if worker_log_local_path is None:
+            worker_log_local_path = worker_log_local_path_prelim
+
+        lu.merge_main_and_worker_upload_logs(no_log, main_log_local_path, worker_log_local_path, stage)
+
+    if not run_local:
+        client.close()
 
 
 

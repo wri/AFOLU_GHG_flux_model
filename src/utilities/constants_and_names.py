@@ -801,6 +801,8 @@ IPCC_node_dir = f"{IPCC_outputs_path}/{IPCC_node_path}/YEAR/CHUNK_SIZE_pixels/RU
 IPCC_change_dir = f"{IPCC_outputs_path}/{IPCC_change_path}/START_END/CHUNK_SIZE_pixels/RUN_DATE/"
 IPCC_summary_dir = f"{IPCC_outputs_path}/{IPCC_summary_path}/2015_2024/CHUNK_SIZE_pixels/RUN_DATE/"
 
+IPCC_outputs_path_mega_zarr = f"{IPCC_outputs_path}/mega_zarr/MODEL_INTERVAL_TYPE_intervals/CHUNK_SIZE_pixels/RUN_DATE/land_use_zarr.zarr"
+
 land_state_pattern = "land_state_node"
 land_state_node_fire_value = 9  # State nodes that end in this value had fire
 
