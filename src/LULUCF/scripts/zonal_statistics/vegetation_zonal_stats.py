@@ -572,7 +572,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     main_logger.info(f"Total rows: {total_rows}")
 
     # Only tries to combine tables into one table if less than specified number of rows
-    if total_rows > 30_000_000:
+    if total_rows > 20_000_000:
         main_logger.info("Too many rows to aggregate into global df. Skipping.")
     else:
         main_logger.info(f"Combining all parquets: {uu.timestr()}")

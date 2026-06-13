@@ -45,11 +45,11 @@ then assembles 10x10 geotifs in the same pass).
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Local test:
-python -m src.synthesis.scripts.1_LULUCF_flux_summation --run_local --no_upload -bb 110 -10 120 0 -mt standard -mpd test_box --veg_date 20260130 --veg_mpd global --soc_date 20260526 --soc_mpd global  -create_zarr
+python -m src.synthesis.scripts.1_LULUCF_flux_summation --run_local --no_upload -bb 110 -10 120 0 -mt standard -mpd test_box --veg_date 20260130 --veg_mpd global --soc_date 20260611 --soc_mpd global  -create_zarr
 
 Coiled small test:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 64 -cn LULUCF
-python -m src.synthesis.scripts.1_LULUCF_flux_summation -cn LULUCF --no_upload -bb 110 -10 120 0 -mt standard -mpd test_box --veg_date 20260130 --veg_mpd global --soc_date 20260526 --soc_mpd global --create_zarr
+python -m src.synthesis.scripts.1_LULUCF_flux_summation -cn LULUCF --no_upload -bb 110 -10 120 0 -mt standard -mpd test_tile_00N_110E --veg_date 20260130 --veg_mpd global --soc_date 20260611 --soc_mpd global --create_zarr
 
 Full run:
   python -m src.utilities.create_cluster -n 100 -t 1 -m 64 -cn LULUCF
@@ -76,7 +76,7 @@ import numpy as np
 import pandas as pd
 import psutil
 import zarr
-from dask.distributed import print
+from dask.distributed import print, as_completed
 from dask import config
 
 from src.utilities import constants_and_names as cn
@@ -172,7 +172,7 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
                               output_base_10x10, model_type, model_path_description):
     """
     Processes one 10x10 deg tile end-to-end:
-      Phase 1: Process each of the 100 1x1 sub-chunks; write 1x1 geotifs and populate zarrs.
+      Phase 1: Process each of the (up to) 100 1x1 sub-chunks; write 1x1 per-ha timeseries and average geotifs and populate respective zarrs.
       Phase 2: Create 10x10 timeseries geotifs (per-ha, per-pixel, 0.04 deg) from LULUCF zarr.
       Phase 3: Create 10x10 annual-average geotifs from in-memory tile accumulators.
     """
@@ -202,8 +202,11 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
     # -----------------------------------------------------------------------
     # Phase 1: process each 1x1 sub-chunk
     # -----------------------------------------------------------------------
+
+    lu.print_and_log(f"--- Creating 1x1 outputs for {tile_id}: {uu.timestr()}", False, logger_worker)
+
     for chunk_idx, bounds in enumerate(sub_chunks):
-    # for i, bounds in enumerate(sub_chunks[92:97]): #TODO for testing
+    # for chunk_idx, bounds in enumerate(sub_chunks[92:97]): # for testing
 
         lu.print_and_log(f"Processing chunk {chunk_idx} ({bounds}) of {len(sub_chunks)} in {tile_id}", is_large_run, logger_worker)
 
@@ -226,7 +229,7 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
         veg_removals_all = veg_zarr[VEG_REMOVALS_VAR][0:cn.end_year_count, lat0:lat1, lon0:lon1].astype(np.float32)
         veg_net_all      = veg_zarr[VEG_NET_VAR      ][0:cn.end_year_count, lat0:lat1, lon0:lon1].astype(np.float32)
 
-        # --- Read SOC blocks (direct zarr index: 3) ---
+        # --- Read SOC blocks (direct zarr index: 3 (used for all years for now)) ---
         soc_loss_b1 = soc_zarr[SOC_LOSS_VAR][SOC_BLOCK1_ZARR_IDX, lat0:lat1, lon0:lon1].astype(np.float32)
         soc_gain_b1 = soc_zarr[SOC_GAIN_VAR][SOC_BLOCK1_ZARR_IDX, lat0:lat1, lon0:lon1].astype(np.float32)
         soc_net_b1  = soc_zarr[SOC_NET_VAR ][SOC_BLOCK1_ZARR_IDX, lat0:lat1, lon0:lon1].astype(np.float32)
@@ -296,6 +299,7 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
 
         # --- Write 1x1 deg per-ha geotifs ---
         if not no_upload:
+            lu.print_and_log(f"Saving 1x1 deg outputs in cluster for {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
             upload_dict = {}
             for i, year in enumerate(cn.interval_end_years_annual):
                 emis_dir = outputs_1x1_dir_by_year[(cn.gross_emis_all_C_pools_all_gases_LULUCF_pattern, year)]
@@ -312,7 +316,6 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
             upload_dict[f"{LULUCF_NET_VAR}_avg_{AVG_YR}"] = [lulucf_net_avg, 'float32', cn.flux_density_pixel_meaning,
                                                     'avg', outputs_1x1_avg_dirs[cn.net_flux_all_C_pools_all_gases_LULUCF_pattern][cn.full_bucket_prefix_length:]]
 
-            lu.print_and_log(f"Saving 1x1 deg outputs in cluster for {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
             upload_tasks = uu.save_and_upload_small_raster_set(
                 bounds, chunk_len_pixels, subtile_id, bounds_str,
                 upload_dict, False, logger_worker, np.nan
@@ -356,7 +359,7 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
     # Reads one (var, year) at a time from zarr to avoid holding all 9 years
     # (~173 GB) in memory simultaneously.
     # -----------------------------------------------------------------------
-    lu.print_and_log(f"Creating 10x10 timeseries geotifs for {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
+    lu.print_and_log(f"--- Creating 10x10 timeseries geotifs for {tile_id}: {uu.timestr()}", False, logger_worker)
 
     for var in LULUCF_OUTPUTS_TO_ZARR:
         for year_idx in range(cn.end_year_count):
@@ -370,7 +373,7 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
     # Phase 3: 10x10 deg annual average geotifs from in-memory tile accumulators
     # Produces per-ha, per-pixel, and 0.04 deg outputs directly without re-reading zarr.
     # -----------------------------------------------------------------------
-    lu.print_and_log(f"Creating 10x10 annual average geotifs for {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
+    lu.print_and_log(f"--- Creating 10x10 annual average geotifs for {tile_id}: {uu.timestr()}", False, logger_worker)
 
     if not no_upload:
 
@@ -454,7 +457,6 @@ def main(cluster_name, model_type,
     # Step 1: Preparation
     # -----------------------------------------------------------------------
     stage      = 'LULUCF_flux_summation'
-    batch_size = 200
 
     cluster, client, run_local = uu.connect_to_Coiled_cluster(cluster_name, run_local)
     config.set({"distributed.scheduler.allowed-failures": 2})
@@ -473,7 +475,7 @@ def main(cluster_name, model_type,
     main_logger.info(f"Veg zarr date: {veg_date};  SOC zarr date: {soc_date}")
     main_logger.info(f"Organic soil zarr: {cn.organic_soil_zarr_path}")
     main_logger.info(f"no_upload: {no_upload};  create_zarr: {create_zarr}")
-    main_logger.info(f"SOC block 1 zarr idx: {SOC_BLOCK1_ZARR_IDX} (SOC_density_intervals[3]=2020, 2015-2020 interval, veg 2016-2020)")
+    main_logger.info(f"SOC block 1 zarr idx: {SOC_BLOCK1_ZARR_IDX} (SOC_density_intervals[3]=2020, i.e. avg(2010-2015) vs. avg(2015-2020)")
     main_logger.info(f"Org soil block 1 idx: {ORG_SOIL_BLOCK1_ZARR_IDX};  block 2 idx: {ORG_SOIL_BLOCK2_ZARR_IDX}")
 
     # Verify org soil zarr year coordinate
@@ -551,13 +553,13 @@ def main(cluster_name, model_type,
         f"PATTERN/annual_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{run_date}/"
     )
 
-    main_logger.info(f"Sample 1x1 dir (emis 2016): {outputs_1x1_dir_by_year[(cn.gross_emis_all_C_pools_all_gases_LULUCF_pattern, 2016)]}")
-    main_logger.info(f"Sample 1x1 avg dir (emis):  {outputs_1x1_avg_dirs[cn.gross_emis_all_C_pools_all_gases_LULUCF_pattern]}")
+    main_logger.info(f"Sample 1x1 output annual dir (emis 2016): {outputs_1x1_dir_by_year[(cn.gross_emis_all_C_pools_all_gases_LULUCF_pattern, 2016)]}")
+    main_logger.info(f"Sample 1x1 output avg dir (emis):  {outputs_1x1_avg_dirs[cn.gross_emis_all_C_pools_all_gases_LULUCF_pattern]}")
     main_logger.info(f"10x10 output base: {output_base_10x10}")
 
 
     # -----------------------------------------------------------------------
-    # Step 4: Create LULUCF zarrs (timeseries + annual average)
+    # Step 4: Create LULUCF zarrs (separate for timeseries and annual average)
     # -----------------------------------------------------------------------
     LULUCF_annual_zarr_path     = None
     LULUCF_avg_zarr_path = None
@@ -591,43 +593,66 @@ def main(cluster_name, model_type,
 
 
     # -----------------------------------------------------------------------
-    # Step 5: Process tiles in parallel (batched)
+    # Step 5: Process tiles in parallel, retiring surplus workers as the
+    #         queue drains so idle workers don't run up costs.
     # -----------------------------------------------------------------------
     main_logger.info("Workers' logs to be appended after main function log\n")
 
-    tile_batches  = [tile_ids[i:i + batch_size] for i in range(0, len(tile_ids), batch_size)]
-    main_logger.info(f"{len(tile_ids)} tiles in {len(tile_batches)} batch(es) of up to {batch_size}: {uu.timestr()}")
-
-    all_results   = []
-    all_stats     = []
+    all_stats = []
     success_count = 0
 
-    for i, tile_batch in enumerate(tile_batches):
+    n_workers_start = len(client.scheduler_info()["workers"])
 
-        main_logger.info(f"Batch {i+1}/{len(tile_batches)} ({len(tile_batch)} tiles): {uu.timestr()}")
+    futures = [
+        client.submit(
+            calculate_LULUCF_fluxes,
+            tile_id, is_large_run, stage, no_upload, create_zarr,
+            veg_zarr_path, soc_zarr_path,
+            LULUCF_annual_zarr_path, LULUCF_avg_zarr_path,
+            outputs_1x1_dir_by_year, outputs_1x1_avg_dirs,
+            output_base_10x10, model_type, model_path_description
+        )
+        for tile_id in tile_ids
+    ]
 
-        futures = [
-            client.submit(
-                calculate_LULUCF_fluxes,
-                tile_id, is_large_run, stage, no_upload, create_zarr,
-                veg_zarr_path, soc_zarr_path,
-                LULUCF_annual_zarr_path, LULUCF_avg_zarr_path,
-                outputs_1x1_dir_by_year, outputs_1x1_avg_dirs,
-                output_base_10x10, model_type, model_path_description
-            )
-            for tile_id in tile_batch
-        ]
-        batch_results = client.gather(futures)
-        all_results.extend(batch_results)
+    n_total = len(futures)
+    n_done = 0
+    main_logger.info(f"Submitted {n_total} tiles to {n_workers_start} workers: {uu.timestr()}")
 
-        for result in batch_results:
-            if isinstance(result, tuple) and result[0].startswith("Success"):
-                success_count += 1
-                all_stats.extend(result[1])
+    for future in as_completed(futures):
+        n_done += 1
+        n_remaining = n_total - n_done
 
-        del futures, batch_results
-        client.run(gc.collect)
-        uu.stage_duration(start_time, uu.timestr(), f"{stage}, batch {i+1}", main_logger)
+        result = future.result()
+        if isinstance(result, tuple) and result[0].startswith("Success"):
+            success_count += 1
+            all_stats.extend(result[1])
+
+        main_logger.info(f"Tile {n_done}/{n_total} done ({n_remaining} remaining): {uu.timestr()}")
+
+        # Progressive retirement: once remaining work is less than the
+        # starting worker count, there are guaranteed idle workers.
+        # retire_workers() is graceful — Dask will not assign new tasks to
+        # flagged workers; each drains its current task before shutting down,
+        # ensuring logs are fully streamed to Coiled before the instance exits.
+        # The >= 5 threshold avoids repeated API calls at the very tail end.
+        if not run_local and n_remaining < n_workers_start:
+            current_worker_ids = list(client.scheduler_info()["workers"].keys())
+            current_count = len(current_worker_ids)
+            desired_count = max(1, n_remaining)
+            surplus = current_count - desired_count
+            if surplus >= 5:
+                time.sleep(15)  # let Coiled flush buffered log lines before instance exits
+                to_retire = current_worker_ids[:surplus]
+                client.retire_workers(to_retire, close_workers=True)
+                main_logger.info(
+                    f"Retired {surplus} workers: {current_count} → {desired_count} "
+                    f"({n_remaining} tiles remaining)"
+                )
+
+    del futures
+    client.run(gc.collect)
+    uu.stage_duration(start_time, uu.timestr(), stage, main_logger)
 
     # -----------------------------------------------------------------------
     # Steps 6-11: Logs, stats, resize, count, merge (same pattern as SOC script)
@@ -663,10 +688,6 @@ def main(cluster_name, model_type,
         lu.merge_main_and_worker_upload_logs(no_log, main_log_local_path, worker_log_local_path, stage)
         client.close()
 
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create LULUCF-level 30m flux outputs.")
