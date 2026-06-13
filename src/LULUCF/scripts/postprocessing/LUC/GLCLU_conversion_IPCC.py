@@ -14,16 +14,16 @@ Russia
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 110 69 111 70 -cs 1 --run_local --run_date 20268888
 
 Coiled small tests (0.25x0.25 deg chunk):
-python -m src.utilities.create_cluster -n 1 -m 16 -cn IPCC_land_use
+python -m src.utilities.create_cluster -n 1 -m 8 -cn IPCC_land_use
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use -bb 119.5 -5.75 119.75 -5.5 -cs 0.25 --run_date 20268888
 
 Coiled small tests (1x1 deg chunk):
-python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn IPCC_land_use
+python -m src.utilities.create_cluster -n 1 -t 1 -m 8 -cn IPCC_land_use
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use -bb -64 -22 -63 -21 -cs 1 --create_zarr --run_date YYYYMMDD
 
 Coiled test (10x10 deg chunk):
-python -m src.utilities.create_cluster -n 20 -m 16 -cn IPCC_land_use_10x10
-python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_10x10 -bb 110 -10 120 0 -cs 10 --run_date 20268888
+python -m src.utilities.create_cluster -n 50 -m 32 -cn IPCC_land_use_10x10
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_10x10 -bb 110 -10 120 0 -cs 10 --create_zarr --skip_existing_1x1 --run_date 20268888
 
 Full run:
 
@@ -40,14 +40,10 @@ import gc
 import os
 import psutil
 import time
-import sys
 import pandas as pd
 import numpy as np
 import re
 import rasterio
-
-import fsspec
-import xarray as xr
 
 from concurrent.futures import ThreadPoolExecutor
 
@@ -56,7 +52,6 @@ from dask.distributed import print
 # Project imports
 from src.utilities import constants_and_names as cn
 from src.utilities import log_utilities as lu
-from src.utilities import numba_utilities as nu
 from src.utilities import universal_utilities as uu
 from src.utilities import zarr_utilities as zu
 from src.utilities import resize_cluster
@@ -124,7 +119,7 @@ def bounds_from_1x1_filename(raster_path):
     return bounds  # W, S, E, N
 
 # Mosaics uploaded 1x1 IPCC rasters into a 10x10 array. Keeps zeros where 1x1 chunks are missing.
-def mosaic_ipcc_1x1_rasters(tile_rasters, tile_bounds, logger_worker):
+def mosaic_ipcc_1x1_rasters(key, tile_rasters, tile_bounds, logger_worker):
     if not tile_rasters:
         raise ValueError("No tile rasters supplied for mosaic")
 
@@ -150,61 +145,82 @@ def mosaic_ipcc_1x1_rasters(tile_rasters, tile_bounds, logger_worker):
 
         mosaic_array[row0:row1, col0:col1] = arr
 
-    lu.print_and_log(f"Mosaicked {len(tile_rasters)} rasters into array {mosaic_array.shape}: {uu.timestr()}",False, logger_worker)
+    lu.print_and_log(f"Mosaicked {key}: {len(tile_rasters)} rasters into array {mosaic_array.shape}: {uu.timestr()}",False, logger_worker)
 
     return mosaic_array
+
+def expected_1x1_filename_for_output_dir(chunk, output_dir_1x1):
+    bounds_str = uu.boundstr(chunk)
+    tile_id = uu.xy_to_tile_id(chunk[0], chunk[3])
+
+    output_dir = output_dir_1x1.rstrip("/")
+    folder_name = output_dir.split("/")[-4] if len(output_dir.split("/")) >= 4 else output_dir
+
+    year_or_interval = output_dir.rstrip("/").split("/")[-3]
+    parent = output_dir.rstrip("/").split("/")[-4]
+
+    if year_or_interval == "2015_2024":
+        key = cn.IPCC_summary_pattern
+    elif "_" in year_or_interval:
+        key = f"{cn.IPCC_change_pattern}_{year_or_interval}"
+    elif cn.IPCC_class_path in output_dir or cn.IPCC_class_pattern in output_dir:
+        key = f"{cn.IPCC_class_pattern}_{year_or_interval}"
+    elif cn.IPCC_node_path in output_dir or cn.IPCC_node_pattern in output_dir:
+        key = f"{cn.IPCC_node_pattern}_{year_or_interval}"
+    else:
+        raise ValueError(f"Could not infer expected output key from {output_dir_1x1}")
+
+    return f"{tile_id}__{bounds_str}__{key}.tif"
+
+#  Lists each 1x1 output folder once and stores existing basenames.
+def build_existing_1x1_output_index(output_dir_list_1x1, main_logger):
+    existing_by_output_dir = {}
+
+    for output_dir_1x1 in output_dir_list_1x1:
+        raster_paths, file_count = uu.list_raster_full_paths_in_s3_folder_and_count(output_dir_1x1)
+        existing_by_output_dir[output_dir_1x1] = {os.path.basename(path) for path in raster_paths}
+        main_logger.info(f"Found {file_count} existing rasters in {output_dir_1x1}: {uu.timestr()}")
+
+    return existing_by_output_dir
+
+def chunk_has_all_1x1_outputs_fast(chunk, output_dir_list_1x1, existing_by_output_dir):
+    for output_dir_1x1 in output_dir_list_1x1:
+        filename = expected_1x1_filename_for_output_dir(chunk, output_dir_1x1)
+
+        if filename not in existing_by_output_dir.get(output_dir_1x1, set()):
+            return False
+
+    return True
+
+def filter_chunks_missing_1x1_outputs_fast(chunk_list, output_dir_list_1x1, main_logger):
+    existing_by_output_dir = build_existing_1x1_output_index(output_dir_list_1x1, main_logger)
+
+    chunks_to_run = []
+    skipped_chunks = []
+
+    for chunk in chunk_list:
+        if chunk_has_all_1x1_outputs_fast( chunk, output_dir_list_1x1, existing_by_output_dir):
+            skipped_chunks.append(chunk)
+        else:
+            chunks_to_run.append(chunk)
+    main_logger.info(f"Existing 1x1 output check: skipping {len(skipped_chunks)} chunks; running {len(chunks_to_run)} chunks.")
+
+    return chunks_to_run, skipped_chunks
+
+# Lists each 1x1 output folder once and stores full raster paths.
+def build_raster_paths_by_output_dir(output_dir_list_1x1, main_logger):
+    raster_paths_by_output_dir = {}
+
+    for output_dir_1x1 in output_dir_list_1x1:
+        raster_paths, file_count = uu.list_raster_full_paths_in_s3_folder_and_count(output_dir_1x1)
+        raster_paths_by_output_dir[output_dir_1x1] = raster_paths
+        main_logger.info(f"Found {file_count} rasters for mosaicking in {output_dir_1x1}: {uu.timestr()}")
+
+    return raster_paths_by_output_dir
 
 def make_10x10_tile_list(chunk_list):
     tile_ids = sorted(set(uu.xy_to_tile_id(chunk[0], chunk[3]) for chunk in chunk_list))
     return tile_ids
-
-def filter_stats_for_tile(all_stats, tile_id):
-    return [row for row in all_stats if row.get("tile_id") == tile_id]
-
-def compile_10x10_ipcc_chunk_stats(all_1x1_stats, tile_ids, stage, no_upload, main_logger):
-    all_10x10_stats = []
-
-    for tile_id in tile_ids:
-        tile_stats = filter_stats_for_tile(all_1x1_stats, tile_id)
-
-        if not tile_stats:
-            continue
-
-        df = pd.DataFrame(tile_stats)
-
-        group_cols = ["tile_id", "layer_name", "pattern", "years", "tile_name", "in_out", "data_type"]
-        count_cols = [c for c in df.columns if c.startswith("count_")]
-
-        agg_dict = {
-            "count_value": "sum",
-        }
-
-        for count_col in count_cols:
-            agg_dict[count_col] = "sum"
-
-        df_10x10 = df.groupby(group_cols, dropna=False, as_index=False).agg(agg_dict)
-
-        df_10x10["chunk_id"] = tile_id
-        df_10x10["chunk_name"] = df_10x10["tile_name"]
-        df_10x10["min_value"] = df.groupby(group_cols, dropna=False)["min_value"].min().values
-        df_10x10["max_value"] = df.groupby(group_cols, dropna=False)["max_value"].max().values
-
-        # Mode from summed class counts
-        if count_cols:
-            mode_values = []
-            for _, row in df_10x10.iterrows():
-                counts = {int(c.replace("count_", "")): row[c] for c in count_cols if c in row and pd.notna(row[c])}
-                mode_values.append(max(counts, key=counts.get) if counts else "no data")
-            df_10x10["mode_value"] = mode_values
-        else:
-            df_10x10["mode_value"] = "no data"
-
-        all_10x10_stats.extend(df_10x10.to_dict("records"))
-
-    if all_10x10_stats:
-        return uu.compile_1x1_chunk_stats(all_10x10_stats, cn.fishnet_1x1deg_uri, f"{stage}_10x10", no_upload, main_logger)
-
-    return None
 
 # Move general utilities from here up to UU
 #######################################################################################################################
@@ -1069,7 +1085,7 @@ def IPCC_land_use(in_dict):
     LU_change_2022_2023_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
     LU_change_2023_2024_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
 
-    LU_summary_block = np.zeros(LC_2015_block.shape, dtype=np.uint32) #TODO: Chnage back to uint 8 after all LU transition have <2
+    LU_summary_block = np.zeros(LC_2015_block.shape, dtype=np.uint16) #TODO: Change back to uint 8 after all LU transition have <2
 
     # Iterates through all pixels in the chunk
     for row in range(LC_2015_block.shape[0]):
@@ -1134,9 +1150,9 @@ def IPCC_land_use(in_dict):
                 token_for_lc(LC_2024),
             ]
 
-            # If all years are unknown, return nodata
+            # If all years are unknown, keep nodata = 0
             if all(t == "U" for t in tokens):
-                return [0] * 10, [0] * 10, [0] * 9, 0
+                continue
 
             # Otherwise if unknown, default to G
             tokens = ["G" if t == "U" else t for t in tokens]
@@ -1334,9 +1350,10 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
     in_dicts = [layers]
     [in_dict.clear() for in_dict in in_dicts]
 
-    ### Part 4: Populate zarr
-    if create_zarr:
-        zu.populate_ipcc_zarr(bounds, bounds_str, create_zarr, is_large_run, logger_worker, mega_zarr_path, out_dict, stage, tile_id)
+    # ### Part 4: Populate zarr
+    # if create_zarr:
+    #     zu.populate_ipcc_zarr(bounds, bounds_str, create_zarr, is_large_run, logger_worker, mega_zarr_path, out_dict, stage, tile_id)
+    #TODO: Delete?
 
 
     ### Part 5: Calculates chunk stats
@@ -1416,66 +1433,45 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
 
     return return_message, chunk_stats  # Return both the success message and the statistics
 
-def combine_ipcc_1x1_outputs_to_10x10(tile_id, output_dir_list_1x1, output_dir_list_10x10,
-                                      no_upload, stage, no_stats=False):
+def combine_ipcc_output_to_10x10( tile_id, output_dir_1x1, output_dir_10x10, raster_paths, no_upload, stage, create_zarr=False, mega_zarr_path=None):
     logger_worker = lu.setup_logging_worker()
     tile_bounds = uu.get_10x10_tile_bounds(tile_id)
     tile_bounds_str = tile_id
 
-    lu.print_and_log(f"Combining IPCC 1x1 outputs into 10x10 tile {tile_id}: {uu.timestr()}", False, logger_worker)
+    tile_rasters = sorted([p for p in raster_paths if f"{tile_id}__" in p])
 
-    tile_stats = []
+    if not tile_rasters:
+        return f"No 1x1 rasters found for {tile_id} in {output_dir_1x1}"
 
-    for output_dir_1x1 in output_dir_list_1x1:
-        output_dir_10x10_matches = [d for d in output_dir_list_10x10 if d.replace(f"/{cn.full_raster_dims}_pixels/", f"/{cn.chunk_dims}_pixels/") == output_dir_1x1]
+    first_name = os.path.basename(tile_rasters[0])
+    key = first_name.replace(".tif", "").split("__")[-1]
+    out_pattern, year_range = uu.strip_and_extract_years(key)
+    key = f"{out_pattern}_{year_range}"
 
-        if not output_dir_10x10_matches:
-            lu.print_and_log(f"No matching 10x10 output folder for {output_dir_1x1}", False, logger_worker)
-            continue
+    lu.print_and_log( f"Mosaicking {key} for 10x10 tile {tile_id} from {len(tile_rasters)} 1x1 rasters: {uu.timestr()}", False, logger_worker)
 
-        output_dir_10x10 = output_dir_10x10_matches[0]
+    mosaic_array = mosaic_ipcc_1x1_rasters(key, tile_rasters, tile_bounds, logger_worker)
 
-        raster_paths, file_count = uu.list_raster_full_paths_in_s3_folder_and_count(output_dir_1x1)
-        tile_rasters = sorted([p for p in raster_paths if f"{tile_id}__" in p])
+    if create_zarr:
+        zu.populate_ipcc_zarr(tile_bounds, tile_bounds_str, create_zarr, True, logger_worker, mega_zarr_path, {key: mosaic_array}, stage, tile_id)
 
-        if not tile_rasters:
-            lu.print_and_log(f"No 1x1 rasters found for {tile_id} in {output_dir_1x1}", False, logger_worker)
-            continue
-
-        # Reuse existing raster mosaic utility if available in your utilities.
-        # If this utility name differs in your repo, replace only this call.
-        mosaic_array = mosaic_ipcc_1x1_rasters(tile_rasters, tile_bounds, logger_worker)
-
-        first_name = os.path.basename(tile_rasters[0])
-        key = first_name.replace(".tif", "").split("__")[-1]
-        out_pattern, year_range = uu.strip_and_extract_years(key)
-
-        key = f"{out_pattern}_{year_range}"
+    if not no_upload:
         data_type = mosaic_array.dtype.name
         s3_path_without_bucket = output_dir_10x10[cn.full_bucket_prefix_length:]
-
         out_dict = {key: [mosaic_array, data_type, out_pattern, year_range, s3_path_without_bucket]}
+        upload_tasks = uu.save_and_upload_raster_10x10( tile_bounds, cn.full_raster_dims, tile_id, tile_bounds_str, out_dict, True, logger_worker, no_data_val=0)
 
-        if not no_upload:
-            upload_tasks = uu.save_and_upload_raster_10x10(tile_bounds, cn.full_raster_dims, tile_id, tile_bounds_str,
-                                                            out_dict, True, logger_worker, no_data_val=0)
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            executor.map(lambda args: uu.upload_raster_to_s3(*args), upload_tasks)
 
-            with ThreadPoolExecutor(max_workers=5) as executor:
-                executor.map(lambda args: uu.upload_raster_to_s3(*args), upload_tasks)
+    del mosaic_array
+    gc.collect()
 
-        if not no_stats:
-            tile_stats.append(uu.calculate_ipcc_stats(mosaic_array, key, tile_id, tile_id, "output_layer_10x10"))
-
-        del mosaic_array
-        gc.collect()
-
-    lu.print_and_log(f"Finished combining IPCC 10x10 tile {tile_id}: {uu.timestr()}", False, logger_worker)
-
-    return f"Success for 10x10 {tile_id}: {uu.timestr()}", tile_stats
+    return f"Success for 10x10 {tile_id} {key}: {uu.timestr()}"
 
 
 def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, no_upload=False, create_zarr=False,
-         chunk_shapefile_uri=False, bounding_box=None, chunk_size_deg=None, first_chunks=None, log_note=None):
+         chunk_shapefile_uri=False, bounding_box=None, chunk_size_deg=None, first_chunks=None, log_note=None, skip_existing_1x1=None):
 
     ### Step 1: Preparation
 
@@ -1521,7 +1517,6 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
         n_workers_int = int(n_workers)
     except (TypeError, ValueError):
         n_workers_int = 1
-
     batch_size = min(len(chunk_list), n_workers_int * 5)
     #TODO: What is the best way to set batch_size?
 
@@ -1611,7 +1606,6 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
     ### Step 2: Create empty (metadata-only), global zarr in s3.
     outputs_to_zarr = [cn.IPCC_class_pattern, cn.IPCC_node_pattern, cn.IPCC_change_pattern, cn.IPCC_summary_pattern]
     raw_mega_zarr_path = None
-
     if create_zarr:
         raw_mega_zarr_path = zu.create_zarr_path(cn.IPCC_outputs_path_mega_zarr, cn.chunk_dims, interval_type, model_type,
                         cn.IPCC_LU_version.replace(".", "_"), "global", run_date, main_logger)
@@ -1624,7 +1618,11 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
     main_logger.info(f"Creating tasks and starting processing: {uu.timestr()}")
     main_logger.info("Workers' logs to be appended after main function log" + "\n")
 
-    chunk_batches = [chunk_list[i:i + batch_size] for i in range(0, len(chunk_list), batch_size)]
+    chunks_to_run = chunk_list
+    if skip_existing_1x1 and not no_upload:
+        chunks_to_run, skipped_1x1_chunks = filter_chunks_missing_1x1_outputs_fast(chunk_list, output_dir_list_1x1, main_logger)
+
+    chunk_batches = [chunks_to_run[i:i + batch_size] for i in range(0, len(chunks_to_run), batch_size)]
     main_logger.info(f"There are {len(chunk_batches)} batches to process: {uu.timestr()}")
 
     # Accumulates all output messages and statistics across batches
@@ -1633,18 +1631,20 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
     success_count = 0  # Count of successful chunks
 
     # Iterates through the batches
+    if not chunks_to_run:
+        main_logger.info("All expected 1x1 outputs already exist in S3. Skipping 1x1 land use processing and moving to 10x10 mosaicking.")
     for i, chunk_batch in enumerate(chunk_batches):
         main_logger.info(f"Processing batch {i + 1}/{len(chunk_batches)} ({len(chunk_batch)} chunks): {uu.timestr()}")
         main_logger.info("Creating batch task txts in s3...")
         uu.create_s3_task_files(stage, chunk_batch)
 
         if run_local:
-            batch_results = [calculate_and_upload_IPCC_land_use(chunk, download_dict_with_data_types, True, no_upload, output_dir_list_1x1, stage, no_stats, create_zarr, raw_mega_zarr_path)
+            batch_results = [calculate_and_upload_IPCC_land_use(chunk, download_dict_with_data_types, True, no_upload, output_dir_list_1x1, stage, no_stats, False, None)
                              for chunk in chunk_batch]
             all_results.extend(batch_results)
 
         else:
-            futures = [client.submit(calculate_and_upload_IPCC_land_use, chunk, download_dict_with_data_types, True, no_upload, output_dir_list_1x1, stage, no_stats, create_zarr, raw_mega_zarr_path, retries=2)
+            futures = [client.submit(calculate_and_upload_IPCC_land_use, chunk, download_dict_with_data_types, True, no_upload, output_dir_list_1x1, stage, no_stats, False, None, retries=2)
                        for chunk in chunk_batch]
             batch_results = client.gather(futures)
             all_results.extend(batch_results)
@@ -1688,90 +1688,51 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
 
         uu.stage_duration(start_time, uu.timestr(), f"{stage} with 1x1 chunk stats", main_logger)
 
-    ### Step 6: Compare model output chunk stats to zarr chunk stats
 
-    if (not no_stats) and create_zarr and model_chunk_stats_path is not None:
+    ### Step 6b: Combine 1x1 outputs into 10x10 outputs and populate 10x10 deg zarr
 
-        main_logger.info(f"Starting IPCC zarr chunk stats comparison: {uu.timestr()}")
-
-        comparison_insert = "_original_zarr_comparison"
-        model_chunk_stats_table_name = os.path.basename(model_chunk_stats_path)
-
-        tables_to_compare_dict, zarr_comparison_stats_name, zarr_comparison_stats_path = (
-            zu.get_table_names_for_zarr_stats_comparison( comparison_insert, main_logger, model_chunk_stats_path)
-        )
-
-        all_merged_tables = []
-        chunks_count_exceeding_total = 0
-        chunks_without_zarr_stats_total = 0
-
-        outputs_to_compare = [cn.IPCC_class_pattern, cn.IPCC_node_pattern, cn.IPCC_change_pattern, cn.IPCC_summary_pattern]
-
-        for var_name in outputs_to_compare:
-            main_logger.info(f"Starting IPCC zarr stats for {var_name}: {uu.timestr()}")
-            var_start_time = time.time()
-
-            chunk_stats_variable_year_zarr = zu.run_parallel_ipcc_stats(client, chunk_list, var_name, raw_mega_zarr_path)
-
-            chunks_count_exceeding, chunks_without_zarr_stats = zu.compare_dataset_year_chunk_stats(all_merged_tables,
-                    chunk_stats_variable_year_zarr, main_logger, tables_to_compare_dict, var_name, zarr_comparison_stats_path)
-
-            chunks_count_exceeding_total += chunks_count_exceeding
-            chunks_without_zarr_stats_total += chunks_without_zarr_stats
-
-            var_end_time = time.time()
-            main_logger.info(f"  Processed {var_name} in {round(var_end_time - var_start_time)} seconds: {uu.timestr()}")
-
-        zu.upload_zarr_chunk_stat_comparisons(chunks_count_exceeding_total, chunks_without_zarr_stats_total, main_logger,
-                model_chunk_stats_table_name, stage, start_time, zarr_comparison_stats_name, zarr_comparison_stats_path)
-
-    ### Step 6b: Combine 1x1 outputs into 10x10 outputs
     if make_10x10_outputs and no_upload:
         main_logger.warning("Skipping 10x10 combine because --no_upload is enabled. The combine step reads uploaded 1x1 rasters from S3.")
 
-    all_10x10_stats = []
-    model_10x10_stats_path = None
-
     if make_10x10_outputs and not no_upload:
-        main_logger.info(f"Starting 1x1 -> 10x10 IPCC combine for {len(tile_ids_10x10)} tiles: {uu.timestr()}")
+        main_logger.info(f"Starting 1x1 -> 10x10 IPCC combine for {len(tile_ids_10x10)} tiles and {len(output_dir_list_1x1)} outputs: {uu.timestr()}")
 
-        combine_batch_size = min(len(tile_ids_10x10), max(1, n_workers_int * 5))
-        tile_batches = [tile_ids_10x10[i:i + combine_batch_size] for i in range(0, len(tile_ids_10x10), combine_batch_size)]
+        raster_paths_by_output_dir = build_raster_paths_by_output_dir(output_dir_list_1x1, main_logger)
 
-        for i, tile_batch in enumerate(tile_batches):
-            main_logger.info(f"Processing 10x10 combine batch {i + 1}/{len(tile_batches)} ({len(tile_batch)} tiles): {uu.timestr()}")
+        combine_tasks = []
+        for tile_id in tile_ids_10x10:
+            for output_dir_1x1 in output_dir_list_1x1:
+                output_dir_10x10_matches = [d for d in output_dir_list_10x10 if d.replace(f"/{cn.full_raster_dims}_pixels/", f"/{cn.chunk_dims}_pixels/") == output_dir_1x1]
+
+                if not output_dir_10x10_matches:
+                    main_logger.warning(f"No matching 10x10 output folder for {output_dir_1x1}")
+                    continue
+                combine_tasks.append((tile_id, output_dir_1x1, output_dir_10x10_matches[0], raster_paths_by_output_dir[output_dir_1x1]))
+
+        main_logger.info(f"Created {len(combine_tasks)} 10x10 mosaic tasks")
+
+        combine_batch_size = min(len(combine_tasks), max(1, n_workers_int * 5))
+        combine_batches = [combine_tasks[i:i + combine_batch_size] for i in range(0, len(combine_tasks), combine_batch_size)]
+
+        for i, combine_batch in enumerate(combine_batches):
+            main_logger.info(f"Processing 10x10 combine batch {i + 1}/{len(combine_batches)} ({len(combine_batch)} output tasks): {uu.timestr()}")
 
             if run_local:
-                tile_batch_results = [
-                    combine_ipcc_1x1_outputs_to_10x10(tile_id, output_dir_list_1x1, output_dir_list_10x10, no_upload, stage, no_stats)
-                    for tile_id in tile_batch
-                ]
+                combine_batch_results = [combine_ipcc_output_to_10x10( tile_id, output_dir_1x1, output_dir_10x10, raster_paths, no_upload, stage, create_zarr, raw_mega_zarr_path)
+                                         for tile_id, output_dir_1x1, output_dir_10x10, raster_paths in combine_batch]
             else:
-                futures = [
-                    client.submit( combine_ipcc_1x1_outputs_to_10x10, tile_id, output_dir_list_1x1, output_dir_list_10x10, no_upload, stage, no_stats, retries=2)
-                    for tile_id in tile_batch
-                ]
+                futures = [client.submit(combine_ipcc_output_to_10x10, tile_id, output_dir_1x1, output_dir_10x10, raster_paths, no_upload, stage, create_zarr, raw_mega_zarr_path, retries=2)
+                                         for tile_id, output_dir_1x1, output_dir_10x10, raster_paths in combine_batch]
+                combine_batch_results = client.gather(futures)
 
-                tile_batch_results = client.gather(futures)
-
-            for _, stats in tile_batch_results:
-                all_10x10_stats.extend(stats)
+            for result in combine_batch_results:
+                main_logger.info(result)
 
             if client is not None:
                 del futures
                 client.run(gc.collect)
 
-            uu.stage_duration(start_time, uu.timestr(), f"{stage}, 10x10 combine batch {i}", main_logger)
-
-        if (not no_stats) and all_10x10_stats:
-            model_10x10_stats_path = uu.compile_1x1_chunk_stats( all_10x10_stats, chunk_shapefile_uri, f"{stage}_10x10_outputs", no_upload, main_logger)
-            main_logger.info(f"Final IPCC 10x10 output stats table: {model_10x10_stats_path}")
-
-        # Also compile 10x10 summaries from the 1x1 chunk stats.
-        if (not no_stats) and all_1x1_stats:
-            combined_10x10_stats_path = compile_10x10_ipcc_chunk_stats(all_1x1_stats, tile_ids_10x10, stage, no_upload, main_logger)
-
-            main_logger.info(f"Final IPCC 10x10 stats from 1x1 chunks: {combined_10x10_stats_path}")
+            uu.stage_duration(start_time, uu.timestr(), f"{stage}, 10x10 combine batch {i}", main_logger,)
 
         uu.stage_duration(start_time, uu.timestr(), f"{stage} with 10x10 combine", main_logger)
 
@@ -1839,6 +1800,7 @@ if __name__ == '__main__':
     parser.add_argument('--no_log', action='store_true', help='Do not create the combined log')
     parser.add_argument('--no_upload', action='store_true', help='Do not save and upload outputs to s3')
     parser.add_argument('--create_zarr', action='store_true', help='Create and populate global mega-zarr with model outputs')
+    parser.add_argument("--skip_existing_1x1", action="store_true", help="If all expected 1x1 output rasters already exist in S3, skip land use processing and go straight to 10x10 mosaicking.")
 
     args = parser.parse_args()
 
@@ -1855,10 +1817,11 @@ if __name__ == '__main__':
     no_log = args.no_log
     no_upload = args.no_upload
     create_zarr = args.create_zarr
+    skip_existing_1x1 = args.skip_existing_1x1
 
     # Create the cluster with command line arguments
     main(cluster_name, run_date, run_local, no_stats, no_log, no_upload, create_zarr, chunk_shapefile_uri,
-         bounding_box=bounding_box, chunk_size_deg=chunk_size_deg, first_chunks=first_chunks, log_note=log_note)
+         bounding_box=bounding_box, chunk_size_deg=chunk_size_deg, first_chunks=first_chunks, log_note=log_note, skip_existing_1x1=skip_existing_1x1)
 
 
 
