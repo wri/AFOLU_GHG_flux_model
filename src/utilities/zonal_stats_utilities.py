@@ -60,7 +60,8 @@ def categorize_age(da):
                     xr.where(da <= 100, 81, 101)))))))
 
 
-# Reclassifies composite landcover zarr for a given year into basic landcover classes
+# Reclassifies composite landcover zarr for a given year into basic landcover classes.
+# Codes are from the GLAD-IPCC crosswalk in the AFOLU flux model schematic slide deck
 # Adapted Claude session 'Forest age categorization in zonal stats'
 def categorize_composite_LC(da):
     return xr.where(da <= 4, 6,             # Codes 0-4                                     Other land
@@ -76,6 +77,7 @@ def categorize_composite_LC(da):
                     xr.where(da <= 250, 3,  # Codes 245-250, but practically just code 250  Settlement
                     xr.where(da <= 254, 6,  # Codes 251-254, but practically just code 254  Other land
                                         7))))))))))))   # All other codes                   None of the above
+
 
 # Converts results of flox to coordinate dictionary.
 # This code came from Solomon Negusse and I haven't changed it in any substantial way.
@@ -344,6 +346,11 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
     if cn.forest_age_category_pattern in df_with_areas.columns:
         df_with_areas[cn.forest_age_category_pattern] = df_with_areas[cn.forest_age_category_pattern].map(cn.forest_age_category_to_text)
         df_with_areas[cn.forest_age_category_pattern] = df_with_areas[cn.forest_age_category_pattern].fillna("Unassigned")
+
+    # Maps watershed codes to names if the contextual layer is used
+    if cn.first_year_LC_composite_pattern in df_with_areas.columns:
+        df_with_areas['first_year_LC_composite_name'] = df_with_areas[cn.first_year_LC_composite_pattern].map(cn.GLAD_LC_to_text)
+        df_with_areas["first_year_LC_composite_name"] = df_with_areas["first_year_LC_composite_name"].fillna("Unassigned")
 
     # Calculates flux density (Mg CO2(e)/ha) for each row
     df_with_areas['density__Mg_ha'] = df_with_areas['value'] / df_with_areas['pixel_area_ha'].replace(0, pd.NA)

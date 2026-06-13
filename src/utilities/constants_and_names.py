@@ -1245,6 +1245,8 @@ managed_land_codes = np.array([0, 1, 2], dtype=np.uint8)
 forest_age_category_pattern = 'forest_age_category_end_of_interval'
 forest_age_category_codes = np.array([0, 1, 6, 21, 41, 61, 81, 101], dtype=np.uint8)
 
+first_year_LC_composite_codes = np.array([0, 1, 2, 3, 4, 5, 6, 7], dtype=np.uint8)
+
 # Converts numeric ISO values to ISO codes
 # From https://github.com/wri/project-zeno-data-infra/blob/main/notebooks/grasslands_areas_gadm_2000-2022.ipynb
 numeric_to_alpha3 = {

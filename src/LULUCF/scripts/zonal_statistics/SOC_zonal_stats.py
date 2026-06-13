@@ -257,6 +257,9 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     # land_state_node_aligned = zsu.safe_crop(land_state_node, reference)
     ds_selected_analysis_vars_aligned = zsu.safe_crop(ds_selected_analysis_vars, reference)
 
+    # Pre-categorize the starting landcover into the 6 IPCC classes (per GLAD-IPCC crosswalk table in model schematic Powerpoint)
+    first_LC_xr_classes_aligned = zsu.categorize_composite_LC(first_LC_xr_aligned)
+
     # # Age category contextual layer
     # # NOTE: Not using in this script because age doesn't mean anything without some information about land cover or land state node.
     # # So, not including until there are also contextual layers about land cover and/or land state.
@@ -289,6 +292,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     # # print("forest_age_cat_3d:", forest_age_cat_3d)
     # forest_age_cat_xr = forest_age_cat_3d.rename(cn.forest_age_category_pattern).to_dataset()
     # # print("forest_age_cat_xr:", forest_age_cat_xr)
+
 
 
     main_logger.info(f"Selecting datasets: {uu.timestr()}")
@@ -385,6 +389,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
         KBA_aligned_subset = KBA_aligned.sel(x=slice(west, east), y=slice(north, south))
         watersheds_aligned_subset = watersheds_aligned.sel(x=slice(west, east), y=slice(north, south))
         drivers_aligned_subset = drivers_aligned.sel(x=slice(west, east), y=slice(north, south))
+        first_LC_classes_aligned_subset = first_LC_xr_classes_aligned.sel(x=slice(west, east), y=slice(north, south))
         # forest_age_cat_subset = forest_age_cat_xr.sel(x=slice(west, east), y=slice(north, south))
         # BRA_biomes_aligned_subset = BRA_biomes_aligned.sel(x=slice(west, east), y=slice(north, south))
         # managed_land_CAN_aligned_subset = managed_land_CAN_aligned.sel(x=slice(west, east), y=slice(north, south))  # Alignment issue below, so not using it
@@ -438,6 +443,12 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
         else:
             drivers_da = drivers_aligned_subset[cn.drivers_of_loss_pattern]
 
+        if first_LC_classes_aligned_subset[cn.first_year_LC_composite_pattern].sizes.get("x", 0) == 0 or first_LC_classes_aligned_subset[cn.first_year_LC_composite_pattern].sizes.get("y", 0) == 0:
+            first_LC_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(cn.first_year_LC_composite_pattern)
+            main_logger.info(f"  {cn.first_year_LC_composite_pattern} not in {tile_id}. Creating xarray of all 0s.")
+        else:
+            first_LC_da = first_LC_classes_aligned_subset[cn.first_year_LC_composite_pattern]
+
         # if forest_age_cat_subset[cn.forest_age_category_pattern].sizes.get("x", 0) == 0 or forest_age_cat_subset[cn.forest_age_category_pattern].sizes.get("y", 0) == 0:
         #     forest_age_cat_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(cn.forest_age_category_pattern)
         #     main_logger.info(f"  {cn.forest_age_category_pattern} not in {tile_id}. Creating xarray of all 0s.")
@@ -488,6 +499,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
          KBA_da,
          watersheds_da,
          drivers_da,
+         first_LC_da,
          # forest_age_cat_da,
          # bra_da,
          # managed_land_CAN_da,
@@ -504,6 +516,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
             KBA_da,
             watersheds_da,
             drivers_da,
+            first_LC_da,
             # forest_age_cat_da,
             # bra_da,
             # managed_land_CAN_da,
@@ -525,6 +538,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
                 KBA_da,
                 watersheds_da,
                 drivers_da,
+                first_LC_da,
                 # forest_age_cat_da,
                 # bra_da,
                 # managed_land_CAN_da,
@@ -542,6 +556,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
                 cn.KBA_codes,
                 cn.watershed_codes,
                 cn.drivers_codes,
+                cn.first_year_LC_composite_codes,
                 # cn.forest_age_category_codes,
                 # cn.BRA_biomes_codes,
                 # cn.managed_land_codes,  # For Canada
@@ -564,6 +579,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
             cn.KBA_pattern,
             cn.watersheds_pattern,
             cn.drivers_of_loss_pattern,
+            cn.first_year_LC_composite_pattern,
             # cn.forest_age_category_pattern,
             # cn.BRA_biomes_pattern,
             # cn.managed_land_CAN_pattern,
