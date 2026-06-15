@@ -44,6 +44,7 @@ https://app.asana.com/1/25496124013636/task/1206230383901961/comment/12106415042
 #TODO potentially add branches for loss of primary forest (currently just have primary forest remaining primary forest)
 #TODO Add veg_ to the start of output patterns to distinguish them from SOC or organic soil
 #TODO Delete all references to 5-year intervals (including s3 paths)
+#TODO Change all runtimes to decimal hours from HH:MM:SS
 """
 
 import argparse

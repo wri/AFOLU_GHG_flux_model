@@ -58,6 +58,11 @@ python -m src.synthesis.scripts.1_LULUCF_flux_summation -cn LULUCF_summation --n
 Full run (150 workers based on discussion with Claude session 'LULUCF 30-m outputs script' about how different numbers of workers will affect runtime):
 python -m src.utilities.create_cluster -n 150 -t 1 -m 64 -cn LULUCF_summation
 python -m src.synthesis.scripts.1_LULUCF_flux_summation -cn LULUCF_summation -mt standard -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --veg_date 20260130 --veg_mpd global --soc_date 20260611 --soc_mpd global --create_zarr --log_note "LULUCF v1.0.0 fluxes: veg v1.0.5 + SOC v1.0.1 + org soil v1.0.1, 2016-2024."
+
+#TODO 2026-06-14 run had timestamps at end of chunk names, as if not is_large_run. Didn't notice it during testing. Need to understand and fix.
+#TODO 2026-06-14 run had more than 18832 output 1x1 deg geotifs in the output folders, e.g., many folders have ~27000 geotifs. Don't know why. Didn't notice this when testing.
+#TODO Parallelize 10x10 deg tile uploads in create_10x10_deg_geotif_from_zarr, per Claude session 'LULUCF 30-m outputs script'. Applies to veg, SOC, and LULUCF. Haven't tried at all.
+#TODO Parallelize outer loop for var in LULUCF_OUTPUTS_TO_ZARR: with max_workers=2 to speed 10x10 deg uploads (separate from change to create_10x10_deg_geotif_from_zarr, per Claude session 'LULUCF 30-m outputs script'
 """
 
 import argparse
@@ -372,6 +377,7 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
     # -----------------------------------------------------------------------
     lu.print_and_log(f"--- Creating 10x10 timeseries geotifs for {tile_id}: {uu.timestr()}", False, logger_worker)
 
+    #TODO Parallelize with max_workers=2 to speed 10x10 deg uploads (separate from change to create_10x10_deg_geotif_from_zarr, per Claude session 'LULUCF 30-m outputs script'
     for var in LULUCF_OUTPUTS_TO_ZARR:
         for year_idx in range(cn.end_year_count):
             zu.create_10x10_deg_geotif_from_zarr(
@@ -657,6 +663,8 @@ def main(cluster_name, model_type,
         # ensuring logs are fully streamed to Coiled before the instance exits.
         # It only shuts down workers that are idle (not processing a task).
         # The >= 5 threshold avoids repeated API calls at the very tail end.
+        # This could perhaps also be done with Coiled's cluster.adapt, which reduces workers as they're not needed.
+        # But I didn't try that.
         if not run_local and n_remaining < n_workers_start:
             workers_info = client.scheduler_info()["workers"]
             current_count = len(workers_info)

@@ -50,6 +50,7 @@ python -m src.utilities.create_cluster -n 200 -t 1 -m 32 -cn mineral_soil
 python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -mt standard -mpd global -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__with_pivots__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --input_date YYYYMMDD --log_note "10x10 deg tile creation for SOC v1.0.1 (2000-2022, revised organic/mineral soil split)."
 
 Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/690a21cd-2ea0-8333-9c7f-7091f8016fb3
+#TODO Parallelize 10x10 deg tile uploads in create_10x10_deg_geotif_from_zarr, per Claude session 'LULUCF 30-m outputs script'. Applies to veg, SOC, and LULUCF. Haven't tried at all.
 """
 
 import argparse

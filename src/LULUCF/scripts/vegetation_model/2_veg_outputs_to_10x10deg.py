@@ -46,6 +46,7 @@ python -m src.LULUCF.scripts.vegetation_model.2_veg_outputs_to_10x10deg -cn vege
 Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/690a21cd-2ea0-8333-9c7f-7091f8016fb3
 
 #TODO change NoData in flux outputs to something besides 0 because 0 has a meaning for fluxes
+#TODO Parallelize 10x10 deg tile uploads in create_10x10_deg_geotif_from_zarr, per Claude session 'LULUCF 30-m outputs script'. Applies to veg, SOC, and LULUCF. Haven't tried at all.
 """
 
 import argparse
