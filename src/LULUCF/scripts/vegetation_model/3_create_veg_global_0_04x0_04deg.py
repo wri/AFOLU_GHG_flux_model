@@ -69,7 +69,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
     main_logger.info(f"Input date: {input_date}")
     main_logger.info(f"no_upload: {no_upload}")
 
-    # Outputs to turn into 10x10 tile
+    # Outputs to create global maps for
     # full_list_of_vars = cn.full_outputs_to_zarr   # If all variables were made into 10x10s
     full_list_of_vars = cn.veg_summative_output_patterns
 
@@ -78,16 +78,16 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
         vars_to_process = full_list_of_vars[0:first_variables_to_process]
     else:
         vars_to_process = full_list_of_vars
-    main_logger.info(f"Variables to create 10x10 deg tiles for: {vars_to_process} ({len(vars_to_process)} out of {len(full_list_of_vars)})")
+    main_logger.info(f"Variables to create global maps for: {vars_to_process} ({len(vars_to_process)} out of {len(full_list_of_vars)})")
 
     # Limits the processed years to the supplied number (for testing)
     if first_years_to_process:
         years_to_process = first_years_to_process
     else:
         years_to_process = cn.end_year_count
-    main_logger.info(f"Years to aggregate to 10x10 deg and compare chunk stats for: {years_to_process} out of {cn.end_year_count}")
+    main_logger.info(f"Years to create global maps for: {years_to_process} out of {cn.end_year_count}")
 
-    # Determines if the output file names for final versions of outputs should be used
+    # Determines if large run parameters should be used
     is_large_run = False
     # is_large_run = True  # For simulating a large run
     if len(vars_to_process * years_to_process) > 20:

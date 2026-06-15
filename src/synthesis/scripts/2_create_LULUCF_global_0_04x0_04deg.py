@@ -1,8 +1,6 @@
 """
 Creates global outputs at 0.04x0.04 deg resolution (approximately 4x4 km at the equator) for specified inputs.
-Net change, loss, and gain are Mg CO2/0.04x0.04 deg pixel/year for interval-level outputs.
-Density is Mg C/0.04x0.04 deg pixel/year.
-Negative is SOC gain and positive is SOC loss (same signs as vegetation).
+Units are Mg CO2(e)/0.04x0.04 deg pixel/year for annual data and annual averages.
 These are for presentations and other static displays.
 They are not to be used for calculations or statistics.
 
@@ -15,21 +13,21 @@ is by telling it to run on only the X first tiles with -ft argument.
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Local test:
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.3_create_veg_global_0_04x0_04deg -mt standard -mpd global -fy 1 -fv 1 -ft 1 --run_local --no_upload --input_date YYYYMMDD
+python -m src.synthesis.scripts.2_create_LULUCF_global_0_04x0_04deg -mt standard -mpd global -fy 1 -fv 1 -ft 1 --run_local --no_upload --input_date 20260614
 
 Coiled small tests:
-python -m src.utilities.create_cluster -n 1 -t 1 -m 4 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.3_create_SOC_global_0_04x0_04deg -cn mineral_soil -mt standard -mpd global -fy 1 -fv 1 -ft 1 --input_date YYYYMMDD
+python -m src.utilities.create_cluster -n 1 -t 1 -m 4 -cn LULUCF_summation
+python -m src.synthesis.scripts.2_create_LULUCF_global_0_04x0_04deg -cn LULUCF_summation -mt standard -mpd global -fy 1 -fv 1 -ft 1 --input_date 20260614
 
 Coiled large shapefile test:
-python -m src.utilities.create_cluster -n 5 -t 1 -m 4 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.3_create_SOC_global_0_04x0_04deg -cn mineral_soil -mt standard -mpd global -fy 2 -fv 2 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp --input_date YYYYMMDD -ln "Test 1884 chunk run"
+python -m src.utilities.create_cluster -n 10 -t 1 -m 4 -cn LULUCF_summation
+python -m src.synthesis.scripts.2_create_LULUCF_global_0_04x0_04deg -cn LULUCF_summation -mt standard -mpd global -fy 2 -fv 2 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp --input_date 20260614 -ln "This is intended to be the definitive 1884-chunk 0.04x0.04 deg output run."
 
 Full run:
-python -m src.utilities.create_cluster -n 5 -t 1 -m 4 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.3_create_SOC_global_0_04x0_04deg -cn mineral_soil --input_date YYYYMMDD -mt standard -mpd global --log_note "This is a global run for SOC v1.0.1 (2000-2022, revised organic/mineral soil split)."
+python -m src.utilities.create_cluster -n 10 -t 1 -m 4 -cn LULUCF_summation
+python -m src.synthesis.scripts.2_create_LULUCF_global_0_04x0_04deg -cn LULUCF_summation --input_date 20260614 -mt standard -mpd global --log_note "This is a global run for LULUCF v1.0.0: veg v1.0.5 + SOC v1.0.1 + org soil v1.0.1, 2016-2024."
 
-# Per https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant
+Based on corresponding vegetation script, but with Claude session 'LULUCF global geotif setup'
 """
 
 import argparse
@@ -55,7 +53,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
     ### Step 1: Preparation
 
     # Model stage being run
-    stage = 'soil_0_04deg_output_global'
+    stage = 'LULUCF_0_04deg_output_global'
 
     # Connects to Coiled cluster if not running locally and the named cluster exists
     cluster, client, run_local = uu.connect_to_Coiled_cluster(cluster_name, run_local)
@@ -65,89 +63,82 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
 
     start_time = uu.timestr() # Starting time for stage
     main_logger.info(f"Stage {stage} started at: {start_time}")
-    main_logger.info(f"SOC model version: {cn.SOC_model_version}")
+    main_logger.info(f"LULUCF model version: {cn.LULUCF_model_version}")
+    main_logger.info(f"Veg: {cn.veg_model_version};  SOC: {cn.SOC_model_version}; Organic soil: {cn.organic_soil_model_version}")
     main_logger.info(f"Model path descriptor: {model_path_description}")
-    main_logger.info(f"Start year: 2000; end year: {cn.SOC_density_intervals[-1]}")
     main_logger.info(f"Input date: {input_date}")
     main_logger.info(f"no_upload: {no_upload}")
 
-    # Outputs to create global maps for
-    # Separate lists for density and change because they have different numbers of years, so they need to be handled separately
-    full_list_of_vars_density = [
-        cn.SOC_density_full_extent_pattern,
-        cn.SOC_density_min_soil_extent_pattern
-    ]
+    LULUCF_run = cn.LULUCF_full_version_underscore.replace("MODEL_TYPE", model_type)
+    LULUCF_run = LULUCF_run.replace("MODEL_PATH_DESCRIPTION", model_path_description)
 
-    full_list_of_vars_change = [
-        cn.SOC_net_full_extent_pattern,
-        cn.SOC_net_min_soil_extent_pattern,
-        cn.SOC_loss_full_extent_pattern,
-        cn.SOC_loss_min_soil_extent_pattern,
-        cn.SOC_gain_full_extent_pattern,
-        cn.SOC_gain_min_soil_extent_pattern
+    base_path = (
+            cn.LULUCF_outputs_path
+            .replace(cn.model_version_type_description_placeholder, LULUCF_run)
+            + f"PATTERN/annual_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{input_date}/"
+    )
+
+    # base_path = f"{cn.LULUCF_outputs_path}PATTERN/annual_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{input_date}/"
+    # base_path = base_path.replace(cn.model_version_type_description_placeholder, f"version_{model_version}__{model_type}__{model_path_description}")
+    main_logger.info(f"Core output path for aggregation: {base_path}")
+
+    # Outputs to create global maps for
+    full_list_of_vars = [
+        cn.gross_emis_all_C_pools_all_gases_LULUCF_pattern,
+        cn.gross_removals_all_C_pools_LULUCF_pattern,
+        cn.net_flux_all_C_pools_all_gases_LULUCF_pattern,
     ]
 
     # Limits the processed variables to the supplied number (for testing)
     if first_variables_to_process:
-        vars_to_process_density = full_list_of_vars_density[0:first_variables_to_process]
-        vars_to_process_change = full_list_of_vars_change[0:first_variables_to_process]
+        vars_to_process = full_list_of_vars[0:first_variables_to_process]
     else:
-        vars_to_process_density = full_list_of_vars_density
-        vars_to_process_change = full_list_of_vars_change
-    main_logger.info(
-        f"Variables to create density global maps for: {vars_to_process_density} ({len(vars_to_process_density)} out of {len(full_list_of_vars_density)})")
-    main_logger.info(
-        f"Variables to create change global maps for: {vars_to_process_change} ({len(vars_to_process_change)} out of {len(full_list_of_vars_change)})")
+        vars_to_process = full_list_of_vars
+    main_logger.info(f"Variables to create 10x10 deg tiles for: {vars_to_process} ({len(vars_to_process)} out of {len(full_list_of_vars)})")
 
     # Limits the processed years to the supplied number (for testing)
     if first_years_to_process:
-        years_to_process_density = first_years_to_process
-        years_to_process_change = first_years_to_process
+        years_to_process = first_years_to_process
     else:
-        years_to_process_density = len(cn.SOC_density_intervals)
-        years_to_process_change = len(cn.SOC_change_intervals)
-    main_logger.info(
-        f"Years to create global density maps for: {years_to_process_density} out of {len(cn.SOC_density_intervals)}")
-    main_logger.info(
-        f"Years to create global change maps for: {years_to_process_change} out of {len(cn.SOC_change_intervals)}")
+        years_to_process = cn.end_year_count
+    main_logger.info(f"Years to aggregate to 10x10 deg and compare chunk stats for: {years_to_process} out of {cn.end_year_count}")
 
     # Determines if large run parameters should be used
     is_large_run = False
     # is_large_run = True  # For simulating a large run
-    if ((len(vars_to_process_density)*2) * (years_to_process_density*2)) > 20:
+    if len(vars_to_process * years_to_process) > 20:
         is_large_run = True
         main_logger.info(f"Running as large-scale run model: {is_large_run}")
 
-    base_path = f"{cn.SOC_outputs_path}PATTERN/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{input_date}/"
-    main_logger.info(f"Core output path for aggregation: {base_path}")
-
 
     ### Step 2: Creates outputs
-    ### Separate submissions for density and change because of the different numbers of years,
+    ### Separate submissions for timeseries and annual average maps because of the differing formats of the input years,
     ### But they still run in parallel because they are all part of the same futures.
+    ### Per Claude session 'LULUCF global geotif setup'
 
-    main_logger.info(f"Starting processing: {uu.timestr()}")
     futures = []
 
-    # Density output processing
-    for var_name in vars_to_process_density:
-        for year_idx in range(years_to_process_density):
+    main_logger.info(f"Starting processing: {uu.timestr()}")
+    # Timeseries output submission
+    for var_name in vars_to_process:
+        for year_idx in range(years_to_process):
 
             future = client.submit(uu.mosaic_tiles_to_global,
                                    var_name, year_idx, first_tiles_to_process, base_path,
-                                   cn.SOC_model_version_underscore, model_type, model_path_description,
+                                   cn.LULUCF_model_version_underscore, model_type, model_path_description,
                                    no_upload, is_large_run)
             futures.append(future)
 
-    # Change output processing
-    for var_name in vars_to_process_change:
-        for year_idx in range(years_to_process_change):
+    # Annual average submission
+    avg_year = f"{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}"
+    base_path_avg = base_path.replace("START_END", f"avg_{avg_year}")
+    for var_name in vars_to_process:
 
-            future = client.submit(uu.mosaic_tiles_to_global,
-                                   var_name, year_idx, first_tiles_to_process, base_path,
-                                   cn.SOC_model_version_underscore, model_type, model_path_description,
-                                   no_upload, is_large_run)
-            futures.append(future)
+        future = client.submit(uu.mosaic_tiles_to_global,
+                               var_name, 0, first_tiles_to_process, base_path_avg,
+                               cn.LULUCF_model_version_underscore, model_type, model_path_description,
+                               no_upload, is_large_run)
+        futures.append(future)
 
     results = client.gather(futures)
     print(results)
@@ -220,3 +211,4 @@ if __name__ == "__main__":
     main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
          first_variables_to_process=first_variables_to_process, first_years_to_process=first_years_to_process,
          first_tiles_to_process=first_tiles_to_process, model_path_description=model_path_description, log_note=log_note)
+

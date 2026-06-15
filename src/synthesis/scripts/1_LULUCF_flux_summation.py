@@ -42,24 +42,22 @@ Geotif outputs (timeseries and annual avg):
 Processing unit: 10x10 deg tiles (each worker processes 100 constituent 1x1 sub-chunks,
 then assembles 10x10 geotifs in the same pass).
 
+Because processing is in 10x10 deg tiles, which can take 2-3 hours to run apiece, this script
+progressively shuts down workers as they are no longer needed. That way, only a few workers more than are needed
+are actually still running, rather than all workers running the whole time but not doing anything once they finish.
+
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Local test:
 python -m src.synthesis.scripts.1_LULUCF_flux_summation --run_local --no_upload -bb 110 -10 120 0 -mt standard -mpd test_box --veg_date 20260130 --veg_mpd global --soc_date 20260611 --soc_mpd global  -create_zarr
 
 Coiled small test:
-python -m src.utilities.create_cluster -n 1 -t 1 -m 64 -cn LULUCF
-python -m src.synthesis.scripts.1_LULUCF_flux_summation -cn LULUCF --no_upload -bb 110 -10 120 0 -mt standard -mpd test_tile_00N_110E --veg_date 20260130 --veg_mpd global --soc_date 20260611 --soc_mpd global --create_zarr
+python -m src.utilities.create_cluster -n 1 -t 1 -m 64 -cn LULUCF_summation
+python -m src.synthesis.scripts.1_LULUCF_flux_summation -cn LULUCF_summation --no_upload -bb 110 -10 120 0 -mt standard -mpd test_tile_00N_110E --veg_date 20260130 --veg_mpd global --soc_date 20260611 --soc_mpd global --create_zarr
 
-Full run:
-  python -m src.utilities.create_cluster -n 100 -t 1 -m 64 -cn LULUCF
-  python -m src.synthesis.scripts.1_LULUCF_flux_summation \\
-    -cn LULUCF -mt standard -mpd global \\
-    -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp \\
-    --veg_date YYYYMMDD --veg_mpd global \\
-    --soc_date YYYYMMDD --soc_mpd global \\
-    --create_zarr \\
-    --log_note "LULUCF v1.0.0 fluxes: veg v1.0.5 + SOC v1.0.1 + org soil v1.0.1, 2016-2024."
+Full run (150 workers based on discussion with Claude session 'LULUCF 30-m outputs script' about how different numbers of workers will affect runtime):
+python -m src.utilities.create_cluster -n 150 -t 1 -m 64 -cn LULUCF_summation
+python -m src.synthesis.scripts.1_LULUCF_flux_summation -cn LULUCF_summation -mt standard -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --veg_date 20260130 --veg_mpd global --soc_date 20260611 --soc_mpd global --create_zarr --log_note "LULUCF v1.0.0 fluxes: veg v1.0.5 + SOC v1.0.1 + org soil v1.0.1, 2016-2024."
 """
 
 import argparse
@@ -69,6 +67,7 @@ import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 import time
+import ctypes
 import resource
 from rasterio.transform import from_origin
 import fsspec
@@ -169,7 +168,8 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
                               veg_zarr_path, soc_zarr_path,
                               lulucf_zarr_path, lulucf_avg_zarr_path,
                               outputs_1x1_dir_by_year, outputs_1x1_avg_dirs,
-                              output_base_10x10, model_type, model_path_description):
+                              output_base_10x10, model_type, model_path_description,
+                              valid_sub_chunks=None):
     """
     Processes one 10x10 deg tile end-to-end:
       Phase 1: Process each of the (up to) 100 1x1 sub-chunks; write 1x1 per-ha timeseries and average geotifs and populate respective zarrs.
@@ -189,7 +189,13 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
     org_zarr  = zarr.open_group(fs.get_mapper(cn.organic_soil_zarr_path), mode="r", use_consolidated=False)
 
     min_x, min_y, max_x, max_y = uu.get_10x10_tile_bounds(tile_id)
-    sub_chunks = uu.get_chunk_bounds_from_bounding_box([min_x, min_y, max_x, max_y], 1)
+    chunk_list_for_tile = uu.get_chunk_bounds_from_bounding_box([min_x, min_y, max_x, max_y], 1)
+
+    # Gets just the chunks in the tile that are in the chunk list shapefile (i.e. skips ocean ones)
+    if valid_sub_chunks is not None:
+        chunk_list_for_tile = [b for b in chunk_list_for_tile if tuple(b) in valid_sub_chunks]
+
+    lu.print_and_log(f"--- Creating 1x1 outputs for {tile_id}: {len(chunk_list_for_tile)} valid chunks in tile: {uu.timestr()}",False, logger_worker)
 
     tile_pixels = cn.full_raster_dims  # 40000
     # Tile-level annual-average accumulators (held throughout tile processing)
@@ -205,10 +211,10 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
 
     lu.print_and_log(f"--- Creating 1x1 outputs for {tile_id}: {uu.timestr()}", False, logger_worker)
 
-    for chunk_idx, bounds in enumerate(sub_chunks):
-    # for chunk_idx, bounds in enumerate(sub_chunks[92:97]): # for testing
+    for chunk_idx, bounds in enumerate(chunk_list_for_tile):
+    # for chunk_idx, bounds in enumerate(chunk_list_for_tile[92:97]): # for testing
 
-        lu.print_and_log(f"Processing chunk {chunk_idx} ({bounds}) of {len(sub_chunks)} in {tile_id}", is_large_run, logger_worker)
+        lu.print_and_log(f"Processing chunk {chunk_idx+1} ({bounds}) of {len(chunk_list_for_tile)} in {tile_id}", is_large_run, logger_worker)
 
         bounds_str       = uu.boundstr(bounds)
         subtile_id       = uu.xy_to_tile_id(bounds[0], bounds[3])
@@ -350,6 +356,11 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
         del lulucf_emis_avg, lulucf_removals_avg, lulucf_net_avg
         del pixel_area_chunk
         gc.collect()
+        try:
+            ctypes.CDLL("libc.so.6").malloc_trim(0)  # returns free glibc pages to OS
+        except Exception:
+            pass
+        lu.print_and_log(f"Memory before Phase 2: {psutil.Process().memory_info().rss / 1e6:.1f} MB", is_large_run, logger_worker)
 
     tile_end_1x1 = time.time()
     lu.print_and_log(f"Completed 1x1 processing in {tile_id} in {round(tile_end_1x1 - tile_start)} seconds: {uu.timestr()}", is_large_run, logger_worker)
@@ -494,9 +505,17 @@ def main(cluster_name, model_type,
         bounding_box, chunk_shapefile_uri, chunk_size_deg or 1, first_chunks, fishnet_iso_df, main_logger)
     main_logger.info(f"1x1 deg chunks to cover: {len(chunk_list)}")
 
-    tile_ids = sorted(set(uu.xy_to_tile_id(c[0], c[3]) for c in chunk_list))
-    main_logger.info(f"10x10 deg tiles to process: {len(tile_ids)}")
+    # Build a dict mapping tile_id → frozenset of valid (w, s, e, n) bounds
+    valid_chunks_by_tile = {}
+    for c in chunk_list:
+        tid = uu.xy_to_tile_id(c[0], c[3])
+        valid_chunks_by_tile.setdefault(tid, set()).add(tuple(c))
 
+    tile_ids = sorted(valid_chunks_by_tile.keys())
+
+    main_logger.info(f"10x10 deg tiles to process (only chunks from chunklist): {len(tile_ids)}")
+
+    # is_large_run = True  # For testing
     is_large_run = len(tile_ids) > 5
     if is_large_run:
         create_zarr = True
@@ -610,7 +629,8 @@ def main(cluster_name, model_type,
             veg_zarr_path, soc_zarr_path,
             LULUCF_annual_zarr_path, LULUCF_avg_zarr_path,
             outputs_1x1_dir_by_year, outputs_1x1_avg_dirs,
-            output_base_10x10, model_type, model_path_description
+            output_base_10x10, model_type, model_path_description,
+            valid_chunks_by_tile[tile_id]
         )
         for tile_id in tile_ids
     ]
@@ -635,20 +655,26 @@ def main(cluster_name, model_type,
         # retire_workers() is graceful — Dask will not assign new tasks to
         # flagged workers; each drains its current task before shutting down,
         # ensuring logs are fully streamed to Coiled before the instance exits.
+        # It only shuts down workers that are idle (not processing a task).
         # The >= 5 threshold avoids repeated API calls at the very tail end.
         if not run_local and n_remaining < n_workers_start:
-            current_worker_ids = list(client.scheduler_info()["workers"].keys())
-            current_count = len(current_worker_ids)
+            workers_info = client.scheduler_info()["workers"]
+            current_count = len(workers_info)
             desired_count = max(1, n_remaining)
             surplus = current_count - desired_count
             if surplus >= 5:
-                time.sleep(15)  # let Coiled flush buffered log lines before instance exits
-                to_retire = current_worker_ids[:surplus]
-                client.retire_workers(to_retire, close_workers=True)
-                main_logger.info(
-                    f"Retired {surplus} workers: {current_count} → {desired_count} "
-                    f"({n_remaining} tiles remaining)"
-                )
+                idle_ids = [
+                    wid for wid, info in workers_info.items()
+                    if not info.get("processing")
+                ]
+                to_retire = idle_ids[:surplus]
+                if to_retire:
+                    time.sleep(15)
+                    client.retire_workers(to_retire, close_workers=True)
+                    main_logger.info(
+                        f"Retired {len(to_retire)} idle workers: {current_count} → {current_count - len(to_retire)} "
+                        f"({n_remaining} tiles remaining)"
+                    )
 
     del futures
     client.run(gc.collect)
@@ -675,13 +701,29 @@ def main(cluster_name, model_type,
             main_logger.info("Resizing cluster to 1 worker for counts/log")
             resize_cluster.resize_coiled_cluster(cluster_name, 1)
 
+    # Counts output 1x1 and 10x10 deg geotifs
     if not no_upload and is_large_run:
         for pattern in LULUCF_OUTPUTS_TO_ZARR:
             for year in list(cn.interval_end_years_annual) + ['avg']:
-                folder = outputs_1x1_dir_by_year.get((pattern, year)) or outputs_1x1_avg_dirs.get(pattern)
-                if folder:
-                    _, count = uu.list_raster_full_paths_in_s3_folder_and_count(folder)
-                    main_logger.info(f"  1x1 outputs in {folder}: {count}")
+                folder_1x1 = outputs_1x1_dir_by_year.get((pattern, year)) or outputs_1x1_avg_dirs.get(pattern)
+                if folder_1x1:
+                    _, count = uu.list_raster_full_paths_in_s3_folder_and_count(folder_1x1)
+                    main_logger.info(f"  1x1 outputs in {folder_1x1}: {count}")
+
+                year_str = f"avg_{AVG_YR}" if year == 'avg' else str(year)
+                for units, dims in [
+                    (cn.flux_density_pixel_meaning,   cn.full_raster_dims),
+                    (cn.flux_per_pixel_pixel_meaning, cn.full_raster_dims),
+                    (cn.flux_aggreg_pixel_meaning,    cn.global_aggregation_factor),
+                ]:
+                    folder_10x10 = (output_base_10x10
+                                    .replace("PATTERN",          pattern)
+                                    .replace("START_END",        year_str)
+                                    .replace("PER_HA_OR_PIXEL",  units)
+                                    .replace("CHUNK_SIZE_pixels", f"{dims}_pixels"))
+                    _, count = uu.list_raster_full_paths_in_s3_folder_and_count(folder_10x10)
+                    main_logger.info(f"  10x10 outputs in {folder_10x10}: {count}")
+
     uu.stage_duration(start_time, uu.timestr(), f"{stage} with output counts", main_logger)
 
     if not run_local:
