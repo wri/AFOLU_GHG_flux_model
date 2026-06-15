@@ -664,7 +664,7 @@ oil_palm_2000_extent_pattern = "plantation_2000_or_earlier_processed"
 
 # Descals et al. 2024: https://essd.copernicus.org/articles/16/5111/2024/essd-16-5111-2024-discussion.html
 oil_palm_first_year_dir = f"{AFOLU_dir}organic_soils/inputs/processed/descals_plantation/year/20241105/"
-oil_palm_first_year_pattern = "descals_year"
+oil_palm_first_year_pattern = "plantation_year"
 
 # Originally from gfw-data-lake, so it's in 400x400 windows
 planted_forest_tree_crop_dir = f"{full_bucket_prefix}/climate/carbon_model/other_emissions_inputs/plantation_simpleType__planted_forest_tree_crop/SDPTv2/20230911/"

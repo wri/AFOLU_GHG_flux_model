@@ -3,8 +3,7 @@ Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Local test:
 Indonesia
-python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 119.5 -5.75 119.75 -5.5 -cs 0.25 --run_local --run_date 20268888
-python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 119 -6 120 -5 -cs 1 --run_local --run_date 20268888
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 119 -6 120 -5 -cs 1 --run_local --create_zarr --run_date 20269999
 
 
 Canada
@@ -23,7 +22,7 @@ python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_l
 
 Coiled test (10x10 deg chunk):
 python -m src.utilities.create_cluster -n 50 -m 32 -cn IPCC_land_use_10x10
-python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_10x10 -bb 110 -10 120 0 -cs 10 --create_zarr --skip_existing_1x1 --run_date 20268888
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_10x10 -bb 110 -10 120 0 -cs 10 --create_zarr --run_date 20268888
 
 Full run:
 
@@ -31,6 +30,9 @@ Notes:
     - Took 2 minutes to run for 0.25 degree chunk locally
     - Took 7 minutes to run for 1 degree chunk locally
     - Took 35 minutes to run for 10 degree area in 1 degree chunks in coiled using 100 workers (30 credits)
+
+TODO:
+Switch from regex to numba for faster performance?
 
 """
 
@@ -221,6 +223,7 @@ def build_raster_paths_by_output_dir(output_dir_list_1x1, main_logger):
 def make_10x10_tile_list(chunk_list):
     tile_ids = sorted(set(uu.xy_to_tile_id(chunk[0], chunk[3]) for chunk in chunk_list))
     return tile_ids
+
 
 # Move general utilities from here up to UU
 #######################################################################################################################
@@ -1351,9 +1354,8 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
     [in_dict.clear() for in_dict in in_dicts]
 
     # ### Part 4: Populate zarr
-    # if create_zarr:
-    #     zu.populate_ipcc_zarr(bounds, bounds_str, create_zarr, is_large_run, logger_worker, mega_zarr_path, out_dict, stage, tile_id)
-    #TODO: Delete?
+    if create_zarr:
+        zu.populate_ipcc_zarr(bounds, bounds_str, create_zarr, is_large_run, logger_worker, mega_zarr_path, out_dict, stage, tile_id)
 
 
     ### Part 5: Calculates chunk stats
@@ -1433,7 +1435,7 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
 
     return return_message, chunk_stats  # Return both the success message and the statistics
 
-def combine_ipcc_output_to_10x10( tile_id, output_dir_1x1, output_dir_10x10, raster_paths, no_upload, stage, create_zarr=False, mega_zarr_path=None):
+def combine_ipcc_output_to_10x10(tile_id, output_dir_1x1, output_dir_10x10, raster_paths, no_upload, stage,):
     logger_worker = lu.setup_logging_worker()
     tile_bounds = uu.get_10x10_tile_bounds(tile_id)
     tile_bounds_str = tile_id
@@ -1451,9 +1453,6 @@ def combine_ipcc_output_to_10x10( tile_id, output_dir_1x1, output_dir_10x10, ras
     lu.print_and_log( f"Mosaicking {key} for 10x10 tile {tile_id} from {len(tile_rasters)} 1x1 rasters: {uu.timestr()}", False, logger_worker)
 
     mosaic_array = mosaic_ipcc_1x1_rasters(key, tile_rasters, tile_bounds, logger_worker)
-
-    if create_zarr:
-        zu.populate_ipcc_zarr(tile_bounds, tile_bounds_str, create_zarr, True, logger_worker, mega_zarr_path, {key: mosaic_array}, stage, tile_id)
 
     if not no_upload:
         data_type = mosaic_array.dtype.name
@@ -1639,12 +1638,12 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
         uu.create_s3_task_files(stage, chunk_batch)
 
         if run_local:
-            batch_results = [calculate_and_upload_IPCC_land_use(chunk, download_dict_with_data_types, True, no_upload, output_dir_list_1x1, stage, no_stats, False, None)
+            batch_results = [calculate_and_upload_IPCC_land_use(chunk, download_dict_with_data_types, True, no_upload, output_dir_list_1x1, stage, no_stats, create_zarr, raw_mega_zarr_path)
                              for chunk in chunk_batch]
             all_results.extend(batch_results)
 
         else:
-            futures = [client.submit(calculate_and_upload_IPCC_land_use, chunk, download_dict_with_data_types, True, no_upload, output_dir_list_1x1, stage, no_stats, False, None, retries=2)
+            futures = [client.submit(calculate_and_upload_IPCC_land_use, chunk, download_dict_with_data_types, True, no_upload, output_dir_list_1x1, stage, no_stats, create_zarr, raw_mega_zarr_path, retries=2)
                        for chunk in chunk_batch]
             batch_results = client.gather(futures)
             all_results.extend(batch_results)
@@ -1688,8 +1687,7 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
 
         uu.stage_duration(start_time, uu.timestr(), f"{stage} with 1x1 chunk stats", main_logger)
 
-
-    ### Step 6b: Combine 1x1 outputs into 10x10 outputs and populate 10x10 deg zarr
+    ### Step 6b: Combine 1x1 outputs into 10x10 outputs
 
     if make_10x10_outputs and no_upload:
         main_logger.warning("Skipping 10x10 combine because --no_upload is enabled. The combine step reads uploaded 1x1 rasters from S3.")
@@ -1702,27 +1700,39 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
         combine_tasks = []
         for tile_id in tile_ids_10x10:
             for output_dir_1x1 in output_dir_list_1x1:
-                output_dir_10x10_matches = [d for d in output_dir_list_10x10 if d.replace(f"/{cn.full_raster_dims}_pixels/", f"/{cn.chunk_dims}_pixels/") == output_dir_1x1]
+                output_dir_10x10_matches = [
+                    d for d in output_dir_list_10x10
+                    if d.replace(f"/{cn.full_raster_dims}_pixels/", f"/{cn.chunk_dims}_pixels/") == output_dir_1x1
+                ]
 
                 if not output_dir_10x10_matches:
                     main_logger.warning(f"No matching 10x10 output folder for {output_dir_1x1}")
                     continue
+
                 combine_tasks.append((tile_id, output_dir_1x1, output_dir_10x10_matches[0], raster_paths_by_output_dir[output_dir_1x1]))
 
         main_logger.info(f"Created {len(combine_tasks)} 10x10 mosaic tasks")
 
-        combine_batch_size = min(len(combine_tasks), max(1, n_workers_int * 5))
-        combine_batches = [combine_tasks[i:i + combine_batch_size] for i in range(0, len(combine_tasks), combine_batch_size)]
+        combine_batch_size = min(len(combine_tasks), max(1, n_workers_int))
+        combine_batches = [
+            combine_tasks[i:i + combine_batch_size]
+            for i in range(0, len(combine_tasks), combine_batch_size)
+        ]
 
         for i, combine_batch in enumerate(combine_batches):
             main_logger.info(f"Processing 10x10 combine batch {i + 1}/{len(combine_batches)} ({len(combine_batch)} output tasks): {uu.timestr()}")
 
             if run_local:
-                combine_batch_results = [combine_ipcc_output_to_10x10( tile_id, output_dir_1x1, output_dir_10x10, raster_paths, no_upload, stage, create_zarr, raw_mega_zarr_path)
-                                         for tile_id, output_dir_1x1, output_dir_10x10, raster_paths in combine_batch]
+                combine_batch_results = [
+                    combine_ipcc_output_to_10x10(tile_id, output_dir_1x1, output_dir_10x10, raster_paths, no_upload, stage)
+                    for tile_id, output_dir_1x1, output_dir_10x10, raster_paths in combine_batch
+                ]
             else:
-                futures = [client.submit(combine_ipcc_output_to_10x10, tile_id, output_dir_1x1, output_dir_10x10, raster_paths, no_upload, stage, create_zarr, raw_mega_zarr_path, retries=2)
-                                         for tile_id, output_dir_1x1, output_dir_10x10, raster_paths in combine_batch]
+                futures = [
+                    client.submit(combine_ipcc_output_to_10x10, tile_id, output_dir_1x1, output_dir_10x10, raster_paths, no_upload, stage, retries=2)
+                    for tile_id, output_dir_1x1, output_dir_10x10, raster_paths in combine_batch
+                ]
+
                 combine_batch_results = client.gather(futures)
 
             for result in combine_batch_results:
@@ -1732,7 +1742,7 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
                 del futures
                 client.run(gc.collect)
 
-            uu.stage_duration(start_time, uu.timestr(), f"{stage}, 10x10 combine batch {i}", main_logger,)
+            uu.stage_duration(start_time, uu.timestr(), f"{stage}, 10x10 combine batch {i}", main_logger)
 
         uu.stage_duration(start_time, uu.timestr(), f"{stage} with 10x10 combine", main_logger)
 
