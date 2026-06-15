@@ -774,6 +774,7 @@ global_cropland_total_amount_all_crops_nonpeat_2019_processed_pattern = f"all_GH
 
 #IPCC LUC translation version number
 IPCC_LU_version = "1.0.0"
+IPCC_LU_version_underscore = IPCC_LU_version.replace(".", "_")
 
 ### IPCC classes and change
 IPCC_class_path = "IPCC_class"
@@ -1246,6 +1247,29 @@ managed_land_codes = np.array([0, 1, 2], dtype=np.uint8)
 
 forest_age_category_pattern = 'forest_age_category_end_of_interval'
 forest_age_category_codes = np.array([0, 1, 6, 21, 41, 61, 81, 101], dtype=np.uint8)
+
+ipcc_class_codes = np.arange(1, 9, dtype=np.uint8)
+
+ipcc_node_codes = np.array([
+    10, 11, 12,
+    20, 21, 22, 23, 24, 25,
+    30, 31, 32, 333, 334, 335, 337, 34, 35, 36, 37, 38, 39,
+    40, 41, 422, 426, 420, 43, 44, 45, 46, 47, 48,
+    50, 51, 52,
+    60, 61,
+    70, 71, 72,
+    80, 81,
+], dtype=np.uint16)
+
+ipcc_change_codes = np.array(
+    [10 * start + end for start in range(1, 9) for end in range(1, 9)],
+    dtype=np.uint8,
+)
+
+ipcc_summary_codes = np.array(
+    [10 * start + end for start in range(1, 9) for end in range(1, 9)],
+    dtype=np.uint16,
+)
 
 # Converts numeric ISO values to ISO codes
 # From https://github.com/wri/project-zeno-data-infra/blob/main/notebooks/grasslands_areas_gadm_2000-2022.ipynb
@@ -1876,6 +1900,7 @@ forest_age_category_to_text = {
 }
 
 veg_local_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/vegetation_v{veg_model_version_underscore}_standard_global/"
+land_use_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/IPCC_land_use_v{IPCC_LU_version_underscore}_standard_global/"
 SOC_local_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/SOC_v{SOC_model_version_underscore}_standard_global/"
 
 

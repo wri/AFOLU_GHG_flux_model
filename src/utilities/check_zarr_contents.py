@@ -27,10 +27,17 @@ from src.utilities.constants_and_names import intervals_annual
 
 # For vegetation model outputs
 # bounds = [23, -4, 24, -3]
-bounds = [-111, 60, -110, 61]
+# bounds = [-111, 60, -110, 61]
+bounds = [110, -1, 111, 0]
+
 zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/mega_zarr/annual_intervals/4000_pixels/20260130/vegetation_zarr.zarr'
+#zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/LULUCF/land_use/1.0.0/mega_zarr/annual_intervals/4000_pixels/20268888/land_use_zarr.zarr'
+
 var_name = 'gross_emissions__all_C_pools__all_gases__MgCO2e_ha_yr'
+#var_name = 'IPCC_change'
+
 interval_end_years = cn.interval_end_years_annual
+#interval_end_years = cn.years_annual
 
 # # For carbon density timeseries
 # bounds = [110, -1 ,111, 0]

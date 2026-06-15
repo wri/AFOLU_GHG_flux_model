@@ -335,7 +335,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
         pixel_area_expanded_subset = pixel_area_expanded.sel(x=slice(west, east), y=slice(north, south))
 
         # Creates xarrays of 0s if contextual layer doesn't extend to the current tile.
-        # Don't need to do with lnd_state_nodes because those should exist everywhere there are model outputs.
+        # Don't need to do with land_state_nodes because those should exist everywhere there are model outputs.
         # Also, don't need to do with pixel_area because that should exist everywhere.
         # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6995f836-b304-8333-8b92-cf24f95d812f
         if adm0_aligned_subset[cn.adm0_pattern].sizes.get("x", 0) == 0 or adm0_aligned_subset[cn.adm0_pattern].sizes.get("y", 0) == 0:
