@@ -237,63 +237,62 @@ Node codes used here:
 1) Settlements and Infrastructure:
     10 = Built from GLAD data
     11 = Built following tall veg loss before built LC
-
+    12 = Built after first built LC in mixed LC sequence
 
 2) Cropland:
     20 = Crop from GLAD data
     21 = Crop from oil palm extent or planting year
-    22 = Crop from SDPT tree crop extent
-    23 = Crop from permanent agriculture driver
-    24 = Crop following tall veg loss before crop LC
-    25 = Crop from majority years in mixed LC prior to built LC
-
+    22 = Crop from SDPT tree crop extent (if not oil palm)
+    23 = Crop following veg loss before crop LC
+    24 = Crop from permanent agriculture driver
+    29 = Crop from majority years in mixed LC prior to built LC
 
 3) Forest:
     30  = Forest from GLAD tall vegetation
+    301 = Forest from GLAD tall vegetation but TCL rior to timeseries and driver is permanent agriculture
     31  = Forest from SDPT planted forest extent
     32  = Forest from GMW mangrove extent
-    33X = Unstocked forest from TCL + drivers rules
-        333 = Forest from shifting cultivation driver
-        334 = Forest from logging driver
-        335 = Forest from wildfire driver
-        337 = Forest from natural disturbance driver
-    34 = Unstocked forest after TCL and before oil palm planting
-    35 = Forest from vegetation/bare to built transition rule
-    36 = Forest from vegetation/bare to crop transition rule
-    37 = Forest from mixed tall/short vegetation rule
-    38 = Forest from mixed vegetation/water rule
-    39 = Forest from majority years in mixed class rule
-
+    333 = Forest from shifting cultivation driver
+    334 = Forest from logging driver
+    335 = Forest from wildfire driver
+    337 = Forest from natural disturbance driver
+    34  = Unstocked forest after TCL and before oil palm planting
+    35  = Forest from vegetation/bare to built transition rule
+    36  = Forest from vegetation/bare to crop transition rule
+    37  = Forest from mixed tall/short vegetation rule
+    38  = Forest from mixed vegetation/water rule
+    39  = Forest from majority years in mixed class rule
 
 4) Grassland:
-    40 = Grass from GLAD short vegetation
-    41 = Grass from TCL + permanent agriculture driver + GPW cultivated grassland extent (assume rangeland)
-    42x = Grass from TCL + driver rule
-        420 = Grass from unknown driver
-        422 = Grass from hard commodities driver
-        426 = Grass from settlements/infrastructure driver
-    43 = Grass from vegetation/bare to built transition rule
-    44 = Grass from vegetation/bare to crop transition rule
-    45 = Grass from mixed tall/short vegetation rule
-    46 = Grass from mixed vegetation/water rule
-    47 = Grass from majority years in mixed class rule
-
+    40  = Grass from GLAD short vegetation
+    41  = Grass from TCL + permanent agriculture driver + GPW cultivated grassland extent
+    430 = Grass from unknown driver
+    432 = Grass from hard commodities driver
+    436 = Grass from settlements/infrastructure driver
+    44  = Grass prior to oil palm establishment
+    45  = Grass from vegetation/bare to built transition rule
+    46  = Grass from vegetation/bare to crop transition rule
+    47  = Grass from mixed tall/short vegetation rule
+    48  = Grass from mixed vegetation/water rule
+    49  = Grass from majority years in mixed class rule
 
 5) Wetland:
     50 = Wetland from GLAD data
-    51 = Wetland from vegetation/water transition rule
-    52 = Wetland from majority years in mixed water rule
+    51 = Wetland from water/wetland/built transition rule
+    52 = Wetland from water/vegetation transition rule
+    59 = Wetland from majority years in mixed water rule
 
-
-6) Other
+6) Other:
     60 = Bare from GLAD data
     61 = Bare from majority years in mixed bare/grass rule
+    69 = Bare from mixed tall/short vegetation rule
 
     70 = Water from GLAD data
     71 = Water from vegetation/water transition rule
     72 = Water from majority years in mixed water rule
 
     80 = Snow/ice from GLAD data
+    81 = Snow/ice from majority years rule
 """
 
 # IPCC Land use hierarchy: Settlements > Cropland > Forest Land > Grassland > Wetlands > Other
@@ -335,11 +334,12 @@ node_code_map = {
     "crop_glad": 20,
     "crop_oil_palm": 21,
     "crop_sdpt_tree_crop": 22,
-    "crop_perm_ag_driver": 23,
-    "crop_other_lc_post_c": 24,
-    "crop_glad_majority_years": 25,
+    "crop_post_c": 23,
+    "crop_perm_ag_driver": 24,
+    "crop_glad_majority_years": 29,
 
     "forest_glad": 30,
+    "forest_glad_perm_ag_driver": 301,
     "forest_sdpt_planted_forest": 31,
     "forest_gmw_mangrove": 32,
     "forest_shift_cult_driver": 333,
@@ -355,23 +355,24 @@ node_code_map = {
 
     "grass_glad": 40,
     "grass_gpw": 41,
-    "grass_hard_commod_driver": 422,
-    "grass_settlement_driver": 426,
-    "grass_unknown_driver": 420,
-    "grass_veg_bare_built_mix": 43,
-    "grass_veg_bare_crop_mix": 44,
-    "grass_tall_short_mix": 45,
-    "grass_veg_water_mix": 46,
-    "grass_unstocked_pre_oil_palm": 47,
-    "grass_glad_majority_years": 48,
-
+    "grass_unknown_driver": 430,
+    "grass_hard_commod_driver": 432,
+    "grass_settlement_driver": 436,
+    "grass_unstocked_pre_oil_palm": 44,
+    "grass_veg_bare_built_mix": 45,
+    "grass_veg_bare_crop_mix": 46,
+    "grass_tall_short_mix": 47,
+    "grass_veg_water_mix": 48,
+    "grass_glad_majority_years": 49,
 
     "wetland_glad": 50,
-    "wetland_veg_water_mix": 51,
-    "wetland_glad_majority_years": 52,
+    "wetland_water_built_mix": 51,
+    "wetland_veg_water_mix": 52,
+    "wetland_glad_majority_years": 59,
 
     "bare_glad": 60,
-    "bare_glad_majority_years": 61,
+    "bare_tall_short_mix": 61,
+    "bare_glad_majority_years": 69,
 
     "water_glad": 70,
     "water_veg_water_mix": 71,
@@ -475,15 +476,6 @@ def apply_extent_rules(lu_dict):
         return True
     return False
 
-def majority_water_wetland_token(seq_tokens):
-    w_count = seq_tokens.count("W")
-    o_count = seq_tokens.count("O")
-
-    # Tie goes to W
-    if w_count >= o_count:
-        return "W", node_code_map["wetland_glad_majority_years"]
-    else:
-        return "O", node_code_map["water_glad_majority_years"]
 
 # Mix of LC classes -> built
 def apply_built_transition(lu_dict):
@@ -491,39 +483,42 @@ def apply_built_transition(lu_dict):
     token_seq = "".join(tokens)
     all_idx = range(len(tokens))
 
-    # Confusion between S/O/W in coastal areas. Use majority class unless true transition.
+    # Confusion between S/O/W in coastal areas.
     # Allow O/W -> S or S -> O/W only if both groups have >= 3 consecutive years and there is exactly one transition.
     if re.fullmatch(r"[OSW]+", token_seq):
-        # O/W -> S: Water/Wetland to Settlement/Infrastructure
+        # O/W -> S: Water/Wetland to Settlement
         transition_match = re.fullmatch(r"([OW]{3,})(S{3,})", token_seq)
         if transition_match:
             transition_idx = transition_match.start(2)
-            pre_token, pre_node = majority_water_wetland_token(tokens[:transition_idx])
+
+            water_tokens = tokens[:transition_idx]
+            if all(t == "O" for t in water_tokens):
+                pre_token = "O"
+                pre_node = node_code_map["water_glad_majority_years"]
+            else:
+                pre_token = "W"
+                pre_node = node_code_map["wetland_water_built_mix"]
+
             apply_tokens(lu_dict, range(0, transition_idx), pre_token, pre_node)
-            apply_tokens(lu_dict, range(transition_idx, len(tokens)), "S", node_code_map["built_tall_veg_loss"])
+            apply_tokens(lu_dict, range(transition_idx, len(tokens)), "S", node_code_map["built_post_s"])
             return
 
-        # S -> O/W: Settlement/Infrastructure to Water/Wetland
+        # S -> O/W: Settlement to Water/Wetland
         transition_match = re.fullmatch(r"(S{3,})([OW]{3,})", token_seq)
         if transition_match:
             transition_idx = transition_match.start(2)
-            final_token, final_node = majority_water_wetland_token(tokens[transition_idx:])
+
+            water_tokens = tokens[transition_idx:]
+            if all(t == "O" for t in water_tokens):
+                final_token = "O"
+                final_node = node_code_map["water_glad_majority_years"]
+            else:
+                final_token = "W"
+                final_node = node_code_map["wetland_water_built_mix"]
+
             apply_tokens(lu_dict, range(0, transition_idx), "S", node_code_map["built_glad"])
             apply_tokens(lu_dict, range(transition_idx, len(tokens)), final_token, final_node)
             return
-
-        # Otherwise collapse to majority class across S vs O/W.
-        # If O/W wins, choose W vs O by majority, tie goes to W.
-        s_count = tokens.count("S")
-        water_wetland_count = tokens.count("O") + tokens.count("W")
-
-        if s_count >= water_wetland_count:
-            apply_tokens(lu_dict, all_idx, "S", node_code_map["built_glad"])
-        else:
-            final_token, final_node = majority_water_wetland_token(tokens)
-            apply_tokens(lu_dict, all_idx, final_token, final_node)
-
-        return
 
     first_s_idx = tokens.index("S")
     apply_tokens(lu_dict, range(first_s_idx, len(tokens)),"S", node_code_map["built_post_s"])
@@ -532,10 +527,8 @@ def apply_built_transition(lu_dict):
     non_s_classes = set(tokens) - {"S"}
     if len(non_s_classes) < 2:
         return
-    #TODO: Delete?
 
     pre_node_map = {
-        "C": node_code_map["crop_glad_majority_years"],
         "F": node_code_map["forest_glad_majority_years"],
         "G": node_code_map["grass_glad_majority_years"],
         "W": node_code_map["wetland_glad_majority_years"],
@@ -543,6 +536,7 @@ def apply_built_transition(lu_dict):
         "O": node_code_map["water_glad_majority_years"],
         "I": node_code_map["ice_glad_majority_years"],
     }
+    #Not including C because it often shows up post veg loss and prior to built. Assume misclassified as C in between if a mix.
 
     first_s_idx = token_seq.find("S")
 
@@ -553,15 +547,8 @@ def apply_built_transition(lu_dict):
 
         pre_token = candidate
 
-        # Count majority pre-token. Tie goes to C.
-        if "C" in token_seq:
-            c_count = tokens.count("C")
-            candidate_count = tokens.count(candidate)
-            if c_count >= candidate_count:
-                pre_token = "C"
-
         # F uses first F loss; everything else uses first S.
-        if candidate == "F" and pre_token == "F":
+        if candidate == "F":
             transition_match = re.search(r"F+[SCGWBOI]", token_seq)
             if not transition_match:
                 transition_idx = first_s_idx
@@ -573,7 +560,6 @@ def apply_built_transition(lu_dict):
         apply_tokens(lu_dict, range(0, transition_idx), pre_token, pre_node_map[pre_token])
         apply_tokens(lu_dict, range(transition_idx, len(tokens)), "S", node_code_map["built_tall_veg_loss"])
         return
-
 #TODO: Use TCL up to 5 years prior for F->S exception?
 
 # Mix of 2 or more LC classes -> crop
@@ -609,22 +595,22 @@ def apply_crop_transition(lu_dict):
             transition_idx = first_c_idx
 
         apply_tokens(lu_dict, range(0, transition_idx), pre_token, pre_node_map[pre_token])
-        apply_tokens(lu_dict, range(transition_idx, len(tokens)), "C", node_code_map["crop_other_lc_post_c"])
+        apply_tokens(lu_dict, range(transition_idx, len(tokens)), "C", node_code_map["crop_post_c"])
 
         return
 #TODO: Use TCL up to 5 years prior for F->C exception?
 
-# Tall vegetation all years
-# def apply_all_tall_veg(lu_dict):
-#     tcl_prior = lu_dict["tcl_prior"]
-#     driver = lu_dict["driver"]
-#
-#     tokens = lu_dict["tokens"]
-#     all_idx = range(len(tokens))
-#
-#     # If TCL has occurred by the start of timeseries and the driver is permanent ag, assume tall veg is tree crops
-#     if tcl_prior and driver == 1:
-#         apply_tokens(lu_dict, all_idx, "C", node_code_map["crop_perm_ag_driver"])
+#Tall vegetation all years
+def apply_all_tall_veg(lu_dict):
+    tcl_prior = lu_dict["tcl_prior"]
+    driver = lu_dict["driver"]
+
+    tokens = lu_dict["tokens"]
+    all_idx = range(len(tokens))
+
+    # If TCL has occurred by the start of timeseries and the driver is permanent ag, assume tall veg is tree crops
+    if tcl_prior and driver == 1:
+        apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_glad_perm_ag_driver"])
 #
 #     # # If oil palm planting year in interval, allows for F -> C transitions assuming establishment of tree crops
 #     # if has_planting_transition(lu_dict):
@@ -715,7 +701,7 @@ def apply_tall_short_bare(lu_dict):
         elif "G" in pre_plant_tokens:
             apply_tokens(lu_dict, range(0, idx), "G", node_code_map["grass_unstocked_pre_oil_palm"])
         else:
-            apply_tokens(lu_dict, range(0, idx), "B", node_code_map["bare_glad_majority_years"])
+            apply_tokens(lu_dict, range(0, idx), "B", node_code_map["bare_tall_short_mix"])
         apply_tokens(lu_dict, range(idx, len(tokens)), "C", node_code_map["crop_oil_palm"])
         return
 
@@ -748,7 +734,7 @@ def apply_tall_short_bare(lu_dict):
         return
 
     # 5) If TCL during timeseries, use hard commodities, settlements/ infrastructure, and unknown driver and an F->G/B transition.
-    # There must be at least 3 consecutiveFs, and at least 3 consecutive G/Bs until the end to determine LU transitions:
+    # There must be at least 3 consecutive Fs, and at least 3 consecutive G/Bs until the end to determine LU transitions:
     if tcl_any and not tcl_prior and driver not in {1, 3, 4, 5, 7}:
         terminal_match = re.search(r"F{3,}[GB]{3,}$", token_seq)
 
@@ -768,7 +754,7 @@ def apply_tall_short_bare(lu_dict):
                         final_node = node_code_map["grass_unknown_driver"]
                     apply_tokens(lu_dict, final_idx, "G", final_node)
                 else:
-                    apply_tokens(lu_dict, final_idx, "B", node_code_map["bare_glad_majority_years"])
+                    apply_tokens(lu_dict, final_idx, "B", node_code_map["bare_tall_short_mix"])
                 return
 
     # 6) Otherwise use regex fallback if no oil palm and no TCL + driver.
@@ -858,15 +844,15 @@ def apply_veg_bare_water(lu_dict):
     f_count = tokens.count("F")
     g_count = tokens.count("G")
     b_count = tokens.count("B")
-    w_count = tokens.count("W")
-    o_count = tokens.count("O")
 
-    # If there are <3 vegetation/bare years, collapse to majority water/wetland. Tie goes to wetland.
+    # If there are <3 vegetation/bare years, collapse to water only if all water/wetland years are O. Otherwise assume wetland.
     if veg_count < 3:
-        if w_count >= o_count:
-            apply_tokens(lu_dict, all_idx, "W", node_code_map["wetland_glad_majority_years"])
-        else:
+        water_wetland_tokens = [t for t in tokens if t in water_tokens]
+        if water_wetland_tokens and all(t == "O" for t in water_wetland_tokens):
             apply_tokens(lu_dict, all_idx, "O", node_code_map["water_glad_majority_years"])
+        else:
+            apply_tokens(lu_dict, all_idx, "W", node_code_map["wetland_glad_majority_years"])
+
         return
 
     # If there are <3 water/wetland years, collapse to majority vegetation/bare class. Tie goes to forest.
@@ -892,21 +878,21 @@ def apply_veg_bare_water(lu_dict):
         # Prominent vegetation/bare class: if F > 2 forest, elif G > 2 grass, else bare.
         if pre_tokens.count("F") > 2:
             pre_token = "F"
-            pre_node = node_code_map["forest_glad_majority_years"]
+            pre_node = node_code_map["forest_veg_water_mix"]
         elif pre_tokens.count("G") > 2:
             pre_token = "G"
-            pre_node = node_code_map["grass_glad_majority_years"]
+            pre_node = node_code_map["grass_veg_water_mix"]
         else:
             pre_token = "B"
             pre_node = node_code_map["bare_glad_majority_years"]
 
-        # Majority water class: if W > 2, wetland; otherwise water.
-        if final_tokens.count("W") > 2:
-            final_token = "W"
-            final_node = node_code_map["wetland_glad_majority_years"]
-        else:
+        # If all water/wetland years are O, assume water. Otherwise, assume wetland.
+        if all(t == "O" for t in final_tokens):
             final_token = "O"
             final_node = node_code_map["water_glad_majority_years"]
+        else:
+            final_token = "W"
+            final_node = node_code_map["wetland_veg_water_mix"]
 
         apply_tokens(lu_dict, range(0, transition_idx), pre_token, pre_node)
         apply_tokens(lu_dict, range(transition_idx, len(tokens)), final_token, final_node)
@@ -915,7 +901,6 @@ def apply_veg_bare_water(lu_dict):
    # If enough evidence of both groups (both groups >=3) but no valid transition, consider it wetland all years.
     apply_tokens(lu_dict, all_idx, "W", node_code_map["wetland_glad_majority_years"])
     return
-#TODO: change node_codes to veg_water_mix?
 
 # Mix of wetland and water only
 def apply_wetland_water(lu_dict):
@@ -927,16 +912,14 @@ def apply_wetland_water(lu_dict):
     if re.fullmatch(r"(W{3,}O{3,}|O{3,}W{3,})", token_seq):
         return
 
-    # Otherwise collapse to majority class across all years
+    # Otherwise collapse to wetland if there are >=2 wetland years. Otherwise, assume water.
     w_count = tokens.count("W")
-    o_count = tokens.count("O")
 
-    # If W and O have the same number of years, assume W
-    if  w_count >= o_count:
+    if w_count >= 2:
         apply_tokens(lu_dict, all_idx, "W", node_code_map["wetland_glad_majority_years"])
     else:
         apply_tokens(lu_dict, all_idx, "O", node_code_map["water_glad_majority_years"])
-
+    return
 
 def apply_regex_rules(tokens, node_codes, driver, tcl_year, pre_2000_plantation, planting_year, sdpt_oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove, gpw_cultiv_grass):
 
@@ -967,9 +950,9 @@ def apply_regex_rules(tokens, node_codes, driver, tcl_year, pre_2000_plantation,
     extent_rule_applied = apply_extent_rules(lu_dict)
 
     if not extent_rule_applied:
-        # if re.fullmatch(r"F+", token_seq):
-        #     apply_all_tall_veg(lu_dict)
-        if re.fullmatch(r"G+", token_seq):
+        if re.fullmatch(r"F+", token_seq):
+            apply_all_tall_veg(lu_dict)
+        elif re.fullmatch(r"G+", token_seq):
             apply_all_short_veg(lu_dict)
         elif re.fullmatch(r"[FGB]+", token_seq) and "F" in token_seq:
             apply_tall_short_bare(lu_dict)
@@ -1153,12 +1136,9 @@ def IPCC_land_use(in_dict):
                 token_for_lc(LC_2024),
             ]
 
-            # If all years are unknown, keep nodata = 0
-            if all(t == "U" for t in tokens):
+            # If any years are unknown, keep nodata = 0
+            if any(t == "U" for t in tokens):
                 continue
-
-            # Otherwise if unknown, default to G
-            tokens = ["G" if t == "U" else t for t in tokens]
 
             default_lu = [lu_token_map[token] for token in tokens]
             node_codes = [default_node_code(token) for token in tokens]
@@ -1280,7 +1260,7 @@ def IPCC_land_use(in_dict):
     out_dict[f"{cn.IPCC_change_pattern}_2022_2023"] = LU_change_2022_2023_block.copy()
     out_dict[f"{cn.IPCC_change_pattern}_2023_2024"] = LU_change_2023_2024_block.copy()
 
-    out_dict[f"{cn.IPCC_summary_pattern}"] = LU_summary_block.copy()
+    out_dict[f"{cn.IPCC_summary_pattern}_2015_2024"] = LU_summary_block.copy()
 
     return out_dict
 

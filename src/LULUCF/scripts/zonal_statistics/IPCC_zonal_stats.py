@@ -1,10 +1,10 @@
 """
 Run:
-python -m src.utilities.create_cluster -n 50 -m 64 -cn IPCC_zonal_stats --zonal_stats
+python -m src.utilities.create_cluster -n 25 -m 64 -cn IPCC_zonal_stats --zonal_stats
 python -m src.LULUCF.scripts.zonal_statistics.IPCC_zonal_stats -cn IPCC_zonal_stats -vid 20260130 -lid 20268888 -bb 110 -10 120 0 -lmpd 10x10_test -zd 10x10_test
 
 Notes:
-    - Took x minutes to run for 10x10 degree area (00N_110E). Analysis layers = Emissions, removals, and net flux. Contextual layers = IPCC class, node, change and summary (2016-2024).
+    - Took 5 minutes to run for 10x10 degree area with 25 workers (00N_110E). Analysis layers = Emissions, removals, and net flux. Contextual layers = IPCC class, node, change and summary (2016-2024).
 """
 
 import argparse
