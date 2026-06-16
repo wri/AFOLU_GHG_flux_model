@@ -36,6 +36,8 @@ python -m src.LULUCF.scripts.zonal_statistics.vegetation_zonal_stats -cn vegetat
 Full run:
 python -m src.utilities.create_cluster -n 50 -m 64 -cn vegetation_zonal_stats --zonal_stats
 python -m src.LULUCF.scripts.zonal_statistics.vegetation_zonal_stats -cn vegetation_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Zonal stats for vegetation model v1.0.5 (2016-2024)."
+
+#TODO Add zonal stats field name output corrections, as done in convert_indiv_tiles_to_wide() in notebook, e.g., density to stock, add _yr to fluxes
 """
 
 import argparse

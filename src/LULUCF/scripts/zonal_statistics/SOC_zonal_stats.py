@@ -46,7 +46,7 @@ python -m src.LULUCF.scripts.zonal_statistics.SOC_zonal_stats -cn SOC_zonal_stat
 -mcstn KEEP_definitive_runs/SOC_density/v1_0_1__2000_2022__20260611/soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__with_pivots__KEEP.xlsx
 
 #TODO Add permafrost as contextual layer
-#TODO Add GLAD land cover category in 2015 as contextual layer
+#TODO Add zonal stats field name output corrections, as done in convert_indiv_tiles_to_wide() in notebook, e.g., density to stock, add _yr to fluxes
 """
 
 import argparse
@@ -614,8 +614,8 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     else:
         main_logger.info("No tiles processed")
 
-    # # Terminates cluster because all further processing is done locally
-    # terminate_cluster.terminate_cluster(cluster_name)
+    # Terminates cluster because all further processing is done locally
+    terminate_cluster.terminate_cluster(cluster_name)
 
     # Collects all tile parquet files
     parquet_files = sorted(
@@ -644,7 +644,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     main_logger.info(f"Total rows: {total_rows}")
 
     # Only tries to combine tables into one table if less than specified number of rows
-    if total_rows > 20_000_000:
+    if total_rows > 30_000_000:
         main_logger.info("Too many rows to aggregate into global df. Skipping.")
     else:
         main_logger.info(f"Combining all parquets: {uu.timestr()}")
