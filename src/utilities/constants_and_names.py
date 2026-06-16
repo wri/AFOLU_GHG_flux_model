@@ -1248,9 +1248,10 @@ managed_land_codes = np.array([0, 1, 2], dtype=np.uint8)
 forest_age_category_pattern = 'forest_age_category_end_of_interval'
 forest_age_category_codes = np.array([0, 1, 6, 21, 41, 61, 81, 101], dtype=np.uint8)
 
-ipcc_class_codes = np.arange(1, 9, dtype=np.uint8)
+ipcc_class_codes = np.arange(0, 9, dtype=np.uint8)
 
 ipcc_node_codes = np.array([
+    0,
     10, 11, 12,
     20, 21, 22, 23, 24, 25,
     30, 31, 32, 333, 334, 335, 337, 34, 35, 36, 37, 38, 39,
@@ -1262,12 +1263,12 @@ ipcc_node_codes = np.array([
 ], dtype=np.uint16)
 
 ipcc_change_codes = np.array(
-    [10 * start + end for start in range(1, 9) for end in range(1, 9)],
+    [0] + [10 * start + end for start in range(1, 9) for end in range(1, 9)],
     dtype=np.uint8,
 )
 
 ipcc_summary_codes = np.array(
-    [10 * start + end for start in range(1, 9) for end in range(1, 9)],
+    [0] + [10 * start + end for start in range(1, 9) for end in range(1, 9)],
     dtype=np.uint16,
 )
 

@@ -1,7 +1,10 @@
 """
 Run:
-python -m src.utilities.create_cluster -n 1 -m 64 -cn IPCC_zonal_stats --zonal_stats
+python -m src.utilities.create_cluster -n 50 -m 64 -cn IPCC_zonal_stats --zonal_stats
 python -m src.LULUCF.scripts.zonal_statistics.IPCC_zonal_stats -cn IPCC_zonal_stats -vid 20260130 -lid 20268888 -bb 110 -10 120 0 -lmpd 10x10_test -zd 10x10_test
+
+Notes:
+    - Took x minutes to run for 10x10 degree area (00N_110E). Analysis layers = Emissions, removals, and net flux. Contextual layers = IPCC class, node, change and summary (2016-2024).
 """
 
 import argparse
@@ -37,13 +40,16 @@ def create_ipcc_lu_context_df(coord_dict, tile_id, main_logger):
         df["year"] = df["year"] + cn.interval_end_years_annual[0]
 
     # Split area and flux rows
-    merge_keys = [ cn.IPCC_class_pattern, cn.IPCC_node_pattern, cn.IPCC_change_pattern, cn.IPCC_summary_pattern, "year"]
+    merge_keys = [cn.adm0_pattern, cn.IPCC_class_pattern, cn.IPCC_node_pattern, cn.IPCC_change_pattern, cn.IPCC_summary_pattern, "year"]
 
-    df_area = (df[df["analysis_layer"] == "pixel_area_ha"].rename(columns={"value": "area_ha"})[merge_keys + ["area_ha"]])
-    df_flux = df[df["analysis_layer"] != "pixel_area_ha"].copy()
+    df_area = df[df["analysis_layer"].str.endswith("__area_ha")].copy()
+    df_area["analysis_layer"] = df_area["analysis_layer"].str.replace("__area_ha", "", regex=False)
+    df_area = df_area.rename(columns={"value": "area_ha"})[merge_keys + ["analysis_layer", "area_ha"]]
+
+    df_flux = df[~df["analysis_layer"].str.endswith("__area_ha") & (df["analysis_layer"] != "pixel_area_ha")].copy()
     df_flux["analysis_layer"] = df_flux["analysis_layer"].str.replace("_ha_yr", "", regex=False)
 
-    df_out = df_flux.merge(df_area, on=merge_keys, how="left")
+    df_out = df_flux.merge( df_area, on=merge_keys + ["analysis_layer"], how="left")
     df_out["density__Mg_ha"] = df_out["value"] / df_out["area_ha"].replace(0, pd.NA)
     df_out["gas"] = "all gases"
 
@@ -244,17 +250,30 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
     main_logger.info(f"Calculating pixel area: {uu.timestr()}")
     pixel_area_layer = (pixel_area_expanded * cn.m2_to_ha).astype("float32")
 
-    # Multiply each flux var by pixel_area
+    # Multiply each flux var by pixel_area and create flux-specific area layers
     main_logger.info(f"Calculating per-pixel values for analysis layers: {uu.timestr()}")
+
     flux_layers = []
+    analysis_layer_names = []
+
     for var in selected_datasets:
+        # Total flux: Mg/ha/yr * ha = Mg/yr
         flux_scaled = (ds_selected_analysis_vars_aligned[var] * pixel_area_layer).astype("float32")
         flux_layers.append(flux_scaled)
+        analysis_layer_names.append(var)
 
+        # Area where this specific flux variable is nonzero
+        var_base = var.replace("_ha_yr", "")
+        active_area = pixel_area_layer.where(ds_selected_analysis_vars_aligned[var].fillna(0) != 0, 0).astype("float32")
+
+        flux_layers.append(active_area)
+        analysis_layer_names.append(f"{var_base}__area_ha")
+
+    # Total IPCC-context area
     flux_layers.append(pixel_area_layer)
+    analysis_layer_names.append("pixel_area_ha")
 
-    # Also updates the list of analysis layer names
-    selected_datasets.append("pixel_area_ha")
+    selected_datasets = analysis_layer_names
 
     # Stack into one flux cube: shape (analysis_layer, year, y, x)
     main_logger.info(f"Stacking analysis layers into flux cube: {uu.timestr()}")
