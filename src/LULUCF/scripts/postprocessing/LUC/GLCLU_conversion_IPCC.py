@@ -5,6 +5,7 @@ Local test:
 Indonesia
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 119 -6 120 -5 -cs 1 --run_local --create_zarr --run_date 20269999
 
+
 Canada
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb -110 59 -109 60 -cs 1 --run_local --run_date 20268888
 
@@ -16,22 +17,28 @@ python -m src.utilities.create_cluster -n 1 -m 8 -cn IPCC_land_use
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use -bb 119.5 -5.75 119.75 -5.5 -cs 0.25 --run_date 20268888
 
 Coiled small tests (1x1 deg chunk):
-python -m src.utilities.create_cluster -n 1 -m 16 -cn IPCC_land_use_1x1 --zonal_stats
+python -m src.utilities.create_cluster -n 1 -m 8 -cn IPCC_land_use_1x1
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_1x1 -bb 119 -6 120 -5 -cs 1 --no_upload --no_stats --run_date 20269999
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_1x1 -bb 119 -6 120 -5 -cs 1 --create_zarr --run_date 20269999
 
 Coiled test (10x10 deg chunk):
-python -m src.utilities.create_cluster -n 25 -m 32 -cn IPCC_land_use_10x10 --zonal_stats
-python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_10x10 -bb 110 -10 120 0 -cs 10 --create_zarr --run_date 20269999
+python -m src.utilities.create_cluster -n 50 -m 16 -cn IPCC_land_use_10x10
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_10x10 -bb 110 -10 120 0 -cs 10 --create_zarr --run_date 20268888
 
 Full run:
+python -m src.utilities.create_cluster -n 200 -m 16 -cn IPCC_land_use
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -cs 10 --create_zarr --run_date 20260617 --log_note "This is a global run for IPCC land use model v1.0.0 (2015-2024)."
+
 
 Notes:
     - Took 2 minutes to run for 0.25 degree chunk locally
+    - Took 3 minutes to run for 1 degree chunk in coiled with no stats, no zarr, and no upload
     - Took 7 minutes to run for 1 degree chunk locally
     - Took 35 minutes to run for 10 degree area in 1 degree chunks in coiled using 100 workers (30 credits)
 
 TODO:
 Switch from regex to numba for faster performance?
+Remove skip existing 1x1 logic
 """
 
 import argparse
@@ -55,6 +62,7 @@ from src.utilities import log_utilities as lu
 from src.utilities import universal_utilities as uu
 from src.utilities import zarr_utilities as zu
 from src.utilities import resize_cluster
+from src.utilities import terminate_cluster
 
 os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "TRUE"
 
@@ -234,20 +242,19 @@ These rules replace the default land use classes.
 Node codes used here:
 1) Settlements and Infrastructure:
     10 = Built from GLAD data
-    11 = Built following tall veg loss before built LC
+    11 = Built following tall vegetation loss before built LC
     12 = Built after first built LC in mixed LC sequence
 
 2) Cropland:
     20 = Crop from GLAD data
     21 = Crop from oil palm extent or planting year
     22 = Crop from SDPT tree crop extent (if not oil palm)
-    23 = Crop following veg loss before crop LC
+    23 = Crop following vegetation loss before crop LC
     24 = Crop from permanent agriculture driver
-    29 = Crop from majority years in mixed LC prior to built LC
+    29 = Crop from majority years in mixed LC prior to crop LC
 
 3) Forest:
     30  = Forest from GLAD tall vegetation
-    301 = Forest from GLAD tall vegetation but TCL rior to timeseries and driver is permanent agriculture
     31  = Forest from SDPT planted forest extent
     32  = Forest from GMW mangrove extent
     333 = Forest from shifting cultivation driver
@@ -255,10 +262,11 @@ Node codes used here:
     335 = Forest from wildfire driver
     337 = Forest from natural disturbance driver
     34  = Unstocked forest after TCL and before oil palm planting
-    35  = Forest from vegetation/bare to built transition rule
-    36  = Forest from vegetation/bare to crop transition rule
-    37  = Forest from mixed tall/short vegetation rule
-    38  = Forest from mixed vegetation/water rule
+    351 = Forest from vegetation/bare to built transition rule
+    352 = Forest from vegetation/bare to crop transition rule
+    353 = Forest from mixed tall/short vegetation rule
+    357 = Forest from vegetation/water transition rule
+    358 = Forest from ice mix rule
     39  = Forest from majority years in mixed class rule
 
 4) Grassland:
@@ -268,29 +276,33 @@ Node codes used here:
     432 = Grass from hard commodities driver
     436 = Grass from settlements/infrastructure driver
     44  = Grass prior to oil palm establishment
-    45  = Grass from vegetation/bare to built transition rule
-    46  = Grass from vegetation/bare to crop transition rule
-    47  = Grass from mixed tall/short vegetation rule
-    48  = Grass from mixed vegetation/water rule
+    451 = Grass from vegetation/bare to built transition rule
+    452 = Grass from vegetation/bare to crop transition rule
+    453 = Grass from mixed tall/short vegetation rule
+    457 = Grass from vegetation/water transition rule
+    458 = Grass from ice mix rule
     49  = Grass from majority years in mixed class rule
 
 5) Wetland:
     50 = Wetland from GLAD data
     51 = Wetland from water/wetland/built transition rule
-    52 = Wetland from water/vegetation transition rule
+    52 = Wetland from vegetation/water transition rule
+    53 = Wetland from bare/ice to water/wetland transition rule
     59 = Wetland from majority years in mixed water rule
 
-6) Other:
+6) Other Land:
     60 = Bare from GLAD data
-    61 = Bare from majority years in mixed bare/grass rule
-    69 = Bare from mixed tall/short vegetation rule
+    61 = Bare from mixed tall/short vegetation rule
+    62 = Bare from bare/ice mix rule
+    69 = Bare from majority years rule
 
     70 = Water from GLAD data
     71 = Water from vegetation/water transition rule
-    72 = Water from majority years in mixed water rule
+    79 = Water from majority years in mixed water rule
 
     80 = Snow/ice from GLAD data
-    81 = Snow/ice from majority years rule
+    81 = Snow/ice from bare/ice mix rule
+    89 = Snow/ice from majority years rule
 """
 
 # IPCC Land use hierarchy: Settlements > Cropland > Forest Land > Grassland > Wetlands > Other
@@ -337,7 +349,7 @@ node_code_map = {
     "crop_glad_majority_years": 29,
 
     "forest_glad": 30,
-    "forest_glad_perm_ag_driver": 301,
+    #"forest_glad_perm_ag_driver": 301,
     "forest_sdpt_planted_forest": 31,
     "forest_gmw_mangrove": 32,
     "forest_shift_cult_driver": 333,
@@ -345,10 +357,11 @@ node_code_map = {
     "forest_wildfire_driver": 335,
     "forest_nat_dist_driver": 337,
     "forest_unstocked_pre_oil_palm": 34,
-    "forest_veg_bare_built_mix": 35,
-    "forest_veg_bare_crop_mix": 36,
-    "forest_tall_short_mix": 37,
-    "forest_veg_water_mix": 38,
+    "forest_built_mix": 351,
+    "forest_crop_mix": 352,
+    "forest_veg_mix": 353,
+    "forest_water_mix": 357,
+    "forest_ice_mix": 358,
     "forest_glad_majority_years": 39,
 
     "grass_glad": 40,
@@ -357,27 +370,31 @@ node_code_map = {
     "grass_hard_commod_driver": 432,
     "grass_settlement_driver": 436,
     "grass_unstocked_pre_oil_palm": 44,
-    "grass_veg_bare_built_mix": 45,
-    "grass_veg_bare_crop_mix": 46,
-    "grass_tall_short_mix": 47,
-    "grass_veg_water_mix": 48,
+    "grass_built_mix": 451,
+    "grass_crop_mix": 452,
+    "grass_veg_mix": 453,
+    "grass_water_mix": 457,
+    "grass_ice_mix": 458,
     "grass_glad_majority_years": 49,
 
     "wetland_glad": 50,
     "wetland_water_built_mix": 51,
     "wetland_veg_water_mix": 52,
+    "wetland_bare_ice_water_mix": 53,
     "wetland_glad_majority_years": 59,
 
     "bare_glad": 60,
     "bare_tall_short_mix": 61,
+    "bare_ice_mix": 62,
     "bare_glad_majority_years": 69,
 
     "water_glad": 70,
     "water_veg_water_mix": 71,
-    "water_glad_majority_years": 72,
+    "water_glad_majority_years": 79,
 
     "ice_glad": 80,
-    "ice_glad_majority_years": 81,
+    "ice_bare_mix": 81,
+    "ice_glad_majority_years": 89,
 }
 
 # Default node codes before rules are applied
@@ -413,10 +430,10 @@ def set_tokens(tokens, node_codes, indices, new_token, node_code, initial_tokens
 def apply_tokens(lu_dict, indices, new_token, node_code):
     set_tokens(lu_dict["tokens"], lu_dict["node_codes"], indices, new_token, node_code, lu_dict["initial_tokens"])
 
-# Select pre-transition token by count. Ties go to the earlier token in priority_order.
-def majority_token(tokens, candidates, priority_order):
-    present = [t for t in candidates if t in tokens]
-    return max(present, key=lambda t: (tokens.count(t), -priority_order.index(t)))
+# # Select pre-transition token by count. Ties go to the earlier token in priority_order.
+# def majority_token(tokens, candidates, priority_order):
+#     present = [t for t in candidates if t in tokens]
+#     return max(present, key=lambda t: (tokens.count(t), -priority_order.index(t)))
 
 # Converts char tokens to final int values in LU map
 lu_token_map = {
@@ -430,16 +447,16 @@ lu_token_map = {
     "I": 8,
 }
 
-lu_token_reverse_map = {
-    1: "S",
-    2: "C",
-    3: "F",
-    4: "G",
-    5: "W",
-    6: "B",
-    7: "O",
-    8: "I",
-}
+# lu_token_reverse_map = {
+#     1: "S",
+#     2: "C",
+#     3: "F",
+#     4: "G",
+#     5: "W",
+#     6: "B",
+#     7: "O",
+#     8: "I",
+# }
 
 
 def apply_extent_rules(lu_dict):
@@ -718,7 +735,7 @@ def apply_tall_short_bare(lu_dict):
         match = re.search(r"F+[GB]", token_seq)
         if match:
             transition_idx = match.end() - 1
-            apply_tokens(lu_dict, range(0, transition_idx), "F", node_code_map["forest_tall_short_mix"])
+            apply_tokens(lu_dict, range(0, transition_idx), "F", node_code_map["forest_veg_mix"])
             if lu_dict["gpw_cultiv_grass"]:
                 apply_tokens(lu_dict, range(transition_idx, len(tokens)), "G", node_code_map["grass_gpw"])
             else:
@@ -741,7 +758,7 @@ def apply_tall_short_bare(lu_dict):
 
             if transition_match:
                 transition_idx = transition_match.end() - 1
-                apply_tokens(lu_dict, range(0, transition_idx), "F", node_code_map["forest_tall_short_mix"])
+                apply_tokens(lu_dict, range(0, transition_idx), "F", node_code_map["forest_veg_mix"])
 
                 final_idx = range(transition_idx, len(tokens))
                 final_tokens = tokens[transition_idx:]
@@ -779,7 +796,7 @@ def apply_tall_short_bare(lu_dict):
 
         # If no valid terminal G/B phase, set all years to F
         if not terminal_match:
-            apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_tall_short_mix"])
+            apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_veg_mix"])
             return
 
         # Option to make number of G/Bs in terminal phase > 3
@@ -787,7 +804,7 @@ def apply_tall_short_bare(lu_dict):
         terminal_tokens = tokens[terminal_gb_start_idx:]
         terminal_gb_count = sum(t in {"G", "B"} for t in terminal_tokens)
         if terminal_gb_count < 3:
-            apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_tall_short_mix"])
+            apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_veg_mix"])
             return
 
         # If there is a valid terminal G/B phase, look for the first F->G/B transition and sets that as the transition year.
@@ -795,15 +812,15 @@ def apply_tall_short_bare(lu_dict):
         transition_match = re.search(r"F+[GB]", token_seq)
 
         if not transition_match:
-            apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_tall_short_mix"])
+            apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_veg_mix"])
             return
 
         transition_idx = transition_match.end() - 1
-        apply_tokens(lu_dict, range(0, transition_idx), "F", node_code_map["forest_tall_short_mix"])
+        apply_tokens(lu_dict, range(0, transition_idx), "F", node_code_map["forest_veg_mix"])
 
         final_tokens = tokens[transition_idx:]
         if "G" in final_tokens:
-            apply_tokens(lu_dict, range(transition_idx, len(tokens)), "G", node_code_map["grass_tall_short_mix"])
+            apply_tokens(lu_dict, range(transition_idx, len(tokens)), "G", node_code_map["grass_veg_mix"])
         else:
             apply_tokens( lu_dict, range(transition_idx, len(tokens)), "B", node_code_map["bare_glad_majority_years"])
 
@@ -849,7 +866,7 @@ def apply_veg_bare_water(lu_dict):
         if water_wetland_tokens and all(t == "O" for t in water_wetland_tokens):
             apply_tokens(lu_dict, all_idx, "O", node_code_map["water_glad_majority_years"])
         else:
-            apply_tokens(lu_dict, all_idx, "W", node_code_map["wetland_glad_majority_years"])
+            apply_tokens(lu_dict, all_idx, "W", node_code_map["wetland_veg_water_mix"])
 
         return
 
@@ -876,10 +893,10 @@ def apply_veg_bare_water(lu_dict):
         # Prominent vegetation/bare class: if F > 2 forest, elif G > 2 grass, else bare.
         if pre_tokens.count("F") > 2:
             pre_token = "F"
-            pre_node = node_code_map["forest_veg_water_mix"]
+            pre_node = node_code_map["forest_water_mix"]
         elif pre_tokens.count("G") > 2:
             pre_token = "G"
-            pre_node = node_code_map["grass_veg_water_mix"]
+            pre_node = node_code_map["grass_water_mix"]
         else:
             pre_token = "B"
             pre_node = node_code_map["bare_glad_majority_years"]
@@ -917,7 +934,115 @@ def apply_wetland_water(lu_dict):
         apply_tokens(lu_dict, all_idx, "W", node_code_map["wetland_glad_majority_years"])
     else:
         apply_tokens(lu_dict, all_idx, "O", node_code_map["water_glad_majority_years"])
+
+
+# Mix of ice and bare only
+def apply_ice_bare(lu_dict):
+    tokens = lu_dict["tokens"]
+    token_seq = "".join(tokens)
+    all_idx = range(len(tokens))
+
+    # Only considered a LU transition if initial landcover >= 3 consecutive years and final land cover >= 3 consecutive years and there is only 1 transition
+    if re.fullmatch(r"(I{3,}B{3,}|B{3,}I{3,})", token_seq):
+        return
+
+    # Otherwise collapse to majority class.
+    i_count = tokens.count("I")
+    b_count = tokens.count("B")
+
+    if b_count >= i_count:
+        apply_tokens(lu_dict, all_idx, "B", node_code_map["bare_glad_majority_years"])
+    else:
+        apply_tokens(lu_dict, all_idx, "I", node_code_map["ice_glad_majority_years"])
+
+
+# Mix of ice and all other LC classes
+def apply_ice_other(lu_dict):
+    tokens = lu_dict["tokens"]
+    token_seq = "".join(tokens)
+    all_idx = range(len(tokens))
+
+    land_tokens = {"I", "F", "G", "B"}
+    water_tokens = {"W", "O"}
+
+    land_count = sum(t in land_tokens for t in tokens)
+    water_count = sum(t in water_tokens for t in tokens)
+
+    i_count = tokens.count("I")
+    f_count = tokens.count("F")
+    g_count = tokens.count("G")
+    b_count = tokens.count("B")
+    w_count = tokens.count("W")
+    o_count = tokens.count("O")
+
+    # If there are <3 land years and none are F, collapse to majority water/wetland class. Tie goes to wetland.
+    if land_count < 3 and f_count == 0:
+        if w_count >= o_count:
+            apply_tokens(lu_dict, all_idx, "W", node_code_map["wetland_glad_majority_years"])
+        else:
+            apply_tokens(lu_dict, all_idx, "O", node_code_map["water_glad_majority_years"])
+        return
+
+    # If there are <3 water/wetland years, use LC with greatest hierarchy where n_years >= 2.
+    if water_count < 3:
+        if f_count >= 2:
+            apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_ice_mix"])
+        elif g_count >= 2:
+            apply_tokens(lu_dict, all_idx, "G", node_code_map["grass_ice_mix"])
+        elif b_count >= 2:
+            apply_tokens(lu_dict, all_idx, "B", node_code_map["bare_ice_mix"])
+        else:
+            apply_tokens(lu_dict, all_idx, "I", node_code_map["ice_glad_majority_years"])
+        return
+
+    # Land -> water/wetland transition:
+    # 3+ consecutive ice/bare years followed by 3+ consecutive water/wetland years until the end.
+    transition_match = re.search(r"(?P<land>[IFGB]{3,})(?P<water>[WO]{3,})$", token_seq)
+
+    if transition_match:
+        transition_idx = transition_match.start("water")
+        pre_tokens = tokens[:transition_idx]
+        final_tokens = tokens[transition_idx:]
+
+        # Prominent LC class: if LC > 2 years, else ice.
+        if pre_tokens.count("F") > 2:
+            pre_token = "F"
+            pre_node = node_code_map["forest_ice_mix"]
+        elif pre_tokens.count("G") > 2:
+            pre_token = "G"
+            pre_node = node_code_map["grass_ice_mix"]
+        elif pre_tokens.count("B") > 2:
+            pre_token = "B"
+            pre_node = node_code_map["bare_ice_mix"]
+        else:
+            pre_token = "I"
+            pre_node = node_code_map["ice_glad_majority_years"]
+
+        # If all water/wetland years are O, assume water. Otherwise, assume wetland.
+        if all(t == "O" for t in final_tokens):
+            final_token = "O"
+            final_node = node_code_map["water_glad_majority_years"]
+        else:
+            final_token = "W"
+            final_node = node_code_map["wetland_bare_ice_water_mix"]
+
+        apply_tokens(lu_dict, range(0, transition_idx), pre_token, pre_node)
+        apply_tokens(lu_dict, range(transition_idx, len(tokens)), final_token, final_node)
+
+        return
+
+    # If enough evidence of both groups but no valid transition, collapse to  LC with greatest hierarchy where n_years >= 2.
+    if f_count >= 2:
+        apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_ice_mix"])
+    elif g_count >= 2:
+        apply_tokens(lu_dict, all_idx, "G", node_code_map["grass_ice_mix"])
+    elif b_count >= 2:
+        apply_tokens(lu_dict, all_idx, "B", node_code_map["bare_ice_mix"])
+    else:
+        apply_tokens(lu_dict, all_idx, "I", node_code_map["ice_glad_majority_years"])
+
     return
+
 
 def apply_regex_rules(tokens, node_codes, driver, tcl_year, pre_2000_plantation, planting_year, sdpt_oil_palm, sdpt_tree_crop, sdpt_planted_forest, gmw_mangrove, gpw_cultiv_grass):
 
@@ -960,6 +1085,10 @@ def apply_regex_rules(tokens, node_codes, driver, tcl_year, pre_2000_plantation,
             apply_veg_bare_water(lu_dict)
         elif re.fullmatch(r"[WO]+", token_seq):
             apply_wetland_water(lu_dict)
+        elif re.fullmatch(r"[IB]+", token_seq):
+            apply_ice_bare(lu_dict)
+        elif re.fullmatch(r"[IFGBWO]+", token_seq) and "I" in token_seq:
+            apply_ice_other(lu_dict)
 
     # Final token and node code timeseries
     final_tokens = lu_dict["tokens"]
@@ -1344,11 +1473,13 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
         lu.print_and_log(f"Populating chunk stats for outputs in {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker)
 
         for key, array in out_dict.items():
-            chunk_stats.append(
-                uu.calculate_ipcc_stats(array, key, bounds_str, tile_id, "output_layer", pixel_area=pixel_area)
-            )
+            chunk_stats.append(uu.calculate_ipcc_stats(array, key, bounds_str, tile_id, "output_layer", pixel_area=pixel_area))
         lu.print_and_log(f"Populated chunk stats for outputs in {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
-    # TODO: Update to total pixel area per class? Update with LU_change and LU_summary
+
+    if not no_stats:
+        del pixel_area
+        pixel_area = None
+        gc.collect()
 
 
 
@@ -1408,12 +1539,19 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
 
         lu.print_and_log(f"Uploads completed for {bounds_str} in {tile_id} using {cn.IPCC_outputs_path}: {uu.timestr()}", is_large_run, logger_worker)
 
+        del upload_tasks
+        gc.collect()
+
     chunk_end_time = time.time()
     lu.print_and_log(f"{bounds_str} took {round(chunk_end_time - chunk_start_time)} seconds: {uu.timestr()}", False, logger_worker)
     return_message = f"Success for {bounds_str}: {uu.timestr()}"
 
     # Removes task tracking file from S3 once task is successful
     uu.delete_s3_task_file(stage, bounds, is_large_run, logger_worker)
+
+    out_dict.clear()
+    del out_dict
+    gc.collect()
 
     return return_message, chunk_stats  # Return both the success message and the statistics
 
@@ -1444,6 +1582,11 @@ def combine_ipcc_output_to_10x10(tile_id, output_dir_1x1, output_dir_10x10, rast
 
         with ThreadPoolExecutor(max_workers=5) as executor:
             executor.map(lambda args: uu.upload_raster_to_s3(*args), upload_tasks)
+
+    if not no_upload:
+        del upload_tasks
+        out_dict.clear()
+        del out_dict
 
     del mosaic_array
     gc.collect()
@@ -1646,9 +1789,12 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
                 df_batch_stats.to_excel(writer, sheet_name=f'stats__batch_{i}', index=False)
 
         del batch_results
-        if client is not None:
+        del batch_stats
+        if not run_local and client is not None:
             del futures
             client.run(gc.collect)
+
+        gc.collect()
 
         uu.stage_duration(start_time, uu.timestr(), f"{stage}, batch {i}", main_logger)
 
@@ -1721,11 +1867,20 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
             for result in combine_batch_results:
                 main_logger.info(result)
 
-            if client is not None:
+            del combine_batch_results
+            if not run_local and client is not None:
                 del futures
                 client.run(gc.collect)
 
+            gc.collect()
+
             uu.stage_duration(start_time, uu.timestr(), f"{stage}, 10x10 combine batch {i}", main_logger)
+
+        raster_paths_by_output_dir.clear()
+        del raster_paths_by_output_dir
+        del combine_tasks
+        del combine_batches
+        gc.collect()
 
         uu.stage_duration(start_time, uu.timestr(), f"{stage} with 10x10 combine", main_logger)
 
@@ -1774,6 +1929,7 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
 
     if not run_local:
         client.close()
+        terminate_cluster.terminate_cluster(cluster_name)
 
 
 

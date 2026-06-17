@@ -81,7 +81,7 @@ def build_land_use_output_paths(tile_id, run_date, chunk_size_pixels=40000):
             .replace("START_END", summary_year_range)
             .replace("CHUNK_SIZE", str(chunk_size_pixels))
             .replace("RUN_DATE", run_date)
-            + f"{tile_id}_{cn.IPCC_summary_pattern}.tif"
+            + f"{tile_id}_{cn.IPCC_summary_pattern}_2015_2024.tif"
         )
     }
 

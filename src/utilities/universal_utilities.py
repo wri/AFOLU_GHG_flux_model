@@ -1903,6 +1903,10 @@ def compile_ipcc_1x1_chunk_stats(all_1x1_stats, chunk_shapefile_uri, stage, no_u
     # Identify count columns. These are count_* but may contain area in ha.
     count_cols = [col for col in df.columns if col.startswith("count_")]
 
+    valid_ipcc_class_count_cols = [f"count_{code}" for code in cn.ipcc_class_codes]
+    valid_ipcc_node_count_cols = [f"count_{code}" for code in cn.ipcc_node_codes]
+    valid_ipcc_change_summary_count_cols = [f"count_{code}" for code in cn.ipcc_change_codes]
+
     for col in count_cols + ["count_value", "min_value", "max_value", "mode_value"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -1922,7 +1926,7 @@ def compile_ipcc_1x1_chunk_stats(all_1x1_stats, chunk_shapefile_uri, stage, no_u
     df["ipcc_layer_group"] = df["pattern"].apply(ipcc_layer_group)
 
     # Summarize each IPCC layer type by ISO, years, and class/code columns
-    def summarize_group(group_name):
+    def summarize_group(group_name, valid_count_cols):
         group_df = df[df["ipcc_layer_group"] == group_name].copy()
 
         if group_df.empty:
@@ -1930,22 +1934,21 @@ def compile_ipcc_1x1_chunk_stats(all_1x1_stats, chunk_shapefile_uri, stage, no_u
 
         group_cols = ["iso", "pattern", "years"]
 
-        summary = (
-            group_df
-            .groupby(group_cols, dropna=False)[count_cols]
-            .sum(numeric_only=True)
-            .reset_index()
-        )
+        # Keep only count columns valid for this IPCC output type.
+        # Add missing valid columns as 0 so every tab has consistent columns.
+        for col in valid_count_cols:
+            if col not in group_df.columns:
+                group_df[col] = 0
 
-        # Add total across classes/codes for each row
-        summary["total_count_or_area"] = summary[count_cols].sum(axis=1)
+        summary = (group_df.groupby(group_cols, dropna=False)[valid_count_cols].sum(numeric_only=True).reset_index())
+        summary["total_count_or_area"] = summary[valid_count_cols].sum(axis=1)
 
         return summary
 
-    class_stats = summarize_group("class")
-    node_code_stats = summarize_group("node_code")
-    change_stats = summarize_group("change")
-    summary_stats = summarize_group("summary")
+    class_stats = summarize_group("class", valid_ipcc_class_count_cols)
+    node_code_stats = summarize_group("node_code", valid_ipcc_node_count_cols)
+    change_stats = summarize_group("change", valid_ipcc_change_summary_count_cols)
+    summary_stats = summarize_group("summary", valid_ipcc_change_summary_count_cols)
 
     # Save to Excel
     out_spreadsheet = f"{stage}__IPCC_1x1_chunk_stats__{timestr()}.xlsx"
