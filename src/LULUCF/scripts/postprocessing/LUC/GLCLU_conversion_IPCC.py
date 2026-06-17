@@ -5,7 +5,6 @@ Local test:
 Indonesia
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 119 -6 120 -5 -cs 1 --run_local --create_zarr --run_date 20269999
 
-
 Canada
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb -110 59 -109 60 -cs 1 --run_local --run_date 20268888
 
@@ -17,12 +16,12 @@ python -m src.utilities.create_cluster -n 1 -m 8 -cn IPCC_land_use
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use -bb 119.5 -5.75 119.75 -5.5 -cs 0.25 --run_date 20268888
 
 Coiled small tests (1x1 deg chunk):
-python -m src.utilities.create_cluster -n 1 -t 1 -m 8 -cn IPCC_land_use
-python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use -bb -64 -22 -63 -21 -cs 1 --create_zarr --run_date YYYYMMDD
+python -m src.utilities.create_cluster -n 1 -m 16 -cn IPCC_land_use_1x1 --zonal_stats
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_1x1 -bb 119 -6 120 -5 -cs 1 --create_zarr --run_date 20269999
 
 Coiled test (10x10 deg chunk):
-python -m src.utilities.create_cluster -n 50 -m 32 -cn IPCC_land_use_10x10
-python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_10x10 -bb 110 -10 120 0 -cs 10 --create_zarr --run_date 20268888
+python -m src.utilities.create_cluster -n 25 -m 32 -cn IPCC_land_use_10x10 --zonal_stats
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_10x10 -bb 110 -10 120 0 -cs 10 --create_zarr --run_date 20269999
 
 Full run:
 
@@ -33,7 +32,6 @@ Notes:
 
 TODO:
 Switch from regex to numba for faster performance?
-
 """
 
 import argparse
@@ -600,17 +598,17 @@ def apply_crop_transition(lu_dict):
         return
 #TODO: Use TCL up to 5 years prior for F->C exception?
 
-#Tall vegetation all years
-def apply_all_tall_veg(lu_dict):
-    tcl_prior = lu_dict["tcl_prior"]
-    driver = lu_dict["driver"]
-
-    tokens = lu_dict["tokens"]
-    all_idx = range(len(tokens))
-
-    # If TCL has occurred by the start of timeseries and the driver is permanent ag, assume tall veg is tree crops
-    if tcl_prior and driver == 1:
-        apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_glad_perm_ag_driver"])
+# #Tall vegetation all years
+# def apply_all_tall_veg(lu_dict):
+#     tcl_prior = lu_dict["tcl_prior"]
+#     driver = lu_dict["driver"]
+#
+#     tokens = lu_dict["tokens"]
+#     all_idx = range(len(tokens))
+#
+#     # If TCL has occurred by the start of timeseries and the driver is permanent ag, assume tall veg is tree crops
+#     if tcl_prior and driver == 1:
+#         apply_tokens(lu_dict, all_idx, "F", node_code_map["forest_glad_perm_ag_driver"])
 #
 #     # # If oil palm planting year in interval, allows for F -> C transitions assuming establishment of tree crops
 #     # if has_planting_transition(lu_dict):
@@ -950,9 +948,9 @@ def apply_regex_rules(tokens, node_codes, driver, tcl_year, pre_2000_plantation,
     extent_rule_applied = apply_extent_rules(lu_dict)
 
     if not extent_rule_applied:
-        if re.fullmatch(r"F+", token_seq):
-            apply_all_tall_veg(lu_dict)
-        elif re.fullmatch(r"G+", token_seq):
+        # if re.fullmatch(r"F+", token_seq):
+        #     apply_all_tall_veg(lu_dict)
+        if re.fullmatch(r"G+", token_seq):
             apply_all_short_veg(lu_dict)
         elif re.fullmatch(r"[FGB]+", token_seq) and "F" in token_seq:
             apply_tall_short_bare(lu_dict)
@@ -1322,6 +1320,9 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
     ipcc_start = time.time()
 
     out_dict = IPCC_land_use(layers)
+    # Save pixel area for chujn stats before clearing input layers
+    if not no_stats:
+        pixel_area = layers[cn.pixel_area_pattern]
     #print("out_dict:", out_dict)
 
     ipcc_end = time.time()
@@ -1341,9 +1342,10 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
     ### Part 5: Calculates chunk stats
     if not no_stats:
         lu.print_and_log(f"Populating chunk stats for outputs in {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker)
+
         for key, array in out_dict.items():
             chunk_stats.append(
-                uu.calculate_ipcc_stats(array, key, bounds_str, tile_id, "output_layer")
+                uu.calculate_ipcc_stats(array, key, bounds_str, tile_id, "output_layer", pixel_area=pixel_area)
             )
         lu.print_and_log(f"Populated chunk stats for outputs in {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
     # TODO: Update to total pixel area per class? Update with LU_change and LU_summary
@@ -1511,6 +1513,7 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
 
     # Dictionary of data to download (inputs to LU assignment).
     download_dict = {
+        cn.pixel_area_pattern: f"{cn.pixel_area_dir}{cn.pixel_area_pattern}_{sample_tile_id}.tif",
         cn.tree_cover_loss_pattern: f"{cn.tree_cover_loss_dir}{cn.tree_cover_loss_pattern}_{sample_tile_id}.tif",
         cn.drivers_pattern: f"{cn.drivers_path}{sample_tile_id}_{cn.drivers_pattern}.tif",
         cn.oil_palm_2000_extent_pattern: f"{cn.oil_palm_2000_extent_dir}{sample_tile_id}_{cn.oil_palm_2000_extent_pattern}.tif",
@@ -1661,7 +1664,7 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
     ### Step 5: Consolidate chunk stats and export
 
     if (not no_stats) and (success_count > 0) and all_1x1_stats:
-        model_chunk_stats_path = uu.compile_1x1_chunk_stats(all_1x1_stats, chunk_shapefile_uri, stage, no_upload, main_logger)
+        model_chunk_stats_path = uu.compile_ipcc_1x1_chunk_stats(all_1x1_stats, chunk_shapefile_uri, stage, no_upload, main_logger)
 
         main_logger.info(f"Final IPCC 1x1 chunk stats table: {model_chunk_stats_path}")
 
