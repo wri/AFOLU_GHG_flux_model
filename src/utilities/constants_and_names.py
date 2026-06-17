@@ -61,6 +61,7 @@ last_model_year_annual = 2024   # Last year of annual data
 years_annual = [2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
 interval_end_years_annual = years_annual[1:]
 end_year_count = len(interval_end_years_annual)
+year_range_str = f"{interval_end_years_annual[0]}_{last_model_year_annual}"
 
 possible_task_statuses = ["pending_", "loading_", "preprocessing_", "calculating_",
                           "zarr_population_", "uploading_", "error_"]
@@ -1900,7 +1901,7 @@ original_shapefile_path = "/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_m
 reprojected_shapefile_path = "/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/world-administrative-boundaries_simple__20250102_reproj.shp"
 
 local_jpeg_folder_vegetation = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/vegetation/v{veg_model_version_underscore}_standard_global/"
-local_jpeg_folder_LULUCF = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/LULUCF_totals/veg_v{veg_model_version_underscore}_standard_global__org_soil_v_{organic_soil_model_version_underscore}__min_soil_v_{SOC_model_version_underscore}/"
+local_jpeg_folder_LULUCF = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/LULUCF_totals/{LULUCF_full_version_underscore}/"
 local_jpeg_folder_cropland = f"/mnt/c/GIS/AFOLU_flux_model/cropland_emissions/20250828/4x4km_aggregated_maps/"
 local_jpeg_folder_livestock = f"/mnt/c/GIS/AFOLU_flux_model/livestock_emissions/20251223/4x4km_aggregated_maps/"
 local_jpeg_folder_AFOLU = f"/mnt/c/GIS/AFOLU_flux_model/AFOLU_totals/4x4km_aggregated_maps/v{veg_model_version_underscore}__standard__global/"

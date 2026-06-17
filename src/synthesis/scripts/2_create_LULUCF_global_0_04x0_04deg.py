@@ -130,8 +130,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
             futures.append(future)
 
     # Annual average submission
-    avg_year = f"{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}"
-    base_path_avg = base_path.replace("START_END", f"avg_{avg_year}")
+    base_path_avg = base_path.replace("START_END", f"avg_{cn.year_range_str}")
     for var_name in vars_to_process:
 
         future = client.submit(uu.mosaic_tiles_to_global,
