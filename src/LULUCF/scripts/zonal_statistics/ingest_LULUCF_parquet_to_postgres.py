@@ -4,7 +4,7 @@ It creates the table schema directly from the parquet file, so there's no need t
 with all the columns and their datatypes.
 Imports in batches to monitor progress.
 Takes about 25 minutes to run locally (15 minutes to ingest table and 10 minutes to create indexes).
-Total size is 17 GB
+Total size is 38 GB
 
 Run in Windows command prompt, not WSL, because Postgres is in Windows, not WSL
 
@@ -15,7 +15,7 @@ Need to activate the base conda environment, which has the necessary packages (p
 conda activate base
 
 Run with:
-python ingest_LULUCF_parquet_to_postgres
+python ingest_LULUCF_parquet_to_postgres.py
 
 Per Claude session 'LULUCF and component table creation'
 """
@@ -27,8 +27,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from tqdm import tqdm
 
-parquet_path = 'C:/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/LULUCF_v1_0_0__veg_v1_0_5__minsoil_v1_0_1__orgsoil_v1_0_1/LULUCF__v1_0_0__LULUCF_summative_vars__wide__20260606.parquet'
-tbl         = 'lulucf100_wide__veg105__soc101__orgsoil101__20260606'
+parquet_path = 'C:/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/LULUCF_v1_0_0__veg_v1_0_5__minsoil_v1_0_1__orgsoil_v1_0_1/LULUCF__v1_0_0__LULUCF_summative_vars__wide__20260617.parquet'
+tbl         = 'lulucf100_wide__veg105__soc101__orgsoil101__20260617'
 batch_size  = 500_000
 # batch_size  = 50_000  # For testing
 db_params   = dict(dbname='AFOLU_GHG_flux_model', host='localhost', port=5432)  # No username or password needed on my computer
