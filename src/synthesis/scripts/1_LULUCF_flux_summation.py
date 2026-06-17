@@ -59,10 +59,9 @@ Full run (150 workers based on discussion with Claude session 'LULUCF 30-m outpu
 python -m src.utilities.create_cluster -n 150 -t 1 -m 64 -cn LULUCF_summation
 python -m src.synthesis.scripts.1_LULUCF_flux_summation -cn LULUCF_summation -mt standard -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --veg_date 20260130 --veg_mpd global --soc_date 20260611 --soc_mpd global --create_zarr --log_note "LULUCF v1.0.0 fluxes: veg v1.0.5 + SOC v1.0.1 + org soil v1.0.1, 2016-2024."
 
-#TODO 2026-06-14 run had timestamps at end of chunk names, as if not is_large_run. Didn't notice it during testing. Need to understand and fix.
-#TODO 2026-06-14 run had more than 18832 output 1x1 deg geotifs in the output folders, e.g., many folders have ~27000 geotifs. I think this is because of timestamps and tiles getting restarted, but should confirm.
 #TODO Parallelize 10x10 deg tile uploads in create_10x10_deg_geotif_from_zarr, per Claude session 'LULUCF 30-m outputs script'. Applies to veg, SOC, and LULUCF. Haven't tried at all.
 #TODO Parallelize outer loop for var in LULUCF_OUTPUTS_TO_ZARR: with max_workers=2 to speed 10x10 deg uploads (separate from change to create_10x10_deg_geotif_from_zarr, per Claude session 'LULUCF 30-m outputs script'
+#TODO Figure out why LULUCF chunk stats emissions and the emissions from the zonal stats-based LULUCF table don't match by 0.024 Gt CO2/yr, as described in https://app.asana.com/1/25496124013636/task/1215782176192854/comment/1215782176192873?focus=true
 """
 
 import argparse
@@ -329,7 +328,7 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
 
             upload_tasks = uu.save_and_upload_small_raster_set(
                 bounds, chunk_len_pixels, subtile_id, bounds_str,
-                upload_dict, False, logger_worker, np.nan
+                upload_dict, is_large_run, logger_worker, np.nan
             )
             with ThreadPoolExecutor(max_workers=5) as executor:
                 executor.map(lambda args: uu.upload_raster_to_s3(*args), upload_tasks)
