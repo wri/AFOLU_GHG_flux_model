@@ -1,7 +1,7 @@
 """
 Run:
-python -m src.utilities.create_cluster -n 25 -m 64 -cn IPCC_zonal_stats --zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.IPCC_zonal_stats -cn IPCC_zonal_stats -vid 20260130 -lid 20268888 -bb 110 -10 120 0 -lmpd 10x10_test -zd 10x10_test
+python -m src.utilities.create_cluster -n 25 -m 64 -cn IPCC_zonal_stats_10x10 --zonal_stats
+python -m src.LULUCF.scripts.zonal_statistics.IPCC_vegetation_zonal_stats -cn IPCC_zonal_stats_10x10 -vid 20260130 -lid 20260617 -bb 110 -10 120 0 -lmpd 10x10_test -zd 10x10_test
 
 Notes:
     - Took 5 minutes to run for 10x10 degree area with 25 workers (00N_110E). Analysis layers = Emissions, removals, and net flux. Contextual layers = IPCC class, node, change and summary (2016-2024).
@@ -29,31 +29,36 @@ from src.utilities import zonal_stats_utilities as zsu
 from src.utilities import terminate_cluster
 
 
-def create_ipcc_lu_context_df(coord_dict, tile_id, main_logger):
-    main_logger.info(f"  Creating {tile_id} land use-context zonal stats df: {uu.timestr()}")
-
-    df = pd.DataFrame(coord_dict)
-    df["tile_id"] = tile_id
-
-    # net flux zarr year index 0-8 corresponds to reporting years 2016-2024
-    if df["year"].max() <= 8:
-        df["year"] = df["year"] + cn.interval_end_years_annual[0]
-
-    # Split area and flux rows
-    merge_keys = [cn.adm0_pattern, cn.IPCC_class_pattern, cn.IPCC_node_pattern, cn.IPCC_change_pattern, cn.IPCC_summary_pattern, "year"]
-
-    df_area = df[df["analysis_layer"].str.endswith("__area_ha")].copy()
-    df_area["analysis_layer"] = df_area["analysis_layer"].str.replace("__area_ha", "", regex=False)
-    df_area = df_area.rename(columns={"value": "area_ha"})[merge_keys + ["analysis_layer", "area_ha"]]
-
-    df_flux = df[~df["analysis_layer"].str.endswith("__area_ha") & (df["analysis_layer"] != "pixel_area_ha")].copy()
-    df_flux["analysis_layer"] = df_flux["analysis_layer"].str.replace("_ha_yr", "", regex=False)
-
-    df_out = df_flux.merge( df_area, on=merge_keys + ["analysis_layer"], how="left")
-    df_out["density__Mg_ha"] = df_out["value"] / df_out["area_ha"].replace(0, pd.NA)
-    df_out["gas"] = "all gases"
-
-    return df_out
+# def create_ipcc_lu_context_df(coord_dict, state_node_df, merge_keys, tile_id, main_logger):
+#     main_logger.info(f"  Creating {tile_id} land use contextual zonal stats df: {uu.timestr()}")
+#
+#     df = pd.DataFrame(coord_dict)
+#     df["tile_id"] = tile_id
+#
+#     # net flux zarr year index 0-8 corresponds to reporting years 2016-2024
+#     if df["year"].max() <= 8:
+#         df["year"] = df["year"] + cn.interval_end_years_annual[0]
+#
+#
+#
+#     df_area = df[df["analysis_layer"].str.endswith("__area_ha")].copy()
+#     df_area["analysis_layer"] = df_area["analysis_layer"].str.replace("__area_ha", "", regex=False)
+#     df_area = df_area.rename(columns={"value": "area_ha"})[merge_keys + ["analysis_layer", "area_ha"]]
+#
+#     df_flux = df[~df["analysis_layer"].str.endswith("__area_ha") & (df["analysis_layer"] != "pixel_area_ha")].copy()
+#     df_flux["analysis_layer"] = df_flux["analysis_layer"].str.replace("_ha_yr", "", regex=False)
+#
+#     df_out = df_flux.merge( df_area, on=merge_keys + ["analysis_layer"], how="left")
+#     df_out["density__Mg_ha"] = df_out["value"] / df_out["area_ha"].replace(0, pd.NA)
+#     df_out["gas"] = "all gases"
+#
+#     # Convert numeric IPCC codes to descriptive text
+#     df_out[f"{cn.IPCC_class_pattern}_name"] = (df_out[cn.IPCC_class_pattern].map(cn.numeric_to_ipcc_class).fillna(df_out[cn.IPCC_class_pattern]))
+#     df_out[f"{cn.IPCC_change_pattern}_name"] = (df_out[cn.IPCC_change_pattern].map(cn.numeric_to_ipcc_change).fillna(df_out[cn.IPCC_change_pattern]))
+#     df_out[f"{cn.IPCC_node_pattern}_name"] = (df_out[cn.IPCC_node_pattern].map(cn.numeric_to_ipcc_node_code).fillna(df_out[cn.IPCC_node_pattern]))
+#     df_out[f"{cn.IPCC_summary_pattern}_name"] = (df_out[cn.IPCC_summary_pattern].map(cn.numeric_to_ipcc_change).fillna(df_out[cn.IPCC_summary_pattern]))
+#
+#     return df_out
 
 
 def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", veg_model_path_description = "global", lu_model_path_description = "global", zonal_stats_description = "global",
@@ -143,13 +148,11 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
                                        lu_model_version, lu_model_path_description, lu_input_date, main_logger)
 
     # Creates dataframe of state_node codes and meanings
-    # state_node_df = zsu.create_state_node_df(cn.state_node_lookup_table_local, cn.state_node_lookup_table_s3, cn.sheet)
-    # node_codes = np.array(list(state_node_df['land_state']), dtype=np.uint32)
+    state_node_df = zsu.create_state_node_df(cn.state_node_lookup_table_local, cn.state_node_lookup_table_s3, cn.sheet)
+    node_codes = [0] + np.array(list(state_node_df['land_state']), dtype=np.uint32)
     # main_logger.info(f"State nodes are from: {cn.state_node_lookup_table_local} or {cn.state_node_lookup_table_s3}, sheet {cn.sheet}")
     # main_logger.info(f"State nodes are: {node_codes}")
 
-    # local_zonal_stats_folder = Path(cn.veg_local_zonal_stats_table_folder)
-    # local_zonal_stats_folder.mkdir(parents=True, exist_ok=True)
     local_zonal_stats_folder = Path(cn.land_use_zonal_stats_table_folder)
     local_zonal_stats_folder.mkdir(parents=True, exist_ok=True)
 
@@ -172,12 +175,12 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
     adm0_xr = xr.open_zarr(cn.adm0_zarr_path, consolidated=False).rename_vars(band_data=cn.adm0_pattern)
     pixel_area_xr = xr.open_zarr(cn.pixel_area_zarr_path, consolidated=False).rename_vars(band_data=cn.pixel_area_zstats_pattern)
     # WDPA_xr = xr.open_zarr(cn.WDPA_zarr_path, consolidated=False).rename_vars(band_data=cn.WDPA_pattern)
-    # cont_eco_xr = xr.open_zarr(cn.cont_eco_zarr_path, consolidated=False).rename_vars(band_data=cn.cont_eco_zstats_pattern)
+    cont_eco_xr = xr.open_zarr(cn.cont_eco_zarr_path, consolidated=False).rename_vars(band_data=cn.cont_eco_zstats_pattern)
     # landmark_xr = xr.open_zarr(cn.landmark_zarr_path, consolidated=False).rename_vars(band_data=cn.landmark_pattern)
-    # composite_primary_xr = xr.open_zarr(cn.starting_composite_primary_forest_zarr_path,consolidated=False)  # No rename because it's created by a different process where the variable is named starting_composite_primary_forest
+    composite_primary_xr = xr.open_zarr(cn.starting_composite_primary_forest_zarr_path,consolidated=False)  # No rename because it's created by a different process where the variable is named starting_composite_primary_forest
     # KBA_xr = xr.open_zarr(cn.KBA_zarr_path, consolidated=False).rename_vars(band_data=cn.KBA_pattern)
     # watersheds_xr = xr.open_zarr(cn.watersheds_zarr_path, consolidated=False).rename_vars(band_data=cn.watersheds_pattern)
-    # drivers_xr = xr.open_zarr(cn.drivers_of_loss_zarr_path, consolidated=False).rename_vars(band_data=cn.drivers_of_loss_pattern)
+    drivers_xr = xr.open_zarr(cn.drivers_of_loss_zarr_path, consolidated=False).rename_vars(band_data=cn.drivers_of_loss_pattern)
     # # BRA_biomes_xr = xr.open_zarr(cn.BRA_biomes_zarr_path, consolidated=False).rename_vars(band_data=cn.BRA_biomes_pattern)
     # # managed_land_CAN_xr = xr.open_zarr(cn.managed_land_CAN_zarr_path, consolidated=False).rename_vars(band_data=cn.managed_land_CAN_pattern)
     # # managed_land_USA_xr = xr.open_zarr(cn.managed_land_USA_zarr_path, consolidated=False).rename_vars(band_data=cn.managed_land_USA_pattern)
@@ -195,16 +198,16 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
     adm0_xr = zsu.round_coords(adm0_xr)
     reference = zsu.round_coords(pixel_area_xr[cn.pixel_area_zstats_pattern])
     # WDPA_xr = zsu.round_coords(WDPA_xr)
-    # cont_eco_xr = zsu.round_coords(cont_eco_xr)
+    cont_eco_xr = zsu.round_coords(cont_eco_xr)
     # landmark_xr = zsu.round_coords(landmark_xr)
-    # composite_primary_xr = zsu.round_coords(composite_primary_xr)
+    composite_primary_xr = zsu.round_coords(composite_primary_xr)
     # KBA_xr = zsu.round_coords(KBA_xr)
     # watersheds_xr = zsu.round_coords(watersheds_xr)
-    # drivers_xr = zsu.round_coords(drivers_xr)
+    drivers_xr = zsu.round_coords(drivers_xr)
     # # BRA_biomes_xr = zsu.round_coords(BRA_biomes_xr)
     # # managed_land_CAN_xr = zsu.round_coords(managed_land_CAN_xr)
     # # managed_land_USA_xr = zsu.round_coords(managed_land_USA_xr)
-    # land_state_node = zsu.round_coords(ds[cn.land_state_pattern])
+    land_state_node = zsu.round_coords(veg_ds[cn.land_state_pattern])
     # forest_age = zsu.round_coords(ds[cn.forest_age_output_pattern])
     lu_ds = zsu.round_coords(lu_ds)
     ds_selected_analysis_vars = zsu.round_coords(ds_selected_analysis_vars)
@@ -214,16 +217,16 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
     adm0_aligned = zsu.safe_crop(adm0_xr, reference)
     pixel_area_aligned = reference
     # WDPA_aligned = zsu.safe_crop(WDPA_xr, reference)
-    # cont_eco_aligned = zsu.safe_crop(cont_eco_xr, reference)
+    cont_eco_aligned = zsu.safe_crop(cont_eco_xr, reference)
     # landmark_aligned = zsu.safe_crop(landmark_xr, reference)
-    # composite_primary_aligned = zsu.safe_crop(composite_primary_xr, reference)
+    composite_primary_aligned = zsu.safe_crop(composite_primary_xr, reference)
     # KBA_aligned = zsu.safe_crop(KBA_xr, reference)
     # watersheds_aligned = zsu.safe_crop(watersheds_xr, reference)
-    # drivers_aligned = zsu.safe_crop(drivers_xr, reference)
+    drivers_aligned = zsu.safe_crop(drivers_xr, reference)
     # # BRA_biomes_aligned = zsu.safe_crop(BRA_biomes_xr, reference)
     # # managed_land_CAN_aligned = zsu.safe_crop(managed_land_CAN_xr, reference)
     # # managed_land_USA_aligned = zsu.safe_crop(managed_land_USA_xr, reference)
-    # land_state_node_aligned = zsu.safe_crop(land_state_node, reference)
+    land_state_node_aligned = zsu.safe_crop(land_state_node, reference)
     # forest_age_aligned = zsu.safe_crop(forest_age, reference)
     lu_ds = zsu.safe_crop(lu_ds, reference)
     ds_selected_analysis_vars_aligned = zsu.safe_crop(ds_selected_analysis_vars, reference)
@@ -347,16 +350,16 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
         adm0_aligned_subset = adm0_aligned.sel(x=slice(west, east), y=slice(north, south))
         pixel_area_expanded_subset = pixel_area_expanded.sel(x=slice(west, east), y=slice(north, south))
         # WDPA_aligned_subset = WDPA_aligned.sel(x=slice(west, east), y=slice(north, south))
-        # cont_eco_aligned_subset = cont_eco_aligned.sel(x=slice(west, east), y=slice(north, south))
+        cont_eco_aligned_subset = cont_eco_aligned.sel(x=slice(west, east), y=slice(north, south))
         # landmark_aligned_subset = landmark_aligned.sel(x=slice(west, east), y=slice(north, south))
-        # composite_primary_aligned_subset = composite_primary_aligned.sel(x=slice(west, east), y=slice(north, south))
+        composite_primary_aligned_subset = composite_primary_aligned.sel(x=slice(west, east), y=slice(north, south))
         # KBA_aligned_subset = KBA_aligned.sel(x=slice(west, east), y=slice(north, south))
         # watersheds_aligned_subset = watersheds_aligned.sel(x=slice(west, east), y=slice(north, south))
-        # drivers_aligned_subset = drivers_aligned.sel(x=slice(west, east), y=slice(north, south))
+        drivers_aligned_subset = drivers_aligned.sel(x=slice(west, east), y=slice(north, south))
         # # BRA_biomes_aligned_subset = BRA_biomes_aligned.sel(x=slice(west, east), y=slice(north, south))
         # # managed_land_CAN_aligned_subset = managed_land_CAN_aligned.sel(x=slice(west, east), y=slice(north, south))
         # # managed_land_USA_aligned_subset = managed_land_USA_aligned.sel(x=slice(west, east), y=slice(north, south))
-        # land_state_node_aligned_subset = land_state_node_aligned.sel(x=slice(west, east), y=slice(north, south))
+        land_state_node_aligned_subset = land_state_node_aligned.sel(x=slice(west, east), y=slice(north, south))
         # forest_age_cat_subset = forest_age_cat_xr.sel(x=slice(west, east), y=slice(north, south))
         ipcc_class_subset = ipcc_class.sel(x=slice(west, east), y=slice(north, south))
         ipcc_node_subset = ipcc_node.sel(x=slice(west, east), y=slice(north, south))
@@ -377,15 +380,15 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
         #     main_logger.info(f"  {cn.WDPA_pattern} not in {tile_id}. Creating xarray of all 0s.")
         # else:
         #     WDPA_da = WDPA_aligned_subset[cn.WDPA_pattern]
-        #
-        # if cont_eco_aligned_subset[cn.cont_eco_zstats_pattern].sizes.get("x", 0) == 0 or cont_eco_aligned_subset[
-        #     cn.cont_eco_zstats_pattern].sizes.get("y", 0) == 0:
-        #     cont_eco_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(
-        #         cn.cont_eco_zstats_pattern)
-        #     main_logger.info(f"  {cn.cont_eco_zstats_pattern} not in {tile_id}. Creating xarray of all 0s.")
-        # else:
-        #     cont_eco_da = cont_eco_aligned_subset[cn.cont_eco_zstats_pattern]
-        #
+
+        if cont_eco_aligned_subset[cn.cont_eco_zstats_pattern].sizes.get("x", 0) == 0 or cont_eco_aligned_subset[
+            cn.cont_eco_zstats_pattern].sizes.get("y", 0) == 0:
+            cont_eco_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(
+                cn.cont_eco_zstats_pattern)
+            main_logger.info(f"  {cn.cont_eco_zstats_pattern} not in {tile_id}. Creating xarray of all 0s.")
+        else:
+            cont_eco_da = cont_eco_aligned_subset[cn.cont_eco_zstats_pattern]
+
         # if landmark_aligned_subset[cn.landmark_pattern].sizes.get("x", 0) == 0 or landmark_aligned_subset[
         #     cn.landmark_pattern].sizes.get("y", 0) == 0:
         #     landmark_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(cn.landmark_pattern)
@@ -407,15 +410,15 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
         #     main_logger.info(f"  {cn.watersheds_pattern} not in {tile_id}. Creating xarray of all 0s.")
         # else:
         #     watersheds_da = watersheds_aligned_subset[cn.watersheds_pattern]
-        #
-        # if drivers_aligned_subset[cn.drivers_of_loss_pattern].sizes.get("x", 0) == 0 or drivers_aligned_subset[
-        #     cn.drivers_of_loss_pattern].sizes.get("y", 0) == 0:
-        #     drivers_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(
-        #         cn.drivers_of_loss_pattern)
-        #     main_logger.info(f"  {cn.drivers_of_loss_pattern} not in {tile_id}. Creating xarray of all 0s.")
-        # else:
-        #     drivers_da = drivers_aligned_subset[cn.drivers_of_loss_pattern]
-        #
+
+        if drivers_aligned_subset[cn.drivers_of_loss_pattern].sizes.get("x", 0) == 0 or drivers_aligned_subset[
+            cn.drivers_of_loss_pattern].sizes.get("y", 0) == 0:
+            drivers_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(
+                cn.drivers_of_loss_pattern)
+            main_logger.info(f"  {cn.drivers_of_loss_pattern} not in {tile_id}. Creating xarray of all 0s.")
+        else:
+            drivers_da = drivers_aligned_subset[cn.drivers_of_loss_pattern]
+
         # if forest_age_cat_subset[cn.forest_age_category_pattern].sizes.get("x", 0) == 0 or forest_age_cat_subset[
         #     cn.forest_age_category_pattern].sizes.get("y", 0) == 0:
         #     forest_age_cat_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(
@@ -442,15 +445,16 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
         # #     main_logger.info(f"  {cn.managed_land_USA_pattern} not in {tile_id}. Creating xarray of all 0s.")
         # # else:
         # #     managed_land_USA_da = managed_land_USA_aligned_subset[cn.managed_land_USA_pattern]
-        #
-        # if (composite_primary_aligned_subset[cn.starting_composite_primary_forest_pattern].sizes.get("x", 0) == 0 or
-        #         composite_primary_aligned_subset[cn.starting_composite_primary_forest_pattern].sizes.get("y", 0) == 0):
-        #     composite_primary_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(
-        #         cn.starting_composite_primary_forest_pattern)
-        #     main_logger.info(
-        #         f"  {cn.starting_composite_primary_forest_pattern} not in {tile_id}. Creating xarray of all 0s.")
-        # else:
-        #     composite_primary_da = composite_primary_aligned_subset[cn.starting_composite_primary_forest_pattern]
+
+        if (composite_primary_aligned_subset[cn.starting_composite_primary_forest_pattern].sizes.get("x", 0) == 0 or
+                composite_primary_aligned_subset[cn.starting_composite_primary_forest_pattern].sizes.get("y", 0) == 0):
+            composite_primary_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(
+                cn.starting_composite_primary_forest_pattern)
+            main_logger.info(
+                f"  {cn.starting_composite_primary_forest_pattern} not in {tile_id}. Creating xarray of all 0s.")
+        else:
+            composite_primary_da = composite_primary_aligned_subset[cn.starting_composite_primary_forest_pattern]
+
         if ipcc_class_subset.sizes.get("x", 0) == 0 or ipcc_class_subset.sizes.get("y", 0) == 0:
             ipcc_class_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(
                 cn.IPCC_class_pattern)
@@ -475,16 +479,12 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
         else:
             ipcc_summary_da = ipcc_summary_subset.rename(cn.IPCC_summary_pattern)
 
-
-
-
-
         # Turns the composite primary forest zarr (which has chunks of 1x4000x4000) into something without a year dimension at all (4000x4000).
         # That allows it to be used with the other contextual layers, which are also just 4000x4000 (no year dimension).
         # Note: composite primary forest has chunks of 1x4000x4000 because of how it's made; it uses the same function as the zarr for the vegetation model,
         # rather than the script of the other contextual layers.
-        # if "year" in composite_primary_da.dims:
-        #     composite_primary_da = composite_primary_da.isel(year=0, drop=True)
+        if "year" in composite_primary_da.dims:
+            composite_primary_da = composite_primary_da.isel(year=0, drop=True)
 
         # Final alignment
         main_logger.info(f"  Aligning {tile_id}: {uu.timestr()}")
@@ -492,17 +492,17 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
          pixel_area_expanded_subset,
          adm0_da,
          # WDPA_da,
-         # cont_eco_da,
+         cont_eco_da,
          # landmark_da,
-         # composite_primary_da,
+         composite_primary_da,
          # KBA_da,
          # watersheds_da,
-         # drivers_da,
+         drivers_da,
          # forest_age_cat_da,
          # # bra_da,
          # # managed_land_CAN_da,
          # # managed_land_USA_da,
-         # land_state_node_aligned_subset,
+         land_state_node_aligned_subset,
          ipcc_class_da,
          ipcc_node_da,
          ipcc_change_da,
@@ -512,17 +512,17 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
             pixel_area_expanded_subset,
             adm0_da,
             # WDPA_da,
-            # cont_eco_da,
+            cont_eco_da,
             # landmark_da,
-            # composite_primary_da,
+            composite_primary_da,
             # KBA_da,
             # watersheds_da,
-            # drivers_da,
+            drivers_da,
             # forest_age_cat_da,
             # # bra_da,
             # # managed_land_CAN_da,
             # # managed_land_USA_da,
-            # land_state_node_aligned_subset,
+            land_state_node_aligned_subset,
             ipcc_class_da,
             ipcc_node_da,
             ipcc_change_da,
@@ -535,14 +535,14 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
             flux_cube_subset,
             *(
                 adm0_da,
-                # land_state_node_aligned_subset,
+                land_state_node_aligned_subset,
                 # WDPA_da,
-                # cont_eco_da,
+                cont_eco_da,
                 # landmark_da,
-                # composite_primary_da,
+                composite_primary_da,
                 # KBA_da,
                 # watersheds_da,
-                # drivers_da,
+                drivers_da,
                 # forest_age_cat_da,
                 # # bra_da,
                 # # managed_land_CAN_da,
@@ -556,14 +556,14 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
             func='sum',
             expected_groups=(
                 cn.gadm_adm0_ids,
-                # node_codes,
+                node_codes,
                 # cn.WDPA_codes,
-                # cn.cont_eco_codes,
+                cn.cont_eco_codes,
                 # cn.landmark_codes,
-                # cn.composite_primary_codes,
+                cn.composite_primary_codes,
                 # cn.KBA_codes,
                 # cn.watershed_codes,
-                # cn.drivers_codes,
+                cn.drivers_codes,
                 # cn.forest_age_category_codes,
                 # # cn.BRA_biomes_codes,
                 # # cn.managed_land_codes,  # For Canada
@@ -582,14 +582,14 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
         # Contextual layers to use to merge pixel_area against other analysis layers (to calculate flux/ha)
         contextual_layers = [
             cn.adm0_pattern,
-            # cn.land_state_pattern,
+            cn.land_state_pattern,
             # cn.WDPA_pattern,
-            # cn.cont_eco_zstats_pattern,
+            cn.cont_eco_zstats_pattern,
             # cn.landmark_pattern,
-            # cn.starting_composite_primary_forest_pattern,
+            cn.starting_composite_primary_forest_pattern,
             # cn.KBA_pattern,
             # cn.watersheds_pattern,
-            # cn.drivers_of_loss_pattern,
+            cn.drivers_of_loss_pattern,
             # cn.forest_age_category_pattern,
             # # cn.BRA_biomes_pattern,
             # # cn.managed_land_CAN_pattern,
@@ -603,8 +603,8 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
 
         main_logger.info(f"  Done computing {tile_id}: {uu.timestr()}")
         coord_dict = zsu.convert_to_coord_dict(results, tile_id, main_logger)
-        #df = zsu.create_df(coord_dict, state_node_df, contextual_layers, tile_id, 'vegetation', main_logger)
-        df = create_ipcc_lu_context_df(coord_dict, tile_id, main_logger)
+        df = zsu.create_df(coord_dict, state_node_df, contextual_layers, tile_id, 'vegetation', main_logger)
+        #df = create_ipcc_lu_context_df(coord_dict, tile_id, main_logger)
         main_logger.info(f"  Rows in {tile_id} dataframe: {len(df.index)}: {uu.timestr()}")
 
         main_logger.info(f"  Saving {tile_id} output table: {uu.timestr()}")

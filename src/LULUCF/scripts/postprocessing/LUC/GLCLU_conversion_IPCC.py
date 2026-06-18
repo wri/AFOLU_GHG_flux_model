@@ -27,7 +27,7 @@ python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_l
 
 Full run:
 python -m src.utilities.create_cluster -n 200 -m 16 -cn IPCC_land_use
-python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -cs 10 --create_zarr --run_date 20260617 --log_note "This is a global run for IPCC land use model v1.0.0 (2015-2024)."
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -cs 10 --create_zarr --run_date 20260617 --log_note "This is a global run for IPCC land use model v1.0.0 (2015-2024). Part 2"
 
 
 Notes:
@@ -35,6 +35,9 @@ Notes:
     - Took 3 minutes to run for 1 degree chunk in coiled with no stats, no zarr, and no upload
     - Took 7 minutes to run for 1 degree chunk locally
     - Took 35 minutes to run for 10 degree area in 1 degree chunks in coiled using 100 workers (30 credits)
+
+
+--chunk_ids_to_skip /mnt/c/GIS/AFOLU_flux_model/land_use/processed_1x1.txt
 
 TODO:
 Switch from regex to numba for faster performance?
@@ -67,6 +70,14 @@ from src.utilities import terminate_cluster
 os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "TRUE"
 
 print_lu_transition = True  #TODO: Set to False for full global run
+
+def read_chunk_ids_file(path):
+    with open(path, "r") as f:
+        return {
+            line.strip()
+            for line in f
+            if line.strip() and not line.strip().startswith("#")
+        }
 
 # Returns boolean values for whether a pixel is planted forest or tree crop
 def get_sdpt_status(sdpt_type):
@@ -241,68 +252,61 @@ These rules replace the default land use classes.
 
 Node codes used here:
 1) Settlements and Infrastructure:
-    10 = Built from GLAD data
-    11 = Built following tall vegetation loss before built LC
-    12 = Built after first built LC in mixed LC sequence
+    10: "Built from GLAD data"
+    11: "Built following tall vegetation loss before built LC"
+    12: "Built after first built LC"
 
 2) Cropland:
-    20 = Crop from GLAD data
-    21 = Crop from oil palm extent or planting year
-    22 = Crop from SDPT tree crop extent (if not oil palm)
-    23 = Crop following vegetation loss before crop LC
-    24 = Crop from permanent agriculture driver
-    29 = Crop from majority years in mixed LC prior to crop LC
+    20: "Crop from GLAD data"
+    21: "Crop from oil palm extent or planting year"
+    22: "Crop from SDPT tree crop extent (not oil palm)"
+    23: "Crop following tall vegetation loss before crop LC"
+    24: "Crop from TCL + permanent agriculture driver"
 
 3) Forest:
-    30  = Forest from GLAD tall vegetation
-    31  = Forest from SDPT planted forest extent
-    32  = Forest from GMW mangrove extent
-    333 = Forest from shifting cultivation driver
-    334 = Forest from logging driver
-    335 = Forest from wildfire driver
-    337 = Forest from natural disturbance driver
-    34  = Unstocked forest after TCL and before oil palm planting
-    351 = Forest from vegetation/bare to built transition rule
-    352 = Forest from vegetation/bare to crop transition rule
-    353 = Forest from mixed tall/short vegetation rule
-    357 = Forest from vegetation/water transition rule
-    358 = Forest from ice mix rule
-    39  = Forest from majority years in mixed class rule
+    30 : "Forest from GLAD tall vegetation"
+    31 : "Forest from SDPT planted forest extent"
+    32 : "Forest from GMW mangrove extent"
+    333: "Forest from shifting cultivation driver"
+    334: "Forest from logging driver"
+    335: "Forest from wildfire driver"
+    337: "Forest from natural disturbance driver"
+    34 : "Unstocked forest after TCL and before oil palm planting"
+    353: "Forest from mixed tall/short vegetation rule"
+    357: "Forest from vegetation/water transition rule"
+    358: "Forest from mixed snow/ice rule"
+    39 : "Forest from majority years rule"
 
 4) Grassland:
-    40  = Grass from GLAD short vegetation
-    41  = Grass from TCL + permanent agriculture driver + GPW cultivated grassland extent
-    430 = Grass from unknown driver
-    432 = Grass from hard commodities driver
-    436 = Grass from settlements/infrastructure driver
-    44  = Grass prior to oil palm establishment
-    451 = Grass from vegetation/bare to built transition rule
-    452 = Grass from vegetation/bare to crop transition rule
-    453 = Grass from mixed tall/short vegetation rule
-    457 = Grass from vegetation/water transition rule
-    458 = Grass from ice mix rule
-    49  = Grass from majority years in mixed class rule
+    40 : "Grass from GLAD short vegetation"
+    41 : "Grass from TCL + permanent agriculture driver + GPW cultivated grassland extent"
+    430: "Grass from TCL + unknown driver"
+    432: "Grass from TCL + hard commodities driver"
+    436: "Grass from TCL + settlements/infrastructure driver"
+    44 : "Grass prior to oil palm establishment"
+    453: "Grass from mixed tall/short vegetation rule"
+    457: "Grass from vegetation/water transition rule"
+    458: "Grass from mixed snow/ice rule"
+    49 : "Grass from majority years rule"
 
 5) Wetland:
-    50 = Wetland from GLAD data
-    51 = Wetland from water/wetland/built transition rule
-    52 = Wetland from vegetation/water transition rule
-    53 = Wetland from bare/ice to water/wetland transition rule
-    59 = Wetland from majority years in mixed water rule
+    50: "Wetland from GLAD data"
+    51: "Wetland from water/wetland/built transition rule"
+    52: "Wetland from vegetation/water transition rule"
+    53: "Wetland from bare/ice to water/wetland transition rule"
+    59: "Wetland from majority years in mixed water rule"
 
 6) Other Land:
-    60 = Bare from GLAD data
-    61 = Bare from mixed tall/short vegetation rule
-    62 = Bare from bare/ice mix rule
-    69 = Bare from majority years rule
+    60: "Bare from GLAD data"
+    61: "Bare from mixed bare + tall/short vegetation rule"
+    62: "Bare from mixed snow/ice rule"
+    69: "Bare from majority years rule"
 
-    70 = Water from GLAD data
-    71 = Water from vegetation/water transition rule
-    79 = Water from majority years in mixed water rule
+    70: "Water from GLAD data"
+    79: "Water from majority years in mixed water rule"
 
-    80 = Snow/ice from GLAD data
-    81 = Snow/ice from bare/ice mix rule
-    89 = Snow/ice from majority years rule
+    80: "Snow/ice from GLAD data"
+    89: "Snow/ice from majority years rule"
 """
 
 # IPCC Land use hierarchy: Settlements > Cropland > Forest Land > Grassland > Wetlands > Other
@@ -346,7 +350,7 @@ node_code_map = {
     "crop_sdpt_tree_crop": 22,
     "crop_post_c": 23,
     "crop_perm_ag_driver": 24,
-    "crop_glad_majority_years": 29,
+    #"crop_glad_majority_years": 29,
 
     "forest_glad": 30,
     #"forest_glad_perm_ag_driver": 301,
@@ -357,8 +361,8 @@ node_code_map = {
     "forest_wildfire_driver": 335,
     "forest_nat_dist_driver": 337,
     "forest_unstocked_pre_oil_palm": 34,
-    "forest_built_mix": 351,
-    "forest_crop_mix": 352,
+    # "forest_built_mix": 351,
+    # "forest_crop_mix": 352,
     "forest_veg_mix": 353,
     "forest_water_mix": 357,
     "forest_ice_mix": 358,
@@ -370,8 +374,8 @@ node_code_map = {
     "grass_hard_commod_driver": 432,
     "grass_settlement_driver": 436,
     "grass_unstocked_pre_oil_palm": 44,
-    "grass_built_mix": 451,
-    "grass_crop_mix": 452,
+    # "grass_built_mix": 451,
+    # "grass_crop_mix": 452,
     "grass_veg_mix": 453,
     "grass_water_mix": 457,
     "grass_ice_mix": 458,
@@ -389,11 +393,11 @@ node_code_map = {
     "bare_glad_majority_years": 69,
 
     "water_glad": 70,
-    "water_veg_water_mix": 71,
+    # "water_veg_water_mix": 71,
     "water_glad_majority_years": 79,
 
     "ice_glad": 80,
-    "ice_bare_mix": 81,
+    # "ice_bare_mix": 81,
     "ice_glad_majority_years": 89,
 }
 
@@ -1595,7 +1599,7 @@ def combine_ipcc_output_to_10x10(tile_id, output_dir_1x1, output_dir_10x10, rast
 
 
 def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, no_upload=False, create_zarr=False,
-         chunk_shapefile_uri=False, bounding_box=None, chunk_size_deg=None, first_chunks=None, log_note=None, skip_existing_1x1=None):
+         chunk_shapefile_uri=False, bounding_box=None, chunk_size_deg=None, first_chunks=None, log_note=None, skip_existing_1x1=None, chunk_ids_to_skip=None):
 
     ### Step 1: Preparation
 
@@ -1630,6 +1634,21 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
 
     chunk_list, chunk_size_pixels = uu.create_chunk_list( bounding_box, chunk_shapefile_uri, processing_chunk_size_deg, first_chunks, fishnet_iso_df, main_logger)
 
+    # Preserve original list before any filtering
+    global_chunk_list = chunk_list.copy()
+
+    # Filter to only 1x1 degree chunks that have not been processed yet
+    if chunk_ids_to_skip:
+        skip_set = read_chunk_ids_file(chunk_ids_to_skip)
+        original_count = len(chunk_list)
+
+        skipped_list = [uu.boundstr(chunk) for chunk in chunk_list if uu.boundstr(chunk) in skip_set]
+        chunk_list = [chunk for chunk in chunk_list if uu.boundstr(chunk) not in skip_set]
+
+        main_logger.info(f"Skipped {len(skipped_list)} chunks from {chunk_ids_to_skip}")
+        main_logger.info(f"First skipped chunks: {skipped_list[:10]}")
+
+
     tile_ids_10x10 = make_10x10_tile_list(chunk_list) if make_10x10_outputs else []
 
     main_logger.info(f"Chunks to process: {len(chunk_list)}")
@@ -1641,7 +1660,8 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
         n_workers_int = int(n_workers)
     except (TypeError, ValueError):
         n_workers_int = 1
-    batch_size = min(len(chunk_list), n_workers_int * 5)
+    #batch_size = min(len(chunk_list), n_workers_int * 5)
+    batch_size = 975
     #TODO: What is the best way to set batch_size?
 
     start_time = uu.timestr()  # Starting time for stage
@@ -1900,15 +1920,15 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
 
     ### Step 9: Count output geotifs in s3
 
-    main_logger.info(f"Counting IPCC 1x1 geotifs. Expecting {len(chunk_list)} in each 1x1 folder: {uu.timestr()}")
+    main_logger.info(f"Counting IPCC 1x1 geotifs. Expecting {len(global_chunk_list)} in each 1x1 folder: {uu.timestr()}") #TODO: Change back to chunk_list
 
     if not no_upload:
         for output_folder in output_dir_list_1x1:
             geotiff_files, file_count = uu.list_raster_full_paths_in_s3_folder_and_count(output_folder)
             main_logger.info(f"1x1 output rasters in {output_folder}: {file_count}")
 
-            if file_count != len(chunk_list):
-                main_logger.warning(f"WARNING: 1x1 output file count in {output_folder} does not match expected {len(chunk_list)}!")
+            if file_count != len(global_chunk_list):    #TODO: Change back to chunk_list
+                main_logger.warning(f"WARNING: 1x1 output file count in {output_folder} does not match expected {len(global_chunk_list)}!") #TODO: Change back to chunk_list
 
         if make_10x10_outputs and output_dir_list_10x10:
             main_logger.info(f"Counting IPCC 10x10 geotifs. Expecting {len(tile_ids_10x10)} in each 10x10 folder: {uu.timestr()}")
@@ -1950,6 +1970,7 @@ if __name__ == '__main__':
     parser.add_argument('--no_upload', action='store_true', help='Do not save and upload outputs to s3')
     parser.add_argument('--create_zarr', action='store_true', help='Create and populate global mega-zarr with model outputs')
     parser.add_argument("--skip_existing_1x1", action="store_true", help="If all expected 1x1 output rasters already exist in S3, skip land use processing and go straight to 10x10 mosaicking.")
+    parser.add_argument( "--chunk_ids_to_skip", help="Text file containing chunk bounds strings to skip, one per line")
 
     args = parser.parse_args()
 
@@ -1967,10 +1988,12 @@ if __name__ == '__main__':
     no_upload = args.no_upload
     create_zarr = args.create_zarr
     skip_existing_1x1 = args.skip_existing_1x1
+    chunk_ids_to_skip = args.chunk_ids_to_skip
 
     # Create the cluster with command line arguments
     main(cluster_name, run_date, run_local, no_stats, no_log, no_upload, create_zarr, chunk_shapefile_uri,
-         bounding_box=bounding_box, chunk_size_deg=chunk_size_deg, first_chunks=first_chunks, log_note=log_note, skip_existing_1x1=skip_existing_1x1)
+         bounding_box=bounding_box, chunk_size_deg=chunk_size_deg, first_chunks=first_chunks, log_note=log_note,
+         skip_existing_1x1=skip_existing_1x1, chunk_ids_to_skip=chunk_ids_to_skip)
 
 
 

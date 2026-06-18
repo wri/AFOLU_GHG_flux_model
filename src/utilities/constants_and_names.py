@@ -1261,6 +1261,7 @@ ipcc_node_codes = np.array([
     70, 71, 79,
     80, 81, 89,
 ], dtype=np.uint16)
+# TODO: update with final node code classes
 
 ipcc_change_codes = np.array(
     [0] + [10 * start + end for start in range(1, 9) for end in range(1, 9)],
@@ -1271,6 +1272,93 @@ ipcc_summary_codes = np.array(
     [0] + [10 * start + end for start in range(1, 9) for end in range(1, 9)],
     dtype=np.uint16,
 )
+
+
+# Converts numeric classes into IPCC land use categories
+numeric_to_ipcc_class = {
+    1: "Settlements",
+    2: "Cropland",
+    3: "Forest Land",
+    4: "Grassland",
+    5: "Wetlands",
+    6: "Other Land (Bare)",
+    7: "Other Land (Water)",
+    8: "Other Land (Snow/Ice)"
+}
+
+# Converts numeric classes into IPCC land use change categories
+numeric_to_ipcc_change = {
+    int(f"{from_code}{to_code}"): (
+        f"{from_class} remaining {to_class}"
+        if from_code == to_code
+        else f"{from_class} to {to_class}"
+    )
+    for from_code, from_class in numeric_to_ipcc_class.items()
+    for to_code, to_class in numeric_to_ipcc_class.items()
+}
+
+# Converts numeric node codes into text description of rule applied for land use classification
+numeric_to_ipcc_node_code = {
+    # 1) Settlements and Infrastructure:
+        10: "Built from GLAD data",
+        11: "Built following tall vegetation loss before built LC",
+        12: "Built after first built LC",
+
+    # 2) Cropland:
+        20: "Crop from GLAD data",
+        21: "Crop from oil palm extent or planting year",
+        22: "Crop from SDPT tree crop extent (not oil palm)",
+        23: "Crop following tall vegetation loss before crop LC",
+        24: "Crop from TCL + permanent agriculture driver",
+
+    # 3) Forest:
+        30 : "Forest from GLAD tall vegetation",
+        31 : "Forest from SDPT planted forest extent",
+        32 : "Forest from GMW mangrove extent",
+        333: "Forest from shifting cultivation driver",
+        334: "Forest from logging driver",
+        335: "Forest from wildfire driver",
+        337: "Forest from natural disturbance driver",
+        34 : "Unstocked forest after TCL and before oil palm planting",
+        353: "Forest from mixed tall/short vegetation rule",
+        357: "Forest from vegetation/water transition rule",
+        358: "Forest from mixed snow/ice rule",
+        39 : "Forest from majority years rule",
+
+    # 4) Grassland:
+        40 : "Grass from GLAD short vegetation",
+        41 : "Grass from TCL + permanent agriculture driver + GPW cultivated grassland extent",
+        430: "Grass from TCL + unknown driver",
+        432: "Grass from TCL + hard commodities driver",
+        436: "Grass from TCL + settlements/infrastructure driver",
+        44 : "Grass prior to oil palm establishment",
+        453: "Grass from mixed tall/short vegetation rule",
+        457: "Grass from vegetation/water transition rule",
+        458: "Grass from mixed snow/ice rule",
+        49 : "Grass from majority years rule",
+
+    # 5) Wetland:
+        50: "Wetland from GLAD data",
+        51: "Wetland from water/wetland/built transition rule",
+        52: "Wetland from vegetation/water transition rule",
+        53: "Wetland from bare/ice to water/wetland transition rule",
+        59: "Wetland from majority years in mixed water rule",
+
+    # 6) Other Land:
+        60: "Bare from GLAD data",
+        61: "Bare from mixed bare + tall/short vegetation rule",
+        62: "Bare from mixed snow/ice rule",
+        69: "Bare from majority years rule",
+
+        70: "Water from GLAD data",
+        79: "Water from majority years in mixed water rule",
+
+        80: "Snow/ice from GLAD data",
+        89: "Snow/ice from majority years rule",
+
+}
+
+
 
 # Converts numeric ISO values to ISO codes
 # From https://github.com/wri/project-zeno-data-infra/blob/main/notebooks/grasslands_areas_gadm_2000-2022.ipynb
