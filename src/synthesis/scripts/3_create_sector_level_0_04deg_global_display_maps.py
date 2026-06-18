@@ -262,7 +262,7 @@ def render_divergent_map(data, raster_extent, bounding_box_proj, country_shapefi
         fig, rounded_lower, rounded_upper, title_text, tick_labels,
         veg_analysis_years, net_colors_rgb, percentiles, percentile_0, logger,
         colorbar_height_multiplier=1.8, add_intermediate_ticks=True,
-        show_direction_arrows=True, colorbar_left_offset=0.05,
+        show_direction_arrows=True, colorbar_left_offset=0.02,
     )
     mu.remove_ticks(ax)
 
@@ -315,7 +315,7 @@ def render_unidirectional_map(data, raster_extent, bounding_box_proj, country_sh
         fig, img, lower_lim, upper_lim, title_text, tick_labels,
         'avg', colors_rgb, percentiles_cfg, logger,
         colorbar_height_multiplier=1.8, add_intermediate_ticks=True,
-        label_divisor=1e3, colorbar_left_offset=0.05,
+        label_divisor=1e3, colorbar_left_offset=0.00,
     )
     mu.remove_ticks(ax)
 
@@ -402,7 +402,7 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
 
     ### Part 1: Net LULUCF flux
 
-    main_logger.info("\n\n\n---Part 2: Mapping net LULUCF flux")
+    main_logger.info("\n\n\n---Part 1: Mapping net LULUCF flux")
 
     lulucf_net_core = f"LULUCF_net_flux_{veg_version}__{non_veg_versions}__ktCO2e_yr"
     jpeg_path_lulucf_net = render_divergent_map(
@@ -420,7 +420,7 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
 
     ### Part 2: LULUCF gross emissions and removals
 
-    main_logger.info("\n\n\n---Part 3: Mapping LULUCF gross emissions and removals")
+    main_logger.info("\n\n\n---Part 2: Mapping LULUCF gross emissions and removals")
 
     lulucf_emis_core = f"LULUCF_gross_emis_{veg_version}__{non_veg_versions}__ktCO2e_yr"
     jpeg_path_lulucf_emis = render_unidirectional_map(
@@ -450,7 +450,7 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
 
     ### Part 3: Three-panel LULUCF map (gross emissions | gross removals | net flux)
 
-    main_logger.info("\n\n\n---Part 4: Three-panel LULUCF map")
+    main_logger.info("\n\n\n---Part 3: Three-panel LULUCF map")
 
     three_panel_core = f"LULUCF_three_panel__emis_remv_net__veg_{veg_version}__{non_veg_versions}__ktCO2e_yr"
     jpeg_path_three_panel = f"{non_pres_folder}/{jpeg_name(three_panel_core, bounding_box_description)}.jpeg"
@@ -471,6 +471,7 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
     main_logger.info("\n\n\n---Part 4: Four-panel LULUCF component map")
 
     # Panel a: Vegetation net flux
+    main_logger.info(f"  Creating vegetation net flux map")
     veg_net_core = f"vegetation_net_flux_all_pools_all_gases_{veg_version}__{cn.year_range_str}__ktCO2e_yr"
     jpeg_path_veg_net = render_divergent_map(
         data_veg_net, raster_extent, bounding_box_proj, country_shapefile,
@@ -485,6 +486,7 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
     )
 
     # Panel b: Mineral soil net SOC change
+    main_logger.info(f"  Creating mineral soil net change map")
     data_min_soil, _ = read_raster_clipped(mineral_soil_reproj, bounding_box_proj)
 
     min_soil_core = f"mineral_soil_net__veg_{veg_version}__{non_veg_versions}__ktCO2_yr"
@@ -500,6 +502,7 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
     )
 
     # Panel c: Organic soil gross emissions
+    main_logger.info(f"  Creating organic soil emissions map")
     data_drained, _ = read_raster_clipped(org_soil_drained_reproj, bounding_box_proj)
     data_burned, _  = read_raster_clipped(org_soil_burned_reproj, bounding_box_proj)
     data_org_soil = data_drained + data_burned
@@ -517,6 +520,7 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
         mask_positive=True,
     )
 
+    main_logger.info(f"  Creating four-panel map")
     four_panel_core = f"LULUCF_four_panel__component_fluxes__veg_{veg_version}__{non_veg_versions}__ktCO2e_yr"
     jpeg_path_four_panel = f"{non_pres_folder}/{jpeg_name(four_panel_core, bounding_box_description)}.jpeg"
     mu.create_four_panel_map(
@@ -525,10 +529,10 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
         "", main_logger,
         panel_labels=["a", "b", "c", "d"],
     )
-    main_logger.info(f"Part 5 done in {round(time.time() - start_time)}s: {uu.timestr()}")
+    main_logger.info(f"Part 4 done in {round(time.time() - start_time)}s: {uu.timestr()}")
 
 
-    # ### Part 6 (stub): AFOLU total map — cropland + livestock + LULUCF
+    # ### Part 5 (stub): AFOLU total map — cropland + livestock + LULUCF
     # Implement when agriculture datasets are ready. Pixel-wise addition requires all inputs
     # to be on a common grid; use a shared reference raster when adding reproject_to_reference().
     #
