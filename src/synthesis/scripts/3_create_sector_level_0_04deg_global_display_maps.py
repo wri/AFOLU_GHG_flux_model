@@ -9,15 +9,15 @@ Inputs:
 - Organic soil burned S3 path (Mg CO2e/pixel/yr, WGS84 — reprojected to Robinson here)
 - Mineral soil S3 path (Mg C/pixel/yr, WGS84 — reprojected to Robinson here)
 - Optional cropland and livestock S3 paths (stub for future AFOLU maps)
+- Optional parquet path for global average annual flux annotations on each map
 
 Both organic soil inputs are summed into one organic soil emissions layer.
 
 Maps produced:
-  Part 1 — Average annual vegetation net flux
-  Part 2 — Net LULUCF flux (annual average from pre-made S3 geotif)
-  Part 3 — Gross LULUCF emissions and removals (annual averages from pre-made S3 geotifs)
-  Part 4 — Three-panel LULUCF: gross emissions | gross removals | net flux (from parts 2 and 3 above)
-  Part 5 — Four-panel LULUCF components: veg net | mineral soil net | organic soil gross emis | LULUCF net
+  Part 1 — Net LULUCF flux (annual average from pre-made S3 geotif)
+  Part 2 — Gross LULUCF emissions and removals (annual averages from pre-made S3 geotifs)
+  Part 3 — Three-panel LULUCF: gross emissions | gross removals | net flux (from parts 1 and 2 above)
+  Part 4 — Four-panel LULUCF components: veg net | mineral soil net | organic soil gross emis | LULUCF net
 
 Legend min/max use the 1st and 99th percentiles of non-zero pixels.
 
@@ -28,15 +28,16 @@ Made with Claude session 'Sector-level display maps refactor'
 
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
-LULUCF global (all five parts):
+LULUCF global (all four parts):
 python -m src.synthesis.scripts.3_create_sector_level_0_04deg_global_display_maps \
 -veg s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/net_flux__all_C_pools__all_gases__MgCO2e/annual_intervals/2024/_0_04deg_yr/global/20260130/net_flux__all_C_pools__all_gases__MgCO2e_0_04deg_yr_v1_0_5_2024_global.tif \
 -osd s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/outputs/version_1_0_1/0_01deg_output_aggregation/drained_total_Mg_CO2e_pixel_yr/ogh_mixed_f1_f15_f2_20260513/2021_2024/0_01deg_global__drained_total_Mg_CO2e_pixel_yr_2021_2024.tif \
 -osb s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/outputs/version_1_0_1/0_01deg_output_aggregation/burned_total_Mg_CO2e_pixel_yr/ogh_mixed_f1_f15_f2_20260513/2021_2024/0_01deg_global__burned_total_Mg_CO2e_pixel_yr_2021_2024.tif \
 -ms s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_1__standard__global/SOC_net__mineral_soil_extent__0-30cm_MgCO2/2020/_0_04deg_yr/global/20260611/SOC_net__mineral_soil_extent__0-30cm_MgCO2_0_04deg_yr_v1_0_1_2020_global.tif \
--ld 20260614
+-ld 20260614 \
+-pq /mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/LULUCF_v1_0_0__veg_v1_0_5__minsoil_v1_0_1__orgsoil_v1_0_1/LULUCF__v1_0_0__for_figures__wide__20260617.parquet
 
-Example — Central Africa zoom (Parts 1-4 only, no component data):
+Example — Central Africa zoom (Parts 1-3 only, no component data):
 python -m src.synthesis.scripts.3_create_sector_level_0_04deg_global_display_maps
   -veg s3://... -ld 20260614
   --center_latitude 0 --center_longitude 20 --lat_height 20 -bbd central_Africa
@@ -52,6 +53,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import rasterio
 from matplotlib.colors import LinearSegmentedColormap, Normalize, TwoSlopeNorm
 from rasterio.warp import Resampling, calculate_default_transform, reproject
@@ -166,6 +168,24 @@ def build_lulucf_s3_path(pattern, lulucf_date, model_type='standard', model_path
     return folder + filename
 
 
+# ── Parquet annotation helpers ──────────────────────────────────────────────────
+
+def _global_avg_annual_Gt(df, col):
+    """Average annual global total in Gt from a per-row Mg flux column."""
+    return df.groupby('year')[col].sum().mean() / 1e9
+
+
+def _flux_annotation(df, col, unit='Gt CO$_2$e yr$^{-1}$'):
+    """Format a bottom-of-map annotation string. Returns None if df is None."""
+    if df is None:
+        return None
+    val = _global_avg_annual_Gt(df, col)
+    year_min = df['year'].min()
+    year_max = df['year'].max()
+    direction = 'net emissions' if val >= 0 else 'net removals'
+    return f"Average {direction}, {year_min}\u2013{year_max}: \n{val:.2g} {unit}"
+
+
 # ── Map rendering helpers ───────────────────────────────────────────────────────
 
 # Default percentile multipliers for divergent maps (applied to percentile_0).
@@ -194,8 +214,8 @@ def read_raster_clipped(path, bounding_box_proj):
     return data, (left, right, bottom, top)
 
 
-# Calculates the 1 and 99% of valid pixels, used to set the min and max for the legend
-def compute_percentile_limits(data, saturation_pct=1):
+def compute_percentile_limits(data, saturation_pct=0.5):
+    """Calculate the 1 and 99% of valid pixels, used to set the min and max for the legend."""
     valid = data[np.isfinite(data) & (data != 0)]
     if valid.size == 0:
         raise ValueError("No valid (non-zero, finite) pixels found in raster — check reprojection nodata handling.")
@@ -213,7 +233,7 @@ def _round_limits_to_kt(lower_lim, upper_lim):
 def render_divergent_map(data, raster_extent, bounding_box_proj, country_shapefile,
                           net_colors_rgb, title_text, veg_analysis_years,
                           non_pres_folder, pres_folder, jpeg_name, slide_text, logger,
-                          percentile_multipliers=None):
+                          percentile_multipliers=None, bottom_annotation=None):
     """Full pipeline for a divergent (net flux) map: percentiles → colormap → figure → legend → save.
 
     Returns the non-presentation JPEG path.
@@ -258,6 +278,10 @@ def render_divergent_map(data, raster_extent, bounding_box_proj, country_shapefi
         ax.set_xlim(extent[0], extent[1])
         ax.set_ylim(extent[2], extent[3])
 
+    if bottom_annotation:
+        ax.text(0.5, 0.03, bottom_annotation, transform=ax.transAxes,
+                ha='center', va='bottom', fontsize=cn.legend_fontsize * 1, color='black')
+
     mu.create_divergent_legend_asymmetric(
         fig, rounded_lower, rounded_upper, title_text, tick_labels,
         veg_analysis_years, net_colors_rgb, percentiles, percentile_0, logger,
@@ -275,7 +299,7 @@ def render_divergent_map(data, raster_extent, bounding_box_proj, country_shapefi
 def render_unidirectional_map(data, raster_extent, bounding_box_proj, country_shapefile,
                                colors_rgb, percentiles_cfg, title_text,
                                non_pres_folder, pres_folder, jpeg_name, slide_text, logger,
-                               mask_positive=True):
+                               mask_positive=True, bottom_annotation=None):
     """Full pipeline for a unidirectional (emissions or removals) map.
 
     mask_positive=True  → show only positive values (emissions, masks <= 0).
@@ -311,6 +335,10 @@ def render_unidirectional_map(data, raster_extent, bounding_box_proj, country_sh
         ax.set_xlim(extent[0], extent[1])
         ax.set_ylim(extent[2], extent[3])
 
+    if bottom_annotation:
+        ax.text(0.5, 0.03, bottom_annotation, transform=ax.transAxes,
+                ha='center', va='bottom', fontsize=cn.legend_fontsize * 1, color='black')
+
     mu.create_unidirection_legend(
         fig, img, lower_lim, upper_lim, title_text, tick_labels,
         'avg', colors_rgb, percentiles_cfg, logger,
@@ -327,17 +355,18 @@ def render_unidirectional_map(data, raster_extent, bounding_box_proj, country_sh
 
 # Names the jpeg
 def jpeg_name(core, bounding_box_description):
-
     ts = uu.timestr()[0:8]
     return f"{core}__{ts}_{bounding_box_description}" if bounding_box_description else f"{core}__{ts}"
 
 
-# Main mapping function
+# ── Main mapping function ───────────────────────────────────────────────────────
+
 def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
                     model_type, model_path_description,
                     organic_soil_drained_s3, organic_soil_burned_s3, mineral_soil_s3,
                     cropland_geotif_s3, livestock_geotif_s3,
-                    net_colors_rgb, country_shapefile, bounding_box, bounding_box_description, main_logger):
+                    net_colors_rgb, country_shapefile, bounding_box, bounding_box_description,
+                    main_logger, parquet_path=None):
 
     start_time = time.time()
 
@@ -353,6 +382,15 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
     pres_folder = f"{out_dir}/jpegs_pres"
     Path(non_pres_folder).mkdir(parents=True, exist_ok=True)
     Path(pres_folder).mkdir(parents=True, exist_ok=True)
+
+    # Load stats table for bottom-of-map annotations (global maps only)
+    if parquet_path and bounding_box is None:
+        df_stats = pd.read_parquet(parquet_path)
+        main_logger.info(f"Loaded stats parquet: {parquet_path}  ({len(df_stats):,} rows, years {df_stats['year'].min()}–{df_stats['year'].max()})")
+    else:
+        df_stats = None
+        if parquet_path and bounding_box is not None:
+            main_logger.info("Skipping flux annotations: map is not global.")
 
     # Builds LULUCF S3 paths
     lulucf_net_s3 = build_lulucf_s3_path(
@@ -408,12 +446,13 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
     jpeg_path_lulucf_net = render_divergent_map(
         data_lulucf_net, raster_extent, bounding_box_proj, country_shapefile,
         net_colors_rgb,
-        title_text=f"Net LULUCF flux\nkt CO$_2$e yr$^{{-1}}$",
+        title_text=f"Net land-based flux\nkt CO$_2$e yr$^{{-1}}$",
         veg_analysis_years=cn.year_range_str,
         non_pres_folder=non_pres_folder, pres_folder=pres_folder,
         jpeg_name=jpeg_name(lulucf_net_core, bounding_box_description),
         slide_text=lulucf_slide_text_with_disclaimer,
         logger=main_logger,
+        bottom_annotation=_flux_annotation(df_stats, 'LULUCF_net_flux__MgCO2e_yr'),
     )
     main_logger.info(f"Part 1 done in {round(time.time() - start_time)}s: {uu.timestr()}")
 
@@ -426,24 +465,27 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
     jpeg_path_lulucf_emis = render_unidirectional_map(
         data_lulucf_emis, raster_extent, bounding_box_proj, country_shapefile,
         cn.emissions_colors_rgb, cn.emissions_percentiles,
-        title_text=f"Gross LULUCF emissions\nkt CO$_2$e yr$^{{-1}}$",
+        title_text=f"Gross land-based emissions\nkt CO$_2$e yr$^{{-1}}$",
         non_pres_folder=non_pres_folder, pres_folder=pres_folder,
         jpeg_name=jpeg_name(lulucf_emis_core, bounding_box_description),
         slide_text=lulucf_slide_text_with_disclaimer,
         logger=main_logger,
         mask_positive=True,
+        bottom_annotation=_flux_annotation(df_stats, 'LULUCF_gross_emissions__all_gases__MgCO2e_yr'),
     )
 
     lulucf_remv_core = f"LULUCF_gross_remv_{veg_version}__{non_veg_versions}__ktCO2e_yr"
     jpeg_path_lulucf_remv = render_unidirectional_map(
         data_lulucf_remv, raster_extent, bounding_box_proj, country_shapefile,
         cn.removals_colors_rgb, cn.removals_percentiles,
-        title_text=f"Gross LULUCF removals\nkt CO$_2$ yr$^{{-1}}$",
+        title_text=f"Gross land-based removals\nkt CO$_2$ yr$^{{-1}}$",
         non_pres_folder=non_pres_folder, pres_folder=pres_folder,
         jpeg_name=jpeg_name(lulucf_remv_core, bounding_box_description),
         slide_text=lulucf_slide_text_with_disclaimer,
         logger=main_logger,
         mask_positive=False,
+        bottom_annotation=_flux_annotation(df_stats, 'LULUCF_gross_removals__MgCO2_yr',
+                                            unit='Gt CO$_2$ yr$^{-1}$'),
     )
     main_logger.info(f"Part 2 done in {round(time.time() - start_time)}s: {uu.timestr()}")
 
@@ -483,6 +525,7 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
         slide_text=cn.veg_pres_text,
         logger=main_logger,
         percentile_multipliers=cn.net_percentiles,
+        bottom_annotation=_flux_annotation(df_stats, 'veg__net_flux__all_C_pools__all_gases__MgCO2e_yr'),
     )
 
     # Panel b: Mineral soil net SOC change
@@ -499,9 +542,11 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
         jpeg_name=jpeg_name(min_soil_core, bounding_box_description),
         slide_text=lulucf_slide_text_with_disclaimer,
         logger=main_logger,
+        bottom_annotation=_flux_annotation(df_stats, 'SOC_net__mineral_soil_extent__0_30cm_MgCO2_yr',
+                                            unit='Gt CO$_2$ yr$^{-1}$'),
     )
 
-    # Panel c: Organic soil gross emissions
+    # Panel c: Organic soil gross emissions (drained + burned)
     main_logger.info(f"  Creating organic soil emissions map")
     data_drained, _ = read_raster_clipped(org_soil_drained_reproj, bounding_box_proj)
     data_burned, _  = read_raster_clipped(org_soil_burned_reproj, bounding_box_proj)
@@ -518,8 +563,10 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
         slide_text=lulucf_slide_text_with_disclaimer,
         logger=main_logger,
         mask_positive=True,
+        bottom_annotation=_flux_annotation(df_stats, 'org_soil_emis__all_gases__MgCO2e_yr'),
     )
 
+    # Four-panel composite
     main_logger.info(f"  Creating four-panel map")
     four_panel_core = f"LULUCF_four_panel__component_fluxes__veg_{veg_version}__{non_veg_versions}__ktCO2e_yr"
     jpeg_path_four_panel = f"{non_pres_folder}/{jpeg_name(four_panel_core, bounding_box_description)}.jpeg"
@@ -557,7 +604,8 @@ def main(veg_net_geotif,
          cropland_geotif_s3=None,
          livestock_geotif_s3=None,
          center_latitude=None, center_longitude=None, lat_height=None,
-         bounding_box_description=None):
+         bounding_box_description=None,
+         parquet_path=None):
 
     stage = 'summative_4x4km_LULUCF_jpegs'
     log_note = '4x4 km jpegs for presenations/manuscript'
@@ -594,7 +642,8 @@ def main(veg_net_geotif,
         lulucf_model_type, lulucf_model_path_description,
         organic_soil_drained_s3, organic_soil_burned_s3, mineral_soil_s3,
         cropland_geotif_s3, livestock_geotif_s3,
-        cn.net_colors_rgb, country_shapefile, bounding_box, bounding_box_description, main_logger,
+        cn.net_colors_rgb, country_shapefile, bounding_box, bounding_box_description,
+        main_logger, parquet_path=parquet_path,
     )
 
 
@@ -610,9 +659,10 @@ if __name__ == '__main__':
     parser.add_argument('-osd', '--organic_soil_drained_s3', required=True, help='S3 path for organic soil drained emissions (Mg CO2e/pixel/yr, WGS84)')
     parser.add_argument('-osb', '--organic_soil_burned_s3', required=True, help='S3 path for organic soil burned emissions (Mg CO2e/pixel/yr, WGS84)')
     parser.add_argument('-ms', '--mineral_soil_s3', required=True, help='S3 path for mineral soil net flux (Mg C/pixel/yr, WGS84)')
-    parser.add_argument('-ld', '--lulucf_input_date', required=True,  help='Run date (YYYYMMDD) of the script-2 LULUCF outputs to map')
+    parser.add_argument('-ld', '--lulucf_input_date', required=True, help='Run date (YYYYMMDD) of the script-2 LULUCF outputs to map')
     parser.add_argument('-mt', '--lulucf_model_type', default='standard', help='Model type used to create summative LULUCF outputs (default: standard)')
     parser.add_argument('-mpd', '--lulucf_model_path_description', default='global', help='Model path description used to create the LULUCF summative outputs (default: global)')
+    parser.add_argument('-pq', '--parquet_path', help='Path to wide-format LULUCF parquet for bottom-of-map flux annotations (optional)')
     parser.add_argument('-cl', '--cropland_geotif_s3', help='S3 path for cropland emissions (AFOLU stub, optional)')
     parser.add_argument('-ls', '--livestock_geotif_s3', help='S3 path for livestock emissions (AFOLU stub, optional)')
 
@@ -626,6 +676,7 @@ if __name__ == '__main__':
         lulucf_input_date=args.lulucf_input_date,
         lulucf_model_type=args.lulucf_model_type,
         lulucf_model_path_description=args.lulucf_model_path_description,
+        parquet_path=args.parquet_path,
         cropland_geotif_s3=args.cropland_geotif_s3,
         livestock_geotif_s3=args.livestock_geotif_s3,
         center_latitude=args.center_latitude,
