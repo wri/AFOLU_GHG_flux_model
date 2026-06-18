@@ -66,12 +66,13 @@ from src.utilities import universal_utilities as uu
 
 # ── Raster helpers ──────────────────────────────────────────────────────────────
 
-def reproject_to_robinson(path, local_folder, logger):
+def reproject_to_robinson(path, local_folder, logger, reference_path=None):
     """Reproject a WGS84 geotif to Robinson projection. Skips if already done.
 
     Uses calculate_default_transform to derive the Robinson pixel grid from the
-    source raster. All inputs use this same function independently — no shared
-    reference raster needed, since no pixel-wise math occurs between inputs.
+    source raster. Pass reference_path to force the output onto an existing
+    raster's grid — necessary when the source resolution differs from the target
+    (e.g. 0.01-degree organic soil inputs being matched to a 0.04-degree grid).
     Returns the reprojected file path.
     """
     filename = os.path.splitext(os.path.basename(path))[0]
@@ -82,9 +83,15 @@ def reproject_to_robinson(path, local_folder, logger):
         logger.info(f"  → {path_reproj}")
         with rasterio.open(path) as src:
             src_nodata = src.nodata
-            dst_transform, dst_width, dst_height = calculate_default_transform(
-                src.crs, cn.Robinson_crs, src.width, src.height, *src.bounds
-            )
+            if reference_path is not None:
+                with rasterio.open(reference_path) as ref:
+                    dst_transform = ref.transform
+                    dst_width = ref.width
+                    dst_height = ref.height
+            else:
+                dst_transform, dst_width, dst_height = calculate_default_transform(
+                    src.crs, cn.Robinson_crs, src.width, src.height, *src.bounds
+                )
             kwargs = src.meta.copy()
             kwargs.update({
                 'crs': cn.Robinson_crs,
@@ -240,6 +247,7 @@ def render_divergent_map(data, raster_extent, bounding_box_proj, country_shapefi
     masked = np.ma.masked_where(data == 0, data)
     norm = TwoSlopeNorm(vmin=lower_lim, vcenter=0, vmax=upper_lim)
 
+    # Creates various graphics layers
     ax, fig = mu.create_plot()
     mu.set_ocean_color(ax)
     mu.plot_country_polygons(ax, country_shapefile)
@@ -360,13 +368,13 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
 
     # Reprojects all inputs to Robinson (each independently)
     main_logger.info("\nReprojecting inputs to Robinson")
-    veg_net_reproj     = reproject_to_robinson(veg_net_geotif,  reproj_folder, main_logger)
-    lulucf_net_reproj  = reproject_to_robinson(lulucf_net_s3,   reproj_folder, main_logger)
-    lulucf_emis_reproj = reproject_to_robinson(lulucf_emis_s3,  reproj_folder, main_logger)
-    lulucf_remv_reproj = reproject_to_robinson(lulucf_remv_s3,  reproj_folder, main_logger)
-    mineral_soil_reproj      = reproject_to_robinson(mineral_soil_s3,         reproj_folder, main_logger)
-    org_soil_drained_reproj  = reproject_to_robinson(organic_soil_drained_s3, reproj_folder, main_logger)
-    org_soil_burned_reproj   = reproject_to_robinson(organic_soil_burned_s3,  reproj_folder, main_logger)
+    veg_net_reproj = reproject_to_robinson(veg_net_geotif, reproj_folder, main_logger)
+    lulucf_net_reproj = reproject_to_robinson(lulucf_net_s3, reproj_folder, main_logger)
+    lulucf_emis_reproj = reproject_to_robinson(lulucf_emis_s3, reproj_folder, main_logger)
+    lulucf_remv_reproj = reproject_to_robinson(lulucf_remv_s3, reproj_folder, main_logger)
+    mineral_soil_reproj = reproject_to_robinson(mineral_soil_s3, reproj_folder, main_logger)
+    org_soil_drained_reproj = reproject_to_robinson(organic_soil_drained_s3, reproj_folder, main_logger, reference_path=veg_net_reproj)
+    org_soil_burned_reproj = reproject_to_robinson(organic_soil_burned_s3, reproj_folder, main_logger, reference_path=veg_net_reproj)
 
     # Robinson bounding box and shapefile clip
     bounding_box_proj = mu.transform_bbox_to_robinson(bounding_box) if bounding_box is not None else None
@@ -392,26 +400,7 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
     main_logger.info(f"Raster extent (from veg): {raster_extent}")
 
 
-    ### Part 1: Average annual vegetation net flux
-
-    main_logger.info("\n\n\n---Part 1: Mapping average annual vegetation net flux")
-
-    veg_net_core = f"vegetation_net_flux_all_pools_all_gases_{veg_version}__{cn.year_range_str}__ktCO2e_yr"
-    jpeg_path_veg_net = render_divergent_map(
-        data_veg_net, raster_extent, bounding_box_proj, country_shapefile,
-        net_colors_rgb,
-        title_text=f"Net greenhouse gas flux\nAll vegetation pools, all gases\nkt CO$_2$e yr$^{{-1}}$",
-        veg_analysis_years=cn.year_range_str,
-        non_pres_folder=non_pres_folder, pres_folder=pres_folder,
-        jpeg_name=jpeg_name(veg_net_core, bounding_box_description),
-        slide_text=cn.veg_pres_text,
-        logger=main_logger,
-        percentile_multipliers=cn.net_percentiles,
-    )
-    main_logger.info(f"Part 1 done in {round(time.time() - start_time)}s: {uu.timestr()}")
-
-
-    ### Part 2: Net LULUCF flux
+    ### Part 1: Net LULUCF flux
 
     main_logger.info("\n\n\n---Part 2: Mapping net LULUCF flux")
 
@@ -426,10 +415,10 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
         slide_text=lulucf_slide_text_with_disclaimer,
         logger=main_logger,
     )
-    main_logger.info(f"Part 2 done in {round(time.time() - start_time)}s: {uu.timestr()}")
+    main_logger.info(f"Part 1 done in {round(time.time() - start_time)}s: {uu.timestr()}")
 
 
-    ### Part 3: LULUCF gross emissions and removals
+    ### Part 2: LULUCF gross emissions and removals
 
     main_logger.info("\n\n\n---Part 3: Mapping LULUCF gross emissions and removals")
 
@@ -456,10 +445,10 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
         logger=main_logger,
         mask_positive=False,
     )
-    main_logger.info(f"Part 3 done in {round(time.time() - start_time)}s: {uu.timestr()}")
+    main_logger.info(f"Part 2 done in {round(time.time() - start_time)}s: {uu.timestr()}")
 
 
-    ### Part 4: Three-panel LULUCF map (gross emissions | gross removals | net flux)
+    ### Part 3: Three-panel LULUCF map (gross emissions | gross removals | net flux)
 
     main_logger.info("\n\n\n---Part 4: Three-panel LULUCF map")
 
@@ -470,18 +459,30 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
         jpeg_path_lulucf_emis, jpeg_path_lulucf_remv, jpeg_path_lulucf_net,
         "", main_logger,
     )
-    main_logger.info(f"Part 4 done in {round(time.time() - start_time)}s: {uu.timestr()}")
+    main_logger.info(f"Part 3 done in {round(time.time() - start_time)}s: {uu.timestr()}")
 
 
-    ### Part 5: Four-panel LULUCF component map
+    ### Part 4: Four-panel LULUCF component map
     ###   a: veg net flux
     ###   b: mineral soil net SOC change
     ###   c: organic soil gross emissions (drained + burned)
     ###   d: LULUCF net flux
 
-    main_logger.info("\n\n\n---Part 5: Four-panel LULUCF component map")
+    main_logger.info("\n\n\n---Part 4: Four-panel LULUCF component map")
 
-    # Panel a: Vegetation net flux-- created in Part 1
+    # Panel a: Vegetation net flux
+    veg_net_core = f"vegetation_net_flux_all_pools_all_gases_{veg_version}__{cn.year_range_str}__ktCO2e_yr"
+    jpeg_path_veg_net = render_divergent_map(
+        data_veg_net, raster_extent, bounding_box_proj, country_shapefile,
+        net_colors_rgb,
+        title_text=f"Net greenhouse gas flux\nAll vegetation pools, all gases\nkt CO$_2$e yr$^{{-1}}$",
+        veg_analysis_years=cn.year_range_str,
+        non_pres_folder=non_pres_folder, pres_folder=pres_folder,
+        jpeg_name=jpeg_name(veg_net_core, bounding_box_description),
+        slide_text=cn.veg_pres_text,
+        logger=main_logger,
+        percentile_multipliers=cn.net_percentiles,
+    )
 
     # Panel b: Mineral soil net SOC change
     data_min_soil, _ = read_raster_clipped(mineral_soil_reproj, bounding_box_proj)
@@ -522,8 +523,7 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
         jpeg_path_four_panel,
         jpeg_path_veg_net, jpeg_path_min_soil, jpeg_path_org_soil, jpeg_path_lulucf_net,
         "", main_logger,
-        panel_labels=["a  Net vegetation flux", "b  Net mineral soil SOC change",
-                      "c  Gross organic soil emissions", "d  Net LULUCF flux"],
+        panel_labels=["a", "b", "c", "d"],
     )
     main_logger.info(f"Part 5 done in {round(time.time() - start_time)}s: {uu.timestr()}")
 
