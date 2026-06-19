@@ -69,17 +69,18 @@ from src.utilities import universal_utilities as uu
 
 # ── Raster helpers ──────────────────────────────────────────────────────────────
 
-def reproject_to_robinson(path, local_folder, logger, component=None, reference_path=None):
+def reproject_to_robinson(path, local_folder, logger, reference_path=None, prefix=''):
     """Reproject a WGS84 geotif to Robinson projection. Skips if already done.
 
     Uses calculate_default_transform to derive the Robinson pixel grid from the
     source raster. Pass reference_path to force the output onto an existing
     raster's grid — necessary when the source resolution differs from the target
     (e.g. 0.01-degree organic soil inputs being matched to a 0.04-degree grid).
+    Pass prefix to prepend a string to the output filename (e.g. 'veg_').
     Returns the reprojected file path.
     """
     filename = os.path.splitext(os.path.basename(path))[0]
-    path_reproj = f"{local_folder}/{component}{filename}_reproj.tif"
+    path_reproj = f"{local_folder}/{prefix}{filename}_reproj.tif"
 
     if not os.path.exists(path_reproj):
         logger.info(f"  Reprojecting to Robinson: {path}")
@@ -121,6 +122,19 @@ def reproject_to_robinson(path, local_folder, logger, component=None, reference_
         logger.info(f"  Reprojected raster already exists: {path_reproj}")
 
     return path_reproj
+
+
+def save_array_as_geotif(data, reference_path, out_path, logger):
+    """Write a float32 numpy array to a GeoTIF using spatial metadata from reference_path. Skips if already exists."""
+    if os.path.exists(out_path):
+        logger.info(f"  Average raster already exists: {out_path}")
+        return
+    with rasterio.open(reference_path) as ref:
+        meta = ref.meta.copy()
+    meta.update({'dtype': 'float32', 'count': 1, 'nodata': 0, 'compress': 'lzw'})
+    with rasterio.open(out_path, 'w', **meta) as dst:
+        dst.write(data.astype('float32'), 1)
+    logger.info(f"  Saved: {out_path}")
 
 
 def convert_kg_to_Mg(path, logger):
@@ -244,7 +258,7 @@ def read_raster_clipped(path, bounding_box_proj):
     return data, (left, right, bottom, top)
 
 
-def compute_percentile_limits(data, saturation_pct=0.5):
+def compute_percentile_limits(data, saturation_pct):
     """Calculate the 1 and 99% of valid pixels, used to set the min and max for the legend."""
     valid = data[np.isfinite(data) & (data != 0)]
     if valid.size == 0:
@@ -272,9 +286,9 @@ def render_divergent_map(data, raster_extent, bounding_box_proj, country_shapefi
         percentile_multipliers = _DIVERGENT_PERCENTILE_MULTIPLIERS
 
     # 1 and 99 percentiles for legend
-    lower_lim, upper_lim = compute_percentile_limits(data)
+    lower_lim, upper_lim = compute_percentile_limits(data, cn.saturation_percentile)
     rounded_lower, rounded_upper = _round_limits_to_kt(lower_lim, upper_lim)
-    logger.info(f"  1-pct limit: {lower_lim:.2f}    99-pct limit: {upper_lim:.2f}")
+    logger.info(f"  {cn.saturation_percentile}-pct limit: {lower_lim:.2f}    {1-cn.saturation_percentile}-pct limit: {upper_lim:.2f}")
 
     tick_labels = [
         f"< {rounded_lower:.0f}  (sink)",
@@ -336,8 +350,8 @@ def render_unidirectional_map(data, raster_extent, bounding_box_proj, country_sh
     mask_positive=False → show only negative values (removals, masks >= 0).
     Returns the non-presentation JPEG path.
     """
-    lower_lim, upper_lim = compute_percentile_limits(data)
-    logger.info(f"  1-pct limit: {lower_lim:.2f}    99-pct limit: {upper_lim:.2f}")
+    lower_lim, upper_lim = compute_percentile_limits(data, cn.saturation_percentile)
+    logger.info(f"  {cn.saturation_percentile}-pct limit: {lower_lim:.2f}    {1-cn.saturation_percentile}-pct limit: {upper_lim:.2f}")
 
     colors_mpl = mu.rgb_to_mpl_palette(colors_rgb)
     cmap = LinearSegmentedColormap.from_list(
@@ -442,7 +456,7 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
     # Vegetation: reproject all annual years
     veg_year_paths = _infer_veg_year_paths(veg_net_geotif, cn.interval_end_years_annual)
     main_logger.info(f"\nReprojecting vegetation ({len(veg_year_paths)} years) to Robinson")
-    veg_reprojected = [reproject_to_robinson(p, reproj_folder, main_logger, component="veg_") for p in veg_year_paths]
+    veg_reprojected = [reproject_to_robinson(p, reproj_folder, main_logger, prefix='veg_') for p in veg_year_paths]
     veg_net_reproj = veg_reprojected[-1]  # reference grid for organic soil reprojection
 
     main_logger.info("\nReprojecting net mineral soil change to Robinson")
@@ -476,13 +490,14 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
     data_veg_net_avg = np.mean(np.stack(veg_arrays), axis=0)
     _, raster_extent = read_raster_clipped(veg_reprojected[-1], bounding_box_proj)
     main_logger.info(f"Vegetation: averaged {len(veg_arrays)} annual rasters")
+    veg_avg_path = f"{reproj_folder}veg_net_flux_{veg_version}_{cn.year_range_str}_avg_reproj.tif"
+    save_array_as_geotif(data_veg_net_avg, veg_reprojected[-1], veg_avg_path, main_logger)
 
     main_logger.info(f"Reading mineral soil net change map")
     data_min_soil, _ = read_raster_clipped(mineral_soil_reproj, bounding_box_proj)
 
     main_logger.info(f"Organic soil: averaging {len(cn.organic_soil_year_intervals)} intervals")
     org_weights   = [_interval_weight(ivl) for ivl in cn.organic_soil_year_intervals]
-    main_logger.info(f"Weights for organic soil emissions intervals: {org_weights}")
     drained_arrays = [read_raster_clipped(p, bounding_box_proj)[0] for p in drained_reprojected]
     burned_arrays  = [read_raster_clipped(p, bounding_box_proj)[0] for p in burned_reprojected]
     data_org_soil = np.average(
@@ -491,6 +506,10 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
         weights=org_weights,
     )
     main_logger.info(f"Organic soil: weighted average over intervals {dict(zip(cn.organic_soil_year_intervals, org_weights))}")
+    org_start = cn.organic_soil_year_intervals[0].split('_')[0]
+    org_end   = cn.organic_soil_year_intervals[-1].split('_')[1]
+    org_soil_avg_path = f"{reproj_folder}org_soil_emis_{org_start}_{org_end}_wtavg_reproj.tif"
+    save_array_as_geotif(data_org_soil, drained_reprojected[-1], org_soil_avg_path, main_logger)
 
     main_logger.info(f"Reading average annual LULUCF maps")
     data_lulucf_net,  _ = read_raster_clipped(lulucf_net_reproj, bounding_box_proj)
