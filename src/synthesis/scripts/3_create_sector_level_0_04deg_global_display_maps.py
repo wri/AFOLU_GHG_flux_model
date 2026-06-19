@@ -81,7 +81,7 @@ from src.utilities import universal_utilities as uu
 
 # ── Raster helpers ──────────────────────────────────────────────────────────────
 
-def reproject_to_robinson(path, local_folder, logger, reference_path=None, prefix=''):
+def reproject_to_robinson(path, local_folder, logger, reference_path=None, prefix='', out_label=None):
     """Reproject a WGS84 geotif to Robinson projection. Skips if already done.
 
     Uses calculate_default_transform to derive the Robinson pixel grid from the
@@ -89,10 +89,14 @@ def reproject_to_robinson(path, local_folder, logger, reference_path=None, prefi
     raster's grid — necessary when the source resolution differs from the target
     (e.g. 0.01-degree organic soil inputs being matched to a 0.04-degree grid).
     Pass prefix to prepend a string to the output filename (e.g. 'veg_').
+    Pass out_label to use a custom stem instead of prefix+source_filename — useful
+    when the source filename is long enough to push the output path over WSL's
+    ~240-character write limit on /mnt/c/ paths.
     Returns the reprojected file path.
     """
     filename = os.path.splitext(os.path.basename(path))[0]
-    path_reproj = f"{local_folder}/{prefix}{filename}_reproj.tif"
+    stem = out_label if out_label is not None else f"{prefix}{filename}"
+    path_reproj = os.path.join(local_folder, f"{stem}_reproj.tif")
 
     if not os.path.exists(path_reproj):
         logger.info(f"  Reprojecting to Robinson: {path}")
@@ -300,7 +304,7 @@ def render_divergent_map(data, raster_extent, bounding_box_proj, country_shapefi
     # 1 and 99 percentiles for legend
     lower_lim, upper_lim = compute_percentile_limits(data, cn.saturation_percentile)
     rounded_lower, rounded_upper = _round_limits_to_kt(lower_lim, upper_lim)
-    logger.info(f"  {cn.saturation_percentile}-pct limit: {lower_lim:.2f}    {1-cn.saturation_percentile}-pct limit: {upper_lim:.2f}")
+    logger.info(f"  {cn.saturation_percentile}-pct limit: {lower_lim:.2f}    {100-cn.saturation_percentile}-pct limit: {upper_lim:.2f}")
 
     tick_labels = [
         f"< {rounded_lower:.0f}  (sink)",
@@ -363,7 +367,7 @@ def render_unidirectional_map(data, raster_extent, bounding_box_proj, country_sh
     Returns the non-presentation JPEG path.
     """
     lower_lim, upper_lim = compute_percentile_limits(data, cn.saturation_percentile)
-    logger.info(f"  {cn.saturation_percentile}-pct limit: {lower_lim:.2f}    {1-cn.saturation_percentile}-pct limit: {upper_lim:.2f}")
+    logger.info(f"  {cn.saturation_percentile}-pct limit: {lower_lim:.2f}    {100-cn.saturation_percentile}-pct limit: {upper_lim:.2f}")
 
     colors_mpl = mu.rgb_to_mpl_palette(colors_rgb)
     cmap = LinearSegmentedColormap.from_list(
@@ -418,7 +422,7 @@ def render_percentage_map(data, raster_extent, bounding_box_proj, country_shapef
     Returns the non-presentation JPEG path.
     """
     _, upper_lim = compute_percentile_limits(data, cn.saturation_percentile)
-    logger.info(f"  {1-cn.saturation_percentile}-pct limit: {upper_lim:.2f}%")
+    logger.info(f"  {100-cn.saturation_percentile}-pct limit: {upper_lim:.2f}%")
 
     colors_mpl = mu.rgb_to_mpl_palette(colors_rgb)
     cmap = LinearSegmentedColormap.from_list(
@@ -546,10 +550,8 @@ def map_LULUCF_maps(lulucf_input_date,
         drained_reprojected = [reproject_to_robinson(p, reproj_folder, main_logger, reference_path=veg_net_reproj_ref_grid) for p in drained_interval_paths]
         burned_reprojected  = [reproject_to_robinson(p, reproj_folder, main_logger, reference_path=veg_net_reproj_ref_grid) for p in burned_interval_paths]
 
-        veg_version = re.search(r'v\d+_\d+_\d+', veg_net_geotif).group(0)
-
         # Version strings for file naming and slide text
-        file_version_str = (f"{veg_version}__organic_soil_v{cn.organic_soil_model_version_underscore}"
+        file_version_str = (f"{cn.veg_model_version_underscore}__organic_soil_v{cn.organic_soil_model_version_underscore}"
                             f"__mineral_soil_v{cn.SOC_model_version_underscore}")
         lulucf_slide_text = f"{cn.veg_pres_text}; {cn.organic_soil_pres_text}; {cn.mineral_soil_pres_text}"
 
@@ -557,7 +559,7 @@ def map_LULUCF_maps(lulucf_input_date,
         veg_net_arrays = [read_raster_clipped(p, bounding_box_proj)[0] for p in veg_net_reprojected]
         data_veg_net_avg = np.mean(np.stack(veg_net_arrays), axis=0)
         main_logger.info(f"Vegetation net flux: averaged {len(veg_net_arrays)} annual rasters")
-        veg_avg_path = f"{reproj_folder}veg_net_flux_{veg_version}_{cn.year_range_str}_avg_reproj.tif"
+        veg_avg_path = f"{reproj_folder}veg_{cn.net_flux_all_C_pools_all_gases_pattern}_v{cn.flux_aggreg_pixel_meaning}{cn.veg_model_version_underscore}_{cn.year_range_str}_avg_global_reproj.tif"
         save_array_as_geotif(data_veg_net_avg, veg_net_reprojected[-1], veg_avg_path, main_logger)
 
         main_logger.info(f"Reading mineral soil net change map")
@@ -575,7 +577,7 @@ def map_LULUCF_maps(lulucf_input_date,
         main_logger.info(f"Organic soil: weighted average over intervals {dict(zip(cn.organic_soil_year_intervals, org_weights))}")
         org_start = cn.organic_soil_year_intervals[0].split('_')[0]
         org_end   = cn.organic_soil_year_intervals[-1].split('_')[1]
-        org_soil_avg_path = f"{reproj_folder}org_soil_emis_{org_start}_{org_end}_wtavg_reproj.tif"
+        org_soil_avg_path = f"{reproj_folder}org_soil_emis_MgCO2e_{cn.flux_aggreg_pixel_meaning}__{org_start}_{org_end}_wght_avg_global_reproj.tif"
         save_array_as_geotif(data_org_soil, drained_reprojected[-1], org_soil_avg_path, main_logger)
 
     else:
@@ -589,7 +591,7 @@ def map_LULUCF_maps(lulucf_input_date,
 
         veg_emis_year_paths = _infer_veg_year_paths(veg_emis_geotif, cn.interval_end_years_annual)
         main_logger.info(f"\nReprojecting vegetation gross emissions ({len(veg_emis_year_paths)} years) to Robinson")
-        veg_emis_reprojected = [reproject_to_robinson(p, reproj_folder, main_logger, prefix='veg_emis_') for p in veg_emis_year_paths]
+        veg_emis_reprojected = [reproject_to_robinson(p, reproj_folder, main_logger, prefix='veg_') for p in veg_emis_year_paths]
 
         main_logger.info("\nReprojecting gross mineral soil loss to Robinson")
         mineral_soil_loss_reproj = reproject_to_robinson(mineral_soil_loss_s3, reproj_folder, main_logger)
@@ -597,12 +599,9 @@ def map_LULUCF_maps(lulucf_input_date,
         veg_emis_arrays = [read_raster_clipped(p, bounding_box_proj)[0] for p in veg_emis_reprojected]
         data_veg_emis_avg = np.mean(np.stack(veg_emis_arrays), axis=0)
         main_logger.info(f"Vegetation gross emissions: averaged {len(veg_emis_arrays)} annual rasters")
-        veg_emis_avg_path = f"{reproj_folder}veg_gross_emis_{veg_version}_{cn.year_range_str}_avg_reproj.tif"
+        veg_emis_avg_path = f"{reproj_folder}veg_{cn.gross_emis_all_C_pools_all_gases_pattern}{cn.flux_aggreg_pixel_meaning}_v{cn.veg_model_version_underscore}_{cn.year_range_str}_avg_reproj.tif"
         save_array_as_geotif(data_veg_emis_avg, veg_emis_reprojected[-1], veg_emis_avg_path, main_logger)
         data_min_soil_loss, _ = read_raster_clipped(mineral_soil_loss_reproj, bounding_box_proj)
-
-        data_veg_emis_avg = None
-        data_min_soil_loss = None
 
     lulucf_slide_text_with_disclaimer = f"{lulucf_slide_text} \n {cn.legend_percentile_disclaimer}"
 
@@ -675,7 +674,7 @@ def map_LULUCF_maps(lulucf_input_date,
 
         # Panel a: Vegetation net flux (annual average)
         main_logger.info(f"  Creating annual average vegetation net flux map")
-        veg_net_core = f"vegetation_net_flux_all_pools_all_gases_{veg_version}__{cn.year_range_str}__ktCO2e_yr"
+        veg_net_core = f"vegetation_net_flux_all_pools_all_gases_{cn.veg_model_version_underscore}__{cn.year_range_str}__ktCO2e_yr"
         jpeg_path_veg_net = render_divergent_map(
             data_veg_net_avg, raster_extent, bounding_box_proj, country_shapefile,
             net_colors_rgb,
