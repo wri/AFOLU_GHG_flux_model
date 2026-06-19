@@ -1,11 +1,14 @@
 """
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
-python -m src.utilities.create_cluster -n 25 -m 64 -cn IPCC_zonal_stats_10x10 --zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.IPCC_vegetation_zonal_stats -cn IPCC_zonal_stats_10x10 -vid 20260130 -lid 20260617 -bb 110 -10 120 0 -lmpd 10x10_test -zd 10x10_test
+10x10:
+python -m src.utilities.create_cluster -n 25 -m 64 -cn IPCC_LULUCF_zonal_stats_10x10 --zonal_stats
+python -m src.LULUCF.scripts.zonal_statistics.IPCC_LULUCF_zonal_stats -cn IPCC_LULUCF_zonal_stats_10x10 -vid 20260130 -tid 20260614 -lid 20260617 -bb 110 -10 120 0 -lmpd 10x10_test -zd 10x10_test
 
 Notes:
-    - Took 5 minutes to run for 10x10 degree area with 25 workers (00N_110E). Analysis layers = Emissions, removals, and net flux. Contextual layers = IPCC class, node, change and summary (2016-2024).
+    - Took 5 minutes to run for 10x10 degree area with 25 workers (00N_110E).
+        Analysis layers = LULUCF emissions, removals, and net flux, vegetation net flux, pixel area
+        Contextual layers = IPCC class, node, change and summary, land state node, continent/ecozone, driver, primary/IFL
 """
 
 import argparse
@@ -30,14 +33,17 @@ from src.utilities import zonal_stats_utilities as zsu
 from src.utilities import terminate_cluster
 
 
-def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", veg_model_path_description = "global", lu_model_path_description = "global", zonal_stats_description = "global",
-         chunk_shapefile_uri=False, bounding_box=None, first_variables_to_process=None, first_tiles_to_process=None, model_chunk_stats_table_name=None, log_note=None):
+def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, model_type="standard", lulucf_model_path_description="global",
+         veg_model_path_description="global", lu_model_path_description="global", zonal_stats_description="global",
+         chunk_shapefile_uri=False, bounding_box=None, first_variables_to_process=None, first_tiles_to_process=None,
+         model_chunk_stats_table_name=None, log_note=None):
 
     ### Step 1: Preparation
 
     # Model stage being run
     stage = "IPCC_land_use_zonal_statistics"
     veg_model_version = cn.veg_model_version_underscore
+    lulucf_model_version = cn.LULUCF_model_version_underscore
     lu_model_version = cn.IPCC_LU_version_underscore
 
     # Connects to Coiled cluster if not running locally and the named cluster exists
@@ -59,9 +65,12 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
 
     main_logger.info(f"Stage {stage} started at: {uu.timestr()}")
     main_logger.info(f"Zonal stats description: {zonal_stats_description}")
-    main_logger.info(f"Vegetation model version: {cn.veg_model_version}")
+    main_logger.info(f"Vegetation version: {cn.veg_model_version}")
     main_logger.info(f"Vegetation model path description: {veg_model_path_description}")
     main_logger.info(f"Vegetation input date: {veg_input_date}")
+    main_logger.info(f"LULUCF version: {cn.LULUCF_model_version}")
+    main_logger.info(f"LULUCF model path description: {lulucf_model_path_description}")
+    main_logger.info(f"LULUCF input date: {lulucf_input_date}")
     main_logger.info(f"IPCC land use model version: {cn.IPCC_LU_version}")
     main_logger.info(f"IPCC land use path description: {lu_model_path_description}")
     main_logger.info(f"IPCC land use input date: {lu_input_date}")
@@ -83,9 +92,19 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
     unique_tile_ids = sorted(list(set(tile_ids)))
 
     # Outputs to performs zonal stats on
-    full_list_of_vars = [cn.gross_emis_all_C_pools_all_gases_pattern,
-                         cn.gross_removals_all_C_pools_pattern,
-                         cn.net_flux_all_C_pools_all_gases_pattern]
+    lulucf_vars = [
+        f"LULUCF_{cn.gross_emis_all_C_pools_all_gases_pattern}",
+        f"LULUCF_{cn.gross_removals_all_C_pools_pattern}",
+        f"LULUCF_{cn.net_flux_all_C_pools_all_gases_pattern}",
+    ]
+
+    veg_vars = [
+        # cn.gross_emis_all_C_pools_all_gases_pattern,
+        # cn.gross_removals_all_C_pools_pattern,
+        cn.net_flux_all_C_pools_all_gases_pattern,
+    ]
+
+    full_list_of_vars = lulucf_vars + veg_vars
 
     full_list_of_vars_with_units = [
         zu.add_units_year_to_pattern(var_name, 9999)[0]
@@ -108,10 +127,25 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
     # lat-long chunk size for source zarr
     source_zarr_chunk_size = cn.chunk_dims  # 4000x4000
 
-    # The zarr paths that are being used
-    veg_zarr_path = zu.create_zarr_path(cn.veg_outputs_path_mega_zarr, source_zarr_chunk_size, "annual", model_type,
+    # Vegetation zarr
+    veg_zarr_path = zu.create_zarr_path( cn.veg_outputs_path_mega_zarr, source_zarr_chunk_size, "annual", model_type,
                                          veg_model_version, veg_model_path_description, veg_input_date, main_logger)
-    main_logger.info(f"Zonal stats from zarr ({source_zarr_chunk_size} pixel chunks): {veg_zarr_path}")
+
+    main_logger.info(f"Vegetation zarr path: {veg_zarr_path}")
+
+
+    # LULUCF zarr
+    lulucf_zarr_path = (
+        f"{cn.full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/"
+        f"outputs_LULUCF_totals/"
+        f"LULUCF_version_{lulucf_model_version}_standard__{lulucf_model_path_description}"
+        f"__veg_v{veg_model_version}"
+        f"__org_soil_v{cn.organic_soil_model_version_underscore}"
+        f"__min_soil_v{cn.SOC_model_version_underscore}"
+        f"/zarr/annual_intervals/{source_zarr_chunk_size}_pixels/{lulucf_input_date}/LULUCF_annual.zarr"
+    )
+
+    main_logger.info(f"Zonal stats from zarr ({source_zarr_chunk_size} pixel chunks): {lulucf_zarr_path}")
 
     lu_zarr_path = zu.create_zarr_path(cn.IPCC_outputs_path_mega_zarr, source_zarr_chunk_size, "annual", model_type,
                                        lu_model_version, lu_model_path_description, lu_input_date, main_logger)
@@ -154,12 +188,21 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
     # # managed_land_CAN_xr = xr.open_zarr(cn.managed_land_CAN_zarr_path, consolidated=False).rename_vars(band_data=cn.managed_land_CAN_pattern)
     # # managed_land_USA_xr = xr.open_zarr(cn.managed_land_USA_zarr_path, consolidated=False).rename_vars(band_data=cn.managed_land_USA_pattern)
 
-    # Open vegetation and land use zarrs
+    # Open LULUCF, vegetation, and land use zarrs
+    lulucf_ds = xr.open_zarr(lulucf_zarr_path, consolidated=False)
     veg_ds = xr.open_zarr(veg_zarr_path, consolidated=False)
     lu_ds = xr.open_zarr(lu_zarr_path, consolidated=False)
 
-    # Select only certain vegetation model variables from the zarr
-    ds_selected_analysis_vars = veg_ds[vars_to_process]
+    lulucf_vars_to_process = [v for v in vars_to_process if v in lulucf_ds.data_vars]
+    veg_vars_to_process = [v for v in vars_to_process if v in veg_ds.data_vars]
+
+    main_logger.info(f"LULUCF variables to process: {lulucf_vars_to_process}")
+    main_logger.info(f"Vegetation variables to process: {veg_vars_to_process}")
+
+    lulucf_selected = lulucf_ds[lulucf_vars_to_process]
+    veg_selected = veg_ds[veg_vars_to_process]
+
+    ds_selected_analysis_vars = xr.merge([lulucf_selected, veg_selected], compat="override")
 
     # Round and align
     main_logger.info(f"Rounding coordinates: {uu.timestr()}")
@@ -253,8 +296,8 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
     prep_end_time = time.time()
     main_logger.info(f"  Finished zonal stats prep, took {round(prep_end_time - prep_start_time)} seconds: {uu.timestr()}")
 
-    # IPCC land use contextusl layers aligned to vegetation analysis years.
-    # Vegetation flux outputs have 9 interval end years (2016-2024)
+    # IPCC land use contextusl layers aligned to LULUCF analysis years.
+    # LULUCF flux outputs have 9 interval end years (2016-2024)
     # IPCC outputs have 10 annual positions (2015-2024)
         # IPCC class/node: positions 0-9 are annual outputs
         # IPCC change: position 0 is empty, positions 1-9 are change interval end years
@@ -262,7 +305,7 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
     main_logger.info(f"Selecting IPCC land use contextual layers: {uu.timestr()}")
     analysis_years = ds_selected_analysis_vars_aligned.year
 
-    # IPCC contextual layers aligned to vegetation flux years, 2016-2024
+    # IPCC contextual layers aligned to LULUCF flux years, 2016-2024
     ipcc_class = lu_ds[cn.IPCC_class_pattern].isel(year=slice(1, 10)).assign_coords(year=analysis_years)
     ipcc_node = lu_ds[cn.IPCC_node_pattern].isel(year=slice(1, 10)).assign_coords(year=analysis_years)
     ipcc_change = lu_ds[cn.IPCC_change_pattern].isel(year=slice(1, 10)).assign_coords(year=analysis_years)
@@ -442,7 +485,7 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
 
         # Turns the composite primary forest zarr (which has chunks of 1x4000x4000) into something without a year dimension at all (4000x4000).
         # That allows it to be used with the other contextual layers, which are also just 4000x4000 (no year dimension).
-        # Note: composite primary forest has chunks of 1x4000x4000 because of how it's made; it uses the same function as the zarr for the vegetation model,
+        # Note: composite primary forest has chunks of 1x4000x4000 because of how it's made; it uses the same function as the zarr for the LULUCF model,
         # rather than the script of the other contextual layers.
         if "year" in composite_primary_da.dims:
             composite_primary_da = composite_primary_da.isel(year=0, drop=True)
@@ -569,8 +612,7 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
         main_logger.info(f"  Rows in {tile_id} dataframe: {len(df.index)}: {uu.timestr()}")
 
         main_logger.info(f"  Saving {tile_id} output table: {uu.timestr()}")
-        #tile_df_name = f'veg_model_zonal_stats_{tile_id}_v{veg_model_version}_{zonal_stats_description}_{time.strftime('%Y%m%d_%H_%M_%S')}'
-        tile_df_name = (f"ipcc_lu_zonal_stats_{tile_id}_v{lu_model_version}_{zonal_stats_description}_{time.strftime('%Y%m%d_%H_%M_%S')}")
+        tile_df_name = (f"ipcc_lulucf_zonal_stats_{tile_id}_v{lu_model_version}_{zonal_stats_description}_{time.strftime('%Y%m%d_%H_%M_%S')}")
         df.to_parquet(f"{local_zonal_stats_folder}/{tile_df_name}.parquet")
 
         # Clean up at end of tile
@@ -639,8 +681,7 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
             main_logger.warning("Sum of row count from individual tables and row count in combined table do not match!")
         main_logger.info(combined_df.head())
 
-        # combined_df_name = f'veg_model_zonal_stats_v{veg_model_version}_{time.strftime('%Y%m%d_%H_%M_%S')}'
-        combined_df_name = f'ipcc_lu_zonal_stats_v{lu_model_version}_{time.strftime("%Y%m%d_%H_%M_%S")}'
+        combined_df_name = f'ipcc_lulucf_zonal_stats_v{lu_model_version}_{time.strftime("%Y%m%d_%H_%M_%S")}'
         combined_df.to_parquet(f"{local_zonal_stats_folder}/{combined_df_name}.parquet")
         if len(combined_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
             combined_df.to_csv(f"{local_zonal_stats_folder}/{combined_df_name}.csv", index=False)
@@ -648,8 +689,7 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
         # Converts combined df from long to wide
         combined_wide_df = zsu.create_wide_df(combined_df, main_logger)
 
-       # combined_wide_df_name = f'veg_model_zonal_stats_v{veg_model_version}_wide_{time.strftime('%Y%m%d_%H_%M_%S')}'
-        combined_wide_df_name = f'ipcc_lu_zonal_stats_v{lu_model_version}_wide_{time.strftime("%Y%m%d_%H_%M_%S")}'
+        combined_wide_df_name = f'ipcc_lulucf_zonal_stats_v{lu_model_version}_wide_{time.strftime("%Y%m%d_%H_%M_%S")}'
         combined_wide_df.to_parquet(f"{local_zonal_stats_folder}/{combined_wide_df_name}.parquet")
         if len(combined_wide_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
             combined_wide_df.to_csv(f"{local_zonal_stats_folder}/{combined_wide_df_name}.csv", index=False)
@@ -664,32 +704,50 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
     #
     # # Uploads outputs to s3 if the run is large enough
     # zsu.upload_zstats_to_s3(stage, local_zonal_stats_folder, output_path, main_logger,
-    #                     model_path_description, model_type, veg_model_version, tiles_processed)
+    #                     model_path_description, model_type, lulucf_model_version, tiles_processed)
 
     end_time = time.time()
     main_logger.info(f"Finished zonal stats, took {round(end_time - prep_start_time)} seconds: {uu.timestr()}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run vegetation net flux zonal stats by IPCC land use zarr context.")
+    parser = argparse.ArgumentParser(description="Run Ccombined LULUCF flux zonal stats by IPCC land use zarr context.")
     parser.add_argument("-cn", "--cluster_name", help="Coiled cluster name")
+
     parser.add_argument("-vid", "--veg_input_date", required=True, help="Vegetation model run date")
+    parser.add_argument("-tid", "--lulucf_input_date", required=True, help="Total LULUCF model run date")
     parser.add_argument("-lid", "--lu_input_date", required=True, help="IPCC land use run date")
+
     parser.add_argument("-bb", "--bounding_box", nargs=4, type=float, help="W S E N")
     parser.add_argument('-fv', '--first_variables_to_process', type=int, help='Number of variables to process from raw mega-zarr (for testing)')
     parser.add_argument("-cshp", "--chunk_shapefile_uri", help="1x1 fishnet shapefile")
     parser.add_argument("-ft", "--first_tiles_to_process", type=int)
     parser.add_argument("-mt", "--model_type", default="standard")
+
     parser.add_argument("-vmpd", "--veg_model_path_description", default="global")
+    parser.add_argument("-tmpd", "--lulucf_model_path_description", default="global")
     parser.add_argument("-lmpd", "--lu_model_path_description", default="global")
     parser.add_argument("-zd", "--zonal_stats_description", required=True)
+
     parser.add_argument('-mcstn', '--model_chunk_stats_table_name', required=False, help='local path for model chunk stats to check if tile had any pixels in it, and skip if empty')
     parser.add_argument("-ln", "--log_note")
 
     args = parser.parse_args()
 
-    main(cluster_name=args.cluster_name, veg_input_date=args.veg_input_date, lu_input_date=args.lu_input_date, model_type=args.model_type,
-         veg_model_path_description=args.veg_model_path_description, lu_model_path_description=args.lu_model_path_description,
-         zonal_stats_description=args.zonal_stats_description, chunk_shapefile_uri=args.chunk_shapefile_uri, bounding_box=args.bounding_box,
-         first_variables_to_process=args.first_variables_to_process, first_tiles_to_process=args.first_tiles_to_process,
-         model_chunk_stats_table_name=args.model_chunk_stats_table_name, log_note=args.log_note)
+    main(
+        cluster_name=args.cluster_name,
+        lulucf_input_date=args.lulucf_input_date,
+        veg_input_date=args.veg_input_date,
+        lu_input_date=args.lu_input_date,
+        model_type=args.model_type,
+        lulucf_model_path_description=args.lulucf_model_path_description,
+        veg_model_path_description=args.veg_model_path_description,
+        lu_model_path_description=args.lu_model_path_description,
+        zonal_stats_description=args.zonal_stats_description,
+        chunk_shapefile_uri=args.chunk_shapefile_uri,
+        bounding_box=args.bounding_box,
+        first_variables_to_process=args.first_variables_to_process,
+        first_tiles_to_process=args.first_tiles_to_process,
+        model_chunk_stats_table_name=args.model_chunk_stats_table_name,
+        log_note=args.log_note,
+    )

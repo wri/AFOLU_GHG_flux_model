@@ -3,14 +3,7 @@ Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Local test:
 Indonesia
-python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 119 -6 120 -5 -cs 1 --run_local --create_zarr --run_date 20269999
-
-
-Canada
-python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb -110 59 -109 60 -cs 1 --run_local --run_date 20268888
-
-Russia
-python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 110 69 111 70 -cs 1 --run_local --run_date 20268888
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -bb 119 -6 120 -5 -cs 1 --run_local --create_zarr --run_date 20268888
 
 Coiled small tests (0.25x0.25 deg chunk):
 python -m src.utilities.create_cluster -n 1 -m 8 -cn IPCC_land_use
@@ -18,8 +11,8 @@ python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_l
 
 Coiled small tests (1x1 deg chunk):
 python -m src.utilities.create_cluster -n 1 -m 8 -cn IPCC_land_use_1x1
-python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_1x1 -bb 119 -6 120 -5 -cs 1 --no_upload --no_stats --run_date 20269999
-python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_1x1 -bb 119 -6 120 -5 -cs 1 --create_zarr --run_date 20269999
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_1x1 -bb 119 -6 120 -5 -cs 1 --no_upload --no_stats --run_date 20268888
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_1x1 -bb 119 -6 120 -5 -cs 1 --create_zarr --run_date 20268888
 
 Coiled test (10x10 deg chunk):
 python -m src.utilities.create_cluster -n 50 -m 16 -cn IPCC_land_use_10x10
@@ -27,7 +20,8 @@ python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_l
 
 Full run:
 python -m src.utilities.create_cluster -n 200 -m 16 -cn IPCC_land_use
-python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -cs 10 --create_zarr --run_date 20260617 --log_note "This is a global run for IPCC land use model v1.0.0 (2015-2024). Part 2"
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -cs 10 --create_zarr --run_date 20260617 --log_note "This is a global run for IPCC land use model v1.0.0 (2015-2024)"
+python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use --chunk_ids_to_skip /mnt/c/GIS/AFOLU_flux_model/land_use/processed_1x1.txt -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -cs 10 --create_zarr --run_date 20260617 --log_note "This is a global run for IPCC land use model v1.0.0 (2015-2024). Part 2"
 
 
 Notes:
@@ -35,13 +29,24 @@ Notes:
     - Took 3 minutes to run for 1 degree chunk in coiled with no stats, no zarr, and no upload
     - Took 7 minutes to run for 1 degree chunk locally
     - Took 35 minutes to run for 10 degree area in 1 degree chunks in coiled using 100 workers (30 credits)
-
-
---chunk_ids_to_skip /mnt/c/GIS/AFOLU_flux_model/land_use/processed_1x1.txt
+    - Took 19.5 hours to run globally (1x1 chunk step) + 3.5 hours to make 10 x 10 outputs (4480 credits, $375)
 
 TODO:
-Switch from regex to numba for faster performance?
-Remove skip existing 1x1 logic
+Switch from regex to numba for faster performance
+Remove skip existing 1x1 logic? Or change to 10x10 deg tile creation only?
+Low resource usage during 10x10 tile creation step
+Error at final combined log step:
+Traceback (most recent call last):
+  File "/mnt/c/GIS/git/AFOLU_GHG_flux_model/src/LULUCF/scripts/postprocessing/LUC/GLCLU_conversion_IPCC.py", line 1952, in main
+    if not run_local:
+        ^^^^^^^^^^^^^^
+  File "/mnt/c/GIS/git/AFOLU_GHG_flux_model/src/utilities/terminate_cluster.py", line 10, in terminate_cluster
+    cluster = coiled.Cluster(name=cluster_name)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/melrose94/miniforge3/envs/afolu/lib/python3.12/site-packages/coiled/v2/cluster.py", line 997, in __init__
+    raise e.with_traceback(None)  # noqa: B904
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+coiled.errors.ClusterCreationError: Only 1 workers ready (was waiting for at least 3).  (cluster_id: 1737481)
 """
 
 import argparse
@@ -69,7 +74,7 @@ from src.utilities import terminate_cluster
 
 os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "TRUE"
 
-print_lu_transition = True  #TODO: Set to False for full global run
+print_lu_transition = True
 
 def read_chunk_ids_file(path):
     with open(path, "r") as f:
@@ -450,18 +455,6 @@ lu_token_map = {
     "O": 7,
     "I": 8,
 }
-
-# lu_token_reverse_map = {
-#     1: "S",
-#     2: "C",
-#     3: "F",
-#     4: "G",
-#     5: "W",
-#     6: "B",
-#     7: "O",
-#     8: "I",
-# }
-
 
 def apply_extent_rules(lu_dict):
     tokens = lu_dict["tokens"]
@@ -1202,7 +1195,7 @@ def IPCC_land_use(in_dict):
     LU_change_2022_2023_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
     LU_change_2023_2024_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
 
-    LU_summary_block = np.zeros(LC_2015_block.shape, dtype=np.uint16) #TODO: Change back to uint 8 after all LU transition have <2
+    LU_summary_block = np.zeros(LC_2015_block.shape, dtype=np.uint8)
 
     # Iterates through all pixels in the chunk
     for row in range(LC_2015_block.shape[0]):
@@ -1648,8 +1641,8 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
         main_logger.info(f"Skipped {len(skipped_list)} chunks from {chunk_ids_to_skip}")
         main_logger.info(f"First skipped chunks: {skipped_list[:10]}")
 
-
     tile_ids_10x10 = make_10x10_tile_list(chunk_list) if make_10x10_outputs else []
+    #tile_ids_10x10 = make_10x10_tile_list(global_chunk_list) if make_10x10_outputs else []  #If you give a list of chunks to skip, use global chunk for 10x10 tile creation
 
     main_logger.info(f"Chunks to process: {len(chunk_list)}")
     if make_10x10_outputs:
@@ -1660,9 +1653,7 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
         n_workers_int = int(n_workers)
     except (TypeError, ValueError):
         n_workers_int = 1
-    #batch_size = min(len(chunk_list), n_workers_int * 5)
-    batch_size = 975
-    #TODO: What is the best way to set batch_size?
+    batch_size = min(len(chunk_list), n_workers_int * 5)
 
     start_time = uu.timestr()  # Starting time for stage
     main_logger.info(f"Stage {stage} started at: {start_time}")
@@ -1920,15 +1911,18 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
 
     ### Step 9: Count output geotifs in s3
 
-    main_logger.info(f"Counting IPCC 1x1 geotifs. Expecting {len(global_chunk_list)} in each 1x1 folder: {uu.timestr()}") #TODO: Change back to chunk_list
+    main_logger.info(f"Counting IPCC 1x1 geotifs. Expecting {len(chunk_list)} in each 1x1 folder: {uu.timestr()}")
+    #main_logger.info(f"Counting IPCC 1x1 geotifs. Expecting {len(global_chunk_list)} in each 1x1 folder: {uu.timestr()}")
 
     if not no_upload:
         for output_folder in output_dir_list_1x1:
             geotiff_files, file_count = uu.list_raster_full_paths_in_s3_folder_and_count(output_folder)
             main_logger.info(f"1x1 output rasters in {output_folder}: {file_count}")
 
-            if file_count != len(global_chunk_list):    #TODO: Change back to chunk_list
-                main_logger.warning(f"WARNING: 1x1 output file count in {output_folder} does not match expected {len(global_chunk_list)}!") #TODO: Change back to chunk_list
+            if file_count != len(chunk_list):    #Use global_chunk_list if using chunk_ids_to_skip
+                main_logger.warning(f"WARNING: 1x1 output file count in {output_folder} does not match expected {len(chunk_list)}!")
+            # if file_count != len(global_chunk_list):
+            #     main_logger.warning(f"WARNING: 1x1 output file count in {output_folder} does not match expected {len(global_chunk_list)}!")
 
         if make_10x10_outputs and output_dir_list_10x10:
             main_logger.info(f"Counting IPCC 10x10 geotifs. Expecting {len(tile_ids_10x10)} in each 10x10 folder: {uu.timestr()}")

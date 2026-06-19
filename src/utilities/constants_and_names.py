@@ -1045,6 +1045,7 @@ soil_output_dirs = [
 
 LULUCF_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs_LULUCF/{model_version_type_description_placeholder}/"
 LULUCF_outputs_path_mega_zarr = f"{LULUCF_outputs_path}mega_zarr/MODEL_INTERVAL_TYPE_intervals/CHUNK_SIZE_pixels/RUN_DATE/"
+LULUCF_annual_outputs_path_mega_zarr = f"{LULUCF_outputs_path_mega_zarr}LULUCF_annual.zarr"
 
 LULUCF_output_patterns = [
     gross_emis_all_C_pools_CO2_only_LULUCF_pattern,

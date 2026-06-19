@@ -434,8 +434,11 @@ def populate_ipcc_zarr(bounds, bounds_str, create_zarr, is_large_run, logger_wor
             z[cn.IPCC_change_pattern][i+1, lat_start:lat_end, lon_start:lon_end] = out_dict[change_key]
 
     # Summary: index 0 stores 2015_2024 summary, indices 1-9 stay empty.
-    if cn.IPCC_summary_pattern in out_dict:
-        z[cn.IPCC_summary_pattern][0, lat_start:lat_end, lon_start:lon_end] = out_dict[cn.IPCC_summary_pattern]
+    summary_key = f"{cn.IPCC_summary_pattern}_2015_2024"
+    if summary_key in out_dict:
+        z[cn.IPCC_summary_pattern][0, lat_start:lat_end, lon_start:lon_end] = out_dict[summary_key]
+    else:
+        lu.print_and_log(f"WARNING: {summary_key} not found in out_dict for {bounds_str}", False, logger_worker)
 
     lu.print_and_log( f"Wrote IPCC outputs to global zarr for {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker)
 
