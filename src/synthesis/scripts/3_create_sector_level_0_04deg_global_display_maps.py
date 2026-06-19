@@ -9,8 +9,8 @@ Inputs:
 - Parquet path for global average annual flux annotations on each map (optional)
 
 - Vegetation last year (2024) net flux geotif S3 path (Mg CO2e/0.04x0.04 deg/yr, WGS84 — reprojected to Robinson here) (optional)
-- Drained organic soil last interval (2021-2024) S3 path (Mg CO2e/0.01x0.01 deg/yr, WGS84 — reprojected to Robinson here) (optional)
-- Burned organic soil last interval (2021-2024) S3 path (Mg CO2e/0.01x0.01 deg/yr, WGS84 — reprojected to Robinson here) (optional)
+- Drained organic soil last interval (2021-2024) S3 path (Mg CO2e/0.01x0.01 deg/yr, WGS84 — resampled to 0.04° then reprojected to Robinson here) (optional)
+- Burned organic soil last interval (2021-2024) S3 path (Mg CO2e/0.01x0.01 deg/yr, WGS84 — resampled to 0.04° then reprojected to Robinson here) (optional)
 - Mineral soil net change S3 path (2020 change) (Mg CO2e/0.04x0.04 deg/yr, WGS84 — reprojected to Robinson here) (optional)
 
 - Vegetation last year (2024) gross emissions geotif S3 path (Mg CO2e/0.04x0.04 deg/yr, WGS84 — reprojected to Robinson here) (optional)
@@ -22,9 +22,7 @@ Inputs:
 - Regional map arguments
 
 Vegetation net flux and gross emissions: mean of all annual rasters in cn.interval_end_years_annual, inferred from the latest year path supplied on command line
-Organic soil: weighted average across cn.organic_soil_year_intervals (weight = years per interval), inferred from the latest interval path supplied on command line
-
-Both organic soil inputs for an interval are summed into one organic soil emissions layer for that interval.
+Organic soil: each 0.01°×0.01° interval raster is resampled (sum) to 0.04° WGS84 on the veg net grid, then drained+burned are summed per interval, then a weighted average is taken across cn.organic_soil_year_intervals (weight = years per interval), then the result is reprojected to Robinson once.  Paths are inferred from the latest-interval paths supplied on the command line.
 
 Maps produced:
   Part 1 — Net and gross emis and removals LULUCF fluxes (annual average from pre-made S3 geotifs)
@@ -138,6 +136,57 @@ def reproject_to_robinson(path, local_folder, logger, reference_path=None, prefi
         logger.info(f"  Reprojected raster already exists: {path_reproj}")
 
     return path_reproj
+
+
+def resample_to_0_04deg(path, reference_path, local_folder, logger, out_label=None):
+    """Resample a WGS84 raster to 0.04-degree resolution using sum aggregation.
+
+    Uses the grid of reference_path as the output template — same CRS, transform,
+    width, and height.  Designed for aggregating fine-resolution organic soil inputs
+    (0.01°) onto the vegetation/mineral-soil grid (0.04°).
+    Pass out_label to override the output filename stem (recommended to keep paths
+    short enough for WSL's /mnt/c/ write limit).
+    Skips if output already exists.  Returns the output path.
+    """
+    filename = os.path.splitext(os.path.basename(path))[0]
+    stem = out_label if out_label is not None else f"{filename}_0_04deg"
+    path_out = os.path.join(local_folder, f"{stem}.tif")
+
+    if not os.path.exists(path_out):
+        logger.info(f"  Resampling to 0.04°: {path}")
+        logger.info(f"  → {path_out}")
+        with rasterio.open(reference_path) as ref:
+            dst_transform = ref.transform
+            dst_width     = ref.width
+            dst_height    = ref.height
+            dst_crs       = ref.crs
+        with rasterio.open(path) as src:
+            kwargs = src.meta.copy()
+            kwargs.update({
+                'crs': dst_crs,
+                'transform': dst_transform,
+                'width': dst_width,
+                'height': dst_height,
+                'nodata': 0,
+                'compress': 'lzw',
+            })
+            with rasterio.open(path_out, 'w', **kwargs) as dst:
+                for i in range(1, src.count + 1):
+                    reproject(
+                        source=rasterio.band(src, i),
+                        destination=rasterio.band(dst, i),
+                        src_transform=src.transform,
+                        src_crs=src.crs,
+                        dst_transform=dst_transform,
+                        dst_crs=dst_crs,
+                        resampling=Resampling.sum,
+                        src_nodata=src.nodata,
+                        dst_nodata=0,
+                    )
+    else:
+        logger.info(f"  0.04-degree raster already exists: {path_out}")
+
+    return path_out
 
 
 def save_array_as_geotif(data, reference_path, out_path, logger):
@@ -534,51 +583,83 @@ def map_LULUCF_maps(lulucf_input_date,
     has_net_component_inputs = all([veg_net_geotif, organic_soil_drained_s3, organic_soil_burned_s3, mineral_soil_net_s3])
     if has_net_component_inputs:
 
+        ### Vegetation
         # Vegetation net: reproject all years
         veg_net_year_paths = _infer_veg_year_paths(veg_net_geotif, cn.interval_end_years_annual)
         main_logger.info(f"\nReprojecting net vegetation ({len(veg_net_year_paths)} years) to Robinson")
         veg_net_reprojected = [reproject_to_robinson(p, reproj_folder, main_logger, prefix='veg_') for p in veg_net_year_paths]
         veg_net_reproj_ref_grid = veg_net_reprojected[-1]  # reference grid for organic soil reprojection
 
+        # Read and average vegetation net flux rasters
+        veg_net_arrays = [read_raster_clipped(p, bounding_box_proj)[0] for p in veg_net_reprojected]
+        data_veg_net_avg = np.mean(np.stack(veg_net_arrays), axis=0)
+        main_logger.info(f"Vegetation net flux: averaged {len(veg_net_arrays)} annual rasters")
+        veg_net_avg_path = f"{reproj_folder}veg_{cn.net_flux_all_C_pools_all_gases_pattern}_v{cn.flux_aggreg_pixel_meaning}{cn.veg_model_version_underscore}_{cn.year_range_str}_avg_global_reproj.tif"
+        save_array_as_geotif(data_veg_net_avg, veg_net_reprojected[-1], veg_net_avg_path, main_logger)
+
+
+        ### Mineral soil
         main_logger.info("\nReprojecting net mineral soil change to Robinson")
         mineral_soil_net_reproj = reproject_to_robinson(mineral_soil_net_s3, reproj_folder, main_logger)
 
-        # Organic soil: reproject all intervals since start of vegetation model
+        main_logger.info(f"Reading mineral soil net change map")
+        data_min_soil, _ = read_raster_clipped(mineral_soil_net_reproj, bounding_box_proj)
+
+
+        ### Organic soil
+        # Organic soil: resample 0.01°→0.04° WGS84 (sum), average in WGS84, reproject once
         drained_interval_paths = _infer_org_soil_interval_paths(organic_soil_drained_s3, cn.organic_soil_year_intervals)
         burned_interval_paths  = _infer_org_soil_interval_paths(organic_soil_burned_s3,  cn.organic_soil_year_intervals)
-        main_logger.info(f"\nReprojecting organic soil ({len(cn.organic_soil_year_intervals)} intervals) to Robinson")
-        drained_reprojected = [reproject_to_robinson(p, reproj_folder, main_logger, reference_path=veg_net_reproj_ref_grid) for p in drained_interval_paths]
-        burned_reprojected  = [reproject_to_robinson(p, reproj_folder, main_logger, reference_path=veg_net_reproj_ref_grid) for p in burned_interval_paths]
+
+        main_logger.info(f"\nResampling organic soil ({len(cn.organic_soil_year_intervals)} intervals) 0.01°→0.04° WGS84")
+        # Takes ~5 minutes for each of the 4 geotifs, so ~20 minutes total
+        drained_0_04deg = [
+            resample_to_0_04deg(p, veg_net_geotif, reproj_folder, main_logger,
+                                out_label=f"org_soil_drained_{ivl}_0_04deg")
+            for p, ivl in zip(drained_interval_paths, cn.organic_soil_year_intervals)
+        ]
+        burned_0_04deg = [
+            resample_to_0_04deg(p, veg_net_geotif, reproj_folder, main_logger,
+                                out_label=f"org_soil_burned_{ivl}_0_04deg")
+            for p, ivl in zip(burned_interval_paths, cn.organic_soil_year_intervals)
+        ]
+
+        main_logger.info(f"Organic soil: averaging {len(cn.organic_soil_year_intervals)} intervals in WGS84")
+        org_weights = [_interval_weight(ivl) for ivl in cn.organic_soil_year_intervals]
+        def _read_full(p):
+            with rasterio.open(p) as src:
+                return src.read(1).astype('float32')
+
+        # Year-weighted annual average emissions from organic soil, 0.04x0.04 deg resolution WGS84 (drained + burned)
+        drained_arrays = [_read_full(p) for p in drained_0_04deg]
+        burned_arrays  = [_read_full(p) for p in burned_0_04deg]
+        data_org_soil_wgs84 = np.average(
+            np.stack([d + b for d, b in zip(drained_arrays, burned_arrays)]),
+            axis=0,
+            weights=org_weights,
+        ).astype('float32')
+        main_logger.info(f"Organic soil: weighted average over intervals {dict(zip(cn.organic_soil_year_intervals, org_weights))}")
+
+        org_start = cn.organic_soil_year_intervals[0].split('_')[0]
+        org_end   = cn.organic_soil_year_intervals[-1].split('_')[1]
+        org_soil_avg_wgs84_path = os.path.join(
+            reproj_folder,
+            f"org_soil_emis_MgCO2e_{cn.flux_aggreg_pixel_meaning}__{org_start}_{org_end}_wght_avg_global_0_04deg.tif",
+        )
+        save_array_as_geotif(data_org_soil_wgs84, drained_0_04deg[-1], org_soil_avg_wgs84_path, main_logger)
+
+        main_logger.info("\nReprojecting averaged total organic emissions (drained+burned) WGS84→Robinson")
+        org_soil_reproj_path = reproject_to_robinson(
+            org_soil_avg_wgs84_path, reproj_folder, main_logger,
+            reference_path=veg_net_reproj_ref_grid,
+            out_label=f"org_soil_avg_{org_start}_{org_end}",
+        )
+        data_org_soil, _ = read_raster_clipped(org_soil_reproj_path, bounding_box_proj)
 
         # Version strings for file naming and slide text
         file_version_str = (f"{cn.veg_model_version_underscore}__organic_soil_v{cn.organic_soil_model_version_underscore}"
                             f"__mineral_soil_v{cn.SOC_model_version_underscore}")
         lulucf_slide_text = f"{cn.veg_pres_text}; {cn.organic_soil_pres_text}; {cn.mineral_soil_pres_text}"
-
-        # Read and average vegetation rasters
-        veg_net_arrays = [read_raster_clipped(p, bounding_box_proj)[0] for p in veg_net_reprojected]
-        data_veg_net_avg = np.mean(np.stack(veg_net_arrays), axis=0)
-        main_logger.info(f"Vegetation net flux: averaged {len(veg_net_arrays)} annual rasters")
-        veg_avg_path = f"{reproj_folder}veg_{cn.net_flux_all_C_pools_all_gases_pattern}_v{cn.flux_aggreg_pixel_meaning}{cn.veg_model_version_underscore}_{cn.year_range_str}_avg_global_reproj.tif"
-        save_array_as_geotif(data_veg_net_avg, veg_net_reprojected[-1], veg_avg_path, main_logger)
-
-        main_logger.info(f"Reading mineral soil net change map")
-        data_min_soil, _ = read_raster_clipped(mineral_soil_net_reproj, bounding_box_proj)
-
-        main_logger.info(f"Organic soil: averaging {len(cn.organic_soil_year_intervals)} intervals")
-        org_weights    = [_interval_weight(ivl) for ivl in cn.organic_soil_year_intervals]
-        drained_arrays = [read_raster_clipped(p, bounding_box_proj)[0] for p in drained_reprojected]
-        burned_arrays  = [read_raster_clipped(p, bounding_box_proj)[0] for p in burned_reprojected]
-        data_org_soil = np.average(
-            np.stack([d + b for d, b in zip(drained_arrays, burned_arrays)]),
-            axis=0,
-            weights=org_weights,
-        )
-        main_logger.info(f"Organic soil: weighted average over intervals {dict(zip(cn.organic_soil_year_intervals, org_weights))}")
-        org_start = cn.organic_soil_year_intervals[0].split('_')[0]
-        org_end   = cn.organic_soil_year_intervals[-1].split('_')[1]
-        org_soil_avg_path = f"{reproj_folder}org_soil_emis_MgCO2e_{cn.flux_aggreg_pixel_meaning}__{org_start}_{org_end}_wght_avg_global_reproj.tif"
-        save_array_as_geotif(data_org_soil, drained_reprojected[-1], org_soil_avg_path, main_logger)
 
     else:
         main_logger.info("Part 3 inputs not supplied — Parts 3 and 4 will be skipped.")
