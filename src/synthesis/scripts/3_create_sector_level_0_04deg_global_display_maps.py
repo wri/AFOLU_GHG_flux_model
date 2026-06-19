@@ -2,24 +2,27 @@
 Creates 4x4km (0.04-degree) display maps for LULUCF and (placeholder) AFOLU sectors.
 
 Inputs:
-- Vegetation average annual net flux geotif (S3 or local path, WGS84 — reprojected to Robinson here)
+- Vegetation last year (2024) net flux geotif S3 path (Mg CO2e/0.04x0.04 deg/yr, WGS84 — reprojected to Robinson here)
+- Drained organic soil last interval (2021-2024) S3 path (Mg CO2e/0.01x0.01 deg/yr, WGS84 — reprojected to Robinson here)
+- Burned organic soil last interval (2021-2024) S3 path (Mg CO2e/0.01x0.01 deg/yr, WGS84 — reprojected to Robinson here)
+- Mineral soil net change S3 path (2020 change) (Mg CO2e/0.04x0.04 deg/yr, WGS84 — reprojected to Robinson here)
 - An input_date (YYYYMMDD) for the summative LULUCF maps, used to construct S3 paths for
   the pre-made LULUCF annual-average global geotifs (net flux, gross emissions, gross removals)
-- Organic soil drained S3 path (Mg CO2e/pixel/yr, WGS84 — reprojected to Robinson here)
-- Organic soil burned S3 path (Mg CO2e/pixel/yr, WGS84 — reprojected to Robinson here)
-- Mineral soil S3 path (Mg C/pixel/yr, WGS84 — reprojected to Robinson here)
 - Optional cropland and livestock S3 paths (stub for future AFOLU maps)
 - Optional parquet path for global average annual flux annotations on each map
 
-Both organic soil inputs are summed into one organic soil emissions layer.
+Vegetation net flux: mean of all annual rasters in cn.interval_end_years_annual, inferred from the latest year path supplied on command line
+Organic soil: weighted average across cn.organic_soil_year_intervals (weight = years per interval), inferred from the latest interval path supplied on command line
+
+Both organic soil inputs for an interval are summed into one organic soil emissions layer for that interval.
 
 Maps produced:
   Part 1 — Net LULUCF flux (annual average from pre-made S3 geotif)
   Part 2 — Gross LULUCF emissions and removals (annual averages from pre-made S3 geotifs)
   Part 3 — Three-panel LULUCF: gross emissions | gross removals | net flux (from parts 1 and 2 above)
-  Part 4 — Four-panel LULUCF components: veg net | mineral soil net | organic soil gross emis | LULUCF net
+  Part 4 — Four-panel LULUCF components: average annual veg net | mineral soil net change | organic soil gross emis | LULUCF net
 
-Legend min/max use the 1st and 99th percentiles of non-zero pixels.
+Legend min/max use the 0.5 and 99.5 percentiles of non-zero pixels.
 
 Defaults to global coverage; supply --center_latitude, --center_longitude, and --lat_height for a
 zoomed map. The global 2:1 (width:height) aspect ratio is maintained in all zoomed maps.
@@ -37,12 +40,10 @@ python -m src.synthesis.scripts.3_create_sector_level_0_04deg_global_display_map
 -ld 20260614 \
 -pq /mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/LULUCF_v1_0_0__veg_v1_0_5__minsoil_v1_0_1__orgsoil_v1_0_1/LULUCF__v1_0_0__for_figures__wide__20260617.parquet
 
-Example — Central Africa zoom (Parts 1-3 only, no component data):
+Example — Central Africa zoom (Parts 1-3 only, no component data-- and no flux annotation):
 python -m src.synthesis.scripts.3_create_sector_level_0_04deg_global_display_maps
   -veg s3://... -ld 20260614
   --center_latitude 0 --center_longitude 20 --lat_height 20 -bbd central_Africa
-
-#TODO Vegetation net flux is currently using just 2024, not averaging all years. Organic soil is using just 2021-2024, not averaging both intervals.
 """
 
 import argparse
@@ -68,7 +69,7 @@ from src.utilities import universal_utilities as uu
 
 # ── Raster helpers ──────────────────────────────────────────────────────────────
 
-def reproject_to_robinson(path, local_folder, logger, reference_path=None):
+def reproject_to_robinson(path, local_folder, logger, component=None, reference_path=None):
     """Reproject a WGS84 geotif to Robinson projection. Skips if already done.
 
     Uses calculate_default_transform to derive the Robinson pixel grid from the
@@ -78,7 +79,7 @@ def reproject_to_robinson(path, local_folder, logger, reference_path=None):
     Returns the reprojected file path.
     """
     filename = os.path.splitext(os.path.basename(path))[0]
-    path_reproj = f"{local_folder}/{filename}_reproj.tif"
+    path_reproj = f"{local_folder}/{component}{filename}_reproj.tif"
 
     if not os.path.exists(path_reproj):
         logger.info(f"  Reprojecting to Robinson: {path}")
@@ -124,6 +125,7 @@ def reproject_to_robinson(path, local_folder, logger, reference_path=None):
 
 def convert_kg_to_Mg(path, logger):
     """Convert a geotif from kg to Mg (tonnes). Skips if already converted.
+    Only used for cropland and livestock.
 
     Returns the converted file path. (Retained for future AFOLU use with cropland/livestock.)
     """
@@ -145,7 +147,7 @@ def convert_kg_to_Mg(path, logger):
 
 
 def build_lulucf_s3_path(pattern, lulucf_date, model_type='standard', model_path_description='global'):
-    """Return the S3 path for a LULUCF annual-average global geotif produced by script 2.
+    """Return the S3 path for a LULUCF annual average global geotif.
 
     Mirrors the path construction in 2_create_LULUCF_global_0_04x0_04deg.py /
     universal_utilities.mosaic_tiles_to_global.
@@ -166,6 +168,34 @@ def build_lulucf_s3_path(pattern, lulucf_date, model_type='standard', model_path
         f"_v{cn.LULUCF_model_version_underscore}_{avg_year}_global.tif"
     )
     return folder + filename
+
+
+# ── Multi-year / multi-interval path inference ─────────────────────────────────
+
+def _infer_veg_year_paths(latest_path, years):
+    """Infer all annual vegetation net-flux paths from the latest-year path.
+
+    Replaces every occurrence of the latest year string in the path and filename,
+    which covers both the annual_intervals/YEAR/ subfolder and the _YEAR_global.tif
+    filename segment. Works for S3 and local paths.
+    """
+    latest_year = str(years[-1])
+    return [latest_path.replace(latest_year, str(y)) for y in years]
+
+
+def _infer_org_soil_interval_paths(latest_path, intervals):
+    """Infer all organic soil interval paths from the latest-interval path.
+
+    Replaces every occurrence of the YYYY_YYYY interval string (folder + filename).
+    """
+    latest_interval = re.search(r'\d{4}_\d{4}', latest_path).group(0)
+    return [latest_path.replace(latest_interval, ivl) for ivl in intervals]
+
+
+def _interval_weight(interval_str):
+    """Number of years covered by an interval string like '2016_2020'."""
+    start, end = interval_str.split('_')
+    return int(end) - int(start) + 1
 
 
 # ── Parquet annotation helpers ──────────────────────────────────────────────────
@@ -404,15 +434,26 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
     )
     main_logger.info(f"LULUCF S3 paths:\n  net:  {lulucf_net_s3}\n  emis: {lulucf_emis_s3}\n  remv: {lulucf_remv_s3}")
 
-    # Reprojects all inputs to Robinson (each independently)
-    main_logger.info("\nReprojecting inputs to Robinson")
-    veg_net_reproj = reproject_to_robinson(veg_net_geotif, reproj_folder, main_logger)
+    main_logger.info("\nReprojecting LULUCF summative maps to Robinson")
     lulucf_net_reproj = reproject_to_robinson(lulucf_net_s3, reproj_folder, main_logger)
     lulucf_emis_reproj = reproject_to_robinson(lulucf_emis_s3, reproj_folder, main_logger)
     lulucf_remv_reproj = reproject_to_robinson(lulucf_remv_s3, reproj_folder, main_logger)
+
+    # Vegetation: reproject all annual years
+    veg_year_paths = _infer_veg_year_paths(veg_net_geotif, cn.interval_end_years_annual)
+    main_logger.info(f"\nReprojecting vegetation ({len(veg_year_paths)} years) to Robinson")
+    veg_reprojected = [reproject_to_robinson(p, reproj_folder, main_logger, component="veg_") for p in veg_year_paths]
+    veg_net_reproj = veg_reprojected[-1]  # reference grid for organic soil reprojection
+
+    main_logger.info("\nReprojecting net mineral soil change to Robinson")
     mineral_soil_reproj = reproject_to_robinson(mineral_soil_s3, reproj_folder, main_logger)
-    org_soil_drained_reproj = reproject_to_robinson(organic_soil_drained_s3, reproj_folder, main_logger, reference_path=veg_net_reproj)
-    org_soil_burned_reproj = reproject_to_robinson(organic_soil_burned_s3, reproj_folder, main_logger, reference_path=veg_net_reproj)
+
+    # Organic soil: reproject all intervals since start of vegetation model
+    drained_interval_paths = _infer_org_soil_interval_paths(organic_soil_drained_s3, cn.organic_soil_year_intervals)
+    burned_interval_paths  = _infer_org_soil_interval_paths(organic_soil_burned_s3,  cn.organic_soil_year_intervals)
+    main_logger.info(f"\nReprojecting organic soil ({len(cn.organic_soil_year_intervals)} intervals) to Robinson")
+    drained_reprojected = [reproject_to_robinson(p, reproj_folder, main_logger, reference_path=veg_net_reproj) for p in drained_interval_paths]
+    burned_reprojected  = [reproject_to_robinson(p, reproj_folder, main_logger, reference_path=veg_net_reproj) for p in burned_interval_paths]
 
     # Robinson bounding box and shapefile clip
     bounding_box_proj = mu.transform_bbox_to_robinson(bounding_box) if bounding_box is not None else None
@@ -430,11 +471,31 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
     lulucf_slide_text += f'; {cn.mineral_soil_pres_text}'
     lulucf_slide_text_with_disclaimer = f"{lulucf_slide_text} \n {cn.legend_percentile_disclaimer}"
 
-    # Read rasters. raster_extent from veg is used as the display extent for all parts.
-    data_veg_net,     raster_extent = read_raster_clipped(veg_net_reproj, bounding_box_proj)
-    data_lulucf_net,  _             = read_raster_clipped(lulucf_net_reproj, bounding_box_proj)
-    data_lulucf_emis, _             = read_raster_clipped(lulucf_emis_reproj, bounding_box_proj)
-    data_lulucf_remv, _             = read_raster_clipped(lulucf_remv_reproj, bounding_box_proj)
+    # Read and average rasters. raster_extent from veg is used as the display extent for all parts.
+    veg_arrays = [read_raster_clipped(p, bounding_box_proj)[0] for p in veg_reprojected]
+    data_veg_net_avg = np.mean(np.stack(veg_arrays), axis=0)
+    _, raster_extent = read_raster_clipped(veg_reprojected[-1], bounding_box_proj)
+    main_logger.info(f"Vegetation: averaged {len(veg_arrays)} annual rasters")
+
+    main_logger.info(f"Reading mineral soil net change map")
+    data_min_soil, _ = read_raster_clipped(mineral_soil_reproj, bounding_box_proj)
+
+    main_logger.info(f"Organic soil: averaging {len(cn.organic_soil_year_intervals)} intervals")
+    org_weights   = [_interval_weight(ivl) for ivl in cn.organic_soil_year_intervals]
+    main_logger.info(f"Weights for organic soil emissions intervals: {org_weights}")
+    drained_arrays = [read_raster_clipped(p, bounding_box_proj)[0] for p in drained_reprojected]
+    burned_arrays  = [read_raster_clipped(p, bounding_box_proj)[0] for p in burned_reprojected]
+    data_org_soil = np.average(
+        np.stack([d + b for d, b in zip(drained_arrays, burned_arrays)]),
+        axis=0,
+        weights=org_weights,
+    )
+    main_logger.info(f"Organic soil: weighted average over intervals {dict(zip(cn.organic_soil_year_intervals, org_weights))}")
+
+    main_logger.info(f"Reading average annual LULUCF maps")
+    data_lulucf_net,  _ = read_raster_clipped(lulucf_net_reproj, bounding_box_proj)
+    data_lulucf_emis, _ = read_raster_clipped(lulucf_emis_reproj, bounding_box_proj)
+    data_lulucf_remv, _ = read_raster_clipped(lulucf_remv_reproj, bounding_box_proj)
     main_logger.info(f"Raster extent (from veg): {raster_extent}")
 
 
@@ -512,11 +573,11 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
 
     main_logger.info("\n\n\n---Part 4: Four-panel LULUCF component map")
 
-    # Panel a: Vegetation net flux
-    main_logger.info(f"  Creating vegetation net flux map")
+    # Panel a: Vegetation net flux (annual avearge)
+    main_logger.info(f"  Creating annual average vegetation net flux map")
     veg_net_core = f"vegetation_net_flux_all_pools_all_gases_{veg_version}__{cn.year_range_str}__ktCO2e_yr"
     jpeg_path_veg_net = render_divergent_map(
-        data_veg_net, raster_extent, bounding_box_proj, country_shapefile,
+        data_veg_net_avg, raster_extent, bounding_box_proj, country_shapefile,
         net_colors_rgb,
         title_text=f"Net greenhouse gas flux\nAll vegetation pools, all gases\nkt CO$_2$e yr$^{{-1}}$",
         veg_analysis_years=cn.year_range_str,
@@ -530,8 +591,6 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
 
     # Panel b: Mineral soil net SOC change
     main_logger.info(f"  Creating mineral soil net change map")
-    data_min_soil, _ = read_raster_clipped(mineral_soil_reproj, bounding_box_proj)
-
     min_soil_core = f"mineral_soil_net__veg_{veg_version}__{non_veg_versions}__ktCO2_yr"
     jpeg_path_min_soil = render_divergent_map(
         data_min_soil, raster_extent, bounding_box_proj, country_shapefile,
@@ -546,12 +605,8 @@ def map_LULUCF_maps(veg_net_geotif, lulucf_input_date,
                                             unit='Gt CO$_2$ yr$^{-1}$'),
     )
 
-    # Panel c: Organic soil gross emissions (drained + burned)
+    # Panel c: Organic soil gross emissions — weighted average across intervals, computed above
     main_logger.info(f"  Creating organic soil emissions map")
-    data_drained, _ = read_raster_clipped(org_soil_drained_reproj, bounding_box_proj)
-    data_burned, _  = read_raster_clipped(org_soil_burned_reproj, bounding_box_proj)
-    data_org_soil = data_drained + data_burned
-    main_logger.info("  Organic soil: summing drained + burned")
 
     org_soil_core = f"org_soil_gross_emis__veg_{veg_version}__{non_veg_versions}__ktCO2e_yr"
     jpeg_path_org_soil = render_unidirectional_map(

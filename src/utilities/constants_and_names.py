@@ -712,6 +712,7 @@ organic_soil_extent_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/organic_soil
 organic_soil_extent_pattern = "organic_soil__2021_2024"
 organic_soil_burned_pattern   = "burned_total_Mg_CO2e"
 organic_soil_drained_pattern  = "drained_total_Mg_CO2e"
+organic_soil_year_intervals   = ['2016_2020', '2021_2024']  # update when a new interval is added
 
 organic_soil_zarr_path = f"s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/outputs/version_{organic_soil_model_version_underscore}/mega_zarr/ogh_mixed_f1_f15_f2_20260513/five_year/4000_pixels/20260525/mega.zarr"
 
