@@ -1940,7 +1940,7 @@ emissions_percentiles = [5, 25, 50, 75, 99]
 removals_colors_rgb = net_colors_rgb[0:5]
 emissions_colors_rgb = net_colors_rgb[5:]
 
-# Percentile at which map color saturates and the min and max values on legend
+# Percentile at which map color saturates and the min and max values on legend (0.5 -> 0.5 and 99.5 percentiles)
 saturation_percentile = 0.5
 
 veg_pres_text = f"Vegetation fluxes: v{veg_model_version}, {interval_end_years_annual[0]}-{last_model_year_annual}"
