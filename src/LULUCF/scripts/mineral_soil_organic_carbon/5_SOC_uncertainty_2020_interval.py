@@ -112,6 +112,9 @@ INTERVAL_LABEL = '2020'   # avg 2015-2020 minus avg 2010-2015
 # Main outputs: U⁻_Δ and U⁺_Δ (Mg C per 120m pixel), masked to mineral soil
 U_MINUS_DELTA_PATTERN = 'SOC_uncertainty_lower__mineral_soil_extent__MgC_per_pixel'
 U_PLUS_DELTA_PATTERN  = 'SOC_uncertainty_upper__mineral_soil_extent__MgC_per_pixel'
+# Delta uncertainty, unmasked (Mg C per pixel)
+U_MINUS_DELTA_UNMASKED_PATTERN = 'SOC_uncertainty_lower__full_extent__MgC_per_pixel'
+U_PLUS_DELTA_UNMASKED_PATTERN  = 'SOC_uncertainty_upper__full_extent__MgC_per_pixel'
 
 # Masks
 HAS_MINERAL_SOIL_PATTERN = 'mineral_soil_mask'
@@ -131,10 +134,6 @@ U_MINUS_T1_UNMASKED_PATTERN = 'SOC_uncertainty_lower_t1__full_extent__MgC_per_pi
 U_PLUS_T1_UNMASKED_PATTERN  = 'SOC_uncertainty_upper_t1__full_extent__MgC_per_pixel'
 U_MINUS_T2_UNMASKED_PATTERN = 'SOC_uncertainty_lower_t2__full_extent__MgC_per_pixel'
 U_PLUS_T2_UNMASKED_PATTERN  = 'SOC_uncertainty_upper_t2__full_extent__MgC_per_pixel'
-# Delta uncertainty, unmasked (Mg C per pixel)
-U_MINUS_DELTA_UNMASKED_PATTERN = 'SOC_uncertainty_lower__MgC_per_pixel'
-U_PLUS_DELTA_UNMASKED_PATTERN  = 'SOC_uncertainty_upper__MgC_per_pixel'
-
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -421,26 +420,26 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload,
 
             # Input layers at 120m
             f"{MEAN_T1_PATTERN}_{INTERVAL_LABEL}": [
-                mean_t1, 'float32', MEAN_T1_PATTERN, INTERVAL_LABEL, f"{output_s3_dir_no_bucket}mean_t1/",
+                mean_t1, 'float32', MEAN_T1_PATTERN, INTERVAL_LABEL, f"{output_s3_dir_no_bucket}mean_t1_full_extent/",
             ],
             f"{P16_T1_PATTERN}_{INTERVAL_LABEL}": [
-                p16_t1, 'float32', P16_T1_PATTERN, INTERVAL_LABEL, f"{output_s3_dir_no_bucket}p16_t1/",
+                p16_t1, 'float32', P16_T1_PATTERN, INTERVAL_LABEL, f"{output_s3_dir_no_bucket}p16_t1_full_extent/",
             ],
             f"{P84_T1_PATTERN}_{INTERVAL_LABEL}": [
-                p84_t1, 'float32', P84_T1_PATTERN, INTERVAL_LABEL, f"{output_s3_dir_no_bucket}p84_t1/",
+                p84_t1, 'float32', P84_T1_PATTERN, INTERVAL_LABEL, f"{output_s3_dir_no_bucket}p84_t1_full_extent/",
             ],
             f"{MEAN_T2_PATTERN}_{INTERVAL_LABEL}": [
-                mean_t2, 'float32', MEAN_T2_PATTERN, INTERVAL_LABEL, f"{output_s3_dir_no_bucket}mean_t2/",
+                mean_t2, 'float32', MEAN_T2_PATTERN, INTERVAL_LABEL, f"{output_s3_dir_no_bucket}mean_t2_full_extent/",
             ],
             f"{P16_T2_PATTERN}_{INTERVAL_LABEL}": [
-                p16_t2, 'float32', P16_T2_PATTERN, INTERVAL_LABEL, f"{output_s3_dir_no_bucket}p16_t2/",
+                p16_t2, 'float32', P16_T2_PATTERN, INTERVAL_LABEL, f"{output_s3_dir_no_bucket}p16_t2_full_extent/",
             ],
             f"{P84_T2_PATTERN}_{INTERVAL_LABEL}": [
-                p84_t2, 'float32', P84_T2_PATTERN, INTERVAL_LABEL, f"{output_s3_dir_no_bucket}p84_t2/",
+                p84_t2, 'float32', P84_T2_PATTERN, INTERVAL_LABEL, f"{output_s3_dir_no_bucket}p84_t2_full_extent/",
             ],
             f"{DELTA_MEAN_PATTERN}_{INTERVAL_LABEL}": [
                 delta_mean_masked, 'float32', DELTA_MEAN_PATTERN, INTERVAL_LABEL,
-                f"{output_s3_dir_no_bucket}delta_mean/",
+                f"{output_s3_dir_no_bucket}delta_mean_min_soil/",
             ],
 
             # Masks
@@ -449,15 +448,15 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload,
             ],
             f"{VALID_PIXEL_MASK_PATTERN}_{INTERVAL_LABEL}": [
                 valid.astype(np.float32), 'float32', VALID_PIXEL_MASK_PATTERN, INTERVAL_LABEL,
-                f"{output_s3_dir_no_bucket}valid/",
+                f"{output_s3_dir_no_bucket}valid_pixels/",
             ],
             f"{LOSS_MASK_PATTERN}_{INTERVAL_LABEL}": [
                 loss_mask, 'float32', LOSS_MASK_PATTERN, INTERVAL_LABEL,
-                f"{output_s3_dir_no_bucket}loss_mask/",
+                f"{output_s3_dir_no_bucket}loss_mask_min_soil/",
             ],
             f"{GAIN_MASK_PATTERN}_{INTERVAL_LABEL}": [
                 gain_mask, 'float32', GAIN_MASK_PATTERN, INTERVAL_LABEL,
-                f"{output_s3_dir_no_bucket}gain_mask/",
+                f"{output_s3_dir_no_bucket}gain_mask_min_soil/",
             ],
 
             # Per-time-block uncertainty, unmasked
