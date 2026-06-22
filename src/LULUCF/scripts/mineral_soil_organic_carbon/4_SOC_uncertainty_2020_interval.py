@@ -114,13 +114,32 @@ U_MINUS_DELTA_PATTERN = 'SOC_uncertainty_lower__mineral_soil_extent__MgC_per_pix
 U_PLUS_DELTA_PATTERN  = 'SOC_uncertainty_upper__mineral_soil_extent__MgC_per_pixel'
 
 # Intermediate outputs (uploaded with --upload_intermediates)
+# Masks
+HAS_MINERAL_SOIL_PATTERN = 'mineral_soil_mask'
+VALID_PIXEL_MASK_PATTERN = 'SOC_valid_pixel_mask'
+LOSS_MASK_PATTERN        = 'SOC_loss_mask__mineral_soil_extent'
+GAIN_MASK_PATTERN        = 'SOC_gain_mask__mineral_soil_extent'
+# Input layers at 120m (Mg C per pixel, not masked to mineral soil)
+MEAN_T1_PATTERN = 'SOC_mean_t1__MgC_per_pixel'
+P16_T1_PATTERN  = 'SOC_p16_t1__MgC_per_pixel'
+P84_T1_PATTERN  = 'SOC_p84_t1__MgC_per_pixel'
+MEAN_T2_PATTERN = 'SOC_mean_t2__MgC_per_pixel'
+P16_T2_PATTERN  = 'SOC_p16_t2__MgC_per_pixel'
+P84_T2_PATTERN  = 'SOC_p84_t2__MgC_per_pixel'
+DELTA_MEAN_PATTERN = 'SOC_delta_mean__mineral_soil_extent__MgC_per_pixel'
+# Per-time-block uncertainty, unmasked (Mg C per pixel)
+U_MINUS_T1_UNMASKED_PATTERN = 'SOC_uncertainty_lower_t1__MgC_per_pixel'
+U_PLUS_T1_UNMASKED_PATTERN  = 'SOC_uncertainty_upper_t1__MgC_per_pixel'
+U_MINUS_T2_UNMASKED_PATTERN = 'SOC_uncertainty_lower_t2__MgC_per_pixel'
+U_PLUS_T2_UNMASKED_PATTERN  = 'SOC_uncertainty_upper_t2__MgC_per_pixel'
+# Per-time-block uncertainty masked to mineral soil (Mg C per pixel)
 U_MINUS_T1_PATTERN = 'SOC_uncertainty_lower_t1__mineral_soil_extent__MgC_per_pixel'
 U_PLUS_T1_PATTERN  = 'SOC_uncertainty_upper_t1__mineral_soil_extent__MgC_per_pixel'
 U_MINUS_T2_PATTERN = 'SOC_uncertainty_lower_t2__mineral_soil_extent__MgC_per_pixel'
 U_PLUS_T2_PATTERN  = 'SOC_uncertainty_upper_t2__mineral_soil_extent__MgC_per_pixel'
-DELTA_MEAN_PATTERN = 'SOC_delta_mean__mineral_soil_extent__MgC_per_pixel'
-LOSS_MASK_PATTERN  = 'SOC_loss_mask__mineral_soil_extent'
-GAIN_MASK_PATTERN  = 'SOC_gain_mask__mineral_soil_extent'
+# Delta uncertainty, unmasked (Mg C per pixel)
+U_MINUS_DELTA_UNMASKED_PATTERN = 'SOC_uncertainty_lower__MgC_per_pixel'
+U_PLUS_DELTA_UNMASKED_PATTERN  = 'SOC_uncertainty_upper__MgC_per_pixel'
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -165,7 +184,7 @@ def pixel_area_m2(bounds, n_pixels, pixel_size_deg):
 # ─── Per-chunk worker ─────────────────────────────────────────────────────────
 
 def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_intermediates,
-                             nodata_val_120m, pixel_size_deg_120m, output_s3_dir):
+                             nodata_val_120m, pixel_size_deg_120m, output_s3_dir, output_s3_intermed_dir):
     """
     Process a single 1×1 degree chunk. Returns:
         (return_message,
@@ -215,6 +234,7 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_inter
                 data = np.full(expected_shape, np.nan, dtype=np.float32)
             raw_arrays[key] = data
     # print("raw_arrays:", raw_arrays)
+
 
     ### Part 2: Download 30m organic soil mask
     # [PDF §1, §6] Organic-soil pixels are excluded from uncertainty outputs.
@@ -308,8 +328,8 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_inter
     # Per-pixel upper uncertainty in SOC stock change (Mg C per 120m pixel), set to NaN outside the valid mineral soil extent
     U_minus_delta_min_soil_masked = np.where(valid, U_minus_delta, np.nan).astype(np.float32)
     U_plus_delta_min_soil_masked  = np.where(valid, U_plus_delta,  np.nan).astype(np.float32)
-    print("U_minus_delta_min_soil_masked:", U_minus_delta_min_soil_masked)
-    print("U_plus_delta_min_soil_masked:", U_plus_delta_min_soil_masked)
+    # print("U_minus_delta_min_soil_masked:", U_minus_delta_min_soil_masked)
+    # print("U_plus_delta_min_soil_masked:", U_plus_delta_min_soil_masked)
 
     # Per-time-block intermediates: same mineral soil mask, but per-block data validity instead of validity for both intervals simultaneously (as done above).
     # This isn't actually used in any calculations; it's just for QC.
@@ -337,8 +357,8 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_inter
     # Pixels with net change = 0 aren't included in either category (and therefore not in the uncertainty of either).
     is_loss = valid & (delta_mean_raw < np.float32(0.0))
     is_gain = valid & (delta_mean_raw > np.float32(0.0))
-    print("is_loss:", is_loss)
-    print("is_gain:", is_gain)
+    # print("is_loss:", is_loss)
+    # print("is_gain:", is_gain)
 
     # Binary masks: 1.0 where classified, NaN elsewhere (float32 for GeoTIFF compatibility)
     loss_mask = np.where(is_loss, np.float32(1.0), np.nan).astype(np.float32)
@@ -373,15 +393,38 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_inter
     ### Part 9: Chunk stats (always; useful for QC even without upload)
 
     for arr, name in [
+        # Masks
+        (has_mineral_soil.astype(np.float32), f"{HAS_MINERAL_SOIL_PATTERN}_{INTERVAL_LABEL}"),
+        (valid.astype(np.float32),            f"{VALID_PIXEL_MASK_PATTERN}_{INTERVAL_LABEL}"),
+        (loss_mask,                           f"{LOSS_MASK_PATTERN}_{INTERVAL_LABEL}"),
+        (gain_mask,                           f"{GAIN_MASK_PATTERN}_{INTERVAL_LABEL}"),
+
+        # Input layers at 120m
+        (mean_t1, f"{MEAN_T1_PATTERN}_{INTERVAL_LABEL}"),
+        (p16_t1,  f"{P16_T1_PATTERN}_{INTERVAL_LABEL}"),
+        (p84_t1,  f"{P84_T1_PATTERN}_{INTERVAL_LABEL}"),
+        (mean_t2, f"{MEAN_T2_PATTERN}_{INTERVAL_LABEL}"),
+        (p16_t2,  f"{P16_T2_PATTERN}_{INTERVAL_LABEL}"),
+        (p84_t2,  f"{P84_T2_PATTERN}_{INTERVAL_LABEL}"),
+        (delta_mean_masked, f"{DELTA_MEAN_PATTERN}_{INTERVAL_LABEL}"),
+
+        # Per-time-block uncertainty, unmasked
+        (U_minus_t1, f"{U_MINUS_T1_UNMASKED_PATTERN}_{INTERVAL_LABEL}"),
+        (U_plus_t1,  f"{U_PLUS_T1_UNMASKED_PATTERN}_{INTERVAL_LABEL}"),
+        (U_minus_t2, f"{U_MINUS_T2_UNMASKED_PATTERN}_{INTERVAL_LABEL}"),
+        (U_plus_t2,  f"{U_PLUS_T2_UNMASKED_PATTERN}_{INTERVAL_LABEL}"),
+
+        # Per-time-block uncertainty masked to mineral soil
+        (U_minus_t1_min_soil_masked, f"{U_MINUS_T1_PATTERN}_{INTERVAL_LABEL}"),
+        (U_plus_t1_min_soil_masked,  f"{U_PLUS_T1_PATTERN}_{INTERVAL_LABEL}"),
+        (U_minus_t2_min_soil_masked, f"{U_MINUS_T2_PATTERN}_{INTERVAL_LABEL}"),
+        (U_plus_t2_min_soil_masked,  f"{U_PLUS_T2_PATTERN}_{INTERVAL_LABEL}"),
+
+        # Delta uncertainty, unmasked and masked
+        (U_minus_delta,              f"{U_MINUS_DELTA_UNMASKED_PATTERN}_{INTERVAL_LABEL}"),
+        (U_plus_delta,               f"{U_PLUS_DELTA_UNMASKED_PATTERN}_{INTERVAL_LABEL}"),
         (U_minus_delta_min_soil_masked, f"{U_MINUS_DELTA_PATTERN}_{INTERVAL_LABEL}"),
         (U_plus_delta_min_soil_masked,  f"{U_PLUS_DELTA_PATTERN}_{INTERVAL_LABEL}"),
-        (U_minus_t1_min_soil_masked,    f"{U_MINUS_T1_PATTERN}_{INTERVAL_LABEL}"),
-        (U_plus_t1_min_soil_masked,     f"{U_PLUS_T1_PATTERN}_{INTERVAL_LABEL}"),
-        (U_minus_t2_min_soil_masked,    f"{U_MINUS_T2_PATTERN}_{INTERVAL_LABEL}"),
-        (U_plus_t2_min_soil_masked,     f"{U_PLUS_T2_PATTERN}_{INTERVAL_LABEL}"),
-        (delta_mean_masked,    f"{DELTA_MEAN_PATTERN}_{INTERVAL_LABEL}"),
-        (loss_mask,            f"{LOSS_MASK_PATTERN}_{INTERVAL_LABEL}"),
-        (gain_mask,            f"{GAIN_MASK_PATTERN}_{INTERVAL_LABEL}"),
     ]:
         chunk_stats_combined.append(uu.calculate_stats(arr, name, bounds_str, tile_id, 'output_layer'))
 
@@ -389,48 +432,107 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_inter
     ### Part 10: Save GeoTIFFs and upload
 
     if not no_upload:
-        output_without_bucket = output_s3_dir[cn.full_bucket_prefix_length:]
-        intermediates_base = f"{output_without_bucket}intermediates"
+
+        print("output_s3_dir:", output_s3_dir)
 
         out_dict = {
+            # Major outputs
             f"{U_MINUS_DELTA_PATTERN}_{INTERVAL_LABEL}": [
-                U_minus_delta_min_soil_masked, 'float32', U_MINUS_DELTA_PATTERN, INTERVAL_LABEL, output_without_bucket,
+                U_minus_delta_min_soil_masked, 'float32', U_MINUS_DELTA_PATTERN, INTERVAL_LABEL, output_s3_dir,
             ],
             f"{U_PLUS_DELTA_PATTERN}_{INTERVAL_LABEL}": [
-                U_plus_delta_min_soil_masked, 'float32', U_PLUS_DELTA_PATTERN, INTERVAL_LABEL, output_without_bucket,
+                U_plus_delta_min_soil_masked, 'float32', U_PLUS_DELTA_PATTERN, INTERVAL_LABEL, output_s3_dir,
+            ],
+
+            # Input layers at 120m
+            f"{MEAN_T1_PATTERN}_{INTERVAL_LABEL}": [
+                mean_t1, 'float32', MEAN_T1_PATTERN, INTERVAL_LABEL, output_s3_dir,
+            ],
+            f"{P16_T1_PATTERN}_{INTERVAL_LABEL}": [
+                p16_t1, 'float32', P16_T1_PATTERN, INTERVAL_LABEL, output_s3_dir,
+            ],
+            f"{P84_T1_PATTERN}_{INTERVAL_LABEL}": [
+                p84_t1, 'float32', P84_T1_PATTERN, INTERVAL_LABEL, output_s3_dir,
+            ],
+            f"{MEAN_T2_PATTERN}_{INTERVAL_LABEL}": [
+                mean_t2, 'float32', MEAN_T2_PATTERN, INTERVAL_LABEL, output_s3_dir,
+            ],
+            f"{P16_T2_PATTERN}_{INTERVAL_LABEL}": [
+                p16_t2, 'float32', P16_T2_PATTERN, INTERVAL_LABEL, output_s3_dir,
+            ],
+            f"{P84_T2_PATTERN}_{INTERVAL_LABEL}": [
+                p84_t2, 'float32', P84_T2_PATTERN, INTERVAL_LABEL, output_s3_dir,
+            ],
+
+            # Masks
+            f"{HAS_MINERAL_SOIL_PATTERN}_{INTERVAL_LABEL}": [
+                has_mineral_soil.astype(np.float32), 'float32', HAS_MINERAL_SOIL_PATTERN, INTERVAL_LABEL, output_s3_dir,
             ],
         }
 
         if upload_intermediates:
             out_dict.update({
-                f"{U_MINUS_T1_PATTERN}_{INTERVAL_LABEL}": [
-                    U_minus_t1_min_soil_masked, 'float32', U_MINUS_T1_PATTERN, INTERVAL_LABEL,
-                    f"{intermediates_base}/U_minus_t1/",
-                ],
-                f"{U_PLUS_T1_PATTERN}_{INTERVAL_LABEL}": [
-                    U_plus_t1_min_soil_masked, 'float32', U_PLUS_T1_PATTERN, INTERVAL_LABEL,
-                    f"{intermediates_base}/U_plus_t1/",
-                ],
-                f"{U_MINUS_T2_PATTERN}_{INTERVAL_LABEL}": [
-                    U_minus_t2_min_soil_masked, 'float32', U_MINUS_T2_PATTERN, INTERVAL_LABEL,
-                    f"{intermediates_base}/U_minus_t2/",
-                ],
-                f"{U_PLUS_T2_PATTERN}_{INTERVAL_LABEL}": [
-                    U_plus_t2_min_soil_masked, 'float32', U_PLUS_T2_PATTERN, INTERVAL_LABEL,
-                    f"{intermediates_base}/U_plus_t2/",
-                ],
-                # Central estimate of stock change and loss/gain classification masks
-                f"{DELTA_MEAN_PATTERN}_{INTERVAL_LABEL}": [
-                    delta_mean_masked, 'float32', DELTA_MEAN_PATTERN, INTERVAL_LABEL,
-                    f"{intermediates_base}/delta_mean/",
+                # Masks
+                f"{VALID_PIXEL_MASK_PATTERN}_{INTERVAL_LABEL}": [
+                    valid.astype(np.float32), 'float32', VALID_PIXEL_MASK_PATTERN, INTERVAL_LABEL,
+                    f"{output_s3_intermed_dir}valid/",
                 ],
                 f"{LOSS_MASK_PATTERN}_{INTERVAL_LABEL}": [
                     loss_mask, 'float32', LOSS_MASK_PATTERN, INTERVAL_LABEL,
-                    f"{intermediates_base}/loss_mask/",
+                    f"{output_s3_intermed_dir}loss_mask/",
                 ],
                 f"{GAIN_MASK_PATTERN}_{INTERVAL_LABEL}": [
                     gain_mask, 'float32', GAIN_MASK_PATTERN, INTERVAL_LABEL,
-                    f"{intermediates_base}/gain_mask/",
+                    f"{output_s3_intermed_dir}gain_mask/",
+                ],
+
+                f"{DELTA_MEAN_PATTERN}_{INTERVAL_LABEL}": [
+                    delta_mean_masked, 'float32', DELTA_MEAN_PATTERN, INTERVAL_LABEL,
+                    f"{output_s3_intermed_dir}delta_mean/",
+                ],
+
+                # Per-time-block uncertainty, unmasked
+                f"{U_MINUS_T1_UNMASKED_PATTERN}_{INTERVAL_LABEL}": [
+                    U_minus_t1, 'float32', U_MINUS_T1_UNMASKED_PATTERN, INTERVAL_LABEL,
+                    f"{output_s3_intermed_dir}U_minus_t1_unmasked/",
+                ],
+                f"{U_PLUS_T1_UNMASKED_PATTERN}_{INTERVAL_LABEL}": [
+                    U_plus_t1, 'float32', U_PLUS_T1_UNMASKED_PATTERN, INTERVAL_LABEL,
+                    f"{output_s3_intermed_dir}U_plus_t1_unmasked/",
+                ],
+                f"{U_MINUS_T2_UNMASKED_PATTERN}_{INTERVAL_LABEL}": [
+                    U_minus_t2, 'float32', U_MINUS_T2_UNMASKED_PATTERN, INTERVAL_LABEL,
+                    f"{output_s3_intermed_dir}U_minus_t2_unmasked/",
+                ],
+                f"{U_PLUS_T2_UNMASKED_PATTERN}_{INTERVAL_LABEL}": [
+                    U_plus_t2, 'float32', U_PLUS_T2_UNMASKED_PATTERN, INTERVAL_LABEL,
+                    f"{output_s3_intermed_dir}U_plus_t2_unmasked/",
+                ],
+                # Per-time-block uncertainty masked to mineral soil
+                f"{U_MINUS_T1_PATTERN}_{INTERVAL_LABEL}": [
+                    U_minus_t1_min_soil_masked, 'float32', U_MINUS_T1_PATTERN, INTERVAL_LABEL,
+                    f"{output_s3_intermed_dir}U_minus_t1_min_soil/",
+                ],
+                f"{U_PLUS_T1_PATTERN}_{INTERVAL_LABEL}": [
+                    U_plus_t1_min_soil_masked, 'float32', U_PLUS_T1_PATTERN, INTERVAL_LABEL,
+                    f"{output_s3_intermed_dir}U_plus_t1_min_soil/",
+                ],
+                f"{U_MINUS_T2_PATTERN}_{INTERVAL_LABEL}": [
+                    U_minus_t2_min_soil_masked, 'float32', U_MINUS_T2_PATTERN, INTERVAL_LABEL,
+                    f"{output_s3_intermed_dir}U_minus_t2_min_soil/",
+                ],
+                f"{U_PLUS_T2_PATTERN}_{INTERVAL_LABEL}": [
+                    U_plus_t2_min_soil_masked, 'float32', U_PLUS_T2_PATTERN, INTERVAL_LABEL,
+                    f"{output_s3_intermed_dir}U_plus_t2_min_soil/",
+                ],
+                # Delta uncertainty, unmasked
+                f"{U_MINUS_DELTA_UNMASKED_PATTERN}_{INTERVAL_LABEL}": [
+                    U_minus_delta, 'float32', U_MINUS_DELTA_UNMASKED_PATTERN, INTERVAL_LABEL,
+                    f"{output_s3_intermed_dir}U_minus_delta/",
+                ],
+                f"{U_PLUS_DELTA_UNMASKED_PATTERN}_{INTERVAL_LABEL}": [
+                    U_plus_delta, 'float32', U_PLUS_DELTA_UNMASKED_PATTERN, INTERVAL_LABEL,
+                    f"{output_s3_intermed_dir}U_plus_delta/",
                 ],
             })
 
@@ -442,16 +544,10 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_inter
         with ThreadPoolExecutor(max_workers=5) as executor:
             executor.map(lambda args: uu.upload_raster_to_s3(*args), upload_tasks)
 
-        lu.print_and_log(
-            f"Uploaded {len(upload_tasks)} GeoTIFF(s) for {bounds_str} ({tile_id}): {uu.timestr()}",
-            False, logger_worker
-        )
+        lu.print_and_log(f"Uploaded {len(upload_tasks)} GeoTIFF(s) for {bounds_str} ({tile_id}): {uu.timestr()}",False, logger_worker)
 
     chunk_end_time = time.time()
-    lu.print_and_log(
-        f"  Total chunk processing for {bounds_str} in {round(chunk_end_time - chunk_start_time)} seconds: {uu.timestr()}",
-        False, logger_worker
-    )
+    lu.print_and_log(f"  Total chunk processing for {bounds_str} in {round(chunk_end_time - chunk_start_time)} seconds: {uu.timestr()}",False, logger_worker)
 
     uu.delete_s3_task_file(stage, bounds, is_large_run, logger_worker)
 
@@ -511,9 +607,10 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
 
     output_s3_dir = f"{cn.full_bucket_prefix}/{cn.SOC_uncertainty_output_base}/{run_date}/"
     output_s3_dir = output_s3_dir.replace(cn.model_version_type_description_placeholder, f"version_{cn.SOC_model_version_underscore}__{model_type}__{model_path_description}")
+    output_s3_intermed_dir = f"{output_s3_dir}intermediates/"
     main_logger.info(f"Main output S3 directory: {output_s3_dir}")
     if upload_intermediates:
-        main_logger.info(f"Intermediates S3 directory: {output_s3_dir}intermediates/")
+        main_logger.info(f"Intermediates S3 directory: {output_s3_intermed_dir}")
 
 
     ### Step 1: Read metadata from 120m COGs
@@ -574,7 +671,7 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
             future = client.submit(
                 compute_soc_uncertainty,
                 chunk, is_large_run, stage, no_upload, upload_intermediates,
-                nodata_val_120m, pixel_size_deg_120m, output_s3_dir
+                nodata_val_120m, pixel_size_deg_120m, output_s3_dir, output_s3_intermed_dir
             )
             futures.append(future)
 
@@ -591,6 +688,7 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
                      sum_U_minus_loss_sq, sum_U_plus_loss_sq,
                      sum_U_minus_gain_sq, sum_U_plus_gain_sq,
                      chunk_stats) = result
+
                     total_sum_U_minus_sq      += sum_U_minus_sq
                     total_sum_U_plus_sq       += sum_U_plus_sq
                     total_sum_U_minus_loss_sq += sum_U_minus_loss_sq
@@ -618,6 +716,9 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
         del futures, batch_results
         client.run(gc.collect)
         uu.stage_duration(start_time, uu.timestr(), f"{stage}, batch {i}", main_logger)
+
+    print("formatted_results:", formatted_results)
+    sys.quit()
 
 
     ### Step 3: Preliminary worker log
