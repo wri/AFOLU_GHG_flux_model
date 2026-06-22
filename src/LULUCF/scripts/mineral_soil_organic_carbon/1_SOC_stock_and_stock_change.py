@@ -84,10 +84,6 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
     # Download dictionary is the SOC global COGs
     download_dict = cn.SOC_COGS
 
-    # Converts the raw COG's kg C/m^3 (top 30 cm) that is rescaled by 10 -> Mg C/ha without the rescaling.
-    # OGH rescaled the global COGs by 10 to make them ints instead of floats to save storage.
-    SOC_CONVERSION_FACTOR = 3.0 / 10.0  # = 0.3
-
     # Report the number of retries for the task. Untested.
     # per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/694bfc7f-fab0-8332-b903-d5efa84b61c3
     retry_env_var = os.environ.get("DASK_TASK_RETRIES", "0")
@@ -147,7 +143,7 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
         interval_array_full_extent = np.where(interval_array_full_extent == nodata_val, np.nan, interval_array_full_extent)
 
         # Convert units from kg C/m³ * 10 for 0-30 cm depth -> Mg C/ha for 0-30 cm depth
-        converted_array_full_extent = (interval_array_full_extent * SOC_CONVERSION_FACTOR).astype(np.float32)
+        converted_array_full_extent = (interval_array_full_extent * cn.SOC_conversion_factor).astype(np.float32)
 
         # print(f"\n--- Chunk {bounds_str} ---")
         # print(f"SOC density array shape for {bounds_str} for {end_year}: {converted_array_full_extent.shape}")

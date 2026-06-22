@@ -984,6 +984,18 @@ SOC_change_intervals_annual = [2016, 2017, 2018, 2019, 2020, 2021, 2022]
 
 SOC_path_zarr = f"{SOC_outputs_path}zarr/CHUNK_SIZE_pixels/RUN_DATE/SOC_zarr.zarr"
 
+# Converts the raw COG's kg C/m^3 (top 30 cm) that is rescaled by 10 -> Mg C/ha without the rescaling.
+# OGH rescaled the global COGs by 10 to make them ints instead of floats to save storage.
+# OGH COG encoding: raw integer × 0.1 = kg C/m³ volumetric density.
+# Depth: 0–30 cm = 0.3 m.
+# Conversion to Mg C per pixel: density × depth × pixel_area_m² / 1000 (=0.3)
+OGH_SCALE  = np.float64(0.1)    # raw → kg C/m³
+DEPTH_M    = np.float64(0.3)    # 0–30 cm layer
+M2_PER_HA  = np.float64(10000) # m²/ha
+KG_TO_MG   = np.float64(1000)  # kg/Mg
+SOC_conversion_factor = np.float32(OGH_SCALE * DEPTH_M * M2_PER_HA / KG_TO_MG)
+
+
 # Extent of raw COGs
 SOC_density_full_extent_pattern = "SOC_density__full_extent__0-30cm_MgC"
 SOC_density_full_extent_dir = f"{SOC_outputs_path}{SOC_density_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"

@@ -2,6 +2,10 @@
 Computes per-pixel asymmetric uncertainty (U⁻_Δ,j and U⁺_Δ,j, Mg C per 120m pixel) in SOC
 stock change for the 2020 interval (avg 2010–2015 → avg 2015–2020) at 120m resolution,
 and the global U⁻_global / U⁺_global (Mg C and Tg C).
+Uncertainty for net change, gross loss, and gross gain.
+
+Pixels with net change = 0 Mg C/ha/yr (same density both intervals) don't get included in the loss or gain uncertainty
+but are still included in the net change uncertainty because they have uncertainty around their densities.
 
 Method: Uncertainty_Propagation_in_SOC_Stocks__from_Serkan_Isik_20260605.pdf
         (OpenGeoHub Foundation, 2026-06-05)
@@ -102,6 +106,8 @@ SOC_UNCERTAINTY_COGS = {
     'p84_t2':  f'{_OGH_BASE}/{_OGH_VAR}_p84_120m_{_SUFFIX_T2}',
 }
 
+INTERVAL_LABEL = '2020'   # avg 2015-2020 minus avg 2010-2015
+
 # ─── Output constants ─────────────────────────────────────────────────────────
 # Main outputs: U⁻_Δ and U⁺_Δ (Mg C per 120m pixel), masked to mineral soil
 U_MINUS_DELTA_PATTERN = 'SOC_uncertainty_lower__mineral_soil_extent__MgC_per_pixel'
@@ -115,19 +121,6 @@ U_PLUS_T2_PATTERN  = 'SOC_uncertainty_upper_t2__mineral_soil_extent__MgC_per_pix
 DELTA_MEAN_PATTERN = 'SOC_delta_mean__mineral_soil_extent__MgC_per_pixel'
 LOSS_MASK_PATTERN  = 'SOC_loss_mask__mineral_soil_extent'
 GAIN_MASK_PATTERN  = 'SOC_gain_mask__mineral_soil_extent'
-
-
-# ─── Physical constants ───────────────────────────────────────────────────────
-# [PDF §1] OGH COG encoding: raw integer × 0.1 = kg C/m³ volumetric density.
-# Depth: 0–30 cm = 0.3 m.
-# Conversion to Mg C per pixel: density × depth × pixel_area_m² / 1000
-# pixel_area_m² is latitude-dependent (see _pixel_area_m2 helper).
-OGH_SCALE  = np.float64(0.1)    # raw → kg C/m³
-DEPTH_M    = np.float64(0.3)    # 0–30 cm layer
-KG_TO_MG   = np.float64(1000)  # kg/Mg
-M2_PER_HA  = np.float64(10000) # m²/ha
-
-INTERVAL_LABEL = '2020'   # avg 2015-2020 minus avg 2010-2015
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -198,7 +191,7 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_inter
     chunk_deg = bounds[2] - bounds[0]
     chunk_length_pixels_120m = max(1, int(round(chunk_deg / pixel_size_deg_120m)))
 
-    lu.print_and_log(f"Processing {bounds_str} ({tile_id}): 30m={chunk_length_pixels_30m}px  120m={chunk_length_pixels_120m}px",False, logger_worker)
+    lu.print_and_log(f"Processing {bounds_str} ({tile_id}): 30m={chunk_length_pixels_30m}px/chunk;  120m={chunk_length_pixels_120m}px/chunk",False, logger_worker)
 
 
     ### Part 1: Download 120m COGs (6 files, concurrent)
@@ -221,7 +214,7 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_inter
                 lu.print_and_log(f"WARNING: {key} inaccessible for {bounds_str} — filling with NaN. Status: {status}",False, logger_worker)
                 data = np.full(expected_shape, np.nan, dtype=np.float32)
             raw_arrays[key] = data
-    print("raw_arrays:", raw_arrays)
+    # print("raw_arrays:", raw_arrays)
 
     ### Part 2: Download 30m organic soil mask
     # [PDF §1, §6] Organic-soil pixels are excluded from uncertainty outputs.
@@ -247,25 +240,31 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_inter
     ### Part 4: Convert raw OGH integer → Mg C per 120m pixel (two steps)
     # [PDF §1] nodata_val_120m → NaN; NaN arrays from inaccessible COGs propagate through all steps.
 
-    # Step 1: raw integer → Mg C/ha  (volumetric density × depth, unit conversion)
-    # raw × 0.1 (kg/m³) × 0.3 m depth × 10000 m²/ha / 1000 (kg/Mg) = Mg C/ha
-    density_to_MgC_per_ha = np.float32(OGH_SCALE * DEPTH_M * M2_PER_HA / KG_TO_MG)
-
-    # Step 2: Mg C/ha → Mg C per 120m pixel  (multiply by latitude-dependent pixel area in ha)
+    lu.print_and_log(f"SOC_conversion_factor: {cn.SOC_conversion_factor}", is_large_run, logger_worker)
     pixel_area_120m_m2 = pixel_area_m2(bounds, chunk_length_pixels_120m, pixel_size_deg_120m)
-    pixel_area_120m_ha = (pixel_area_120m_m2 / M2_PER_HA).astype(np.float32)
+    # print("pixel_area_120m_m2:", pixel_area_120m_m2)
+    pixel_area_120m_ha = (pixel_area_120m_m2 / cn.M2_PER_HA).astype(np.float32)
+    # print("pixel_area_120m_ha:", pixel_area_120m_ha)
 
+    # Nested function just to avoid having to supply more arguments to the function (e.g., pixel_area_120m_ha)
     def convert(arr):
         nodata_masked = np.where(arr == nodata_val_120m, np.nan, arr.astype(np.float32))
-        MgC_per_ha = nodata_masked * density_to_MgC_per_ha   # Mg C/ha
+        MgC_per_ha = nodata_masked * cn.SOC_conversion_factor   # Mg C/ha
         return (MgC_per_ha * pixel_area_120m_ha).astype(np.float32)  # Mg C/pixel
 
+    # Mg C/m^3, 0-30 cm depth → Mg C/ha → Mg C/120m pixel (multiply by latitude-dependent pixel area in ha)
     mean_t1 = convert(raw_arrays['mean_t1'])
     p16_t1  = convert(raw_arrays['p16_t1'])
     p84_t1  = convert(raw_arrays['p84_t1'])
     mean_t2 = convert(raw_arrays['mean_t2'])
     p16_t2  = convert(raw_arrays['p16_t2'])
     p84_t2  = convert(raw_arrays['p84_t2'])
+    print("mean_t1:", mean_t1)
+    # print("p16_t1:", p16_t1)
+    # print("p84_t1:", p84_t1)
+    print("mean_t2:", mean_t2)
+    # print("p16_t2:", p16_t2)
+    # print("p84_t2:", p84_t2)
 
 
     ### Part 5: Per-pixel asymmetric uncertainty for each time block
@@ -279,6 +278,10 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_inter
     U_plus_t1  = np.maximum(p84_t1 - mean_t1, np.float32(0.0))
     U_minus_t2 = np.maximum(mean_t2 - p16_t2, np.float32(0.0))
     U_plus_t2  = np.maximum(p84_t2 - mean_t2, np.float32(0.0))
+    # print("U_minus_t1:", U_minus_t1)
+    # print("U_plus_t1:", U_plus_t1)
+    # print("U_minus_t2:", U_minus_t2)
+    # print("U_plus_t2:", U_plus_t2)
 
 
     ### Part 6: Propagate uncertainty through the stock-change computation
@@ -288,37 +291,58 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_inter
 
     U_minus_delta = np.sqrt(U_minus_t2 ** 2 + U_plus_t1  ** 2).astype(np.float32)
     U_plus_delta  = np.sqrt(U_plus_t2  ** 2 + U_minus_t1 ** 2).astype(np.float32)
+    # print("U_minus_delta:", U_minus_delta)
+    # print("U_plus_delta:", U_plus_delta)
 
 
     ### Part 7: Apply masks and classify loss/gain pixels
-    # [PDF §6] Exclude pixels outside mineral-soil mask.
+    # [PDF §6] Exclude pixels outside mineral soil mask.
     # has_data: NaN in either time block's U → exclude (data quality; propagated from Parts 4-5).
 
     has_data = ~(np.isnan(U_minus_delta) | np.isnan(U_plus_delta))
+    # print("has_data:", has_data)
     valid = has_data & has_mineral_soil
+    print("valid:", valid)
 
-    U_minus_delta_masked = np.where(valid, U_minus_delta, np.nan).astype(np.float32)
-    U_plus_delta_masked  = np.where(valid, U_plus_delta,  np.nan).astype(np.float32)
+    # Per-pixel lower uncertainty in SOC stock change (Mg C per 120m pixel), set to NaN outside the valid mineral soil extent
+    # Per-pixel upper uncertainty in SOC stock change (Mg C per 120m pixel), set to NaN outside the valid mineral soil extent
+    U_minus_delta_min_soil_masked = np.where(valid, U_minus_delta, np.nan).astype(np.float32)
+    U_plus_delta_min_soil_masked  = np.where(valid, U_plus_delta,  np.nan).astype(np.float32)
+    print("U_minus_delta_min_soil_masked:", U_minus_delta_min_soil_masked)
+    print("U_plus_delta_min_soil_masked:", U_plus_delta_min_soil_masked)
 
-    # Per-time-block intermediates: same mineral-soil mask, but per-block data validity
+
+    # Per-time-block intermediates: same mineral soil mask, but per-block data validity instead of validity for both intervals simultaneously (as done above).
+    # This isn't actually used in any calculations; it's just for QC.
     has_data_t1 = ~(np.isnan(U_minus_t1) | np.isnan(U_plus_t1))
     has_data_t2 = ~(np.isnan(U_minus_t2) | np.isnan(U_plus_t2))
-    U_minus_t1_masked = np.where(has_data_t1 & has_mineral_soil, U_minus_t1, np.nan).astype(np.float32)
-    U_plus_t1_masked  = np.where(has_data_t1 & has_mineral_soil, U_plus_t1,  np.nan).astype(np.float32)
-    U_minus_t2_masked = np.where(has_data_t2 & has_mineral_soil, U_minus_t2, np.nan).astype(np.float32)
-    U_plus_t2_masked  = np.where(has_data_t2 & has_mineral_soil, U_plus_t2,  np.nan).astype(np.float32)
+    U_minus_t1_min_soil_masked = np.where(has_data_t1 & has_mineral_soil, U_minus_t1, np.nan).astype(np.float32)
+    U_plus_t1_min_soil_masked  = np.where(has_data_t1 & has_mineral_soil, U_plus_t1,  np.nan).astype(np.float32)
+    U_minus_t2_min_soil_masked = np.where(has_data_t2 & has_mineral_soil, U_minus_t2, np.nan).astype(np.float32)
+    U_plus_t2_min_soil_masked  = np.where(has_data_t2 & has_mineral_soil, U_plus_t2,  np.nan).astype(np.float32)
+    # print("U_minus_t1_min_soil_masked:", U_minus_t1_min_soil_masked)
+    # print("U_plus_t1_min_soil_masked:", U_plus_t1_min_soil_masked)
+    # print("U_minus_t2_min_soil_masked:", U_minus_t2_min_soil_masked)
+    # print("U_plus_t2_min_soil_masked:", U_plus_t2_min_soil_masked)
 
     # Central estimate of stock change at 120m; used to classify loss vs gain pixels.
     # NaN where has_data is False (inaccessible COG) so those pixels are excluded from
     # both gross loss and gross gain — they don't silently inflate either category.
     delta_mean_raw = (mean_t2 - mean_t1).astype(np.float32)
     delta_mean_masked = np.where(valid, delta_mean_raw, np.nan).astype(np.float32)
+    print("delta_mean_masked:", delta_mean_masked)
+
 
     # Loss/gain classification based on central estimate sign (fixed classification).
-    # Pixels where |delta_mean| < U⁺_Δ could plausibly flip sign, but are treated as
-    # pure loss or gain — a standard first-order approximation (see module docstring).
+    # Pixels where |delta_mean| < U⁺_Δ could plausibly flip sign (i.e. where mean change is less than uncertainty),
+    # but are treated as pure loss or gain for simplicity (see note at top).
+    # Pixels with net change = 0 aren't included in either category (and therefore not in the uncertainty of either).
     is_loss = valid & (delta_mean_raw < np.float32(0.0))
     is_gain = valid & (delta_mean_raw > np.float32(0.0))
+    print("is_loss:", is_loss)
+    print("is_gain:", is_gain)
+
+    sys.quit()
 
     # Binary masks: 1.0 where classified, NaN elsewhere (float32 for GeoTIFF compatibility)
     loss_mask = np.where(is_loss, np.float32(1.0), np.nan).astype(np.float32)
@@ -331,8 +355,8 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_inter
     # For gross loss: U⁻_Δ = how much deeper the loss could be; U⁺_Δ = how much shallower.
     # For gross gain: U⁺_Δ = how much larger the gain could be; U⁻_Δ = how much smaller.
 
-    sum_U_minus_squared     = float(np.nansum(U_minus_delta_masked ** 2))
-    sum_U_plus_squared      = float(np.nansum(U_plus_delta_masked  ** 2))
+    sum_U_minus_squared     = float(np.nansum(U_minus_delta_min_soil_masked ** 2))
+    sum_U_plus_squared      = float(np.nansum(U_plus_delta_min_soil_masked  ** 2))
     sum_U_minus_loss_sq     = float(np.nansum(np.where(is_loss, U_minus_delta ** 2, np.float32(0.0))))
     sum_U_plus_loss_sq      = float(np.nansum(np.where(is_loss, U_plus_delta  ** 2, np.float32(0.0))))
     sum_U_minus_gain_sq     = float(np.nansum(np.where(is_gain, U_minus_delta ** 2, np.float32(0.0))))
@@ -347,12 +371,12 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_inter
     ### Part 9: Chunk stats (always; useful for QC even without upload)
 
     for arr, name in [
-        (U_minus_delta_masked, f"{U_MINUS_DELTA_PATTERN}_{INTERVAL_LABEL}"),
-        (U_plus_delta_masked,  f"{U_PLUS_DELTA_PATTERN}_{INTERVAL_LABEL}"),
-        (U_minus_t1_masked,    f"{U_MINUS_T1_PATTERN}_{INTERVAL_LABEL}"),
-        (U_plus_t1_masked,     f"{U_PLUS_T1_PATTERN}_{INTERVAL_LABEL}"),
-        (U_minus_t2_masked,    f"{U_MINUS_T2_PATTERN}_{INTERVAL_LABEL}"),
-        (U_plus_t2_masked,     f"{U_PLUS_T2_PATTERN}_{INTERVAL_LABEL}"),
+        (U_minus_delta_min_soil_masked, f"{U_MINUS_DELTA_PATTERN}_{INTERVAL_LABEL}"),
+        (U_plus_delta_min_soil_masked,  f"{U_PLUS_DELTA_PATTERN}_{INTERVAL_LABEL}"),
+        (U_minus_t1_min_soil_masked,    f"{U_MINUS_T1_PATTERN}_{INTERVAL_LABEL}"),
+        (U_plus_t1_min_soil_masked,     f"{U_PLUS_T1_PATTERN}_{INTERVAL_LABEL}"),
+        (U_minus_t2_min_soil_masked,    f"{U_MINUS_T2_PATTERN}_{INTERVAL_LABEL}"),
+        (U_plus_t2_min_soil_masked,     f"{U_PLUS_T2_PATTERN}_{INTERVAL_LABEL}"),
         (delta_mean_masked,    f"{DELTA_MEAN_PATTERN}_{INTERVAL_LABEL}"),
         (loss_mask,            f"{LOSS_MASK_PATTERN}_{INTERVAL_LABEL}"),
         (gain_mask,            f"{GAIN_MASK_PATTERN}_{INTERVAL_LABEL}"),
@@ -368,29 +392,29 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_inter
 
         out_dict = {
             f"{U_MINUS_DELTA_PATTERN}_{INTERVAL_LABEL}": [
-                U_minus_delta_masked, 'float32', U_MINUS_DELTA_PATTERN, INTERVAL_LABEL, output_without_bucket,
+                U_minus_delta_min_soil_masked, 'float32', U_MINUS_DELTA_PATTERN, INTERVAL_LABEL, output_without_bucket,
             ],
             f"{U_PLUS_DELTA_PATTERN}_{INTERVAL_LABEL}": [
-                U_plus_delta_masked, 'float32', U_PLUS_DELTA_PATTERN, INTERVAL_LABEL, output_without_bucket,
+                U_plus_delta_min_soil_masked, 'float32', U_PLUS_DELTA_PATTERN, INTERVAL_LABEL, output_without_bucket,
             ],
         }
 
         if upload_intermediates:
             out_dict.update({
                 f"{U_MINUS_T1_PATTERN}_{INTERVAL_LABEL}": [
-                    U_minus_t1_masked, 'float32', U_MINUS_T1_PATTERN, INTERVAL_LABEL,
+                    U_minus_t1_min_soil_masked, 'float32', U_MINUS_T1_PATTERN, INTERVAL_LABEL,
                     f"{intermediates_base}/U_minus_t1/",
                 ],
                 f"{U_PLUS_T1_PATTERN}_{INTERVAL_LABEL}": [
-                    U_plus_t1_masked, 'float32', U_PLUS_T1_PATTERN, INTERVAL_LABEL,
+                    U_plus_t1_min_soil_masked, 'float32', U_PLUS_T1_PATTERN, INTERVAL_LABEL,
                     f"{intermediates_base}/U_plus_t1/",
                 ],
                 f"{U_MINUS_T2_PATTERN}_{INTERVAL_LABEL}": [
-                    U_minus_t2_masked, 'float32', U_MINUS_T2_PATTERN, INTERVAL_LABEL,
+                    U_minus_t2_min_soil_masked, 'float32', U_MINUS_T2_PATTERN, INTERVAL_LABEL,
                     f"{intermediates_base}/U_minus_t2/",
                 ],
                 f"{U_PLUS_T2_PATTERN}_{INTERVAL_LABEL}": [
-                    U_plus_t2_masked, 'float32', U_PLUS_T2_PATTERN, INTERVAL_LABEL,
+                    U_plus_t2_min_soil_masked, 'float32', U_PLUS_T2_PATTERN, INTERVAL_LABEL,
                     f"{intermediates_base}/U_plus_t2/",
                 ],
                 # Central estimate of stock change and loss/gain classification masks
