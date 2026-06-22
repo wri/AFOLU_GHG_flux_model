@@ -1012,6 +1012,10 @@ SOC_outputs_to_zarr = [
 ]
 
 
+# S3 base path (without s3://gfw2-data/)
+SOC_uncertainty_output_base = (f'{SOC_outputs_path}SOC_uncertainty')
+
+
 ### Soil summative outputs
 
 soil_output_patterns = [
