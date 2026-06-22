@@ -129,11 +129,6 @@ MEAN_T2_PATTERN = 'SOC_mean_t2__full_extent__MgC_per_pixel'
 P16_T2_PATTERN  = 'SOC_p16_t2__full_extent__MgC_per_pixel'
 P84_T2_PATTERN  = 'SOC_p84_t2__full_extent__MgC_per_pixel'
 DELTA_MEAN_PATTERN = 'SOC_delta_mean__mineral_soil_extent__MgC_per_pixel'
-# Per-time-block uncertainty, unmasked (Mg C per pixel)
-U_MINUS_T1_UNMASKED_PATTERN = 'SOC_uncertainty_lower_t1__full_extent__MgC_per_pixel'
-U_PLUS_T1_UNMASKED_PATTERN  = 'SOC_uncertainty_upper_t1__full_extent__MgC_per_pixel'
-U_MINUS_T2_UNMASKED_PATTERN = 'SOC_uncertainty_lower_t2__full_extent__MgC_per_pixel'
-U_PLUS_T2_UNMASKED_PATTERN  = 'SOC_uncertainty_upper_t2__full_extent__MgC_per_pixel'
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -387,12 +382,6 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload,
         (p84_t2,  f"{P84_T2_PATTERN}_{INTERVAL_LABEL}"),
         (delta_mean_masked, f"{DELTA_MEAN_PATTERN}_{INTERVAL_LABEL}"),
 
-        # Per-time-block uncertainty, unmasked
-        (U_minus_t1, f"{U_MINUS_T1_UNMASKED_PATTERN}_{INTERVAL_LABEL}"),
-        (U_plus_t1,  f"{U_PLUS_T1_UNMASKED_PATTERN}_{INTERVAL_LABEL}"),
-        (U_minus_t2, f"{U_MINUS_T2_UNMASKED_PATTERN}_{INTERVAL_LABEL}"),
-        (U_plus_t2,  f"{U_PLUS_T2_UNMASKED_PATTERN}_{INTERVAL_LABEL}"),
-
         # Delta uncertainty, unmasked and masked
         (U_minus_delta,              f"{U_MINUS_DELTA_UNMASKED_PATTERN}_{INTERVAL_LABEL}"),
         (U_plus_delta,               f"{U_PLUS_DELTA_UNMASKED_PATTERN}_{INTERVAL_LABEL}"),
@@ -457,24 +446,6 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload,
             f"{GAIN_MASK_PATTERN}_{INTERVAL_LABEL}": [
                 gain_mask, 'float32', GAIN_MASK_PATTERN, INTERVAL_LABEL,
                 f"{output_s3_dir_no_bucket}gain_mask_min_soil/",
-            ],
-
-            # Per-time-block uncertainty, unmasked
-            f"{U_MINUS_T1_UNMASKED_PATTERN}_{INTERVAL_LABEL}": [
-                U_minus_t1, 'float32', U_MINUS_T1_UNMASKED_PATTERN, INTERVAL_LABEL,
-                f"{output_s3_dir_no_bucket}U_minus_t1_full_extent/",
-            ],
-            f"{U_PLUS_T1_UNMASKED_PATTERN}_{INTERVAL_LABEL}": [
-                U_plus_t1, 'float32', U_PLUS_T1_UNMASKED_PATTERN, INTERVAL_LABEL,
-                f"{output_s3_dir_no_bucket}U_plus_t1_full_extent/",
-            ],
-            f"{U_MINUS_T2_UNMASKED_PATTERN}_{INTERVAL_LABEL}": [
-                U_minus_t2, 'float32', U_MINUS_T2_UNMASKED_PATTERN, INTERVAL_LABEL,
-                f"{output_s3_dir_no_bucket}U_minus_t2_full_extent/",
-            ],
-            f"{U_PLUS_T2_UNMASKED_PATTERN}_{INTERVAL_LABEL}": [
-                U_plus_t2, 'float32', U_PLUS_T2_UNMASKED_PATTERN, INTERVAL_LABEL,
-                f"{output_s3_dir_no_bucket}U_plus_t2_full_extent/",
             ],
 
             # Delta uncertainty, unmasked
