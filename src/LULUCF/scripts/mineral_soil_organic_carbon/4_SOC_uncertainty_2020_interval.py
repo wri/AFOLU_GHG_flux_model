@@ -259,10 +259,10 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_inter
     mean_t2 = convert(raw_arrays['mean_t2'])
     p16_t2  = convert(raw_arrays['p16_t2'])
     p84_t2  = convert(raw_arrays['p84_t2'])
-    print("mean_t1:", mean_t1)
+    # print("mean_t1:", mean_t1)
     # print("p16_t1:", p16_t1)
     # print("p84_t1:", p84_t1)
-    print("mean_t2:", mean_t2)
+    # print("mean_t2:", mean_t2)
     # print("p16_t2:", p16_t2)
     # print("p84_t2:", p84_t2)
 
@@ -302,7 +302,7 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_inter
     has_data = ~(np.isnan(U_minus_delta) | np.isnan(U_plus_delta))
     # print("has_data:", has_data)
     valid = has_data & has_mineral_soil
-    print("valid:", valid)
+    # print("valid:", valid)
 
     # Per-pixel lower uncertainty in SOC stock change (Mg C per 120m pixel), set to NaN outside the valid mineral soil extent
     # Per-pixel upper uncertainty in SOC stock change (Mg C per 120m pixel), set to NaN outside the valid mineral soil extent
@@ -310,7 +310,6 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_inter
     U_plus_delta_min_soil_masked  = np.where(valid, U_plus_delta,  np.nan).astype(np.float32)
     print("U_minus_delta_min_soil_masked:", U_minus_delta_min_soil_masked)
     print("U_plus_delta_min_soil_masked:", U_plus_delta_min_soil_masked)
-
 
     # Per-time-block intermediates: same mineral soil mask, but per-block data validity instead of validity for both intervals simultaneously (as done above).
     # This isn't actually used in any calculations; it's just for QC.
@@ -330,8 +329,7 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_inter
     # both gross loss and gross gain — they don't silently inflate either category.
     delta_mean_raw = (mean_t2 - mean_t1).astype(np.float32)
     delta_mean_masked = np.where(valid, delta_mean_raw, np.nan).astype(np.float32)
-    print("delta_mean_masked:", delta_mean_masked)
-
+    # print("delta_mean_masked:", delta_mean_masked)
 
     # Loss/gain classification based on central estimate sign (fixed classification).
     # Pixels where |delta_mean| < U⁺_Δ could plausibly flip sign (i.e. where mean change is less than uncertainty),
@@ -342,16 +340,17 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_inter
     print("is_loss:", is_loss)
     print("is_gain:", is_gain)
 
-    sys.quit()
-
     # Binary masks: 1.0 where classified, NaN elsewhere (float32 for GeoTIFF compatibility)
     loss_mask = np.where(is_loss, np.float32(1.0), np.nan).astype(np.float32)
     gain_mask = np.where(is_gain, np.float32(1.0), np.nan).astype(np.float32)
+    # print("loss_mask:", loss_mask)
+    # print("gain_mask:", gain_mask)
 
 
     ### Part 8: Per-chunk contributions for global aggregation
-    # [PDF §7] Accumulated separately for net change, gross loss, and gross gain.
-    # Country-level aggregation [PDF §6] is skipped; pixel values used directly.
+    # [PDF §7] Accumulated separately for net change, gross loss, and gross gain (the latter two not in Serkan's document).
+    # Country-level aggregation [PDF §6] is skipped; pixel values used directly for global aggregation (via chunks instead of countries).
+    # This is essentially applying the equations in PDF §7 for countries to individual pixels in the chunk instead.
     # For gross loss: U⁻_Δ = how much deeper the loss could be; U⁺_Δ = how much shallower.
     # For gross gain: U⁺_Δ = how much larger the gain could be; U⁻_Δ = how much smaller.
 
@@ -361,11 +360,14 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload, upload_inter
     sum_U_plus_loss_sq      = float(np.nansum(np.where(is_loss, U_plus_delta  ** 2, np.float32(0.0))))
     sum_U_minus_gain_sq     = float(np.nansum(np.where(is_gain, U_minus_delta ** 2, np.float32(0.0))))
     sum_U_plus_gain_sq      = float(np.nansum(np.where(is_gain, U_plus_delta  ** 2, np.float32(0.0))))
+    # print("sum_U_minus_squared:", sum_U_minus_squared)
+    # print("sum_U_plus_squared:", sum_U_plus_squared)
+    # print("sum_U_minus_loss_sq:", sum_U_minus_loss_sq)
+    # print("sum_U_plus_loss_sq:", sum_U_plus_loss_sq)
+    # print("sum_U_minus_gain_sq:", sum_U_minus_gain_sq)
+    # print("sum_U_plus_gain_sq:", sum_U_plus_gain_sq)
 
-    lu.print_and_log(
-        f"After computing U⁻/U⁺_Δ for {bounds_str}: {process.memory_info().rss / 1024 ** 2:.2f} MB",
-        False, logger_worker
-    )
+    lu.print_and_log(f"After computing U⁻/U⁺_Δ for {bounds_str}: {process.memory_info().rss / 1024 ** 2:.2f} MB",False, logger_worker)
 
 
     ### Part 9: Chunk stats (always; useful for QC even without upload)
