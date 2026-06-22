@@ -19,23 +19,23 @@ Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Coiled small tests:
 python -m src.utilities.create_cluster -n 1 -m 64 -cn vegetation_zonal_stats --zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.vegetation_zonal_stats -cn vegetation_zonal_stats -bb 10 49 11 50 -fv 2 -ft 2 -mt standard -mpd global --input_date YYYYMMDD -zd test_box
+python -m src.LULUCF.scripts.zonal_statistics.5_vegetation_zonal_stats -cn vegetation_zonal_stats -bb 10 49 11 50 -fv 2 -ft 2 -mt standard -mpd global --input_date YYYYMMDD -zd test_box
 
 Coiled 8-tile test (Central and East Africa):
 python -m src.utilities.create_cluster -n 50 -m 64 -cn vegetation_zonal_stats --zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.vegetation_zonal_stats -cn vegetation_zonal_stats -bb 13 -14 44 -3 -fv 3 -ft 3 -mt standard -mpd global --input_date YYYYMMDD -zd Central_Africa_test
+python -m src.LULUCF.scripts.zonal_statistics.5_vegetation_zonal_stats -cn vegetation_zonal_stats -bb 13 -14 44 -3 -fv 3 -ft 3 -mt standard -mpd global --input_date YYYYMMDD -zd Central_Africa_test
 
 Coiled Cerrado test (174 features):
 python -m src.utilities.create_cluster -n 50 -m 64 -cn vegetation_zonal_stats --zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.vegetation_zonal_stats -cn vegetation_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd Cerrado_test -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp
+python -m src.LULUCF.scripts.zonal_statistics.5_vegetation_zonal_stats -cn vegetation_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd Cerrado_test -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp
 
 Coiled large shapefile test (1884 features):
 python -m src.utilities.create_cluster -n 50 -m 64 -cn vegetation_zonal_stats --zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.vegetation_zonal_stats -cn vegetation_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd 1884_chunk_test -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp
+python -m src.LULUCF.scripts.zonal_statistics.5_vegetation_zonal_stats -cn vegetation_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd 1884_chunk_test -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp
 
 Full run:
 python -m src.utilities.create_cluster -n 50 -m 64 -cn vegetation_zonal_stats --zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.vegetation_zonal_stats -cn vegetation_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Zonal stats for vegetation model v1.0.5 (2016-2024)."
+python -m src.LULUCF.scripts.zonal_statistics.5_vegetation_zonal_stats -cn vegetation_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Zonal stats for vegetation model v1.0.5 (2016-2024)."
 
 #TODO Add zonal stats field name output corrections, as done in convert_indiv_tiles_to_wide() in notebook, e.g., density to stock, add _yr to fluxes
 """

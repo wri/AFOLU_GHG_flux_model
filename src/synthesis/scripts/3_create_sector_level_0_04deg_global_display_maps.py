@@ -284,15 +284,14 @@ def _global_avg_annual_Gt(df, col):
     return df.groupby('year')[col].sum().mean() / 1e9
 
 
-def _flux_annotation(df, col, unit='Gt CO$_2$e yr$^{-1}$'):
+def _flux_annotation(df, col, flux_description, unit='Gt CO$_2$e yr$^{-1}$'):
     """Format a bottom-of-map annotation string. Returns None if df is None."""
     if df is None:
         return None
     val = _global_avg_annual_Gt(df, col)
     year_min = df['year'].min()
     year_max = df['year'].max()
-    direction = 'net emissions' if val >= 0 else 'net removals'
-    return f"Average {direction}, {year_min}\u2013{year_max}: \n{val:.2g} {unit}"
+    return f"{flux_description}, {year_min}\u2013{year_max}: \n{val:.2g} {unit}"
 
 
 # ── Map rendering helpers ───────────────────────────────────────────────────────
@@ -691,44 +690,45 @@ def map_LULUCF_maps(lulucf_input_date,
 
     main_logger.info("\n\n\n---Part 1: Mapping net and gross LULUCF flux")
 
-    lulucf_net_core = f"LULUCF_net_flux__{file_version_str}__ktCO2e_yr"
-    jpeg_path_lulucf_net = render_divergent_map(
-        data_lulucf_net, raster_extent, bounding_box_proj, country_shapefile,
-        net_colors_rgb,
-        title_text=f"Net land-based flux\nkt CO$_2$e yr$^{{-1}}$",
-        veg_analysis_years=cn.year_range_str,
-        non_pres_folder=non_pres_folder, pres_folder=pres_folder,
-        jpeg_name=jpeg_name(lulucf_net_core, bounding_box_description),
-        slide_text=lulucf_slide_text_with_disclaimer,
-        logger=main_logger,
-        bottom_annotation=_flux_annotation(df_stats, 'LULUCF_net_flux__MgCO2e_yr'),
-    )
-
     lulucf_emis_core = f"LULUCF_gross_emis__{file_version_str}__ktCO2e_yr"
     jpeg_path_lulucf_emis = render_unidirectional_map(
         data_lulucf_emis, raster_extent, bounding_box_proj, country_shapefile,
         cn.emissions_colors_rgb, cn.emissions_percentiles,
-        title_text=f"Gross land-based emissions\nkt CO$_2$e yr$^{{-1}}$",
+        title_text=f"Gross land-based emissions\n{cn.interval_end_years_annual[0]}-{cn.interval_end_years_annual[-1]}\nkt CO$_2$e yr$^{{-1}}$",
         non_pres_folder=non_pres_folder, pres_folder=pres_folder,
         jpeg_name=jpeg_name(lulucf_emis_core, bounding_box_description),
         slide_text=lulucf_slide_text_with_disclaimer,
         logger=main_logger,
         mask_positive=True,
-        bottom_annotation=_flux_annotation(df_stats, 'LULUCF_gross_emissions__all_gases__MgCO2e_yr'),
+        bottom_annotation=_flux_annotation(df_stats, 'LULUCF_gross_emissions__all_gases__MgCO2e_yr', 'Average gross emissions'),
     )
 
     lulucf_remv_core = f"LULUCF_gross_remv__{file_version_str}__ktCO2e_yr"
     jpeg_path_lulucf_remv = render_unidirectional_map(
         data_lulucf_remv, raster_extent, bounding_box_proj, country_shapefile,
         cn.removals_colors_rgb, cn.removals_percentiles,
-        title_text=f"Gross land-based removals\nkt CO$_2$ yr$^{{-1}}$",
+        title_text=f"Gross land-based removals\n{cn.interval_end_years_annual[0]}-{cn.interval_end_years_annual[-1]}\nkt CO$_2$ yr$^{{-1}}$",
         non_pres_folder=non_pres_folder, pres_folder=pres_folder,
         jpeg_name=jpeg_name(lulucf_remv_core, bounding_box_description),
         slide_text=lulucf_slide_text_with_disclaimer,
         logger=main_logger,
         mask_positive=False,
-        bottom_annotation=_flux_annotation(df_stats, 'LULUCF_gross_removals__MgCO2_yr', unit='Gt CO$_2$ yr$^{-1}$'),
+        bottom_annotation=_flux_annotation(df_stats, 'LULUCF_gross_removals__MgCO2_yr', 'Average gross removals', unit='Gt CO$_2$ yr$^{-1}$'),
     )
+
+    lulucf_net_core = f"LULUCF_net_flux__{file_version_str}__ktCO2e_yr"
+    jpeg_path_lulucf_net = render_divergent_map(
+        data_lulucf_net, raster_extent, bounding_box_proj, country_shapefile,
+        net_colors_rgb,
+        title_text=f"Net land-based flux\n{cn.interval_end_years_annual[0]}-{cn.interval_end_years_annual[-1]}\nkt CO$_2$e yr$^{{-1}}$",
+        veg_analysis_years=cn.year_range_str,
+        non_pres_folder=non_pres_folder, pres_folder=pres_folder,
+        jpeg_name=jpeg_name(lulucf_net_core, bounding_box_description),
+        slide_text=lulucf_slide_text_with_disclaimer,
+        logger=main_logger,
+        bottom_annotation=_flux_annotation(df_stats, 'LULUCF_net_flux__MgCO2e_yr', 'Average net flux'),
+    )
+
     main_logger.info(f"Part 1 done in {round(time.time() - start_time)}s: {uu.timestr()}")
 
 
@@ -759,14 +759,14 @@ def map_LULUCF_maps(lulucf_input_date,
         jpeg_path_veg_net = render_divergent_map(
             data_veg_net_avg, raster_extent, bounding_box_proj, country_shapefile,
             net_colors_rgb,
-            title_text=f"Net greenhouse gas flux\nAll vegetation pools, all gases\nkt CO$_2$e yr$^{{-1}}$",
+            title_text=f"Net greenhouse gas flux\nAll vegetation pools, all gases\n{cn.interval_end_years_annual[0]}-{cn.interval_end_years_annual[-1]}\nkt CO$_2$e yr$^{{-1}}$",
             veg_analysis_years=cn.year_range_str,
             non_pres_folder=non_pres_folder, pres_folder=pres_folder,
             jpeg_name=jpeg_name(veg_net_core, bounding_box_description),
             slide_text=cn.veg_pres_text,
             logger=main_logger,
             percentile_multipliers=cn.net_percentiles,
-            bottom_annotation=_flux_annotation(df_stats, 'veg__net_flux__all_C_pools__all_gases__MgCO2e_yr'),
+            bottom_annotation=_flux_annotation(df_stats, 'veg__net_flux__all_C_pools__all_gases__MgCO2e_yr', 'Average net flux'),
         )
 
         # Panel b: Mineral soil net SOC change
@@ -775,13 +775,13 @@ def map_LULUCF_maps(lulucf_input_date,
         jpeg_path_min_soil = render_divergent_map(
             data_min_soil, raster_extent, bounding_box_proj, country_shapefile,
             net_colors_rgb,
-            title_text=f"Net mineral soil SOC change\nkt CO$_2$e yr$^{{-1}}$",
+            title_text=f"Net mineral soil SOC change\n{cn.interval_end_years_annual[0]}-{cn.interval_end_years_annual[-1]}\nkt CO$_2$e yr$^{{-1}}$",
             veg_analysis_years=cn.year_range_str,
             non_pres_folder=non_pres_folder, pres_folder=pres_folder,
             jpeg_name=jpeg_name(min_soil_core, bounding_box_description),
             slide_text=lulucf_slide_text_with_disclaimer,
             logger=main_logger,
-            bottom_annotation=_flux_annotation(df_stats, 'SOC_net__mineral_soil_extent__0_30cm_MgCO2_yr',
+            bottom_annotation=_flux_annotation(df_stats, 'SOC_net__mineral_soil_extent__0_30cm_MgCO2_yr', 'Average net flux',
                                                 unit='Gt CO$_2$ yr$^{-1}$'),
         )
 
@@ -792,13 +792,13 @@ def map_LULUCF_maps(lulucf_input_date,
         jpeg_path_org_soil = render_unidirectional_map(
             data_org_soil, raster_extent, bounding_box_proj, country_shapefile,
             cn.emissions_colors_rgb, cn.emissions_percentiles,
-            title_text=f"Gross organic soil emissions\nkt CO$_2$e yr$^{{-1}}$",
+            title_text=f"Gross organic soil emissions\n{cn.interval_end_years_annual[0]}-{cn.interval_end_years_annual[-1]}\nkt CO$_2$e yr$^{{-1}}$",
             non_pres_folder=non_pres_folder, pres_folder=pres_folder,
             jpeg_name=jpeg_name(org_soil_core, bounding_box_description),
             slide_text=lulucf_slide_text_with_disclaimer,
             logger=main_logger,
             mask_positive=True,
-            bottom_annotation=_flux_annotation(df_stats, 'org_soil_emis__all_gases__MgCO2e_yr'),
+            bottom_annotation=_flux_annotation(df_stats, 'org_soil_emis__all_gases__MgCO2e_yr', 'Average gross emissions'),
         )
 
         # Four-panel composite
