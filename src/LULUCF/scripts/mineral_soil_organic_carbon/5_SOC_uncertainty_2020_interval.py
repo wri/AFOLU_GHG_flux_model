@@ -51,19 +51,20 @@ Inputs per time block [PDF §1]:
     - organic-soil mask at 30m (to exclude organic soils)
 
 Local test :
-  python -m src.LULUCF.scripts.mineral_soil_organic_carbon.5_SOC_uncertainty_2020_interval  -bb 110 -1 111 0 -cs 1 -mt uncertainty -mpd test_box
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.5_SOC_uncertainty_2020_interval  -bb 110 -1 111 0 -cs 1 -mt uncertainty -mpd test_box
 
 Small Coiled run in area with data:
-  python -m src.utilities.create_cluster -n 1 -t 1 -m 4 -cn SOC_uncertainty
-  python -m src.LULUCF.scripts.mineral_soil_organic_carbon.5_SOC_uncertainty_2020_interval -cn SOC_uncertainty -bb 110 -1 111 0 -cs 1 -mt uncertainty -mpd test_box
+python -m src.utilities.create_cluster -n 1 -t 1 -m 4 -cn SOC_uncertainty
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.5_SOC_uncertainty_2020_interval -cn SOC_uncertainty -bb 110 -1 111 0 -cs 1 -mt uncertainty -mpd test_box
 
 Small Coiled run in area without data:
-  python -m src.utilities.create_cluster -n 1 -t 1 -m 4 -cn SOC_uncertainty
-  python -m src.LULUCF.scripts.mineral_soil_organic_carbon.5_SOC_uncertainty_2020_interval -cn SOC_uncertainty -bb 0 77 1 78 -cs 1 -mt uncertainty -mpd test_box
+python -m src.utilities.create_cluster -n 1 -t 1 -m 4 -cn SOC_uncertainty
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.5_SOC_uncertainty_2020_interval -cn SOC_uncertainty -bb 0 77 1 78 -cs 1 -mt uncertainty -mpd test_box
 
 Full run:
-  python -m src.utilities.create_cluster -n 200 -t 1 -m 4 -cn SOC_uncertainty
-  python -m src.LULUCF.scripts.mineral_soil_organic_carbon.5_SOC_uncertainty_2020_interval -cn SOC_uncertainty -mt uncertainty -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp
+python -m src.utilities.create_cluster -n 150 -t 1 -m 4 -cn SOC_uncertainty
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.5_SOC_uncertainty_2020_interval -cn SOC_uncertainty -mt uncertainty -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "Uncertainty analysis for mineral soil change, v1.0.1"
+#TODO Write chunk, tile and global uncertainty to xlsx after each batch, not just after global run finishes.
 """
 
 import argparse
@@ -109,12 +110,12 @@ SOC_UNCERTAINTY_COGS = {
 INTERVAL_LABEL = '2020'   # avg 2015-2020 minus avg 2010-2015
 
 # ─── Output constants ─────────────────────────────────────────────────────────
-# Main outputs: U⁻_Δ and U⁺_Δ (Mg C per 120m pixel), masked to mineral soil
-U_MINUS_DELTA_PATTERN = 'SOC_uncertainty_lower__mineral_soil_extent__MgC_per_pixel'
-U_PLUS_DELTA_PATTERN  = 'SOC_uncertainty_upper__mineral_soil_extent__MgC_per_pixel'
-# Delta uncertainty, unmasked (Mg C per pixel)
-U_MINUS_DELTA_UNMASKED_PATTERN = 'SOC_uncertainty_lower__full_extent__MgC_per_pixel'
-U_PLUS_DELTA_UNMASKED_PATTERN  = 'SOC_uncertainty_upper__full_extent__MgC_per_pixel'
+# Main outputs: U⁻_Δ and U⁺_Δ (Mg C per 120m pixel per year), masked to mineral soil
+U_MINUS_DELTA_PATTERN = 'SOC_uncertainty_lower__mineral_soil_extent__MgC_per_pixel_year'
+U_PLUS_DELTA_PATTERN  = 'SOC_uncertainty_upper__mineral_soil_extent__MgC_per_pixel_year'
+# Delta uncertainty, unmasked (Mg C per pixel per year)
+U_MINUS_DELTA_UNMASKED_PATTERN = 'SOC_uncertainty_lower__full_extent__MgC_per_pixel_year'
+U_PLUS_DELTA_UNMASKED_PATTERN  = 'SOC_uncertainty_upper__full_extent__MgC_per_pixel_year'
 
 # Masks
 HAS_MINERAL_SOIL_PATTERN = 'mineral_soil_mask'
@@ -128,7 +129,7 @@ P84_T1_PATTERN  = 'SOC_p84_t1__full_extent__MgC_per_pixel'
 MEAN_T2_PATTERN = 'SOC_mean_t2__full_extent__MgC_per_pixel'
 P16_T2_PATTERN  = 'SOC_p16_t2__full_extent__MgC_per_pixel'
 P84_T2_PATTERN  = 'SOC_p84_t2__full_extent__MgC_per_pixel'
-DELTA_MEAN_PATTERN = 'SOC_delta_mean__mineral_soil_extent__MgC_per_pixel'
+DELTA_MEAN_PATTERN = 'SOC_delta_mean__mineral_soil_extent__MgC_per_pixel_year'
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -296,8 +297,8 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload,
     # U⁻_Δ,j = sqrt( (U⁻_t2)² + (U⁺_t1)² )  [t2 at its low, t1 at its high → smallest change]
     # U⁺_Δ,j = sqrt( (U⁺_t2)² + (U⁻_t1)² )  [t2 at its high, t1 at its low → largest change]
 
-    U_minus_delta = np.sqrt(U_minus_t2 ** 2 + U_plus_t1  ** 2).astype(np.float32)
-    U_plus_delta  = np.sqrt(U_plus_t2  ** 2 + U_minus_t1 ** 2).astype(np.float32)
+    U_minus_delta = (np.sqrt(U_minus_t2 ** 2 + U_plus_t1  ** 2) / np.float32(cn.SOC_change_interval_length)).astype(np.float32)
+    U_plus_delta  = (np.sqrt(U_plus_t2  ** 2 + U_minus_t1 ** 2) / np.float32(cn.SOC_change_interval_length)).astype(np.float32)
     # print("U_minus_delta:", U_minus_delta)
     # print("U_plus_delta:", U_plus_delta)
 
@@ -322,7 +323,7 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload,
     # NaN where has_data is False (inaccessible COG) so those pixels are excluded from
     # both gross loss and gross gain — they don't silently inflate either category.
     delta_mean_raw = (mean_t2 - mean_t1).astype(np.float32)
-    delta_mean_masked = np.where(valid, delta_mean_raw, np.nan).astype(np.float32)
+    delta_mean_masked = (np.where(valid, delta_mean_raw, np.nan) / np.float32(cn.SOC_change_interval_length)).astype(np.float32)
     # print("delta_mean_masked:", delta_mean_masked)
 
     # Loss/gain classification based on central estimate sign (fixed classification).
@@ -361,7 +362,7 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload,
     # print("sum_U_minus_gain_sq:", sum_U_minus_gain_sq)
     # print("sum_U_plus_gain_sq:", sum_U_plus_gain_sq)
 
-    lu.print_and_log(f"After computing U⁻/U⁺_Δ for {bounds_str}: {process.memory_info().rss / 1024 ** 2:.2f} MB",False, logger_worker)
+    lu.print_and_log(f"Peak memory for {bounds_str}: {process.memory_info().rss / 1024 ** 2:.2f} MB",False, logger_worker)
 
 
     ### Part 9: Chunk stats (always; useful for QC even without upload)
@@ -581,6 +582,7 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
     total_sum_U_plus_loss_sq  = 0.0   # gross loss: Σ (U⁺_Δ,j)²
     total_sum_U_minus_gain_sq = 0.0   # gross gain: Σ (U⁻_Δ,j)²  [delta_mean > 0 pixels]
     total_sum_U_plus_gain_sq  = 0.0   # gross gain: Σ (U⁺_Δ,j)²
+    all_chunk_sq_sums = []            # per-chunk squared sums for chunk/tile Excel tabs
 
     for i, chunk_batch in enumerate(chunk_batches):
         main_logger.info(
@@ -601,7 +603,7 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
         # Extract U² accumulators; reformat to 2-tuples for count_successful_chunks
         # (which expects (return_message, chunk_stats)).
         formatted_results = []
-        for result in batch_results:
+        for chunk, result in zip(chunk_batch, batch_results):
             if result is not None:
                 try:
                     (return_message,
@@ -617,6 +619,16 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
                     total_sum_U_minus_gain_sq += sum_U_minus_gain_sq
                     total_sum_U_plus_gain_sq  += sum_U_plus_gain_sq
                     formatted_results.append((return_message, chunk_stats))
+                    all_chunk_sq_sums.append({
+                        'bounds_str': uu.boundstr(chunk),
+                        'tile_id': uu.xy_to_tile_id(chunk[0], chunk[3]),
+                        'sum_U_minus_sq':      sum_U_minus_sq,
+                        'sum_U_plus_sq':       sum_U_plus_sq,
+                        'sum_U_minus_loss_sq': sum_U_minus_loss_sq,
+                        'sum_U_plus_loss_sq':  sum_U_plus_loss_sq,
+                        'sum_U_minus_gain_sq': sum_U_minus_gain_sq,
+                        'sum_U_plus_gain_sq':  sum_U_plus_gain_sq,
+                    })
                 except (TypeError, ValueError):
                     formatted_results.append(result)
             else:
@@ -678,41 +690,94 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
         main_logger.info(f"{label} = {val:.4e} Mg C  =  {val/1e9:.7f} Gt C  [PDF §7]")
 
     if not no_upload:
-        df_global = pd.DataFrame([{
+        # Shared metadata columns present on every tab
+        _meta = {
             'interval': INTERVAL_LABEL,
             'time_block_t1': '2010-2015',
             'time_block_t2': '2015-2020',
             'temporal_correlation': 'uncorrelated (PDF §5)',
             'spatial_correlation': 'uncorrelated pixels; country-level step skipped (PDF §6-7)',
-            # Net change uncertainty (all valid mineral-soil pixels)
-            # U_net_lower: net change could be this much more negative
-            # U_net_upper: net change could be this much more positive
-            'U_net_lower_MgC':  U_minus_global_MgC,
-            'U_net_upper_MgC':  U_plus_global_MgC,
-            'U_net_lower_GtC':  U_minus_global_MgC / 1e9,
-            'U_net_upper_GtC':  U_plus_global_MgC  / 1e9,
-            # Gross loss uncertainty (pixels where delta_mean < 0)
-            # U_loss_deeper:    gross loss could be this much larger (more negative)
-            # U_loss_shallower: gross loss could be this much smaller (less negative)
-            'U_loss_deeper_MgC':    U_minus_loss_MgC,
-            'U_loss_shallower_MgC': U_plus_loss_MgC,
-            'U_loss_deeper_GtC':    U_minus_loss_MgC / 1e9,
-            'U_loss_shallower_GtC': U_plus_loss_MgC  / 1e9,
-            # Gross gain uncertainty (pixels where delta_mean > 0)
-            # U_gain_larger:  gross gain could be this much larger (more positive)
-            # U_gain_smaller: gross gain could be this much smaller (less positive)
-            'U_gain_larger_MgC':  U_plus_gain_MgC,
-            'U_gain_smaller_MgC': U_minus_gain_MgC,
-            'U_gain_larger_GtC':  U_plus_gain_MgC  / 1e9,
-            'U_gain_smaller_GtC': U_minus_gain_MgC / 1e9,
             'run_date': run_date,
             'model_path_description': model_path_description or '',
+        }
+
+        def _u_cols(sq):
+            """Return the 12 uncertainty columns from a dict of 6 squared-sum entries."""
+            U_net_lo  = float(np.sqrt(sq['sum_U_minus_sq']))
+            U_net_hi  = float(np.sqrt(sq['sum_U_plus_sq']))
+            U_lo_deep = float(np.sqrt(sq['sum_U_minus_loss_sq']))
+            U_lo_sha  = float(np.sqrt(sq['sum_U_plus_loss_sq']))
+            U_ga_sma  = float(np.sqrt(sq['sum_U_minus_gain_sq']))
+            U_ga_lar  = float(np.sqrt(sq['sum_U_plus_gain_sq']))
+            return {
+                'U_net_lower_MgC_yr':      U_net_lo,
+                'U_net_upper_MgC_yr':      U_net_hi,
+                'U_net_lower_GtC_yr':      U_net_lo  / 1e9,
+                'U_net_upper_GtC_yr':      U_net_hi  / 1e9,
+                'U_loss_deeper_MgC_yr':    U_lo_deep,
+                'U_loss_shallower_MgC_yr': U_lo_sha,
+                'U_loss_deeper_GtC_yr':    U_lo_deep / 1e9,
+                'U_loss_shallower_GtC_yr': U_lo_sha  / 1e9,
+                'U_gain_larger_MgC_yr':    U_ga_lar,
+                'U_gain_smaller_MgC_yr':   U_ga_sma,
+                'U_gain_larger_GtC_yr':    U_ga_lar  / 1e9,
+                'U_gain_smaller_GtC_yr':   U_ga_sma  / 1e9,
+            }
+
+        # ── Chunk tab (one row per successfully processed chunk) ─────────────
+        df_chunks = pd.DataFrame([
+            {'bounds_str': c['bounds_str'], 'tile_id': c['tile_id'], **_meta, **_u_cols(c)}
+            for c in all_chunk_sq_sums
+        ])
+
+        # ── Tile tab (RSS-aggregate chunks within each 10×10 deg tile) ───────
+        tile_sums = {}
+        sq_keys = ('sum_U_minus_sq', 'sum_U_plus_sq',
+                   'sum_U_minus_loss_sq', 'sum_U_plus_loss_sq',
+                   'sum_U_minus_gain_sq', 'sum_U_plus_gain_sq')
+        for c in all_chunk_sq_sums:
+            tid = c['tile_id']
+            if tid not in tile_sums:
+                tile_sums[tid] = {k: 0.0 for k in sq_keys}
+            for k in sq_keys:
+                tile_sums[tid][k] += c[k]
+        df_tiles = pd.DataFrame([
+            {'tile_id': tid, **_meta, **_u_cols(sums)}
+            for tid, sums in tile_sums.items()
+        ])
+
+        # ── Global tab ───────────────────────────────────────────────────────
+        # Net change uncertainty (all valid mineral-soil pixels)
+        # U_net_lower: net change could be this much more negative
+        # U_net_upper: net change could be this much more positive
+        # Gross loss uncertainty (pixels where delta_mean < 0)
+        # U_loss_deeper:    gross loss could be this much larger (more negative)
+        # U_loss_shallower: gross loss could be this much smaller (less negative)
+        # Gross gain uncertainty (pixels where delta_mean > 0)
+        # U_gain_larger:  gross gain could be this much larger (more positive)
+        # U_gain_smaller: gross gain could be this much smaller (less positive)
+        df_global = pd.DataFrame([{
+            **_meta,
+            'U_net_lower_MgC_yr':      U_minus_global_MgC,
+            'U_net_upper_MgC_yr':      U_plus_global_MgC,
+            'U_net_lower_GtC_yr':      U_minus_global_MgC / 1e9,
+            'U_net_upper_GtC_yr':      U_plus_global_MgC  / 1e9,
+            'U_loss_deeper_MgC_yr':    U_minus_loss_MgC,
+            'U_loss_shallower_MgC_yr': U_plus_loss_MgC,
+            'U_loss_deeper_GtC_yr':    U_minus_loss_MgC / 1e9,
+            'U_loss_shallower_GtC_yr': U_plus_loss_MgC  / 1e9,
+            'U_gain_larger_MgC_yr':    U_plus_gain_MgC,
+            'U_gain_smaller_MgC_yr':   U_minus_gain_MgC,
+            'U_gain_larger_GtC_yr':    U_plus_gain_MgC  / 1e9,
+            'U_gain_smaller_GtC_yr':   U_minus_gain_MgC / 1e9,
         }])
 
         global_xlsx_filename = f"SOC_uncertainty_2020_interval_global_{run_date}.xlsx"
         local_xlsx_path = f"{cn.local_chunk_stats_path}{global_xlsx_filename}"
         with pd.ExcelWriter(local_xlsx_path) as writer:
-            df_global.to_excel(writer, sheet_name='mineral_soil_uncert', index=False)
+            df_chunks.to_excel(writer, sheet_name='chunks', index=False)
+            df_tiles.to_excel(writer, sheet_name='tiles', index=False)
+            df_global.to_excel(writer, sheet_name='global', index=False)
 
         s3_key = f"{cn.SOC_uncertainty_output_base}{run_date}/{global_xlsx_filename}"
         boto3.client('s3').upload_file(local_xlsx_path, cn.short_bucket_prefix, s3_key)

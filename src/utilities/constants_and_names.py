@@ -978,6 +978,7 @@ SOC_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/output
 SOC_density_intervals = [2005, 2010, 2015, 2020, 2022]
 # Value refers to the end year of the second OGH reporting block, e.g., 2010 is the comparison of 2000-2005 block vs. 2005-2010 block
 SOC_change_intervals = [2010, 2015, 2020, 2022]
+SOC_change_interval_length = 5 # years
 
 SOC_density_intervals_annual = [2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022]
 SOC_change_intervals_annual = [2016, 2017, 2018, 2019, 2020, 2021, 2022]
