@@ -177,9 +177,11 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload,
     """
     Process a single 1×1 degree chunk. Returns:
         (return_message,
-         sum_U_minus_sq, sum_U_plus_sq,           # net change [all valid pixels]
-         sum_U_minus_loss_sq, sum_U_plus_loss_sq, # gross loss [delta_mean < 0]
-         sum_U_minus_gain_sq, sum_U_plus_gain_sq, # gross gain [delta_mean > 0]
+         sum_U_minus_sq, sum_U_plus_sq,           # net change [all valid pixels] — squared, for RSS
+         sum_U_minus_loss_sq, sum_U_plus_loss_sq, # gross loss [delta_mean < 0]   — squared, for RSS
+         sum_U_minus_gain_sq, sum_U_plus_gain_sq, # gross gain [delta_mean > 0]   — squared, for RSS
+         sum_U_minus_loss, sum_U_plus_loss,        # gross loss — linear (not squared), for spatial correlation scaling
+         sum_U_minus_gain, sum_U_plus_gain,        # gross gain — linear (not squared), for spatial correlation scaling
          chunk_stats_list)
 
     Follows PDF §8 recommended workflow steps 2–5 (pixel level).
@@ -362,10 +364,16 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload,
     # print("sum_U_minus_gain_sq:", sum_U_minus_gain_sq)
     # print("sum_U_plus_gain_sq:", sum_U_plus_gain_sq)
 
+    # For doing calculations with different assumptions about spatial autocorrelation
+    sum_U_minus_loss        = float(np.nansum(np.where(is_loss, U_minus_delta,      np.float32(0.0))))
+    sum_U_plus_loss         = float(np.nansum(np.where(is_loss, U_plus_delta,       np.float32(0.0))))
+    sum_U_minus_gain        = float(np.nansum(np.where(is_gain, U_minus_delta,      np.float32(0.0))))
+    sum_U_plus_gain         = float(np.nansum(np.where(is_gain, U_plus_delta,       np.float32(0.0))))
+
     lu.print_and_log(f"Peak memory for {bounds_str}: {process.memory_info().rss / 1024 ** 2:.2f} MB",False, logger_worker)
 
 
-    ### Part 9: Chunk stats (always; useful for QC even without upload)
+    ### Part 9: Chunk stats
 
     for arr, name in [
         # Masks
@@ -388,6 +396,15 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload,
         (U_plus_delta,               f"{U_PLUS_DELTA_UNMASKED_PATTERN}_{INTERVAL_LABEL}"),
         (U_minus_delta_min_soil_masked, f"{U_MINUS_DELTA_PATTERN}_{INTERVAL_LABEL}"),
         (U_plus_delta_min_soil_masked,  f"{U_PLUS_DELTA_PATTERN}_{INTERVAL_LABEL}"),
+    ]:
+        chunk_stats_combined.append(uu.calculate_stats(arr, name, bounds_str, tile_id, 'output_layer'))
+
+    # Loss- and gain-masked U arrays: pass as array_per_pixel so sum_value = linear sum of U
+    for arr, name in [
+        (np.where(is_loss, U_minus_delta, np.nan).astype(np.float32), f"SOC_uncertainty_lower__loss_pixels__MgC_per_pixel_year_{INTERVAL_LABEL}"),
+        (np.where(is_loss, U_plus_delta,  np.nan).astype(np.float32), f"SOC_uncertainty_upper__loss_pixels__MgC_per_pixel_year_{INTERVAL_LABEL}"),
+        (np.where(is_gain, U_minus_delta, np.nan).astype(np.float32), f"SOC_uncertainty_lower__gain_pixels__MgC_per_pixel_year_{INTERVAL_LABEL}"),
+        (np.where(is_gain, U_plus_delta,  np.nan).astype(np.float32), f"SOC_uncertainty_upper__gain_pixels__MgC_per_pixel_year_{INTERVAL_LABEL}"),
     ]:
         chunk_stats_combined.append(uu.calculate_stats(arr, name, bounds_str, tile_id, 'output_layer'))
 
@@ -481,6 +498,8 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload,
             sum_U_minus_squared, sum_U_plus_squared,
             sum_U_minus_loss_sq, sum_U_plus_loss_sq,
             sum_U_minus_gain_sq, sum_U_plus_gain_sq,
+            sum_U_minus_loss, sum_U_plus_loss,
+            sum_U_minus_gain, sum_U_plus_gain,
             chunk_stats_combined)
 
 
@@ -610,6 +629,8 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
                      sum_U_minus_sq, sum_U_plus_sq,
                      sum_U_minus_loss_sq, sum_U_plus_loss_sq,
                      sum_U_minus_gain_sq, sum_U_plus_gain_sq,
+                     sum_U_minus_loss, sum_U_plus_loss,
+                     sum_U_minus_gain, sum_U_plus_gain,
                      chunk_stats) = result
 
                     total_sum_U_minus_sq      += sum_U_minus_sq
@@ -628,6 +649,10 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
                         'sum_U_plus_loss_sq':  sum_U_plus_loss_sq,
                         'sum_U_minus_gain_sq': sum_U_minus_gain_sq,
                         'sum_U_plus_gain_sq':  sum_U_plus_gain_sq,
+                        'sum_U_minus_loss':    sum_U_minus_loss,
+                        'sum_U_plus_loss':     sum_U_plus_loss,
+                        'sum_U_minus_gain':    sum_U_minus_gain,
+                        'sum_U_plus_gain':     sum_U_plus_gain,
                     })
                 except (TypeError, ValueError):
                     formatted_results.append(result)
@@ -724,25 +749,32 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
                 'U_gain_smaller_GtC_yr':   U_ga_sma  / 1e9,
             }
 
+        lin_keys = ('sum_U_minus_loss_MgC_yr', 'sum_U_plus_loss_MgC_yr',
+                    'sum_U_minus_gain_MgC_yr', 'sum_U_plus_gain_MgC_yr')
+
+        def _lin_cols(c):
+            return {k: c[k] for k in lin_keys}
+
         # ── Chunk tab (one row per successfully processed chunk) ─────────────
         df_chunks = pd.DataFrame([
-            {'bounds_str': c['bounds_str'], 'tile_id': c['tile_id'], **_meta, **_u_cols(c)}
+            {'bounds_str': c['bounds_str'], 'tile_id': c['tile_id'],
+             **_meta, **_u_cols(c), **_lin_cols(c)}
             for c in all_chunk_sq_sums
         ])
 
-        # ── Tile tab (RSS-aggregate chunks within each 10×10 deg tile) ───────
-        tile_sums = {}
+        # ── Tile tab (RSS-aggregate squared sums; linearly aggregate linear sums) ───
         sq_keys = ('sum_U_minus_sq', 'sum_U_plus_sq',
                    'sum_U_minus_loss_sq', 'sum_U_plus_loss_sq',
                    'sum_U_minus_gain_sq', 'sum_U_plus_gain_sq')
+        tile_sums = {}
         for c in all_chunk_sq_sums:
             tid = c['tile_id']
             if tid not in tile_sums:
-                tile_sums[tid] = {k: 0.0 for k in sq_keys}
-            for k in sq_keys:
+                tile_sums[tid] = {k: 0.0 for k in sq_keys + lin_keys}
+            for k in sq_keys + lin_keys:
                 tile_sums[tid][k] += c[k]
         df_tiles = pd.DataFrame([
-            {'tile_id': tid, **_meta, **_u_cols(sums)}
+            {'tile_id': tid, **_meta, **_u_cols(sums), **_lin_cols(sums)}
             for tid, sums in tile_sums.items()
         ])
 

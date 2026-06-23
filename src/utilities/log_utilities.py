@@ -164,36 +164,36 @@ def merge_main_and_worker_upload_logs(no_log, main_log, worker_log, stage):
         # Extract seconds from lines for total chunk processing
         total_chunk_proc_times__sec = [int(m) for m in re.findall(r'Total chunk processing.*?(\d+) seconds', log_content)]
 
-        # Extract peak memory usage
-        peak_memory__GB = [np.float32(m) for m in re.findall(r'Peak memory for [^:]+: ([0-9]+(?:\.[0-9]+)?) GB', log_content)]
+        # Extract peak memory usage (could be MB or GB)
+        peak_memory = [np.float32(m) for m in re.findall(r'Peak memory for [^:]+: ([0-9]+(?:\.[0-9]+)?)', log_content)]
 
         # Averages
         avg_calc_proc_times__sec = sum(calc_proc_times__sec) / len(calc_proc_times__sec) if calc_proc_times__sec else 0
         avg_zarr_pop_proc_times__sec = sum(zarr_insert_proc_times__sec) / len(zarr_insert_proc_times__sec) if zarr_insert_proc_times__sec else 0
         avg_uploads_proc_times__sec = sum(uploads_proc_times__sec) / len(uploads_proc_times__sec) if uploads_proc_times__sec else 0
         avg_total_chunk_proc_times__sec = sum(total_chunk_proc_times__sec) / len(total_chunk_proc_times__sec) if total_chunk_proc_times__sec else 0
-        avg_peak_memory__GB = sum(peak_memory__GB) / len(peak_memory__GB) if peak_memory__GB else 0
+        avg_peak_memory = sum(peak_memory) / len(peak_memory) if peak_memory else 0
 
         # Standard deviations
         stdev_calc_proc_times__sec = statistics.stdev(calc_proc_times__sec) if len(calc_proc_times__sec) > 1 else 0
         stdev_zarr_pop_proc_times__sec = statistics.stdev(zarr_insert_proc_times__sec) if len(zarr_insert_proc_times__sec) > 1 else 0
         stdev_uploads_proc_times__sec = statistics.stdev(uploads_proc_times__sec) if len(uploads_proc_times__sec) > 1 else 0
         stdev_total_chunk_proc_times__sec = statistics.stdev(total_chunk_proc_times__sec) if len(total_chunk_proc_times__sec) > 1 else 0
-        stdev_peak_memory__GB = statistics.stdev(peak_memory__GB) if len(peak_memory__GB) > 1 else 0
+        stdev_peak_memory = statistics.stdev(peak_memory) if len(peak_memory) > 1 else 0
 
         # Mins
         min_calc_proc_times__sec = min(calc_proc_times__sec) if calc_proc_times__sec else 0
         min_zarr_pop_proc_times__sec = min(zarr_insert_proc_times__sec) if zarr_insert_proc_times__sec else 0
         min_uploads_proc_times__sec = min(uploads_proc_times__sec) if uploads_proc_times__sec else 0
         min_total_chunk_proc_times__sec = min(total_chunk_proc_times__sec) if total_chunk_proc_times__sec else 0
-        min_peak_memory__GB = min(peak_memory__GB) if peak_memory__GB else 0
+        min_peak_memory = min(peak_memory) if peak_memory else 0
 
         # Maxes
         max_calc_proc_times__sec = max(calc_proc_times__sec) if calc_proc_times__sec else 0
         max_zarr_pop_proc_times__sec = max(zarr_insert_proc_times__sec) if zarr_insert_proc_times__sec else 0
         max_uploads_proc_times__sec = max(uploads_proc_times__sec) if uploads_proc_times__sec else 0
         max_total_chunk_proc_times__sec = max(total_chunk_proc_times__sec) if total_chunk_proc_times__sec else 0
-        max_peak_memory__GB = max(peak_memory__GB) if peak_memory__GB else 0
+        max_peak_memory = max(peak_memory) if peak_memory else 0
 
         # Step 3: Append results to the log file
         with open(combined_local_log, "a") as outfile:
@@ -215,9 +215,9 @@ def merge_main_and_worker_upload_logs(no_log, main_log, worker_log, stage):
             outfile.write(f"  Average and stdev: {avg_total_chunk_proc_times__sec:.0f} seconds (stdev: {stdev_total_chunk_proc_times__sec:.0f})\n")
             outfile.write(f"  Min and max: {min_total_chunk_proc_times__sec:.0f}-{max_total_chunk_proc_times__sec:.0f}\n")
 
-            outfile.write(f"Peak memory usage for tasks ({len(peak_memory__GB)} tasks):\n")
-            outfile.write(f"  Average and stdev: {avg_peak_memory__GB:.2f} GB (stdev: {stdev_peak_memory__GB:.2f})\n")
-            outfile.write(f"  Min and max: {min_peak_memory__GB:.2f}-{max_peak_memory__GB:.2f}\n")
+            outfile.write(f"Peak memory usage for tasks ({len(peak_memory)} tasks):\n")
+            outfile.write(f"  Average and stdev: {avg_peak_memory:.2f} MB or GB (stdev: {stdev_peak_memory:.2f})\n")
+            outfile.write(f"  Min and max: {min_peak_memory:.2f}-{max_peak_memory:.2f}\n")
 
             outfile.write("--- End of log---\n")
 
