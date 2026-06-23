@@ -64,7 +64,6 @@ python -m src.LULUCF.scripts.mineral_soil_organic_carbon.5_SOC_uncertainty_2020_
 Full run:
 python -m src.utilities.create_cluster -n 150 -t 1 -m 4 -cn SOC_uncertainty
 python -m src.LULUCF.scripts.mineral_soil_organic_carbon.5_SOC_uncertainty_2020_interval -cn SOC_uncertainty -mt uncertainty -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "Uncertainty analysis for mineral soil change, v1.0.1"
-#TODO Write chunk, tile and global uncertainty to xlsx after each batch, not just after global run finishes.
 """
 
 import argparse
@@ -593,6 +592,49 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
     chunk_batches = [chunk_list[i:i + batch_size] for i in range(0, len(chunk_list), batch_size)]
     main_logger.info(f"Batches to process: {len(chunk_batches)}: {uu.timestr()}")
 
+    # Helpers and paths used for both per-batch and final Excel writes
+    _meta = {
+        'interval': INTERVAL_LABEL,
+        'time_block_t1': '2010-2015',
+        'time_block_t2': '2015-2020',
+        'temporal_correlation': 'uncorrelated (PDF §5)',
+        'spatial_correlation': 'uncorrelated pixels; country-level step skipped (PDF §6-7)',
+        'run_date': run_date,
+        'model_path_description': model_path_description or '',
+    }
+
+    def _u_cols(sq):
+        """Return the 12 uncertainty columns from a dict of 6 squared-sum entries."""
+        U_net_lo  = float(np.sqrt(sq['sum_U_minus_sq']))
+        U_net_hi  = float(np.sqrt(sq['sum_U_plus_sq']))
+        U_lo_deep = float(np.sqrt(sq['sum_U_minus_loss_sq']))
+        U_lo_sha  = float(np.sqrt(sq['sum_U_plus_loss_sq']))
+        U_ga_sma  = float(np.sqrt(sq['sum_U_minus_gain_sq']))
+        U_ga_lar  = float(np.sqrt(sq['sum_U_plus_gain_sq']))
+        return {
+            'U_net_lower_MgC_yr':      U_net_lo,
+            'U_net_upper_MgC_yr':      U_net_hi,
+            'U_net_lower_GtC_yr':      U_net_lo  / 1e9,
+            'U_net_upper_GtC_yr':      U_net_hi  / 1e9,
+            'U_loss_deeper_MgC_yr':    U_lo_deep,
+            'U_loss_shallower_MgC_yr': U_lo_sha,
+            'U_loss_deeper_GtC_yr':    U_lo_deep / 1e9,
+            'U_loss_shallower_GtC_yr': U_lo_sha  / 1e9,
+            'U_gain_larger_MgC_yr':    U_ga_lar,
+            'U_gain_smaller_MgC_yr':   U_ga_sma,
+            'U_gain_larger_GtC_yr':    U_ga_lar  / 1e9,
+            'U_gain_smaller_GtC_yr':   U_ga_sma  / 1e9,
+        }
+
+    lin_keys = ('sum_U_minus_loss_MgC_yr', 'sum_U_plus_loss_MgC_yr',
+                'sum_U_minus_gain_MgC_yr', 'sum_U_plus_gain_MgC_yr')
+
+    def _lin_cols(c):
+        return {k: c[k] for k in lin_keys}
+
+    global_xlsx_filename = f"SOC_uncertainty_2020_interval_global_{run_date}.xlsx"
+    local_xlsx_path = f"{cn.local_chunk_stats_path}{global_xlsx_filename}"
+
     all_stats = []
     success_count = 0
     total_sum_U_minus_sq      = 0.0   # net change: Σ (U⁻_Δ,j)²  [all valid pixels]
@@ -643,16 +685,16 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
                     all_chunk_sq_sums.append({
                         'bounds_str': uu.boundstr(chunk),
                         'tile_id': uu.xy_to_tile_id(chunk[0], chunk[3]),
-                        'sum_U_minus_sq':      sum_U_minus_sq,
-                        'sum_U_plus_sq':       sum_U_plus_sq,
-                        'sum_U_minus_loss_sq': sum_U_minus_loss_sq,
-                        'sum_U_plus_loss_sq':  sum_U_plus_loss_sq,
-                        'sum_U_minus_gain_sq': sum_U_minus_gain_sq,
-                        'sum_U_plus_gain_sq':  sum_U_plus_gain_sq,
-                        'sum_U_minus_loss':    sum_U_minus_loss,
-                        'sum_U_plus_loss':     sum_U_plus_loss,
-                        'sum_U_minus_gain':    sum_U_minus_gain,
-                        'sum_U_plus_gain':     sum_U_plus_gain,
+                        'sum_U_minus_sq':           sum_U_minus_sq,
+                        'sum_U_plus_sq':            sum_U_plus_sq,
+                        'sum_U_minus_loss_sq':      sum_U_minus_loss_sq,
+                        'sum_U_plus_loss_sq':       sum_U_plus_loss_sq,
+                        'sum_U_minus_gain_sq':      sum_U_minus_gain_sq,
+                        'sum_U_plus_gain_sq':       sum_U_plus_gain_sq,
+                        'sum_U_minus_loss_MgC_yr':  sum_U_minus_loss,
+                        'sum_U_plus_loss_MgC_yr':   sum_U_plus_loss,
+                        'sum_U_minus_gain_MgC_yr':  sum_U_minus_gain,
+                        'sum_U_plus_gain_MgC_yr':   sum_U_plus_gain,
                     })
                 except (TypeError, ValueError):
                     formatted_results.append(result)
@@ -670,6 +712,16 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
             local_path = f"{cn.local_chunk_stats_path}{out_file}"
             with pd.ExcelWriter(local_path) as writer:
                 df_batch_stats.to_excel(writer, sheet_name=f"stats__batch_{i}", index=False)
+
+        if not no_upload and all_chunk_sq_sums:
+            df_chunks_partial = pd.DataFrame([
+                {'bounds_str': c['bounds_str'], 'tile_id': c['tile_id'],
+                 **_meta, **_u_cols(c), **_lin_cols(c)}
+                for c in all_chunk_sq_sums
+            ])
+            with pd.ExcelWriter(local_xlsx_path) as writer:
+                df_chunks_partial.to_excel(writer, sheet_name='chunks', index=False)
+            main_logger.info(f"Partial uncertainty spreadsheet updated: {len(all_chunk_sq_sums)} chunks written")
 
         del futures, batch_results
         client.run(gc.collect)
