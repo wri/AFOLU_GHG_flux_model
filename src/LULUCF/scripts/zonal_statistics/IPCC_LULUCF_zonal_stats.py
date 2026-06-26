@@ -2,13 +2,32 @@
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 10x10:
-python -m src.utilities.create_cluster -n 25 -m 64 -cn IPCC_LULUCF_zonal_stats_10x10 --zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.IPCC_LULUCF_zonal_stats -cn IPCC_LULUCF_zonal_stats_10x10 -vid 20260130 -tid 20260614 -lid 20260617 -bb 110 -10 120 0 -lmpd 10x10_test -zd 10x10_test
+python -m src.utilities.create_cluster -n 10 -m 128 -cn IPCC_LULUCF_zonal_stats --zonal_stats
+python -m src.LULUCF.scripts.zonal_statistics.IPCC_LULUCF_zonal_stats -cn IPCC_LULUCF_zonal_stats -bb 100 10 110 20 -vid 20260130 -tid 20260614 -lid 20260617 -zd global --log_note "Zonal stats for IPCC land use model v1.0.0."
+
+Central and East Africa (8, 10x10 tiles):
+python -m src.utilities.create_cluster -n 50 -m 32 -cn IPCC_LULUCF_zonal_stats__Central_Africa --zonal_stats
+python -m src.LULUCF.scripts.zonal_statistics.IPCC_LULUCF_zonal_stats -cn IPCC_LULUCF_zonal_stats__Central_Africa -bb 13 -14 44 -3 -vid 20260130 -tid 20260614 -lid 20260617 -zd Central_Africa_test
+
+Global run:
+python -m src.utilities.create_cluster -n 25 -m 64 -cn IPCC_LULUCF_zonal_stats --zonal_stats
+python -m src.LULUCF.scripts.zonal_statistics.IPCC_LULUCF_zonal_stats -cn IPCC_LULUCF_zonal_stats -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -vid 20260130 -tid 20260614 -lid 20260617 -zd global --log_note "Zonal stats for IPCC land use model v1.0.0."
+
+
+global_south
+python -m src.utilities.create_cluster -n 25 -m 64 -cn IPCC_LULUCF_zonal_stats_global_south --zonal_stats
+python -m src.LULUCF.scripts.zonal_statistics.IPCC_LULUCF_zonal_stats -cn IPCC_LULUCF_zonal_stats_global_south --tile_ids_file /mnt/c/GIS/AFOLU_flux_model/land_use/global_south.txt -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -vid 20260130 -tid 20260614 -lid 20260617 -zd global --log_note "Zonal stats for IPCC land use model v1.0.0."
+
+global_north
+python -m src.utilities.create_cluster -n 25 -m 64 -cn IPCC_LULUCF_zonal_stats_global_north --zonal_stats
+python -m src.LULUCF.scripts.zonal_statistics.IPCC_LULUCF_zonal_stats -cn IPCC_LULUCF_zonal_stats_global_north --tile_ids_file /mnt/c/GIS/AFOLU_flux_model/land_use/global_north.txt -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -vid 20260130 -tid 20260614 -lid 20260617 -zd global --log_note "Zonal stats for IPCC land use model v1.0.0."
 
 Notes:
-    - Took 5 minutes to run for 10x10 degree area with 25 workers (00N_110E).
-        Analysis layers = LULUCF emissions, removals, and net flux, vegetation net flux, pixel area
+    - Took 5 minutes to run for 10x10 degree area (00N_110E) with 25 workers (17 credits, $1).
+        Analysis layers = LULUCF emissions, LULUCF removals, and LULUCF net flux, vegetation net flux, pixel area
         Contextual layers = IPCC class, node, change and summary, land state node, continent/ecozone, driver, primary/IFL
+    - Toook 19 minutes to run for Central Africa (8 tiles) with 50 workers (128 credits, $7)
+
 """
 
 import argparse
@@ -32,11 +51,19 @@ from src.utilities import zarr_utilities as zu
 from src.utilities import zonal_stats_utilities as zsu
 from src.utilities import terminate_cluster
 
+def read_tile_ids_file(tile_ids_file):
+    with open(tile_ids_file, "r") as f:
+        return {
+            line.strip()
+            for line in f
+            if line.strip()
+        }
+
 
 def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, model_type="standard", lulucf_model_path_description="global",
          veg_model_path_description="global", lu_model_path_description="global", zonal_stats_description="global",
          chunk_shapefile_uri=False, bounding_box=None, first_variables_to_process=None, first_tiles_to_process=None,
-         model_chunk_stats_table_name=None, log_note=None):
+         model_chunk_stats_table_name=None, log_note=None, tile_ids_file=None):
 
     ### Step 1: Preparation
 
@@ -90,6 +117,21 @@ def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, model_t
         tile_ids.append(tile_id)
 
     unique_tile_ids = sorted(list(set(tile_ids)))
+
+    if tile_ids_file:
+        tile_ids_to_keep = read_tile_ids_file(tile_ids_file)
+
+        original_count = len(unique_tile_ids)
+
+        unique_tile_ids = [
+            tile_id
+            for tile_id in unique_tile_ids
+            if tile_id in tile_ids_to_keep
+        ]
+
+        main_logger.info(
+            f"Filtered tile list from {original_count} to {len(unique_tile_ids)} using {tile_ids_file}"
+        )
 
     # Outputs to performs zonal stats on
     lulucf_vars = [
@@ -607,16 +649,23 @@ def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, model_t
 
         main_logger.info(f"  Done computing {tile_id}: {uu.timestr()}")
         coord_dict = zsu.convert_to_coord_dict(results, tile_id, main_logger)
-        df = zsu.create_df(coord_dict, state_node_df, contextual_layers, tile_id, 'vegetation', main_logger)
-        #df = create_ipcc_lu_context_df(coord_dict, tile_id, main_logger)
-        main_logger.info(f"  Rows in {tile_id} dataframe: {len(df.index)}: {uu.timestr()}")
 
+        del results
+        gc.collect()
+
+        df = zsu.create_df(coord_dict, state_node_df, contextual_layers, tile_id, 'vegetation', main_logger)
+
+        del coord_dict
+        gc.collect()
+
+        main_logger.info(f"  Rows in {tile_id} dataframe: {len(df.index)}: {uu.timestr()}")
         main_logger.info(f"  Saving {tile_id} output table: {uu.timestr()}")
         tile_df_name = (f"ipcc_lulucf_zonal_stats_{tile_id}_v{lu_model_version}_{zonal_stats_description}_{time.strftime('%Y%m%d_%H_%M_%S')}")
         df.to_parquet(f"{local_zonal_stats_folder}/{tile_df_name}.parquet")
 
         # Clean up at end of tile
-        del results, coord_dict, df, flux_cube_subset
+        #del results, coord_dict, df, flux_cube_subset
+        del df, flux_cube_subset
         gc.collect()
 
         tile_end_time = time.time()
@@ -731,6 +780,7 @@ if __name__ == "__main__":
 
     parser.add_argument('-mcstn', '--model_chunk_stats_table_name', required=False, help='local path for model chunk stats to check if tile had any pixels in it, and skip if empty')
     parser.add_argument("-ln", "--log_note")
+    parser.add_argument( "--tile_ids_file", required=False, help="Path to txt file containing 10x10 tile IDs to process, one per line.")
 
     args = parser.parse_args()
 
@@ -750,4 +800,5 @@ if __name__ == "__main__":
         first_tiles_to_process=args.first_tiles_to_process,
         model_chunk_stats_table_name=args.model_chunk_stats_table_name,
         log_note=args.log_note,
+        tile_ids_file=args.tile_ids_file,
     )

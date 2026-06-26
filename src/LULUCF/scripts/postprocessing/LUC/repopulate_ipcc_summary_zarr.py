@@ -9,7 +9,7 @@ python -m src.utilities.create_cluster -n 10 -m 8 -cn IPCC_summary_zarr
 python -m src.LULUCF.scripts.postprocessing.LUC.repopulate_ipcc_summary_zarr -cn IPCC_summary_zarr -id 20260617 -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -bb 110 -10 120 0
 
 Global run:
-python -m src.utilities.create_cluster -n 200 -m 8 -cn IPCC_summary_zarr
+python -m src.utilities.create_cluster -n 50 -m 8 -cn IPCC_summary_zarr
 python -m src.LULUCF.scripts.postprocessing.LUC.repopulate_ipcc_summary_zarr -cn IPCC_summary_zarr -id 20260617 -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "Repopulating IPCC_summary zarr from existing 1x1 (uint16) rasters."
 
 """
@@ -81,7 +81,7 @@ def populate_one_ipcc_summary_zarr_chunk(chunk, summary_dir, zarr_path, main_log
 
 
 def main(cluster_name, input_date, model_type, no_log=False, chunk_shapefile_uri=False,
-         bounding_box=None, first_chunks=None, model_path_description=None, log_note=None):
+         bounding_box=None, first_chunks=None, model_path_description=None, log_note=None, recreate_array=False):
 
     ### Step 1: Preparation
 
@@ -177,34 +177,63 @@ def main(cluster_name, input_date, model_type, no_log=False, chunk_shapefile_uri
 
     array_exists = cn.IPCC_summary_pattern in z
 
-    if array_exists:
-        main_logger.info(
-            f"Array '{cn.IPCC_summary_pattern}' already exists. "
-            f"Deleting and recreating as uint16: {uu.timestr()}"
+    if recreate_array:
+        if array_exists:
+            main_logger.info(
+                f"Array '{cn.IPCC_summary_pattern}' already exists. "
+                f"Deleting and recreating as uint16: {uu.timestr()}"
+            )
+            del z[cn.IPCC_summary_pattern]
+
+        new_arr = z.create_array(
+            cn.IPCC_summary_pattern,
+            shape=(10, lat_size, lon_size),
+            chunks=(1, cn.chunk_dims, cn.chunk_dims),
+            dtype="uint16",
+            fill_value=0,
+            compressors={"name": "zstd", "configuration": {"level": 3}},
+            dimension_names=["year", "y", "x"],
         )
-        del z[cn.IPCC_summary_pattern]
+        new_arr.attrs["grid_mapping"] = "spatial_ref"
+        zarr.consolidate_metadata(mapper)
 
-    new_arr = z.create_array(
-        cn.IPCC_summary_pattern,
-        shape=(10, lat_size, lon_size),
-        chunks=(1, cn.chunk_dims, cn.chunk_dims),
-        dtype="uint16",
-        fill_value=0,
-        compressors={"name": "zstd", "configuration": {"level": 3}},
-        dimension_names=["year", "y", "x"],
-    )
-    new_arr.attrs["grid_mapping"] = "spatial_ref"
+        main_logger.info(
+            f"Created '{cn.IPCC_summary_pattern}': "
+            f"shape={new_arr.shape}, dtype={new_arr.dtype}: {uu.timestr()}"
+        )
 
-    zarr.consolidate_metadata(mapper)
+    elif not array_exists:
+        raise RuntimeError(
+            f"{cn.IPCC_summary_pattern} does not exist in zarr. "
+            f"Rerun with --recreate_array."
+        )
 
-    main_logger.info(
-        f"Created '{cn.IPCC_summary_pattern}': "
-        f"shape={new_arr.shape}, dtype={new_arr.dtype}: {uu.timestr()}"
-    )
-
-    main_logger.info(f"Datasets after recreation: {list(z.array_keys())}")
+    else:
+        main_logger.info(
+            f"Using existing '{cn.IPCC_summary_pattern}' array without deleting it: {uu.timestr()}"
+        )
 
     ### Step 3: Submit tasks through Coiled
+
+
+    raster_paths, raster_count = uu.list_raster_full_paths_in_s3_folder_and_count(summary_dir)
+    existing_raster_names = {p.split("/")[-1] for p in raster_paths}
+
+    main_logger.info(f"Found {raster_count} IPCC_summary rasters in {summary_dir}")
+
+    original_count = len(chunk_list)
+
+    chunk_list = [
+        chunk for chunk in chunk_list
+        if f"{uu.xy_to_tile_id(chunk[0], chunk[3])}__{uu.boundstr(chunk)}__{cn.IPCC_summary_pattern}_2015_2024.tif"
+           in existing_raster_names
+    ]
+
+    main_logger.info(
+        f"Filtered chunk list from {original_count} to {len(chunk_list)} chunks "
+        f"based on existing IPCC_summary rasters."
+    )
+
 
     main_logger.info(f"Submitting {len(chunk_list)} tasks: {uu.timestr()}")
 
@@ -263,6 +292,7 @@ if __name__ == "__main__":
     parser.add_argument("-mpd", "--model_path_description", default="global", help="Description of model run.")
     parser.add_argument("-ln", "--log_note", help="Note to include in the log.")
     parser.add_argument("--no_log", action="store_true", help="Do not create the combined log")
+    parser.add_argument("--recreate_array", action="store_true", help="Delete and recreate IPCC_summary as uint16 before populating.")
 
     args = parser.parse_args()
 
@@ -276,4 +306,5 @@ if __name__ == "__main__":
         first_chunks=args.first_chunks,
         model_path_description=args.model_path_description,
         log_note=args.log_note,
+        recreate_array=args.recreate_array,
     )

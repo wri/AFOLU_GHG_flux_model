@@ -15,11 +15,11 @@ python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_l
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_1x1 -bb 119 -6 120 -5 -cs 1 --create_zarr --run_date 20268888
 
 Coiled test (10x10 deg chunk):
-python -m src.utilities.create_cluster -n 50 -m 16 -cn IPCC_land_use_10x10
+python -m src.utilities.create_cluster -n 50 -m 8 -cn IPCC_land_use_10x10
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use_10x10 -bb 110 -10 120 0 -cs 10 --create_zarr --run_date 20268888
 
 Full run:
-python -m src.utilities.create_cluster -n 200 -m 16 -cn IPCC_land_use
+python -m src.utilities.create_cluster -n 200 -m 8 -cn IPCC_land_use
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -cs 10 --create_zarr --run_date 20260617 --log_note "This is a global run for IPCC land use model v1.0.0 (2015-2024)"
 python -m src.LULUCF.scripts.postprocessing.LUC.GLCLU_conversion_IPCC -cn IPCC_land_use --chunk_ids_to_skip /mnt/c/GIS/AFOLU_flux_model/land_use/processed_1x1.txt -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -cs 10 --create_zarr --run_date 20260617 --log_note "This is a global run for IPCC land use model v1.0.0 (2015-2024). Part 2"
 
@@ -32,21 +32,11 @@ Notes:
     - Took 19.5 hours to run globally (1x1 chunk step) + 3.5 hours to make 10 x 10 outputs (4480 credits, $375)
 
 TODO:
-Switch from regex to numba for faster performance
+Potentially switch from regex to numba for faster performance
 Remove skip existing 1x1 logic? Or change to 10x10 deg tile creation only?
-Low resource usage during 10x10 tile creation step
-Error at final combined log step:
-Traceback (most recent call last):
-  File "/mnt/c/GIS/git/AFOLU_GHG_flux_model/src/LULUCF/scripts/postprocessing/LUC/GLCLU_conversion_IPCC.py", line 1952, in main
-    if not run_local:
-        ^^^^^^^^^^^^^^
-  File "/mnt/c/GIS/git/AFOLU_GHG_flux_model/src/utilities/terminate_cluster.py", line 10, in terminate_cluster
-    cluster = coiled.Cluster(name=cluster_name)
-              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/melrose94/miniforge3/envs/afolu/lib/python3.12/site-packages/coiled/v2/cluster.py", line 997, in __init__
-    raise e.with_traceback(None)  # noqa: B904
-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-coiled.errors.ClusterCreationError: Only 1 workers ready (was waiting for at least 3).  (cluster_id: 1737481)
+Low resource usage during 10x10 tile creation step. Resize cluster or run separately than with 1x1 chunk run.
+Add IFL/primary rule: If Built, Crop, or TCL + antrhopgenic driver then conversion, else Forest remaining Forest.
+If any vegetation fluxes with water assume wetland.
 """
 
 import argparse
@@ -461,7 +451,7 @@ def apply_extent_rules(lu_dict):
 
     crop_reclass_idx = [i for i, token in enumerate(tokens) if token in {"F", "G", "W", "B", "O", "I"}]
     forest_reclass_idx = [i for i, token in enumerate(tokens) if token in {"G", "W", "B", "O", "I"}]
-    # TODO: May want to consider not including wetland? water? ice?
+    # May want to consider not including wetland? water? ice?
 
     # Get oil palm planting year
     crop_extent = lu_dict["sdpt_tree_crop"] or lu_dict["sdpt_oil_palm"]
@@ -552,7 +542,7 @@ def apply_built_transition(lu_dict):
 
     first_s_idx = token_seq.find("S")
 
-    # Go down hierarchy. C is handled as tie-breaker when present.
+    # Go down hierarchy.
     for candidate in ["F", "G", "W", "B", "O", "I"]:
         if candidate not in token_seq:
             continue
@@ -572,7 +562,8 @@ def apply_built_transition(lu_dict):
         apply_tokens(lu_dict, range(0, transition_idx), pre_token, pre_node_map[pre_token])
         apply_tokens(lu_dict, range(transition_idx, len(tokens)), "S", node_code_map["built_tall_veg_loss"])
         return
-#TODO: Use TCL up to 5 years prior for F->S exception?
+#TODO: Use TCL up to 5 years prior for F->S exception? Allow for S->O/W transitions but not O/W->S? Require 5 years of O/W for it to be considered permanently flooded land?
+
 
 # Mix of 2 or more LC classes -> crop
 def apply_crop_transition(lu_dict):
@@ -591,6 +582,7 @@ def apply_crop_transition(lu_dict):
     first_c_idx = token_seq.find("C")
 
     # Go down hierarchy. F uses first F loss; everything else uses first C.
+    # If there is a mix of 2 or more non-built classes, it chooses the highest-priority class from this order:
     for candidate in ["F", "G", "W", "B", "O", "I"]:
         if candidate not in token_seq:
             continue
@@ -610,7 +602,7 @@ def apply_crop_transition(lu_dict):
         apply_tokens(lu_dict, range(transition_idx, len(tokens)), "C", node_code_map["crop_post_c"])
 
         return
-#TODO: Use TCL up to 5 years prior for F->C exception?
+#TODO: Use TCL up to 5 years prior for F->C exception? Allow for permanently flooded land like in the built transition rule?
 
 # #Tall vegetation all years
 # def apply_all_tall_veg(lu_dict):
@@ -768,6 +760,7 @@ def apply_tall_short_bare(lu_dict):
                 else:
                     apply_tokens(lu_dict, final_idx, "B", node_code_map["bare_tall_short_mix"])
                 return
+    #TODO: Revisit this subrule.
 
     # 6) Otherwise use regex fallback if no oil palm and no TCL + driver.
 
