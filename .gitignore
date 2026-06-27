@@ -92,6 +92,8 @@ config/hot_export_token.txt
 .DS_Store
 *checkpoint.ipynb
 
+*-checkpoint*
+
 *chunk_statistics*
 
 *parquet*
@@ -103,3 +105,6 @@ model_output/
 
 *model_log*txt
 
+*KEEP*
+
+/src/LULUCF/scripts/zonal_statistics/old_zonal_stats_notebooks/dist_alerts_zonal_stat(1)__from_Solomon_Negusse_via_Slack_20250523a.ipynb

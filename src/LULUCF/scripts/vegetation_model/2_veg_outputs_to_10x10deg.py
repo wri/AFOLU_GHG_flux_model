@@ -46,6 +46,7 @@ python -m src.LULUCF.scripts.vegetation_model.2_veg_outputs_to_10x10deg -cn vege
 Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/690a21cd-2ea0-8333-9c7f-7091f8016fb3
 
 #TODO change NoData in flux outputs to something besides 0 because 0 has a meaning for fluxes
+#TODO Parallelize 10x10 deg tile uploads in create_10x10_deg_geotif_from_zarr, per Claude session 'LULUCF 30-m outputs script'. Applies to veg, SOC, and LULUCF. Haven't tried at all.
 """
 
 import argparse
@@ -134,8 +135,8 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     if first_years_to_process:
         years_to_process = first_years_to_process
     else:
-        years_to_process = len(cn.interval_end_years_annual)
-    main_logger.info(f"Years to aggregate to 10x10 deg and compare chunk stats for: {years_to_process} out of {len(cn.interval_end_years_annual)}")
+        years_to_process = cn.end_year_count
+    main_logger.info(f"Years to aggregate to 10x10 deg and compare chunk stats for: {years_to_process} out of {cn.end_year_count}")
 
     if first_tiles_to_process:
         tile_ids_to_process = unique_tile_ids[0:first_tiles_to_process]

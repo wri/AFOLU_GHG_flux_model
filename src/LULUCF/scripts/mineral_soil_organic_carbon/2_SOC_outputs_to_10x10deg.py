@@ -31,25 +31,26 @@ python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10d
 
 Coiled small tests (needs 32 GB because of per-ha and per-pixel outputs):
 python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -bb 10 49 11 50 -fy 1 -fv 1 -ft 1 -mt standard -mpd test_box -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__KEEP.xlsx  --input_date YYYYMMDD
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -bb 10 49 11 50 -fy 1 -fv 1 -ft 1 -mt standard -mpd test_box -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__with_pivots__KEEP.xlsx  --input_date YYYYMMDD
 
 Coiled small tests:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -bb -64 -22 -63 -21 -fy 3 -fv 3 -ft 3 -mt standard -mpd test_box -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__KEEP.xlsx --input_date YYYYMMDD
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -bb -64 -22 -63 -21 -fy 3 -fv 3 -ft 3 -mt standard -mpd test_box -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__with_pivots__KEEP.xlsx --input_date YYYYMMDD
 
 Coiled Cerrado test (174 features):
 python -m src.utilities.create_cluster -n 20 -t 1 -m 32 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -mt standard -mpd Cerrado -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp --input_date YYYYMMDD
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -mt standard -mpd Cerrado -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__with_pivots__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp --input_date YYYYMMDD
 
 Coiled large shapefile test (1884 features):
 python -m src.utilities.create_cluster -n 100 -t 1 -m 32 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -mt standard -mpd 1884_features -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp --input_date YYYYMMDD
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -mt standard -mpd 1884_features -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__with_pivots__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp --input_date YYYYMMDD
 
 Full run:
 python -m src.utilities.create_cluster -n 200 -t 1 -m 32 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -mt standard -mpd global -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --input_date YYYYMMDD --log_note "10x10 deg tile creation for SOC v1.0.1 (2000-2022, revised organic/mineral soil split)."
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -mt standard -mpd global -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__with_pivots__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --input_date YYYYMMDD --log_note "10x10 deg tile creation for SOC v1.0.1 (2000-2022, revised organic/mineral soil split)."
 
 Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/690a21cd-2ea0-8333-9c7f-7091f8016fb3
+#TODO Parallelize 10x10 deg tile uploads in create_10x10_deg_geotif_from_zarr, per Claude session 'LULUCF 30-m outputs script'. Applies to veg, SOC, and LULUCF. Haven't tried at all.
 """
 
 import argparse

@@ -60,6 +60,25 @@ def categorize_age(da):
                     xr.where(da <= 100, 81, 101)))))))
 
 
+# Reclassifies composite landcover zarr for a given year into basic landcover classes.
+# Codes are from the GLAD-IPCC crosswalk in the AFOLU flux model schematic slide deck
+# Adapted Claude session 'Forest age categorization in zonal stats'
+def categorize_composite_LC(da):
+    return xr.where(da <= 4, 6,             # Codes 0-4                                     Other land
+                    xr.where(da <= 26, 5,   # Codes 5-26                                    Grassland
+                    xr.where(da <= 48, 1,   # Codes 27-48                                   Forest
+                    xr.where(da <= 104, 6,  # Codes 49-104, but practically just 100-104    Other land
+                    xr.where(da <= 126, 5,  # Codes 105-126                                 Grassland
+                    xr.where(da <= 148, 1,  # Codes 127-148                                 Other land
+                    xr.where(da <= 204, 4,  # Codes 149-204, but practically just 200-204   Wetland
+                    xr.where(da <= 207, 6,  # Codes 205-207                                 Other land
+                    xr.where(da <= 241, 6,  # Codes 208-241, but practically just code 241  Other land
+                    xr.where(da <= 244, 2,  # Codes 242-244, but practically just code 244  Cropland
+                    xr.where(da <= 250, 3,  # Codes 245-250, but practically just code 250  Settlement
+                    xr.where(da <= 254, 6,  # Codes 251-254, but practically just code 254  Other land
+                                        7))))))))))))   # All other codes                   None of the above
+
+
 # Converts results of flox to coordinate dictionary.
 # This code came from Solomon Negusse and I haven't changed it in any substantial way.
 def convert_to_coord_dict(flux_results, tile_id, main_logger):
@@ -343,6 +362,11 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
     # Maps IPCC summary codes to names if the contextual layer is used
     if cn.IPCC_summary_pattern in df_with_areas.columns:
         df_with_areas[f"{cn.IPCC_summary_pattern}_name"] = (df_with_areas[cn.IPCC_summary_pattern].map(cn.numeric_to_ipcc_change).fillna("Unassigned"))
+        
+    # Maps watershed codes to names if the contextual layer is used
+    if cn.first_year_LC_composite_pattern in df_with_areas.columns:
+        df_with_areas['first_year_LC_composite_name'] = df_with_areas[cn.first_year_LC_composite_pattern].map(cn.GLAD_LC_to_text)
+        df_with_areas["first_year_LC_composite_name"] = df_with_areas["first_year_LC_composite_name"].fillna("Unassigned")
 
     # Calculates flux density (Mg CO2(e)/ha) for each row
     df_with_areas['density__Mg_ha'] = df_with_areas['value'] / df_with_areas['pixel_area_ha'].replace(0, pd.NA)

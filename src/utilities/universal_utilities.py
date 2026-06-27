@@ -587,16 +587,16 @@ def get_interval_info(start_year, end_year, main_logger):
         output_years = cn.interval_end_years_5_years
     elif start_year == 2015 and end_year == cn.last_model_year_annual:
         interval_type = cn.intervals_annual
-        interval_length = [1] * len(cn.interval_end_years_annual)
+        interval_length = [1] * cn.end_year_count
         # interval_length = [1, 1, 1, 1, 1, 1, 1, 1, 1]  # Expected for 2015-2024
-        interval_year_diff = [1] * len(cn.interval_end_years_annual)
+        interval_year_diff = [1] * cn.end_year_count
         # interval_year_diff = [1, 1, 1, 1, 1, 1, 1, 1, 1]  # Expected for 2015-2024
         output_years = cn.interval_end_years_annual
     elif start_year == 2000 and end_year == cn.last_model_year_annual:  # Hybrid model (2000-2024)
         interval_type = cn.intervals_hybrid
-        interval_length = [cn.five_year_interval_duration] * len(cn.interval_end_years_5_years[:-1]) + [1] * len(cn.interval_end_years_annual)
+        interval_length = [cn.five_year_interval_duration] * len(cn.interval_end_years_5_years[:-1]) + [1] * cn.end_year_count
         # interval_length = [5, 5, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1]  # Expected for 2000-2024
-        interval_year_diff = [cn.five_year_interval_duration - 1] * len(cn.interval_end_years_5_years[:-1]) + [1] * len(cn.interval_end_years_annual)
+        interval_year_diff = [cn.five_year_interval_duration - 1] * len(cn.interval_end_years_5_years[:-1]) + [1] * cn.end_year_count
         # interval_year_diff = [4, 4, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1]  # Expected for 2000-2024
         output_years = cn.interval_end_years_5_years[:-1] + cn.interval_end_years_annual
     else:
@@ -2252,6 +2252,7 @@ def write_single_geotiff_to_s3(var, year, tile_id, data, no_data_val, transform,
         "tiled": True,
         "blockxsize": 400,
         "blockysize": 400,
+        "BIGTIFF": "YES",  # For geotifs >4 GB
     }
 
     # Counts non-zero and non-NaN pixels for comparison with 1x1 deg geotifs
@@ -2468,7 +2469,11 @@ def mosaic_tiles_to_global(var_name, year_idx, first_tiles_to_process, base_path
     # Output s3 folder for dataset and year
     output_path = base_path.replace("CHUNK_SIZE_pixels", "global")
 
-    output_name = f"{var_name}{units}_v{model_version}_{year}_global.tif"
+    # If processing an annual average map, it uses that for the year, e.g., avg_2016_2024. Otherwise, just uses the year.
+    # Per Claude session 'LULUCF global geotif setup'
+    avg_match = re.search(r'avg_\d{4}_\d{4}', base_path)
+    year_for_name = avg_match.group(0) if avg_match else year
+    output_name = f"{var_name}{units}_v{model_version}_{year_for_name}_global.tif"
     # print(output_name)
 
     # Collects s3 tiles for the dataset-year
@@ -2486,7 +2491,7 @@ def mosaic_tiles_to_global(var_name, year_idx, first_tiles_to_process, base_path
 
     # Creates a temporary working directory for worker
     tmpdir = tempfile.mkdtemp(prefix="mosaic_")
-    safe_name = re.sub(r'[^0-9a-zA-Z]+', '_', input_path.strip('/'))
+    safe_name = re.sub(r'[^0-9a-zA-Z]+', '_', input_path.strip('/'))[-180:]  # Shortens name if too long, per Claude session 'LULUCF global geotif setup'
     list_path = os.path.join(tmpdir, f"tile_list_{safe_name}.txt")
     vrt_path = os.path.join(tmpdir, f"mosaic_{safe_name}.vrt")
 

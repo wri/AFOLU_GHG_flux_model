@@ -84,10 +84,6 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
     # Download dictionary is the SOC global COGs
     download_dict = cn.SOC_COGS
 
-    # Converts the raw COG's kg C/m^3 (top 30 cm) that is rescaled by 10 -> Mg C/ha without the rescaling.
-    # OGH rescaled the global COGs by 10 to make them ints instead of floats to save storage.
-    SOC_CONVERSION_FACTOR = 3.0 / 10.0  # = 0.3
-
     # Report the number of retries for the task. Untested.
     # per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/694bfc7f-fab0-8332-b903-d5efa84b61c3
     retry_env_var = os.environ.get("DASK_TASK_RETRIES", "0")
@@ -115,12 +111,16 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
 
     # Ensures futures stores Future objects
     # Revised with https://chatgpt.com/share/e/67bde66c-d9a0-800a-a524-a9ef88c641a2 to return status messages for chunks
-    for future in concurrent.futures.as_completed(futures):
-        layer = futures[future]  # Gets the corresponding key
-        data, status = future.result()  # Unpacks the tuple result
-        if 'success' not in status: # Prints and logs any inputs that couldn't be accessed (downloaded as all 0s) or had to be padded
-            lu.print_and_log(f"{status}: {uu.timestr()}", False, logger_worker)
-        layers[layer] = data
+    # Revised with Claude session 'SOC stock script hang at task 3799'
+    try:
+        for future in concurrent.futures.as_completed(futures, timeout=cn.download_timeout):
+            layer = futures[future]
+            data, status = future.result()
+            if 'success' not in status:
+                lu.print_and_log(f"{status}: {uu.timestr()}", False, logger_worker)
+            layers[layer] = data
+    except concurrent.futures.TimeoutError:
+        raise RuntimeError(f"Download timed out after {cn.download_timeout}s for {bounds_str} ({tile_id}): {uu.timestr()}")
 
     organic_soil_mask_uri = f"{cn.organic_soil_extent_dir}{tile_id}__{cn.organic_soil_extent_pattern}.tif"
 
@@ -143,7 +143,7 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
         interval_array_full_extent = np.where(interval_array_full_extent == nodata_val, np.nan, interval_array_full_extent)
 
         # Convert units from kg C/m³ * 10 for 0-30 cm depth -> Mg C/ha for 0-30 cm depth
-        converted_array_full_extent = (interval_array_full_extent * SOC_CONVERSION_FACTOR).astype(np.float32)
+        converted_array_full_extent = (interval_array_full_extent * cn.SOC_conversion_factor).astype(np.float32)
 
         # print(f"\n--- Chunk {bounds_str} ---")
         # print(f"SOC density array shape for {bounds_str} for {end_year}: {converted_array_full_extent.shape}")
@@ -176,7 +176,11 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
         year_diff = end_year-start_year
         # print(f"start_year: {start_year}; end_year: {end_year}; year_diff: {year_diff}")
 
-        lu.print_and_log(f"Calculating SOC change for {end_year} to {start_year} for {bounds_str}: {uu.timestr()}", is_large_run, logger_worker)
+        # Final interval is 3.5 years (2015-2020 vs. 2020-2022, midpoints are 2017.5 and 2021, difference is 3.5)
+        if end_year == cn.SOC_density_intervals[-1]:
+            year_diff = 3.5
+
+        lu.print_and_log(f"Calculating SOC change for {end_year} to {start_year} using {year_diff} years for {bounds_str}: {uu.timestr()}", is_large_run, logger_worker)
 
         # Multiplies difference by -1 to make net loss positive and net gain negative (as for vegetation)
         # Interval arrays must be unsigned so difference can be negative
@@ -508,7 +512,7 @@ def main(cluster_name, model_type,
 
         # Creates the global mega-zarr with metadata only
         zu.initialize_global_zarr(zarr_path, outputs_to_zarr_with_unit, len(cn.SOC_density_intervals),
-                                  ((len(cn.interval_end_years_annual)), chunk_size_pixels, chunk_size_pixels), main_logger)
+                                  ((cn.end_year_count), chunk_size_pixels, chunk_size_pixels), main_logger)
 
         fs = fsspec.filesystem("s3", anon=False)
         mapper = fs.get_mapper(zarr_path)
@@ -628,6 +632,9 @@ def main(cluster_name, model_type,
 
 
     ### Step 6: Compares model output chunk stats to zarr chunk stats for each variable-year (only if chunk stats created)
+
+    # # Use if resuming run here for zarr-chunk stats comparison
+    # model_chunk_stats_path = 'chunk_stats/soil_carbon_densities_and_changes_1x1_chunk_statistics_20260611_20_36_25__with_pivot__KEEP.xlsx'
 
     if (not no_stats) and create_zarr:
 

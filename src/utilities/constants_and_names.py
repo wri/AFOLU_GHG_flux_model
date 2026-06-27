@@ -26,6 +26,8 @@ organic_soil_model_version_underscore = organic_soil_model_version.replace(".", 
 SOC_model_version = "1.0.1"
 SOC_model_version_underscore = SOC_model_version.replace(".", "_")
 
+LULUCF_full_version_underscore = (f"LULUCF_version_{LULUCF_model_version_underscore}_MODEL_TYPE__MODEL_PATH_DESCRIPTION__veg_v{veg_model_version_underscore}__org_soil_v{organic_soil_model_version_underscore}__min_soil_v{SOC_model_version_underscore}")
+
 
 ### s3 buckets
 s3 = boto3.resource('s3')
@@ -58,6 +60,8 @@ last_model_year_annual = 2024   # Last year of annual data
 
 years_annual = [2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
 interval_end_years_annual = years_annual[1:]
+end_year_count = len(interval_end_years_annual)
+year_range_str = f"{interval_end_years_annual[0]}_{last_model_year_annual}"
 
 possible_task_statuses = ["pending_", "loading_", "preprocessing_", "calculating_",
                           "zarr_population_", "uploading_", "error_"]
@@ -66,6 +70,9 @@ possible_task_statuses = ["pending_", "loading_", "preprocessing_", "calculating
 intervals_five_years = "five_years"
 intervals_annual = "annual"
 intervals_hybrid = "hybrid"
+
+# Seconds until a file download timeouts (and potentially retries)
+download_timeout = 300
 
 
 ### Carbon constants
@@ -713,6 +720,11 @@ GPW_MVH_pattern = f"GPW_height"
 # Erin confirmed that it didn't matter which interval I used for the organic soil mask; all are equivalent.
 organic_soil_extent_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/outputs/version_{organic_soil_model_version_underscore}/organic_soil/ogh_mixed_f1_f15_f2_20260513/five_year_intervals/2021_2024/40000_pixels/20260525/"
 organic_soil_extent_pattern = "organic_soil__2021_2024"
+organic_soil_burned_pattern   = "burned_total_Mg_CO2e"
+organic_soil_drained_pattern  = "drained_total_Mg_CO2e"
+organic_soil_year_intervals   = ['2016_2020', '2021_2024']  # update when a new interval is added
+
+organic_soil_zarr_path = f"s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/outputs/version_{organic_soil_model_version_underscore}/mega_zarr/ogh_mixed_f1_f15_f2_20260513/five_year/4000_pixels/20260525/mega.zarr"
 
 
 # Cropland emissions
@@ -992,8 +1004,24 @@ SOC_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/output
 SOC_density_intervals = [2005, 2010, 2015, 2020, 2022]
 # Value refers to the end year of the second OGH reporting block, e.g., 2010 is the comparison of 2000-2005 block vs. 2005-2010 block
 SOC_change_intervals = [2010, 2015, 2020, 2022]
+SOC_change_interval_length = 5 # years
+
+SOC_density_intervals_annual = [2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022]
+SOC_change_intervals_annual = [2016, 2017, 2018, 2019, 2020, 2021, 2022]
 
 SOC_path_zarr = f"{SOC_outputs_path}zarr/CHUNK_SIZE_pixels/RUN_DATE/SOC_zarr.zarr"
+
+# Converts the raw COG's kg C/m^3 (top 30 cm) that is rescaled by 10 -> Mg C/ha without the rescaling.
+# OGH rescaled the global COGs by 10 to make them ints instead of floats to save storage.
+# OGH COG encoding: raw integer × 0.1 = kg C/m³ volumetric density.
+# Depth: 0–30 cm = 0.3 m.
+# Conversion to Mg C per pixel: density × depth × pixel_area_m² / 1000 (=0.3)
+OGH_SCALE  = np.float64(0.1)    # raw → kg C/m³
+DEPTH_M    = np.float64(0.3)    # 0–30 cm layer
+M2_PER_HA  = np.float64(10000) # m²/ha
+KG_TO_MG   = np.float64(1000)  # kg/Mg
+SOC_conversion_factor = np.float32(OGH_SCALE * DEPTH_M * M2_PER_HA / KG_TO_MG)
+
 
 # Extent of raw COGs
 SOC_density_full_extent_pattern = "SOC_density__full_extent__0-30cm_MgC"
@@ -1023,6 +1051,11 @@ SOC_outputs_to_zarr = [
 ]
 
 
+# S3 base path (without s3://gfw2-data/)
+SOC_uncertainty_output_base = (f'{SOC_outputs_path}mineral_soil_uncertainty/')
+SOC_uncertainty_output_intermediates = (f'{SOC_uncertainty_output_base}intermediates/')
+
+
 ### Soil summative outputs
 
 soil_output_patterns = [
@@ -1043,9 +1076,8 @@ soil_output_dirs = [
 
 ### LULUCF summative outputs
 
-LULUCF_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs_LULUCF/{model_version_type_description_placeholder}/"
-LULUCF_outputs_path_mega_zarr = f"{LULUCF_outputs_path}mega_zarr/MODEL_INTERVAL_TYPE_intervals/CHUNK_SIZE_pixels/RUN_DATE/"
-LULUCF_annual_outputs_path_mega_zarr = f"{LULUCF_outputs_path_mega_zarr}LULUCF_annual.zarr"
+LULUCF_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs_LULUCF_totals/{model_version_type_description_placeholder}/"
+LULUCF_outputs_path_zarr = f"{LULUCF_outputs_path}zarr/MODEL_INTERVAL_TYPE_intervals/CHUNK_SIZE_pixels/RUN_DATE/"
 
 LULUCF_output_patterns = [
     gross_emis_all_C_pools_CO2_only_LULUCF_pattern,
@@ -1064,6 +1096,9 @@ LULUCF_output_dirs = [
     f"{LULUCF_outputs_path}{net_flux_all_C_pools_all_gases_LULUCF_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
 ]
 
+LULUCF_annual_zarr_name = "LULUCF_annual.zarr"
+LULUCF_avg_zarr_name = f"LULUCF_avg_{interval_end_years_annual[0]}_{interval_end_years_annual[-1]}.zarr"
+
 
 #######
 ### Zonal stats resources
@@ -1075,81 +1110,88 @@ contextual_zarr_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/contextua
 
 adm0_zarr_date = '20251209'
 adm0_zarr_dtype = 'uint16'
+adm0_pattern = 'adm0'
 adm0_geotif_path = "s3://gfw2-data/gadm_administrative_boundaries/v4.1/v4.1.64__from_gfw-data-lake/raster/epsg-4326/10/40000/adm0/gdal-geotiff/"
 adm0_zarr_path = f"{contextual_zarr_path}GADM4_1_adm0_global/{adm0_zarr_date}_fillValue_removed/global_GADM41_adm0_{adm0_zarr_date}.zarr"
 adm0_test_chunk = [13, 48, 14, 49]  # Three countries meet in Europe, with different values in three corners (50N_010E)
-adm0_pattern = 'adm0'
 
 pixel_area_zarr_date = '20260531'
 pixel_area_zarr_dtype = 'float32'
+pixel_area_zstats_pattern = 'pixel_area'
 pixel_area_geotif_path = pixel_area_dir
 pixel_area_zarr_path = f"{contextual_zarr_path}pixel_area/{pixel_area_zarr_date}_fillValue_removed/global_pixel_area_{pixel_area_zarr_date}.zarr"
 pixel_area_test_chunk = [13, 48, 14, 49]  # 50N_010E
-pixel_area_zstats_pattern = 'pixel_area'
 
 WDPA_zarr_date = '20251229'
 WDPA_zarr_dtype = 'uint8'
+WDPA_pattern = 'WDPA'
 WDPA_geotif_path = "s3://gfw2-data/conservation/wdpa_licensed_proteced_areas__from_data_lake/v202511/raster/epsg-4326/10/40000/detailed_iucn_cat/gdal-geotiff/"
 WDPA_zarr_path = f"{contextual_zarr_path}WDPAv202511/{WDPA_zarr_date}_fillValue_removed/wdpa_{WDPA_zarr_date}.zarr"
 WDPA_test_chunk = [21, -3, 22, -2]  # Has WDPA 0, 3 (bottom left, top right), and 9 (top left) (00N_020E)
-WDPA_pattern = 'WDPA'
 
 BRA_biomes_zarr_date = '20251229'
 BRA_biomes_zarr_dtype = 'uint8'
+BRA_biomes_pattern = 'BRA_biomes'
 BRA_biomes_geotif_path = "s3://gfw2-data/country/bra/bra_biomes_geotif/"
 BRA_biomes_zarr_path = f"{contextual_zarr_path}BRA_biomes/{BRA_biomes_zarr_date}_fillValue_removed/BRA_biomes_{BRA_biomes_zarr_date}.zarr"
 BRA_biomes_test_chunk = [-58, -16, -57, -15]  # Three biomes meet, with different values in three corners (10S_060W)
-BRA_biomes_pattern = 'BRA_biomes'
 
 cont_eco_zarr_date = '20260206'
 cont_eco_zarr_dtype = 'uint16'
+cont_eco_zstats_pattern = 'cont_eco'
 cont_eco_geotif_path = "s3://gfw2-data/climate/carbon_model/fao_ecozones/ecozone_continent/20190116/processed/"
 cont_eco_zarr_path = f"{contextual_zarr_path}FAO_ecozone_continents/{cont_eco_zarr_date}_fillValue_removed/FAO_ecozone_continents_{cont_eco_zarr_date}.zarr"
-cont_eco_test_chunk = [119, -6, 120, -5]  # Mix of 0, 4018 and 4020, with 4020 in upper right (00N_110E)
-cont_eco_zstats_pattern = 'cont_eco'
+cont_eco_test_chunk = [119, -6, 120, -5]  # Mix of 0, 4018 and 4020, with 4020 in upper right (00N_110E)=
 
 landmark_zarr_date = '20260213'
 landmark_zarr_dtype = 'uint8'
+landmark_pattern = 'Landmark'
 landmark_geotif_path = "s3://gfw2-data/landmark/gfw-data-lake/landmark_ip_lc_and_indicative_poly/v20250909/raster/epsg-4326/10/40000/is/geotiff/"
 landmark_zarr_path = f"{contextual_zarr_path}landmark/v20250909/{landmark_zarr_date}_fillValue_removed/landmark_{landmark_zarr_date}.zarr"
 landmark_test_chunk = [29, -1, 30, 0]  # 1 in upper left and lower left (00N_020E)
-landmark_pattern = 'Landmark'
 
 KBA_zarr_date = '20260213'
 KBA_zarr_dtype = 'uint16'
+KBA_pattern = 'KBA'
 KBA_geotif_path = "s3://gfw2-data/conservation/Key_Biodiversity_Areas/KBA_2024_09/KBA_v20240903__from_gfw-data-lake/raster/epsg-4326/10/40000/is/geotiff/"
 KBA_zarr_path = f"{contextual_zarr_path}KBA/v20240903/{KBA_zarr_date}_fillValue_removed/KBA_{KBA_zarr_date}.zarr"
 KBA_test_chunk = [29, -1, 30, 0]  # 1 in upper right; roughly 1/3-1/2 of chunk is KBA (00N_020E)
-KBA_pattern = 'KBA'
 
 # watersheds_zarr_date = '20260213'
 watersheds_zarr_date = '20260508'
 watersheds_zarr_dtype = 'uint16'
+watersheds_pattern = 'watershed'
 watersheds_geotif_path = "s3://gfw2-data/water/mapbox_river_basins__from_gfw-data-lake/v2018/raster/epsg-4326/10/40000/id/gdal-geotiff/"
 watersheds_zarr_path = f"{contextual_zarr_path}river_basins/v2018/{watersheds_zarr_date}_fillValue_removed/river_basins_{watersheds_zarr_date}.zarr"
 watersheds_test_chunk = [29, -1, 30, 0]  # 7005 in upper and lower left corners, 7003 in upper and lower right corners; should have nearly full coverage (00N_020E)
-watersheds_pattern = 'watershed'
 
 managed_land_CAN_zarr_date = '20260322'
 managed_land_CAN_zarr_dtype = 'uint8'  # 1=managed, 2=unmanaged
+managed_land_CAN_pattern = 'managed_land_Canada'
 managed_land_CAN_geotif_path = "s3://gfw2-data/climate/jrc_managed_land_can__from_gfw-data-lake/v20260218/raster/epsg-4326/10/40000/managed_land_extent/geotiff/"
 managed_land_CAN_zarr_path = f"{contextual_zarr_path}jrc_managed_land_can/v20260218/{managed_land_CAN_zarr_date}_fillValue_removed/jrc_managed_land_can_{managed_land_CAN_zarr_date}.zarr"
 managed_land_CAN_test_chunk = [-141, 61, -140, 62]  # 1 (managed) in bottom corners, 2 (unmanaged) in top corners. Should have full coverage. (70N_150W)
-managed_land_CAN_pattern = 'managed_land_Canada'
 
 managed_land_USA_zarr_date = '20260219'
 managed_land_USA_zarr_dtype = 'uint8'  # 1=managed, 2=unmanaged
+managed_land_USA_pattern = 'managed_land_USA'
 managed_land_USA_geotif_path = "s3://gfw2-data/climate/jrc_managed_land_usa__from_gfw-data-lake/v20260218/raster/epsg-4326/10/40000/managed_land_extent/geotiff/"
 managed_land_USA_zarr_path = f"{contextual_zarr_path}jrc_managed_land_USA/v20260218/{managed_land_USA_zarr_date}_fillValue_removed/jrc_managed_land_USA_{managed_land_USA_zarr_date}.zarr"
 managed_land_USA_test_chunk = [-143, 61, -142, 62]  # 1 (managed) in top right, 2 (unmanaged) in other corners. Should have full coverage. (70N_150W)
-managed_land_USA_pattern = 'managed_land_USA'
 
 drivers_of_loss_zarr_date = '20260507'
 drivers_of_loss_zarr_dtype = 'uint8'
+drivers_of_loss_pattern = 'drivers_of_TCL_1_km'
 drivers_of_loss_geotif_path = drivers_processed_dir
 drivers_of_loss_zarr_path = f"{contextual_zarr_path}drivers_of_TCL_1_km/v{drivers_run_date}/update2023_20241218__run_{drivers_of_loss_zarr_date}_fillValue_removed/drivers_of_TCL_1_km_{drivers_of_loss_zarr_date}.zarr"
 drivers_of_loss_test_chunk = [27, -9, 28, -8]  # 7 in top-left, 3 in top-right, 1 in bottom-right, NoData in bottom-left (00N_020E)
-drivers_of_loss_pattern = 'drivers_of_TCL_1_km'
+
+first_year_LC_composite_zarr_date = '20260611'
+first_year_LC_composite_zarr_dtype = 'uint8'
+first_year_LC_composite_pattern = 'first_year_LC_composite'
+first_year_LC_composite_geotif_path = f'{land_cover_annual_path}{first_model_year_annual}/'
+first_year_LC_composite_zarr_path = f"{contextual_zarr_path}{first_year_LC_composite_pattern}/v2/{first_year_LC_composite_zarr_date}_fillValue_removed/{first_year_LC_composite_pattern}_{first_year_LC_composite_zarr_date}.zarr"
+first_year_LC_composite_test_chunk = [19, 44, 20, 45] # 145 in top-left, 244 in top right, 24 in bottom right, 24 in bottom left
 
 
 ### Value options for contextual layer values.
@@ -1989,8 +2031,19 @@ forest_age_category_to_text = {
     101: '>100yr'
 }
 
-veg_local_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/vegetation_v{veg_model_version_underscore}_standard_global/"
+GLAD_LC_to_text = {
+    0: "Unassigned",
+    1: "Forest",
+    2: "Cropland",
+    3: "Settlement",
+    4: "Wetland",
+    5: "Grassland",
+    6: "Other land",
+    7: "Not specified"
+}
+
 land_use_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/IPCC_land_use_v{IPCC_LU_version_underscore}_standard_global/"
+veg_local_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/vegetation_v{veg_model_version_underscore}_standard_global/"
 SOC_local_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/SOC_v{SOC_model_version_underscore}_standard_global/"
 
 
@@ -2004,7 +2057,7 @@ original_shapefile_path = "/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_m
 reprojected_shapefile_path = "/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/world-administrative-boundaries_simple__20250102_reproj.shp"
 
 local_jpeg_folder_vegetation = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/vegetation/v{veg_model_version_underscore}_standard_global/"
-local_jpeg_folder_LULUCF = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/LULUCF_totals/veg_v{veg_model_version_underscore}_standard_global__org_soil_v_{organic_soil_model_version_underscore}__min_soil_v_{SOC_model_version_underscore}/"
+local_jpeg_folder_LULUCF = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/LULUCF_totals/{LULUCF_full_version_underscore}/"
 local_jpeg_folder_cropland = f"/mnt/c/GIS/AFOLU_flux_model/cropland_emissions/20250828/4x4km_aggregated_maps/"
 local_jpeg_folder_livestock = f"/mnt/c/GIS/AFOLU_flux_model/livestock_emissions/20251223/4x4km_aggregated_maps/"
 local_jpeg_folder_AFOLU = f"/mnt/c/GIS/AFOLU_flux_model/AFOLU_totals/4x4km_aggregated_maps/v{veg_model_version_underscore}__standard__global/"
@@ -2016,8 +2069,8 @@ Robinson_crs = "ESRI:54030"
 land_bkgrnd = (245, 245, 245) # Color for land where no raster data (light gray)
 # land_bkgrnd = (2, 2, 2) # Color for land where no raster data (black: for testing)
 # land_bkgrnd = (245, 245, 220) # Color for land where no raster data (light yellow: for testing)
-ocean_color = (235, 235, 235) # Color for land where no raster data (very light gray)
-# ocean_color = (255, 255, 255) # Color for land where no raster data (white)
+# ocean_color = (235, 235, 235) # Color for ocean (gray)
+ocean_color = (255, 255, 255) # Color for ocean (white)
 # ocean_color = (50, 50, 50) # Color for land where no raster data (dark gray: for testing)
 boundary_color = (150, 150, 150) # Color for country boundaries (medium gray)
 boundary_width = 0.2 # Width of country boundaries
@@ -2042,12 +2095,15 @@ emissions_percentiles = [5, 25, 50, 75, 99]
 removals_colors_rgb = net_colors_rgb[0:5]
 emissions_colors_rgb = net_colors_rgb[5:]
 
+# Percentile at which map color saturates and the min and max values on legend (0.5 -> 0.5 and 99.5 percentiles)
+saturation_percentile = 0.5
+
 veg_pres_text = f"Vegetation fluxes: v{veg_model_version}, {interval_end_years_annual[0]}-{last_model_year_annual}"
 organic_soil_pres_text = f"Organic soil: v{organic_soil_model_version}, 2021-2024"
 mineral_soil_pres_text = f"Mineral soil: v{SOC_model_version}, 2021-2022"
 cropland_pres_text = f"Cropland: vYYYYMMDD, ca. 2020"
 livestock_pres_text = f"Livestock: vYYYYMMDD, ca. 2020"
-legend_percentile_disclaimer = f"Legend value range represents 1 and 99 percentiles of fluxes."
+legend_percentile_disclaimer = f"Legend value range represents {saturation_percentile} and {1-saturation_percentile} percentiles of fluxes."
 
 # Output global aggregated jpeg names
 three_panel_jpeg_base = f"three_panels__4km_aggregation__v{veg_model_version}"

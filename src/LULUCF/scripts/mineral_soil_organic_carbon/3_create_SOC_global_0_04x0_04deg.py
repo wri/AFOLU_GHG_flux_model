@@ -71,7 +71,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
     main_logger.info(f"Input date: {input_date}")
     main_logger.info(f"no_upload: {no_upload}")
 
-    # Outputs to turn into 10x10 tiles.
+    # Outputs to create global maps for
     # Separate lists for density and change because they have different numbers of years, so they need to be handled separately
     full_list_of_vars_density = [
         cn.SOC_density_full_extent_pattern,
@@ -95,9 +95,9 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
         vars_to_process_density = full_list_of_vars_density
         vars_to_process_change = full_list_of_vars_change
     main_logger.info(
-        f"Variables to create 10x10 deg density tiles for: {vars_to_process_density} ({len(vars_to_process_density)} out of {len(full_list_of_vars_density)})")
+        f"Variables to create density global maps for: {vars_to_process_density} ({len(vars_to_process_density)} out of {len(full_list_of_vars_density)})")
     main_logger.info(
-        f"Variables to create 10x10 deg change tiles for: {vars_to_process_change} ({len(vars_to_process_change)} out of {len(full_list_of_vars_change)})")
+        f"Variables to create change global maps for: {vars_to_process_change} ({len(vars_to_process_change)} out of {len(full_list_of_vars_change)})")
 
     # Limits the processed years to the supplied number (for testing)
     if first_years_to_process:
@@ -107,11 +107,11 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
         years_to_process_density = len(cn.SOC_density_intervals)
         years_to_process_change = len(cn.SOC_change_intervals)
     main_logger.info(
-        f"Years to aggregate to 10x10 deg density and compare chunk stats for: {years_to_process_density} out of {len(cn.SOC_density_intervals)}")
+        f"Years to create global density maps for: {years_to_process_density} out of {len(cn.SOC_density_intervals)}")
     main_logger.info(
-        f"Years to aggregate to 10x10 deg change and compare chunk stats for: {years_to_process_change} out of {len(cn.SOC_change_intervals)}")
+        f"Years to create global change maps for: {years_to_process_change} out of {len(cn.SOC_change_intervals)}")
 
-    # Determines if the output file names for final versions of outputs should be used
+    # Determines if large run parameters should be used
     is_large_run = False
     # is_large_run = True  # For simulating a large run
     if ((len(vars_to_process_density)*2) * (years_to_process_density*2)) > 20:
@@ -122,40 +122,34 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
     main_logger.info(f"Core output path for aggregation: {base_path}")
 
 
-    ### Step 2: Creates outputs (separately for density and change because they have different numbers of years
+    ### Step 2: Creates outputs
+    ### Separate submissions for density and change because of the different numbers of years,
+    ### But they still run in parallel because they are all part of the same futures.
 
-    main_logger.info(f"Starting processing for density outputs: {uu.timestr()}")
-    futures_density = []
+    main_logger.info(f"Starting processing: {uu.timestr()}")
+    futures = []
 
+    # Density output processing
     for var_name in vars_to_process_density:
-
         for year_idx in range(years_to_process_density):
 
             future = client.submit(uu.mosaic_tiles_to_global,
                                    var_name, year_idx, first_tiles_to_process, base_path,
                                    cn.SOC_model_version_underscore, model_type, model_path_description,
                                    no_upload, is_large_run)
-            futures_density.append(future)
+            futures.append(future)
 
-    results = client.gather(futures_density)
-    print(results)
-
-    uu.stage_duration(start_time, uu.timestr(), stage, main_logger)
-
-    main_logger.info(f"Starting processing for change outputs: {uu.timestr()}")
-    futures_change = []
-
+    # Change output processing
     for var_name in vars_to_process_change:
-
         for year_idx in range(years_to_process_change):
 
             future = client.submit(uu.mosaic_tiles_to_global,
                                    var_name, year_idx, first_tiles_to_process, base_path,
                                    cn.SOC_model_version_underscore, model_type, model_path_description,
                                    no_upload, is_large_run)
-            futures_change.append(future)
+            futures.append(future)
 
-    results = client.gather(futures_change)
+    results = client.gather(futures)
     print(results)
 
     uu.stage_duration(start_time, uu.timestr(), stage, main_logger)

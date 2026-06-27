@@ -248,7 +248,8 @@ def main(cluster_name, process, bounding_box, chunk_size, run_local, no_upload):
     client
 
     # Creates the log for the main function and populates it with basic run information
-    main_logger, main_log_local_path, n_workers = lu.populate_main_log_header(client, cluster, f"Preprocessing: {process}", run_local,'standard', f'Hansenize: {process}')
+    main_logger, main_log_local_path, n_workers = lu.populate_main_log_header(client, cluster, f"Preprocessing: {process}", run_local,
+                                                                   'standard', f'Hansenize: {process}')
 
 
     ####################################################################################################################
