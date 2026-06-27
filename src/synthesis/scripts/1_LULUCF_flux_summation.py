@@ -62,7 +62,7 @@ python -m src.synthesis.scripts.1_LULUCF_flux_summation -cn LULUCF_summation -mt
 #TODO Parallelize 10x10 deg tile uploads in create_10x10_deg_geotif_from_zarr, per Claude session 'LULUCF 30-m outputs script'. Applies to veg, SOC, and LULUCF. Haven't tried at all.
 #TODO Parallelize outer loop for var in LULUCF_OUTPUTS_TO_ZARR: with max_workers=2 to speed 10x10 deg uploads (separate from change to create_10x10_deg_geotif_from_zarr, per Claude session 'LULUCF 30-m outputs script'
 #TODO Figure out why LULUCF chunk stats emissions and the emissions from the zonal stats-based LULUCF table don't match by 0.024 Gt CO2/yr, as described in https://app.asana.com/1/25496124013636/task/1215782176192854/comment/1215782176192873?focus=true
-#TODO Include output for total carbon density (vegetation + soil)
+#TODO Include output for total carbon density (vegetation + soil) (need to use different SOC blocks for different vegetation years)
 """
 
 import argparse

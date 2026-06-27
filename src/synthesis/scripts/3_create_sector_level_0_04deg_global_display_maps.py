@@ -16,6 +16,8 @@ Inputs:
 - Vegetation last year (2024) gross emissions geotif S3 path (Mg CO2e/0.04x0.04 deg/yr, WGS84 — reprojected to Robinson here) (optional)
 - Mineral soil gross loss S3 path (2020 change) (Mg CO2e/0.04x0.04 deg/yr, WGS84 — reprojected to Robinson here) (optional)
 
+- Flux uncertainties: hardcoded as arguments to annotation rendering function.
+
 - Cropland emissions (optional)
 - Livestock emissions (optional)
 
@@ -63,6 +65,7 @@ import re
 import time
 from pathlib import Path
 
+import matplotlib as mpl
 import numpy as np
 import pandas as pd
 import rasterio
@@ -75,6 +78,11 @@ from src.utilities import constants_and_names as cn
 from src.utilities import log_utilities as lu
 from src.utilities import map_utilities as mu
 from src.utilities import universal_utilities as uu
+
+mpl.rcParams.update({
+    'font.family': 'sans-serif',
+    'font.sans-serif': ['Helvetica', 'Arial', 'DejaVu Sans'],
+})
 
 
 # ── Raster helpers ──────────────────────────────────────────────────────────────
@@ -284,14 +292,15 @@ def _global_avg_annual_Gt(df, col):
     return df.groupby('year')[col].sum().mean() / 1e9
 
 
-def _flux_annotation(df, col, flux_description, unit='Gt CO$_2$e yr$^{-1}$'):
+def _flux_annotation(df, col, flux_description, unit='Gt CO$_2$e yr$^{-1}$', uncertainty=None):
     """Format a bottom-of-map annotation string. Returns None if df is None."""
     if df is None:
         return None
     val = _global_avg_annual_Gt(df, col)
     year_min = df['year'].min()
     year_max = df['year'].max()
-    return f"{flux_description}, {year_min}\u2013{year_max}: \n{val:.2g} {unit}"
+    unc_str = f" \u00b1 {uncertainty}" if uncertainty is not None else ''
+    return f"{flux_description}, {year_min}\u2013{year_max}: \n{val:.2g}{unc_str} {unit}"
 
 
 # ── Map rendering helpers ───────────────────────────────────────────────────────
@@ -700,7 +709,7 @@ def map_LULUCF_maps(lulucf_input_date,
         slide_text=lulucf_slide_text_with_disclaimer,
         logger=main_logger,
         mask_positive=True,
-        bottom_annotation=_flux_annotation(df_stats, 'LULUCF_gross_emissions__all_gases__MgCO2e_yr', 'Average gross emissions'),
+        bottom_annotation=_flux_annotation(df_stats, 'LULUCF_gross_emissions__all_gases__MgCO2e_yr', 'Average gross emissions', uncertainty="2.6"),
     )
 
     lulucf_remv_core = f"LULUCF_gross_remv__{file_version_str}__ktCO2e_yr"
@@ -713,7 +722,7 @@ def map_LULUCF_maps(lulucf_input_date,
         slide_text=lulucf_slide_text_with_disclaimer,
         logger=main_logger,
         mask_positive=False,
-        bottom_annotation=_flux_annotation(df_stats, 'LULUCF_gross_removals__MgCO2_yr', 'Average gross removals', unit='Gt CO$_2$ yr$^{-1}$'),
+        bottom_annotation=_flux_annotation(df_stats, 'LULUCF_gross_removals__MgCO2_yr', 'Average gross removals', unit='Gt CO$_2$ yr$^{-1}$', uncertainty="3.1"),
     )
 
     lulucf_net_core = f"LULUCF_net_flux__{file_version_str}__ktCO2e_yr"
@@ -726,7 +735,7 @@ def map_LULUCF_maps(lulucf_input_date,
         jpeg_name=jpeg_name(lulucf_net_core, bounding_box_description),
         slide_text=lulucf_slide_text_with_disclaimer,
         logger=main_logger,
-        bottom_annotation=_flux_annotation(df_stats, 'LULUCF_net_flux__MgCO2e_yr', 'Average net flux'),
+        bottom_annotation=_flux_annotation(df_stats, 'LULUCF_net_flux__MgCO2e_yr', 'Average net flux', uncertainty="4.0"),
     )
 
     main_logger.info(f"Part 1 done in {round(time.time() - start_time)}s: {uu.timestr()}")

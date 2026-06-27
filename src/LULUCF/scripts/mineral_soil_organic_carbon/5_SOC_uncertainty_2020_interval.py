@@ -12,6 +12,16 @@ Method: Uncertainty_Propagation_in_SOC_Stocks__from_Serkan_Isik_20260605.pdf
 
 Per Claude session 'Mineral soil carbon change uncertainty analysis'
 
+NOTE: Using the direct outputs from the methods that Serkan provided resulted in mineral soil change uncertainty orders of magnitude lower
+than the fluxes. One reason the uncertainties were so low was because I assumed all pixels were independent (no correlation between them).
+To address that, I used the chunk stats outputs to calculate chunk-level uncertainty for gain, loss, and net where I
+assumed that all pixels were correlated (not independent) in each chunk, then assumed all chunks were independent.
+In the end, that means squaring the total loss, gain and net uncertainties for all pixels in each chunk (rather than the square root of sums for all pixels),
+then taking the square root of sums across chunks.
+I did that in the chunk stats output, not the special uncertainty analysis output-- but I could have coded the uncertainty
+analysis spreadsheet to do that calculation, I suppose.
+Also, the geotifs are not for further uncertainty analysis; they're just for QC.
+
 A 120m pixel is included if it contains at least one mineral-soil 30m pixel (not majority). This matches the
 central estimate, which uses the 30m mineral-soil mask directly — so every 120m pixel that contributes any
 mass to the central estimate is also represented in the uncertainty analysis. A majority-mineral threshold would
@@ -64,6 +74,7 @@ python -m src.LULUCF.scripts.mineral_soil_organic_carbon.5_SOC_uncertainty_2020_
 Full run:
 python -m src.utilities.create_cluster -n 150 -t 1 -m 4 -cn SOC_uncertainty
 python -m src.LULUCF.scripts.mineral_soil_organic_carbon.5_SOC_uncertainty_2020_interval -cn SOC_uncertainty -mt uncertainty -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "Uncertainty analysis for mineral soil change, v1.0.1"
+#TODO Include sum_U_minus_net_MgC_yr and sum_U_plus_net_MgC_yr in "chunk" tab of special uncertainty xlsx, akin to sum_U_minus_loss_MgC_yr,	sum_U_plus_loss_MgC_yr,	sum_U_minus_gain_MgC_yr, sum_U_plus_gain_MgC_yr so that net uncertainty with chunk-level pixel correlation can be calculated.
 """
 
 import argparse
@@ -645,9 +656,10 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
     total_sum_U_plus_gain_sq  = 0.0   # gross gain: Σ (U⁺_Δ,j)²
     all_chunk_sq_sums = []            # per-chunk squared sums for chunk/tile Excel tabs
 
+    # start_batch = 3  # 0-indexed, so batch 4 is index 3  # for resuming at a specific batch
+    # for i, chunk_batch in enumerate(chunk_batches[start_batch:], start=start_batch):
     for i, chunk_batch in enumerate(chunk_batches):
-        main_logger.info(
-            f"Processing batch {i+1}/{len(chunk_batches)} ({len(chunk_batch)} chunks): {uu.timestr()}")
+        main_logger.info(f"Processing batch {i+1}/{len(chunk_batches)} ({len(chunk_batch)} chunks): {uu.timestr()}")
         uu.create_s3_task_files(stage, chunk_batch)
 
         futures = []
@@ -883,7 +895,7 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
 
     if not no_upload and is_large_run:
         geotiff_files, file_count = uu.list_raster_full_paths_in_s3_folder_and_count(output_s3_dir)
-        expected = success_count * 2   # U⁻_Δ and U⁺_Δ per chunk
+        expected = success_count * 15   # Currently 15 output folders
         main_logger.info(f"Output rasters in {output_s3_dir}: {file_count}  (expected {expected})")
         if file_count != expected:
             main_logger.warning("WARNING: File count mismatch — check for failed uploads.")
