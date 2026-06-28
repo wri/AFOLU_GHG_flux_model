@@ -123,9 +123,11 @@ IPCC_removal_factor_table_tab = "natrl fores gain, for std model"
 mangrove_rate_ratio_tab = 'mang gain and Cratios,for model'
 
 # Emission factors for partial disturbances (by 1km driver)
-partial_disturbance_emission_factor_table_name = "partial_disturbance_emission_factors_LULUCF_model__20260424.xlsx"
+partial_disturbance_emission_factor_table_name = "partial_disturbance_emission_factors_LULUCF_model_w_sensit_anlys__20260627.xlsx"
 partial_disturbance_emission_factor_table_full_path = f"{EF_RF_C_ratio_spreadsheet_URL}{partial_disturbance_emission_factor_table_name}"
-partial_disturbance_emission_factor_table_tab = "EF_combined"
+partial_disturbance_emission_factor_table_tab_standard = "EF_combined"
+partial_disturbance_emission_factor_table_tab_low_EF = "EF_combined_low"
+partial_disturbance_emission_factor_table_tab_high_EF = "EF_combined_high"
 
 # Aboveground carbon removal factor for oil palm (Mg C/ha/yr) (IPCC 2019 Cropland Table 5.3)
 oil_palm_agc_rf = 2.4
@@ -148,7 +150,9 @@ gwp_n2o = 273 # AR6 WG1 Table 7.15
 # Combustion factor for trees that had fire but no height reduction or other sign of disturbance
 # (i.e. undisturbed trees remaining trees).
 # From IPCC 2019, Table 2.6, "Boreal forest- surface fire" (applied globally, though boreal)
-Cf_forest_undisturbed = 0.15
+Cf_forest_undisturbed_standard = 0.15  # Standard model and sensitivity analyses in which EFs are not changed
+Cf_forest_undisturbed_low = (0.15-0.08)  # For sensitivity analysis: value-st dev
+Cf_forest_undisturbed_high = (0.15+0.08)  # For sensitivity analysis: value+st dev
 
 other_landcover_node = 7
 
@@ -162,21 +166,33 @@ cropland_node = 5
 cropland_residue_harvest_ratio = 1.0
 
 # Emission factors for crop residue burning (IPCC 2019, V4, Ch. 2, Table 2.5-- agricultural residues)
-Gef_CH4_crop_residue = 2.7
-Gef_N2O_crop_residue = 0.07
+Gef_CH4_crop_residue_standard = 2.7  # Standard model and sensitivity analyses in which EFs are not changed
+Gef_N2O_crop_residue_standard = 0.07  # Standard model and sensitivity analyses in which EFs are not changed
+Gef_CH4_crop_residue_low_EF = (2.7-1.5)  # For sensitivity analysis: value-best professional judgement st dev because IPCC has no st dev
+Gef_N2O_crop_residue_low_EF = (0.07-0.03)  # For sensitivity analysis: value-best professional judgement st dev because IPCC has no st dev
+Gef_CH4_crop_residue_high_EF = (2.7+1.5)  # For sensitivity analysis: value+best professional judgement st dev because IPCC has no st dev
+Gef_N2O_crop_residue_high_EF = (0.07+0.03)  # For sensitivity analysis: value+best professional judgement st dev because IPCC has no st dev
 
 # Combustion factor for crop residue burning (IPCC 2019, V4, Ch. 2, Table 2.6-- agricultural residues, other crops)
-Cf_crop_residue = 0.85
+Cf_crop_residue_standard = 0.85  # Standard model and sensitivity analyses in which EFs are not changed
+Cf_crop_residue_low = (0.85-0.15)  # For sensitivity analysis: value-best professional judgement st dev because IPCC has no st dev
+Cf_crop_residue_high = (0.85+0.15)  # For sensitivity analysis: value-best professional judgement st dev because IPCC has no st dev
 
 # Value for short/medium vegetation nodes in land state node decision tree (for gain, loss, or remaining)
 grassland_node = 6
 
 # Emission factors for savanna and grassland burning (IPCC 2019, V4, Ch. 2, Table 2.5-- savanna and grassland)
-Gef_CH4_grassland = 2.3
-Gef_N2O_grassland = 0.21
+Gef_CH4_grassland_standard = 2.3  # Standard model and sensitivity analyses in which EFs are not changed
+Gef_N2O_grassland_standard = 0.21  # Standard model and sensitivity analyses in which EFs are not changed
+Gef_CH4_grassland_low_EF = (2.3-0.9)  # For sensitivity analysis: value-st dev
+Gef_N2O_grassland_low_EF = (0.21-0.10)  # For sensitivity analysis: value-st dev
+Gef_CH4_grassland_high_EF = (2.3+0.9)  # For sensitivity analysis: value+st dev
+Gef_N2O_grassland_high_EF = (0.21+0.10)  # For sensitivity analysis: value+st dev
 
 # Combustion factor for savanna and grassland burning (IPCC 2019, V4, Ch. 2, Table 2.6-- all savanna grasslands (mid/late dry season burns)
-Cf_grassland = 0.77
+Cf_grassland_standard = 0.77  # Standard model and sensitivity analyses in which EFs are not changed
+Cf_grassland_low = (0.77-0.26)  # For sensitivity analysis: value-st dev
+Cf_grassland_high = 1  # For sensitivity analysis: value+st dev (0.77+0.26>1, so capping at 1).
 
 
 ### GLCLU cover codes
@@ -1975,3 +1991,12 @@ three_panel_jpeg_base = f"three_panels__4km_aggregation__v{veg_model_version}"
 fraction_base_cmap = 'RdPu'
 
 
+#######
+### Sensitivity analysis
+#######
+
+# Variant names
+low_EF = 'low_partial_dist_EF'
+high_EF = 'high_partial_dist_EF'
+alt_AGB = 'alternative_initial_AGB'
+alt_RF = 'alternative_RF'

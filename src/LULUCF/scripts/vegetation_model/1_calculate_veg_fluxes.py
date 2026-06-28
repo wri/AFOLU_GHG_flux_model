@@ -94,8 +94,9 @@ os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "TRUE"
 # Operates pixel by pixel, so uses numba (Python compiled to C++).
 @jit(nopython=True)
 def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int32, in_dict_float32,
-                      primary_forest_RF_array, partial_disturbance_EF_array, mangrove_C_ratio_array,
-                      model_start_year, end_year, interval_type, interval_year_diff_list, interval_length_list, interval_end_years, is_large_run):
+                      primary_forest_RF_array, partial_disturbance_EF_array, mangrove_C_ratio_array, model_start_year,
+                      end_year, interval_type, interval_year_diff_list, interval_length_list, interval_end_years,
+                      is_large_run, model_type):
 
     # Separate dictionaries for output numpy arrays of each datatype, named by output data type.
     # This is because a dictionary in a Numba function cannot have arrays with multiple data types, so each dictionary has to store only one data type,
@@ -559,11 +560,11 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                     composite_primary_cell = 0
 
                 # Gef for fire emissions for different gases for forests specifically (grams respective gas/kg dry matter)
-                Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest = nu.calc_Gef_forest(climate_domain_cell)
+                Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest = nu.calc_Gef_forest(climate_domain_cell, model_type)
 
                 # Cf for fire emissions for all gases for forests specifically (unitless).
                 # Based on driver of loss, not the interval-end land cover.
-                Cf_forest = nu.calc_Cf_forest(climate_domain_cell, drivers_cell, composite_primary_cell)
+                Cf_forest = nu.calc_Cf_forest(climate_domain_cell, drivers_cell, composite_primary_cell, model_type)
 
                 # Sets all mangrove states to false and only initializes mangrove states if is_ever_mang is True below
                 before_mang = mang_gain = mang_loss = mang_remaining_mang = non_mang_remaining_non_mang = after_mang = False
@@ -1566,7 +1567,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         first_year_burned_during_interval,
                                         RF_AGC_final, RF_BGC_final, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                         interval_end_year, c_dens_in, most_recent_year_not_tall_veg,
-                                        cn.Cf_forest_undisturbed, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest, deadwood_c_ratio=0, litter_c_ratio=0)
+                                        cn.Cf_forest_undisturbed_standard, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest, deadwood_c_ratio=0, litter_c_ratio=0)
                                 else: # Planted trees not disturbed in the current interval (42212->422129/422122)
                                     node = nu.accrete_node(node, 2)
                                     RF_AGC_final = planted_forest_AGC_RF_cell
@@ -1579,7 +1580,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         first_year_burned_during_interval,
                                         RF_AGC_final, RF_BGC_final, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                         interval_end_year, c_dens_in, most_recent_year_not_tall_veg,
-                                        cn.Cf_forest_undisturbed, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest, deadwood_c_ratio=0, litter_c_ratio=0)
+                                        cn.Cf_forest_undisturbed_standard, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest, deadwood_c_ratio=0, litter_c_ratio=0)
                             else:  # Non-planted trees not disturbed in last interval (4222)
                                 node = nu.accrete_node(node, 2)
                                 if GLAD_tall_veg_LC_curr:  # Natural forest not disturbed in last interval (42221)
@@ -1595,7 +1596,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                             node, interval_length, forest_age_start_of_interval, first_year_burned_during_interval,
                                             RF_AGC_final, RF_BGC_final, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                             interval_end_year, c_dens_in, most_recent_year_not_tall_veg,
-                                            cn.Cf_forest_undisturbed, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest,
+                                            cn.Cf_forest_undisturbed_standard, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest,
                                             deadwood_c_ratio=deadwood_c_ratio_non_mang, litter_c_ratio=litter_c_ratio_non_mang)
                                     else:  # Natural forest undisturbed since model start (422212)
                                         node = nu.accrete_node(node, 2)
@@ -1610,7 +1611,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                                 node, interval_length, forest_age_start_of_interval, first_year_burned_during_interval,
                                                 RF_AGC_final, RF_BGC_final, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                                 interval_end_year, c_dens_in, most_recent_year_not_tall_veg,
-                                                cn.Cf_forest_undisturbed, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest,
+                                                cn.Cf_forest_undisturbed_standard, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest,
                                                 deadwood_c_ratio=deadwood_c_ratio_non_mang, litter_c_ratio=litter_c_ratio_non_mang)
                                         else: # Old secondary forest undisturbed since model start (4222122->42221229/42221222)
                                             node = nu.accrete_node(node, 2)
@@ -1623,7 +1624,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                                 node, interval_length, forest_age_start_of_interval, first_year_burned_during_interval,
                                                 RF_AGC_final, RF_BGC_final, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                                 interval_end_year, c_dens_in, most_recent_year_not_tall_veg,
-                                                cn.Cf_forest_undisturbed, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest,
+                                                cn.Cf_forest_undisturbed_standard, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest,
                                                 deadwood_c_ratio=deadwood_c_ratio_non_mang, litter_c_ratio=litter_c_ratio_non_mang)
                                 else:  # Trees outside forests not disturbed in the current interval (42222->422229/422222)
                                     node = nu.accrete_node(node, 2)
@@ -1636,7 +1637,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         node, interval_length, forest_age_start_of_interval, first_year_burned_during_interval,
                                         RF_AGC_final, RF_BGC_final, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                         interval_end_year, c_dens_in_ToF, most_recent_year_not_tall_veg,
-                                        cn.Cf_forest_undisturbed, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest, deadwood_c_ratio=0, litter_c_ratio=0)
+                                        cn.Cf_forest_undisturbed_standard, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest, deadwood_c_ratio=0, litter_c_ratio=0)
 
                 ### Non-cropland/non-tree to cropland (without trees)
                 elif (LC_prev != cn.cropland) and (LC_curr == cn.cropland):
@@ -2030,10 +2031,20 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
     uu.rename_s3_task_file(stage, bounds, "calculating_", is_large_run, logger_worker)
     calc_start = time.time()
 
-    out_dict_uint8, out_dict_uint16, out_dict_uint32, out_dict_float32 = vegetation_fluxes(
-        typed_dict_uint8, typed_dict_uint16, typed_dict_int16, typed_dict_int32, typed_dict_float32,
-        primary_forest_RF_array, partial_disturbance_EF_array, mangrove_C_ratio_array,
-        start_year, end_year, interval_type, interval_year_diff_list, interval_length_list, interval_end_years, is_large_run)
+    out_dict_uint8, out_dict_uint16, out_dict_uint32, out_dict_float32 = vegetation_fluxes(typed_dict_uint8,
+                                                                                           typed_dict_uint16,
+                                                                                           typed_dict_int16,
+                                                                                           typed_dict_int32,
+                                                                                           typed_dict_float32,
+                                                                                           primary_forest_RF_array,
+                                                                                           partial_disturbance_EF_array,
+                                                                                           mangrove_C_ratio_array,
+                                                                                           start_year, end_year,
+                                                                                           interval_type,
+                                                                                           interval_year_diff_list,
+                                                                                           interval_length_list,
+                                                                                           interval_end_years,
+                                                                                           is_large_run, model_type)
 
     calc_end = time.time()
     lu.print_and_log(f"Done calculating vegetation fluxes and carbon densities in {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
@@ -2455,9 +2466,16 @@ def main(cluster_name, year_range, model_type,
     mangrove_C_ratio_array = uu.convert_lookup_table_to_array(cn.RF_C_ratio_spreadsheet_full_path, cn.mangrove_rate_ratio_tab,
                                                               ['gainEcoCon', 'AGB_gain_tons_ha_yr', 'BGC_AGC', 'deadwood_AGC', 'litter_AGC'])
 
+    # Table of emissions factors from height loss depends on the model type
+    if model_type == cn.low_EF:  # Low emission factors
+        EF_tab = cn.partial_disturbance_emission_factor_table_tab_low_EF
+    elif model_type == cn.high_EF:  # High emission factors
+        EF_tab = cn.partial_disturbance_emission_factor_table_tab_high_EF
+    else:  # Standard model and sensitivity analyses in which EFs are not changed
+        EF_tab = cn.partial_disturbance_emission_factor_table_tab_standard
+
     # Creates numpy array of emission factors for partially disturbed forest by driver and continent-ecozone combination
-    partial_disturbance_EF_array = uu.convert_lookup_table_to_array(cn.partial_disturbance_emission_factor_table_full_path,
-                                                                    cn.partial_disturbance_emission_factor_table_tab,
+    partial_disturbance_EF_array = uu.convert_lookup_table_to_array(cn.partial_disturbance_emission_factor_table_full_path, EF_tab,
                                                                     ['gainEcoCon', '1_perm_ag_EF', '2_hard_comm_EF',
                                                                      '3_shift_cult_EF',	'4_logging_EF',	'5_wildfire_EF',
                                                                      '6_sett_infrastr_EF', '7_natrl_dist_EF'])
