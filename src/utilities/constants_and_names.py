@@ -799,6 +799,7 @@ IPCC_summary_path = "IPCC_summary"
 IPCC_summary_pattern = "IPCC_summary"
 
 ### IPCC codes
+# Based in IPCC LU heirarchy: Settlements > Cropland > Forest Land > Grassland > Wetland > Other Land
 settlement_IPCC = 1
 cropland_IPCC = 2
 forest_IPCC = 3
@@ -1304,7 +1305,7 @@ ipcc_node_codes = np.array([
     70, 71, 79,
     80, 81, 89,
 ], dtype=np.uint16)
-# TODO: update with final node code classes
+# Description of each node code in numeric_to_ipcc_node_code (below)
 
 ipcc_change_codes = np.array(
     [0] + [10 * start + end for start in range(1, 9) for end in range(1, 9)],
