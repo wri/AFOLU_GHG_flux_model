@@ -1,4 +1,5 @@
 """
+Purpose: Download IPCC land use input layers for a 10 x 10 tile. Useful for QCing land use assignment. 
 Run:
 python -m src.LULUCF.scripts.postprocessing.LUC.download_land_use_inputs -t 00N_110E
 """
