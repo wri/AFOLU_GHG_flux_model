@@ -1579,7 +1579,8 @@ def calculate_stats(array_per_ha, name, bounds_str, tile_id, in_out, array_per_p
         }
 
 
-
+# Calculates summary statistics for an IPCC land-use output raster at the chunk level. 
+# Reports metadata, minimum/maximum values, dominant class, unique classes, and either pixel counts or area (ha) by class, depending on whether a pixel area raster is provided
 def calculate_ipcc_stats(array, name, bounds_str, tile_id, in_out, pixel_area=None):
 
     out_pattern, year_range = strip_and_extract_years(name)
