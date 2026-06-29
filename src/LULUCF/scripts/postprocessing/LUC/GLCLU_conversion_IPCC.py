@@ -1,4 +1,7 @@
 """
+Purpose: This script assigns each pixel to an IPCC land use (LU) category using the entire GLCLU observation timeseries and other contxtual information to disentangle land use from land cover (i.e. mangrove, tree crop, rangelands, temporarily unstocked forest, etc). 
+LU classifcations are assigned annualy (2015 - 2024), LU change is determined for each interval (2015_2016 - 2023_2024), and all LUs during the timseries are summarized per pixel(i.e if starts as Forest and ends as Cropland during timeseries, LU summary is 32)
+
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Local test:
