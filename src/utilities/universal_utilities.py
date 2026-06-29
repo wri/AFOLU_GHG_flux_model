@@ -41,6 +41,8 @@ import botocore
 from src.utilities import constants_and_names as cn
 from src.utilities import log_utilities as lu
 
+#TODO: Create separate utilities for land use specific functions. Keep all other general utilities and microservices here.
+
 
 # Turns off a FutureWarning about gdal.UseExceptions() vs. gdal.DontUseExceptions()
 gdal.UseExceptions()
