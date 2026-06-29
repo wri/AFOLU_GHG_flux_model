@@ -1,4 +1,9 @@
 """
+Purpose: Calculates zonal statistics for combined LULUCF flux outputs using IPCC land-use classifications and other contextual datasets. 
+The script reads vegetation, LULUCF, and IPCC land-use zarrs, converts per-hectare fluxes to per-pixel totals, and summarizes emissions, removals, 
+net flux, and area by IPCC land-use class, transition, summary, land state, administrative unit, and other contextual layers for each 10×10° tile. 
+Tile-level outputs are written as parquet tables and optionally combined into global long- and wide-format zonal statistics tables.
+
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 10x10:
