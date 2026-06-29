@@ -1,4 +1,5 @@
 """
+Purpose: Download IPCC land use outputs for a 10 x 10 tile. Useful for QCing land use assignment. 
 Run:
 python -m src.LULUCF.scripts.postprocessing.LUC.download_land_use_outputs -t 00N_110E --run_date 20268888
 """
