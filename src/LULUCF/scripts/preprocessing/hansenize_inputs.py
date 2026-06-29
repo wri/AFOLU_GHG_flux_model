@@ -13,11 +13,23 @@ python -m src.LULUCF.scripts.preprocessing.gmw_smooth_mangrove_extent_timeseries
 
 Coiled test area with data:
 python -m src.utilities.create_cluster -cn Hansenize -n 2 -m 4
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p mangroves -bb 100 -10 110 10 -cs 10
+python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p GPW -bb 110 -10 120 0 -cs 10
 
-Coiled full run (running with 20 clusters causes an error  of not finding the vrt, perhaps because it's being accessed too quickly-- better to run with fewer workers for now):
-python -m src.utilities.create_cluster -cn Hansenize -n 10 -t 1 -m 4
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p mangroves -bb -180 -60 180 80 -cs 10
+Coiled full run (running with 20 clusters causes an error of not finding the vrt, perhaps because it's being accessed too quickly-- better to run with fewer workers for now):
+
+python -m src.utilities.create_cluster -cn GPW_10x10__2021 -n 20 -t 12 -m 8
+python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn GPW_10x10__2021 -p grasslands -bb -180 -60 180 80 -cs 10
+
+python -m src.utilities.create_cluster -cn GPW_10x10__2022 -n 20 -t 12 -m 8
+python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn GPW_10x10__2022 -p grasslands -bb -180 -60 180 80 -cs 10
+
+python -m src.utilities.create_cluster -cn GPW_10x10__2023 -n 20 -t 12 -m 8
+python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn GPW_10x10__2023 -p grasslands -bb -180 -60 180 80 -cs 10
+
+python -m src.utilities.create_cluster -cn GPW_10x10__2024 -n 20 -t 12 -m 8
+python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn GPW_10x10__2024 -p grasslands -bb -180 -60 180 80 -cs 10
+
+
 python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p AGB2015 AGB2015_stdev -bb -180 -60 180 80 -cs 10
 # Note: Tried this with -n 20 -t 12 -m 16 (for mangrove extent from 1996 to 2016) and then again with -n 20 -t 12 -m 8 (for mangrove extent from 2017 to 2020).
     # After reducing the memory to 8 and using a smaller vm type, gdal_warp per dataset finshed 2x a fast (10 minutes in stead of 20).
@@ -160,9 +172,19 @@ def main(cluster_name, process, bounding_box, chunk_size, run_local, no_upload):
             download_upload_dictionary[f"mangrove_extent_{year}"] = {
                 'raw_dir': f"{cn.mangrove_extent_raw_dir}{year}/",
                 'raw_pattern': cn.mangrove_extent_raw_pattern,
-                'vrt': f"/tmp/mangrove_extent_{year}_{cn.GMW_version}.vrt",
+                'vrt': f"/tmp/mangrove_extent_{year}.vrt",
                 'processed_dir': f"{cn.mangrove_extent_hansenized_dir}{year}/",
                 'processed_pattern': f"{cn.mangrove_extent_hansenized_pattern}_{year}"
+            }
+
+    if 'grasslands' in process:
+        for year in cn.years_annual:
+            download_upload_dictionary[f"grassland_extent_{year}"] = {
+                'raw_dir': f"{cn.GPW_extent_raw_dir}",
+                'raw_pattern': f"{cn.GPW_extent_raw_pattern}_{year}",
+                'vrt': f"/tmp/grasslands_extent_{year}.vrt",
+                'processed_dir': f"{cn.GPW_extent_processed_dir}{year}/",
+                'processed_pattern': f"{cn.GPW_extent_processed_pattern}_{year}"
             }
 
     if 'cropland_fertilizer' in process:
@@ -248,7 +270,7 @@ def main(cluster_name, process, bounding_box, chunk_size, run_local, no_upload):
 
         # Add output_vrt_s3 to dictionary
         output_vrt_s3 = f"{items['raw_dir']}{os.path.basename(items['vrt'])}"
-        main_logger.info(f"output_vrt_s3: {output_vrt_s3}") #todo
+        main_logger.info(f"output_vrt_s3: {output_vrt_s3}")
         main_logger.info(f"Adding output_vrt_s3 path to dictionary: {output_vrt_s3}")
         download_upload_dictionary[key]['output_vrt_s3'] = output_vrt_s3
 
@@ -322,7 +344,7 @@ def main(cluster_name, process, bounding_box, chunk_size, run_local, no_upload):
         # Iterates through all tiles in a given dataset
         for chunk in chunk_list:
             tile_id = uu.xy_to_tile_id(chunk[0], chunk[3])
-            output_filename = f"{tile_id}_{items['processed_pattern']}.tif"  #TODO make sure all patterns don't have tif extension
+            output_filename = f"{tile_id}_{items['processed_pattern']}.tif"
             output_tile_s3 = f"{items['processed_dir']}{output_filename}"
             xmin, ymin, xmax, ymax = uu.get_10x10_tile_bounds(tile_id)
 
@@ -352,7 +374,7 @@ def main(cluster_name, process, bounding_box, chunk_size, run_local, no_upload):
 
         # The key for the dictionary: the s3 path with a tile set that will be indexed
         path = items['processed_dir'].replace(cn.veg_outputs_path, "")
-        print(path) #TODO
+        print(path)
 
         # The value for the dictionary: the pattern to use for naming the output shapefile
         value = items['processed_pattern']

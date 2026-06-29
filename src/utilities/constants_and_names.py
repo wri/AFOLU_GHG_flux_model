@@ -687,7 +687,7 @@ oil_palm_2000_extent_pattern = "plantation_2000_or_earlier_processed"
 
 # Descals et al. 2024: https://essd.copernicus.org/articles/16/5111/2024/essd-16-5111-2024-discussion.html
 oil_palm_first_year_dir = f"{AFOLU_dir}organic_soils/inputs/processed/descals_plantation/year/20241105/"
-oil_palm_first_year_pattern = "descals_year"
+oil_palm_first_year_pattern = "plantation_year"
 
 # Originally from gfw-data-lake, so it's in 400x400 windows
 planted_forest_tree_crop_dir = f"{full_bucket_prefix}/climate/carbon_model/other_emissions_inputs/plantation_simpleType__planted_forest_tree_crop/SDPTv2/20230911/"
@@ -713,6 +713,16 @@ mangrove_1x1deg_smoothed_dir = f"{full_bucket_prefix}/global-mangrove-extent/ver
 
 mangrove_extent_processed_dir = f"{full_bucket_prefix}/global-mangrove-extent/version3/smoothed/raster/"
 mangrove_extent_processed_pattern = f"GMW{GMW_version}_smoothed_mangrove_extent"
+
+# Global pasture watch grasslands extent (1 = cultivated grassland, 2 = natural/semi-natural grassland)
+GPW_version = "v1.1"
+GPW_years = range(2000, 2025)
+
+GPW_extent_raw_dir = f"{full_bucket_prefix}/lcl/gpw/grasslands/{GPW_version}/raw/"
+GPW_extent_raw_pattern = "grasslands"
+
+GPW_extent_processed_dir = f"{full_bucket_prefix}/lcl/gpw/grasslands/{GPW_version}/processed/"
+GPW_extent_processed_pattern = f"GPW_grasslands_extent"
 
 # Global Pasture Watch median vegetation height (https://stac.openlandmap.org/gpw_gsvh-30m/collection.json?.language=en,
 # from Hunter et al. 2025 (https://www.nature.com/articles/s41597-025-05739-6)
@@ -790,21 +800,38 @@ global_cropland_total_amount_all_crops_nonpeat_2019_processed_pattern = f"all_GH
 
 ##### Outputs
 
+#IPCC LUC translation version number
+IPCC_LU_version = "1.0.0"
+IPCC_LU_version_underscore = IPCC_LU_version.replace(".", "_")
+
 ### IPCC classes and change
-IPCC_class_path = "IPCC_basic_classes"
-IPCC_class_pattern = "IPCC_classes"
-IPCC_change_path = "IPCC_basic_change"
+IPCC_class_path = "IPCC_class"
+IPCC_class_pattern = "IPCC_class"
+IPCC_node_path = "IPCC_node_code"
+IPCC_node_pattern = "IPCC_node_code"
+IPCC_change_path = "IPCC_change"
 IPCC_change_pattern = "IPCC_change"
+IPCC_summary_path = "IPCC_summary"
+IPCC_summary_pattern = "IPCC_summary"
 
 ### IPCC codes
-forest_IPCC = 1
+# Based in IPCC LU heirarchy: Settlements > Cropland > Forest Land > Grassland > Wetland > Other Land
+settlement_IPCC = 1
 cropland_IPCC = 2
-settlement_IPCC = 3
-wetland_IPCC = 4
-grassland_IPCC = 5
+forest_IPCC = 3
+grassland_IPCC = 4
+wetland_IPCC = 5
 otherland_IPCC = 6
 
-IPCC_class_max_val = 6  # Maximum value of IPCC class codes
+#IPCC_class_max_val = 6  # Maximum value of IPCC class codes
+
+IPCC_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/land_use/{IPCC_LU_version}"
+IPCC_class_dir = f"{IPCC_outputs_path}/{IPCC_class_path}/YEAR/CHUNK_SIZE_pixels/RUN_DATE/"
+IPCC_node_dir = f"{IPCC_outputs_path}/{IPCC_node_path}/YEAR/CHUNK_SIZE_pixels/RUN_DATE/"
+IPCC_change_dir = f"{IPCC_outputs_path}/{IPCC_change_path}/START_END/CHUNK_SIZE_pixels/RUN_DATE/"
+IPCC_summary_dir = f"{IPCC_outputs_path}/{IPCC_summary_path}/2015_2024/CHUNK_SIZE_pixels/RUN_DATE/"
+
+IPCC_outputs_path_mega_zarr = f"{IPCC_outputs_path}/mega_zarr/MODEL_INTERVAL_TYPE_intervals/CHUNK_SIZE_pixels/RUN_DATE/land_use_zarr.zarr"
 
 land_state_pattern = "land_state_node"
 land_state_node_fire_value = 9  # State nodes that end in this value had fire
@@ -1281,7 +1308,117 @@ managed_land_codes = np.array([0, 1, 2], dtype=np.uint8)
 forest_age_category_pattern = 'forest_age_category_end_of_interval'
 forest_age_category_codes = np.array([0, 1, 6, 21, 41, 61, 81, 101], dtype=np.uint8)
 
-first_year_LC_composite_codes = np.array([0, 1, 2, 3, 4, 5, 6, 7], dtype=np.uint8)
+ipcc_class_codes = np.arange(0, 9, dtype=np.uint8)
+
+ipcc_node_codes = np.array([
+    0,
+    10, 11, 12,
+    20, 21, 22, 23, 24, 29,
+    30, 301, 31, 32, 333, 334, 335, 337, 34, 351, 352, 353, 357, 358, 39,
+    40, 41, 430, 432, 436, 44, 451, 452, 453, 457, 458, 49,
+    50, 51, 52, 53, 59,
+    60, 61, 62, 69,
+    70, 71, 79,
+    80, 81, 89,
+], dtype=np.uint16)
+# Description of each node code in numeric_to_ipcc_node_code (below)
+
+ipcc_change_codes = np.array(
+    [0] + [10 * start + end for start in range(1, 9) for end in range(1, 9)],
+    dtype=np.uint8,
+)
+
+ipcc_summary_codes = np.array(
+    [0] + [10 * start + end for start in range(1, 9) for end in range(1, 9)],
+    dtype=np.uint16,
+)
+
+
+# Converts numeric classes into IPCC land use categories
+numeric_to_ipcc_class = {
+    1: "Settlements",
+    2: "Cropland",
+    3: "Forest Land",
+    4: "Grassland",
+    5: "Wetlands",
+    6: "Other Land (Bare)",
+    7: "Other Land (Water)",
+    8: "Other Land (Snow/Ice)"
+}
+
+# Converts numeric classes into IPCC land use change categories
+numeric_to_ipcc_change = {
+    int(f"{from_code}{to_code}"): (
+        f"{from_class} remaining {to_class}"
+        if from_code == to_code
+        else f"{from_class} to {to_class}"
+    )
+    for from_code, from_class in numeric_to_ipcc_class.items()
+    for to_code, to_class in numeric_to_ipcc_class.items()
+}
+
+# Converts numeric node codes into text description of rule applied for land use classification
+numeric_to_ipcc_node_code = {
+    # 1) Settlements and Infrastructure:
+        10: "Built from GLAD data",
+        11: "Built following tall vegetation loss before built LC",
+        12: "Built after first built LC",
+
+    # 2) Cropland:
+        20: "Crop from GLAD data",
+        21: "Crop from oil palm extent or planting year",
+        22: "Crop from SDPT tree crop extent (not oil palm)",
+        23: "Crop following tall vegetation loss before crop LC",
+        24: "Crop from TCL + permanent agriculture driver",
+
+    # 3) Forest:
+        30 : "Forest from GLAD tall vegetation",
+        31 : "Forest from SDPT planted forest extent",
+        32 : "Forest from GMW mangrove extent",
+        333: "Forest from shifting cultivation driver",
+        334: "Forest from logging driver",
+        335: "Forest from wildfire driver",
+        337: "Forest from natural disturbance driver",
+        34 : "Unstocked forest after TCL and before oil palm planting",
+        353: "Forest from mixed tall/short vegetation rule",
+        357: "Forest from vegetation/water transition rule",
+        358: "Forest from mixed snow/ice rule",
+        39 : "Forest from majority years rule",
+
+    # 4) Grassland:
+        40 : "Grass from GLAD short vegetation",
+        41 : "Grass from TCL + permanent agriculture driver + GPW cultivated grassland extent",
+        430: "Grass from TCL + unknown driver",
+        432: "Grass from TCL + hard commodities driver",
+        436: "Grass from TCL + settlements/infrastructure driver",
+        44 : "Grass prior to oil palm establishment",
+        453: "Grass from mixed tall/short vegetation rule",
+        457: "Grass from vegetation/water transition rule",
+        458: "Grass from mixed snow/ice rule",
+        49 : "Grass from majority years rule",
+
+    # 5) Wetland:
+        50: "Wetland from GLAD data",
+        51: "Wetland from water/wetland/built transition rule",
+        52: "Wetland from vegetation/water transition rule",
+        53: "Wetland from bare/ice to water/wetland transition rule",
+        59: "Wetland from majority years in mixed water rule",
+
+    # 6) Other Land:
+        60: "Bare from GLAD data",
+        61: "Bare from mixed bare + tall/short vegetation rule",
+        62: "Bare from mixed snow/ice rule",
+        69: "Bare from majority years rule",
+
+        70: "Water from GLAD data",
+        79: "Water from majority years in mixed water rule",
+
+        80: "Snow/ice from GLAD data",
+        89: "Snow/ice from majority years rule",
+
+}
+
+
 
 # Converts numeric ISO values to ISO codes
 # From https://github.com/wri/project-zeno-data-infra/blob/main/notebooks/grasslands_areas_gadm_2000-2022.ipynb
@@ -1922,6 +2059,7 @@ GLAD_LC_to_text = {
     7: "Not specified"
 }
 
+land_use_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/IPCC_land_use_v{IPCC_LU_version_underscore}_standard_global/"
 veg_local_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/vegetation_v{veg_model_version_underscore}_standard_global/"
 SOC_local_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/SOC_v{SOC_model_version_underscore}_standard_global/"
 

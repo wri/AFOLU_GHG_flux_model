@@ -347,6 +347,22 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
         df_with_areas[cn.forest_age_category_pattern] = df_with_areas[cn.forest_age_category_pattern].map(cn.forest_age_category_to_text)
         df_with_areas[cn.forest_age_category_pattern] = df_with_areas[cn.forest_age_category_pattern].fillna("Unassigned")
 
+    # Maps IPCC land use class codes to names if the contextual layer is used
+    if cn.IPCC_class_pattern in df_with_areas.columns:
+        df_with_areas[f"{cn.IPCC_class_pattern}_name"] = (df_with_areas[cn.IPCC_class_pattern].map(cn.numeric_to_ipcc_class).fillna("Unassigned"))
+
+    # Maps IPCC land use change codes to names if the contextual layer is used
+    if cn.IPCC_change_pattern in df_with_areas.columns:
+        df_with_areas[f"{cn.IPCC_change_pattern}_name"] = (df_with_areas[cn.IPCC_change_pattern].map(cn.numeric_to_ipcc_change).fillna("Unassigned"))
+
+    # Maps IPCC node codes to rule descriptions if the contextual layer is used
+    if cn.IPCC_node_pattern in df_with_areas.columns:
+        df_with_areas[f"{cn.IPCC_node_pattern}_name"] = (df_with_areas[cn.IPCC_node_pattern].map(cn.numeric_to_ipcc_node_code).fillna("Unassigned"))
+
+    # Maps IPCC summary codes to names if the contextual layer is used
+    if cn.IPCC_summary_pattern in df_with_areas.columns:
+        df_with_areas[f"{cn.IPCC_summary_pattern}_name"] = (df_with_areas[cn.IPCC_summary_pattern].map(cn.numeric_to_ipcc_change).fillna("Unassigned"))
+        
     # Maps watershed codes to names if the contextual layer is used
     if cn.first_year_LC_composite_pattern in df_with_areas.columns:
         df_with_areas['first_year_LC_composite_name'] = df_with_areas[cn.first_year_LC_composite_pattern].map(cn.GLAD_LC_to_text)

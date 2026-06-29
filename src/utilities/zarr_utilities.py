@@ -210,6 +210,102 @@ def initialize_global_zarr(store_url, dataset_keys, n_years, chunk_size, main_lo
     end_time = time.time()
     main_logger.info(f"Initialized spatial mega-zarr metadata at {store_url} in {round(end_time-start_time)} seconds: {uu.timestr()}")
 
+def initialize_ipcc_global_zarr(store_url, chunk_size, main_logger, fill_value=0):
+    dataset_keys = [
+        cn.IPCC_class_pattern,
+        cn.IPCC_node_pattern,
+        cn.IPCC_change_pattern,
+        cn.IPCC_summary_pattern,
+    ]
+
+    dtype_map = {
+        cn.IPCC_class_pattern: "uint8",
+        cn.IPCC_node_pattern: "uint16",
+        cn.IPCC_change_pattern: "uint8",
+        cn.IPCC_summary_pattern: "uint8",
+    }
+
+    fs = fsspec.filesystem("s3", anon=False)
+
+    if fs.exists(store_url):
+        main_logger.info(f"IPCC zarr already exists at {store_url}. Skipping initialization: {uu.timestr()}")
+        return
+
+    lat_size = int(180 / cn.resolution)
+    lon_size = int(360 / cn.resolution)
+
+    lats = np.arange(90.0 - cn.resolution / 2, -90, -cn.resolution)[:lat_size]
+    lons = np.arange(-180.0 + cn.resolution / 2, 180, cn.resolution)[:lon_size]
+
+    # 10 slots:
+    # class/node: 2015-2024
+    # change: 2015_2016 through 2023_2024, plus empty index 9
+    # summary: 2015_2024 in index 0, empty indices 1-9
+    year_index = np.arange(10)
+
+    compressor = {
+        "name": "zstd",
+        "configuration": {"level": 3}
+    }
+
+    spatial_attrs = {
+        "grid_mapping_name": "latitude_longitude",
+        "epsg_code": 4326,
+        "semi_major_axis": 6378137.0,
+        "inverse_flattening": 298.257223563,
+    }
+
+    data_vars = {}
+    encoding = {}
+
+    for key in dataset_keys:
+        dtype = dtype_map[key]
+        dask_data = da.full(
+            (10, lat_size, lon_size),
+            fill_value,
+            dtype=dtype,
+            chunks=chunk_size,
+        )
+
+        data_vars[key] = xr.DataArray(
+            dask_data,
+            dims=("year", "y", "x"),
+            coords={"year": year_index, "y": lats, "x": lons},
+            name=key,
+            attrs={"grid_mapping": "spatial_ref"},
+        )
+
+        encoding[key] = {
+            "compressors": compressor,
+        }
+
+    ds = xr.Dataset(
+        data_vars=data_vars,
+        coords={"x": lons, "y": lats, "year": year_index},
+    )
+
+    ds["spatial_ref"] = xr.DataArray(
+        np.array(0, dtype="int32"),
+        attrs=spatial_attrs,
+    )
+
+    mapper = fs.get_mapper(store_url)
+    ds.to_zarr(
+        store=mapper,
+        mode="w",
+        compute=False,
+        encoding=encoding,
+        zarr_format=3,
+    )
+
+    z = zarr.open_group(store=mapper, mode="r+")
+    for key in z.array_keys():
+        arr = z[key]
+        if "_FillValue" in arr.attrs:
+            del arr.attrs["_FillValue"]
+
+    main_logger.info(f"Initialized IPCC global zarr at {store_url}: {uu.timestr()}")
+
 
 # Populates pre-existing global mega-zarr with select output numpy arrays (out_dict_all_dtypes)
 # Accelerated by writing all years at once
@@ -301,6 +397,49 @@ def populate_zarr(bounds, bounds_str, create_zarr, interval_end_years, is_large_
     zarr_end = time.time()
     lu.print_and_log(f"Wrote outputs to global zarr for {bounds_str} in {tile_id} in {round(zarr_end - zarr_start)} seconds: {uu.timestr()}",False, logger_worker)
 
+
+def populate_ipcc_zarr(bounds, bounds_str, create_zarr, is_large_run, logger_worker,
+                       mega_zarr_path, out_dict, stage, tile_id):
+    if not create_zarr:
+        lu.print_and_log(f"Not writing IPCC outputs for {bounds_str} in {tile_id} to global zarr: {uu.timestr()}",False, logger_worker)
+        return
+
+    lu.print_and_log(f"Writing IPCC outputs to global zarr for {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
+    uu.rename_s3_task_file(stage, bounds, "zarr_population_", is_large_run, logger_worker)
+
+    fs = fsspec.filesystem("s3", anon=False)
+    mapper = fs.get_mapper(mega_zarr_path)
+    z = zarr.open_group(mapper, mode="r+")
+
+    lat_start, lon_start = latlon_to_global_zarr_indices(bounds[3], bounds[0], cn.resolution)
+    lat_end, lon_end = latlon_to_global_zarr_indices(bounds[1], bounds[2], cn.resolution)
+
+    # Annual land use and node code: indices 0-9 map to 2015-2024.
+    for i, year in enumerate(cn.years_annual):
+        class_key = f"{cn.IPCC_class_pattern}_{year}"
+        node_key = f"{cn.IPCC_node_pattern}_{year}"
+
+        if class_key in out_dict:
+            z[cn.IPCC_class_pattern][i, lat_start:lat_end, lon_start:lon_end] = out_dict[class_key]
+
+        if node_key in out_dict:
+            z[cn.IPCC_node_pattern][i, lat_start:lat_end, lon_start:lon_end] = out_dict[node_key]
+
+    # LU change: indices 1-9 (based on end year) map to intervals, index 0 stays empty.
+    for i, (start_year, end_year) in enumerate(zip(cn.years_annual[:-1], cn.years_annual[1:])):
+        change_key = f"{cn.IPCC_change_pattern}_{start_year}_{end_year}"
+
+        if change_key in out_dict:
+            z[cn.IPCC_change_pattern][i+1, lat_start:lat_end, lon_start:lon_end] = out_dict[change_key]
+
+    # Summary: index 0 stores 2015_2024 summary, indices 1-9 stay empty.
+    summary_key = f"{cn.IPCC_summary_pattern}_2015_2024"
+    if summary_key in out_dict:
+        z[cn.IPCC_summary_pattern][0, lat_start:lat_end, lon_start:lon_end] = out_dict[summary_key]
+    else:
+        lu.print_and_log(f"WARNING: {summary_key} not found in out_dict for {bounds_str}", False, logger_worker)
+
+    lu.print_and_log( f"Wrote IPCC outputs to global zarr for {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker)
 
 # Checks composite ds for each tile against the original geotif to make sure geotifs haven't been flipped north-south
 # (as happened for pixel area once).
@@ -478,6 +617,45 @@ def run_parallel_stats(client, chunk_list, var, zarr_path, interval_end_years):
     results = client.gather(futures)
 
     return results
+
+def ipcc_zarr_1x1_deg_stats(bounds, var, zarr_path):
+    bounds_str = uu.boundstr(bounds)
+    tile_id = uu.xy_to_tile_id(bounds[0], bounds[3])
+
+    lat0, lon0 = latlon_to_global_zarr_indices(bounds[3], bounds[0], cn.resolution)
+    lat1, lon1 = latlon_to_global_zarr_indices(bounds[1], bounds[2], cn.resolution)
+
+    fs = fsspec.filesystem("s3", anon=False)
+    mapper = fs.get_mapper(zarr_path)
+    z = zarr.open_group(mapper, mode="r")
+
+    stats = []
+
+    if var in {cn.IPCC_class_pattern, cn.IPCC_node_pattern}:
+        for i, year in enumerate(cn.years_annual):
+            key = f"{var}_{year}"
+            arr = z[var][i, lat0:lat1, lon0:lon1]
+            stats.append(uu.calculate_ipcc_stats(arr, key, bounds_str, tile_id, "zarr_stats"))
+    elif var == cn.IPCC_change_pattern:
+        for i, (start_year, end_year) in enumerate(zip(cn.years_annual[:-1], cn.years_annual[1:])):
+            key = f"{cn.IPCC_change_pattern}_{start_year}_{end_year}"
+            arr = z[var][i+1, lat0:lat1, lon0:lon1]
+            stats.append(uu.calculate_ipcc_stats(arr, key, bounds_str, tile_id, "zarr_stats"))
+    elif var == cn.IPCC_summary_pattern:
+        arr = z[var][0, lat0:lat1, lon0:lon1]
+        stats.append(uu.calculate_ipcc_stats(arr, cn.IPCC_summary_pattern, bounds_str, tile_id, "zarr_stats"))
+    else:
+        raise ValueError(f"Unsupported IPCC zarr variable: {var}")
+
+    return stats
+
+def run_parallel_ipcc_stats(client, chunk_list, var, zarr_path):
+    if client is None:
+        return [ipcc_zarr_1x1_deg_stats(chunk, var, zarr_path) for chunk in chunk_list]
+    futures = [client.submit( ipcc_zarr_1x1_deg_stats, chunk, var, zarr_path, retries=2) for chunk in chunk_list]
+    results_nested = client.gather(futures)
+
+    return [item for result in results_nested for item in result]
 
 
 # Compares chunk stats from model and from zarr for a dataset-year combination

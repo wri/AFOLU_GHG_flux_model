@@ -41,6 +41,8 @@ import botocore
 from src.utilities import constants_and_names as cn
 from src.utilities import log_utilities as lu
 
+#TODO: Create separate utilities for land use specific functions. Keep all other general utilities and microservices here.
+
 
 # Turns off a FutureWarning about gdal.UseExceptions() vs. gdal.DontUseExceptions()
 gdal.UseExceptions()
@@ -124,7 +126,7 @@ def check_s3_file_created(s3_path):
 
     try:
         s3.head_object(Bucket=bucket, Key=key)
-        lu.print_and_log.info(f"File successfully created at: {s3_path}", False, logger_worker)
+        lu.print_and_log(f"File successfully created at: {s3_path}", False, logger_worker)
         return True
     except s3.exceptions.ClientError as e:
         if e.response['Error']['Code'] == "404":
@@ -1578,6 +1580,74 @@ def calculate_stats(array_per_ha, name, bounds_str, tile_id, in_out, array_per_p
             'data_type': array_per_ha.dtype.name
         }
 
+
+# Calculates summary statistics for an IPCC land-use output raster at the chunk level. 
+# Reports metadata, minimum/maximum values, dominant class, unique classes, and either pixel counts or area (ha) by class, depending on whether a pixel area raster is provided
+def calculate_ipcc_stats(array, name, bounds_str, tile_id, in_out, pixel_area=None):
+
+    out_pattern, year_range = strip_and_extract_years(name)
+
+    base = {
+        "chunk_id": bounds_str,
+        "tile_id": tile_id,
+        "layer_name": name,
+        "pattern": out_pattern,
+        "years": year_range,
+        "chunk_name": f"{tile_id}__{bounds_str}__{out_pattern}_{year_range}.tif",
+        "tile_name": f"{tile_id}__{out_pattern}_{year_range}.tif",
+        "in_out": in_out,
+    }
+
+    if array is None or not np.any(array):
+        return {
+            **base,
+            "min_value": "no data",
+            "max_value": "no data",
+            "count_value": "no data",
+            "mode_value": "no data",
+            "unique_values": "no data",
+            "pixel_counts": "no data",
+            "data_type": "no data",
+        }
+
+    valid = array != 0
+    values = np.unique(array[valid])
+
+    if pixel_area is not None:
+
+        pixel_area_ha = pixel_area * cn.m2_to_ha
+
+        flat_classes = array.ravel().astype(np.int32)
+        flat_area = pixel_area_ha.ravel()
+
+        area_sums = np.bincount( flat_classes, weights=flat_area)
+
+        values = np.nonzero(area_sums)[0]
+        values = values[values != 0]
+
+        count_cols = { f"count_{int(v)}": float(area_sums[v]) for v in values}
+        total_area = float(area_sums[values].sum())
+        mode_value = int(values[np.argmax(area_sums[values])])
+
+    else:
+
+        _, counts = np.unique(array[valid], return_counts=True)
+
+        count_cols = {f"count_{int(value)}": int(count) for value, count in zip(values, counts)}
+        mode_value = int(values[np.argmax(counts)])
+        total_area = int(np.sum(counts))
+
+    return {
+        **base,
+        "min_value": int(np.min(values)),
+        "max_value": int(np.max(values)),
+        "count_value": total_area,
+        "mode_value": mode_value,
+        "unique_values": [int(v) for v in values],
+        **count_cols,
+        "data_type": array.dtype.name,
+    }
+
 # Makes sure that all columns in output chunk stats Pandas dataframe are indeed numeric
 # From https://chatgpt.com/c/68751cbe-6888-800a-bf9d-3657b048a810
 def sanitize_numeric_columns(df, numeric_cols):
@@ -1802,6 +1872,107 @@ def compile_1x1_chunk_stats(all_1x1_stats, chunk_shapefile_uri, stage, no_upload
         return local_spreadsheet
 
 
+def compile_ipcc_1x1_chunk_stats(all_1x1_stats, chunk_shapefile_uri, stage, no_upload, main_logger):
+    """
+    Compiles IPCC 1x1 chunk stats to Excel with separate tabs for:
+      - raw_chunk_stats
+      - class
+      - node_code
+      - change
+      - summary
+
+    count_* columns represent either:
+      - total area in hectares, if calculate_ipcc_stats was called with pixel_area
+      - pixel counts, if calculate_ipcc_stats was called without pixel_area
+    """
+
+    s3_client = boto3.client("s3")
+
+    main_logger.info(f"Starting to aggregate and export IPCC chunk stats: {timestr()}")
+
+    df = pd.DataFrame(all_1x1_stats)
+
+    if df.empty:
+        main_logger.warning("No IPCC chunk stats to compile.")
+        return None
+
+    # Add ISO/country code from fishnet
+    gdf = gpd.read_file(chunk_shapefile_uri)
+    fishnet_shapefile_df = gdf[["chunk_id", "iso"]]
+
+    df = df.merge(fishnet_shapefile_df, on="chunk_id", how="left")
+    df["iso"] = df["iso"].fillna("unknown")
+
+    # Identify count columns. These are count_* but may contain area in ha.
+    count_cols = [col for col in df.columns if col.startswith("count_")]
+
+    valid_ipcc_class_count_cols = [f"count_{code}" for code in cn.ipcc_class_codes]
+    valid_ipcc_node_count_cols = [f"count_{code}" for code in cn.ipcc_node_codes]
+    valid_ipcc_change_summary_count_cols = [f"count_{code}" for code in cn.ipcc_change_codes]
+
+    for col in count_cols + ["count_value", "min_value", "max_value", "mode_value"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # Layer-type grouping
+    def ipcc_layer_group(pattern):
+        if pattern == cn.IPCC_class_pattern:
+            return "class"
+        if pattern == cn.IPCC_node_pattern:
+            return "node_code"
+        if pattern == cn.IPCC_change_pattern:
+            return "change"
+        if pattern == cn.IPCC_summary_pattern:
+            return "summary"
+        return "other"
+
+    df["ipcc_layer_group"] = df["pattern"].apply(ipcc_layer_group)
+
+    # Summarize each IPCC layer type by ISO, years, and class/code columns
+    def summarize_group(group_name, valid_count_cols):
+        group_df = df[df["ipcc_layer_group"] == group_name].copy()
+
+        if group_df.empty:
+            return pd.DataFrame()
+
+        group_cols = ["iso", "pattern", "years"]
+
+        # Keep only count columns valid for this IPCC output type.
+        # Add missing valid columns as 0 so every tab has consistent columns.
+        for col in valid_count_cols:
+            if col not in group_df.columns:
+                group_df[col] = 0
+
+        summary = (group_df.groupby(group_cols, dropna=False)[valid_count_cols].sum(numeric_only=True).reset_index())
+        summary["total_count_or_area"] = summary[valid_count_cols].sum(axis=1)
+
+        return summary
+
+    class_stats = summarize_group("class", valid_ipcc_class_count_cols)
+    node_code_stats = summarize_group("node_code", valid_ipcc_node_count_cols)
+    change_stats = summarize_group("change", valid_ipcc_change_summary_count_cols)
+    summary_stats = summarize_group("summary", valid_ipcc_change_summary_count_cols)
+
+    # Save to Excel
+    out_spreadsheet = f"{stage}__IPCC_1x1_chunk_stats__{timestr()}.xlsx"
+    local_spreadsheet = f"{cn.local_chunk_stats_path}{out_spreadsheet}"
+
+    with pd.ExcelWriter(local_spreadsheet) as writer:
+        df.to_excel(writer, sheet_name="raw_chunk_stats", index=False)
+        class_stats.to_excel(writer, sheet_name="class", index=False)
+        node_code_stats.to_excel(writer, sheet_name="node_code", index=False)
+        change_stats.to_excel(writer, sheet_name="change", index=False)
+        summary_stats.to_excel(writer, sheet_name="summary", index=False)
+
+    main_logger.info(f"Saved IPCC chunk stats locally: {local_spreadsheet}")
+
+    if not no_upload:
+        s3_path = f"{cn.s3_chunk_stats_path}{out_spreadsheet}"
+        bucket, key = split_s3_path(f"s3://{cn.short_bucket_prefix}/{s3_path}")
+        s3_client.upload_file(local_spreadsheet, Bucket=bucket, Key=key)
+        main_logger.info(f"Uploaded IPCC chunk stats to s3://{bucket}/{key}")
+
+    return local_spreadsheet
 
 def aggregate_10x10_chunk_stats(counts_10x10_df, stage, no_upload, main_logger):
 
