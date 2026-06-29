@@ -2714,7 +2714,7 @@ def warp_to_hansen_local(source_raster_s3_path, output_raster_s3_path, xmin, ymi
 
 # Creates a 10x10 deg raster at 0.00025x0.00025 resolution from a VRT for a specified bounding box
 def warp_to_hansen_coiled(source_vrt_path, filename, output_raster_s3_path_and_name, xmin, ymin, xmax, ymax,
-                          dt, no_data, tiled=True, x_pixel_window=400, y_pixel_window=400):
+                          dt, no_data, tiled=True, x_pixel_window=400, y_pixel_window=400, src_nodata=None, scale_factor=1, round_scaled=False):
     #Note: If tiled=False, set x_pixel_window=None, y_pixel_window=None
 
     logger_worker = lu.setup_logging_worker()
@@ -2734,35 +2734,52 @@ def warp_to_hansen_coiled(source_vrt_path, filename, output_raster_s3_path_and_n
 
     #Code to run gdal warp using Python API
     if dataset:
+        warp_kwargs = dict(
+            format="GTiff", # Output format
+            dstSRS='EPSG:4326',  # Reproject to WGS84
+            xRes=cn.resolution,  # X resolution (10 degrees)
+            yRes=cn.resolution,  # Y resolution (10 degrees)
+            targetAlignedPixels=True,  # Ensure target aligned pixels (-tap)
+            outputBounds=[xmin, ymin, xmax, ymax],  # Output bounds
+            dstNodata=no_data,  # Set no data
+            outputType=dt,  # Output data type
+        )
+
         if tiled == True:
-            options = gdal.WarpOptions(
-                dstSRS='EPSG:4326',  # Reproject to WGS84
-                xRes=cn.resolution,  # X resolution (10 degrees)
-                yRes=cn.resolution,  # Y resolution (10 degrees)
-                targetAlignedPixels=True,  # Ensure target aligned pixels (-tap)
-                outputBounds=[xmin, ymin, xmax, ymax],  # Output bounds
-                dstNodata=no_data,  # Set no data
-                outputType=dt,  # Output data type
-                creationOptions=['COMPRESS=DEFLATE', 'TILED=YES',  # Tiling with user-specified dimensions
-                                 f'BLOCKXSIZE={x_pixel_window}',
-                                 f'BLOCKYSIZE={y_pixel_window}'],
-                format='GTiff'  # Output format
-            )
+            warp_kwargs["creationOptions"] = ['COMPRESS=DEFLATE', 'TILED=YES',  # Tiling with user-specified dimensions
+                                             f'BLOCKXSIZE={x_pixel_window}',
+                                             f'BLOCKYSIZE={y_pixel_window}']
         else:
-            options = gdal.WarpOptions(
-                dstSRS='EPSG:4326',
-                xRes=cn.resolution,
-                yRes=cn.resolution,
-                targetAlignedPixels=True,
-                outputBounds=[xmin, ymin, xmax, ymax],
-                dstNodata=no_data,
-                outputType=dt,
-                creationOptions=['COMPRESS=DEFLATE', 'TILED=NO'],  # No tiling (i.e. 40,000 x 1)
-                format='GTiff'
-            )
+            warp_kwargs["creationOptions"] = ['COMPRESS=DEFLATE', 'TILED=NO']  # No tiling (i.e. 40,000 x 1)
+
+        if src_nodata is not None:
+            warp_kwargs["srcNodata"] = src_nodata
+
+        options = gdal.WarpOptions(**warp_kwargs)
 
         gdal.Warp(str(Path(filename)), str(Path(source_vrt_path)), options=options)
         lu.print_and_log(f"{filename} created: {timestr('time')}", True, logger_worker)
+
+        # Fixing scale factor (divide by 10) for Ctrees AGB data
+        if scale_factor != 1:
+            np_dtype = map_to_numpy_dtype(gdal_to_string_dtype_mapping[dt])
+
+            with rasterio.open(str(Path(filename)), "r+") as dst:
+                data = dst.read(1)
+
+                valid_mask = data != no_data
+
+                scaled = data.astype(np.float32)
+                scaled[valid_mask] = scaled[valid_mask] * scale_factor
+
+                if round_scaled:
+                    scaled[valid_mask] = np.rint(scaled[valid_mask])
+
+                data_out = np.full(data.shape, no_data, dtype=np_dtype)
+                data_out[valid_mask] = scaled[valid_mask].astype(np_dtype)
+
+                dst.write(data_out, 1)
+                dst.update_tags(1, scale_factor_applied=scale_factor, rounded=round_scaled)
 
         #Fixing greyscale colormap in GMWv3 data
         if "mangrove" in source_vrt_path:

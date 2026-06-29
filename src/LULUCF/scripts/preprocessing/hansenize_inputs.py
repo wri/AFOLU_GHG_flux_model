@@ -12,23 +12,14 @@ python -m src.LULUCF.scripts.preprocessing.gmw_smooth_mangrove_extent_timeseries
 python -m src.LULUCF.scripts.preprocessing.gmw_smooth_mangrove_extent_timeseries.1_aggregate_smoothed_mangrove_extent_1x1_degree -cn Hansenize --first_10x10s_to_process 1 --no_upload
 
 Coiled test area with data:
-python -m src.utilities.create_cluster -cn Hansenize -n 2 -m 4
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p GPW -bb 110 -10 120 0 -cs 10
+Note: use -m 8 for all other datasets other than Ctrees_AGB2015. Scale factor (divide all values by 10) requires more memory.
+python -m src.utilities.create_cluster -cn Ctrees_AGB2015_test -n 1 -m 32
+python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Ctrees_AGB2015_test -p Ctrees_AGB2015 -bb -80 30 -70 40 -cs 10
 
 Coiled full run (running with 20 clusters causes an error of not finding the vrt, perhaps because it's being accessed too quickly-- better to run with fewer workers for now):
-
-python -m src.utilities.create_cluster -cn GPW_10x10__2021 -n 20 -t 12 -m 8
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn GPW_10x10__2021 -p grasslands -bb -180 -60 180 80 -cs 10
-
-python -m src.utilities.create_cluster -cn GPW_10x10__2022 -n 20 -t 12 -m 8
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn GPW_10x10__2022 -p grasslands -bb -180 -60 180 80 -cs 10
-
-python -m src.utilities.create_cluster -cn GPW_10x10__2023 -n 20 -t 12 -m 8
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn GPW_10x10__2023 -p grasslands -bb -180 -60 180 80 -cs 10
-
-python -m src.utilities.create_cluster -cn GPW_10x10__2024 -n 20 -t 12 -m 8
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn GPW_10x10__2024 -p grasslands -bb -180 -60 180 80 -cs 10
-
+Note: use -m 8 for all other datasets other than Ctrees_AGB2015. Scale factor (divide all values by 10) requires more memory.
+python -m src.utilities.create_cluster -cn Ctrees_AGB2015 -n 10 -t 1 -m 32 --on_demand
+python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Ctrees_AGB2015 -p Ctrees_AGB2015 -bb -180 -60 180 80 -cs 10
 
 python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p AGB2015 AGB2015_stdev -bb -180 -60 180 80 -cs 10
 # Note: Tried this with -n 20 -t 12 -m 16 (for mangrove extent from 1996 to 2016) and then again with -n 20 -t 12 -m 8 (for mangrove extent from 2017 to 2020).
@@ -51,6 +42,7 @@ import sys
 import argparse
 import dask
 from dask.distributed import print
+import math
 
 from src.utilities import constants_and_names as cn, log_utilities as lu, universal_utilities as uu
 
@@ -156,6 +148,32 @@ def main(cluster_name, process, bounding_box, chunk_size, run_local, no_upload):
             'vrt': f"/tmp/agb2015_stdev.vrt",
             'processed_dir': cn.agb_stdev_2015_dir_processed,
             'processed_pattern': cn.agb_stdev_2015_pattern
+        }
+
+    if 'Ctrees_AGB2015' in process:
+        download_upload_dictionary["Ctrees_AGB2015"] = {
+            'raw_dir': cn.ctrees_agb_2015_dir_raw,
+            'raw_pattern': cn.ctrees_agb_2015_pattern_raw,
+            'vrt': f"/tmp/Ctrees_agb2015.vrt",
+            'processed_dir': cn.ctrees_agb_2015_dir_processed,
+            'processed_pattern': cn.ctrees_agb_2015_pattern,
+            'src_nodata': cn.ctrees_agb_raw_nodata,
+            'dst_nodata': cn.ctrees_agb_processed_nodata,
+            'scale_factor': cn.ctrees_agb_scale_factor,
+            'round_scaled': True,
+            'output_dtype': cn.ctrees_agb_output_dtype
+        }
+
+    if 'Ctrees_AGB2015_uncertainty' in process:
+        download_upload_dictionary["Ctrees_AGB2015_uncertainty"] = {
+            'raw_dir': cn.ctrees_agb_uncertainty_2015_dir_raw,
+            'raw_pattern': cn.ctrees_agb_uncertainty_2015_pattern_raw,
+            'vrt': f"/tmp/Ctrees_agb2015_uncertainty.vrt",
+            'processed_dir': cn.ctrees_agb_uncertainty_2015_dir_processed,
+            'processed_pattern': cn.ctrees_agb_uncertainty_2015_pattern,
+            'src_nodata': cn.ctrees_agb_raw_nodata,
+            'dst_nodata': cn.ctrees_agb_processed_nodata,
+            'output_dtype': cn.ctrees_agb_output_dtype
         }
 
     if 'climate_zone' in process:
@@ -334,29 +352,42 @@ def main(cluster_name, process, bounding_box, chunk_size, run_local, no_upload):
 
         # Get dataset information
         dt = items['dt']
+        src_nodata = items.get('src_nodata', None)
+        dst_nodata = items.get('dst_nodata', 0)
+        scale_factor = items.get('scale_factor', 1)
+        round_scaled = items.get('round_scaled', False)
+
+        if items.get('output_dtype'):
+            dt = uu.string_to_gdal_dtype_mapping[items['output_dtype']]
+
         output_vrt_s3 = f"{items['raw_dir']}{os.path.basename(items['vrt'])}"
         main_logger.info(f"Using {output_vrt_s3} for Hansenization")
 
         # Separate tile_futures list for each dataset being processed
         tile_start_time = uu.timestr()
-        tile_futures = []  #creates tiles in parallel for each dataset
+        batch_size = max(1, n_workers * 2)
 
-        # Iterates through all tiles in a given dataset
-        for chunk in chunk_list:
-            tile_id = uu.xy_to_tile_id(chunk[0], chunk[3])
-            output_filename = f"{tile_id}_{items['processed_pattern']}.tif"
-            output_tile_s3 = f"{items['processed_dir']}{output_filename}"
-            xmin, ymin, xmax, ymax = uu.get_10x10_tile_bounds(tile_id)
+        for batch_start in range(0, len(chunk_list), batch_size):
+            batch_chunks = chunk_list[batch_start:batch_start + batch_size]
+            tile_futures = []
 
-            # Create 10 x 10 degree hansenized tile for each dataset in dictionary
-            tile_future = client.submit(uu.warp_to_hansen_coiled, output_vrt_s3, output_filename, output_tile_s3,
-                                        xmin, ymin, xmax, ymax, dt, 0, True, 400, 400)
-            tile_futures.append(tile_future)
+            main_logger.info(
+                f"Submitting tile batch {batch_start // batch_size + 1} "
+                f"of {math.ceil(len(chunk_list) / batch_size)} "
+                f"({len(batch_chunks)} tiles)"
+            )
 
-        main_logger.info(f"Tiles to process: {len(tile_futures)}")
+            for chunk in batch_chunks:
+                tile_id = uu.xy_to_tile_id(chunk[0], chunk[3])
+                output_filename = f"{tile_id}_{items['processed_pattern']}.tif"
+                output_tile_s3 = f"{items['processed_dir']}{output_filename}"
+                xmin, ymin, xmax, ymax = uu.get_10x10_tile_bounds(tile_id)
 
-        # Collect the results once they are finished
-        client.gather(tile_futures)
+                tile_future = client.submit( uu.warp_to_hansen_coiled, output_vrt_s3, output_filename, output_tile_s3,
+                                             xmin, ymin, xmax, ymax, dt, dst_nodata, True, 400, 400, src_nodata, scale_factor, round_scaled, retries=0,)
+                tile_futures.append(tile_future)
+
+            client.gather(tile_futures)
 
         main_logger.info(f"Completed Hansenizing {len(tile_futures)} tiles for {key}: {uu.timestr('time')}")
         uu.stage_duration(tile_start_time, uu.timestr(), f"Hansenize {key}", main_logger, "time")

@@ -369,6 +369,27 @@ agb_stdev_2015_pattern = "AGB_stdev_2015_ESA_CCI_Mg_AGB_ha"
 mangrove_agb_2000_dir = f"{full_bucket_prefix}/climate/carbon_model/mangrove_biomass/processed/standard/20190220/"
 mangrove_agb_2000_pattern = "mangrove_agb_t_ha_2000"
 
+# Data available at https://ctrees-agb-100m-global.s3.us-west-2.amazonaws.com/index.html#cogs/
+# Description available at https://registry.opendata.aws/ctrees-agb-100m-global/
+# CTrees 2015 AGB and uncertainty global COGs (used for starting carboon pool sensitivity analysis)
+# aws s3 cp s3://ctrees-agb-100m-global/cogs/global_agb_100m_landsat0024_all_2015_densenet_l1_agb_mosaic_100m_base_cd_ts.tif s3://gfw2-data/climate/Ctrees_biomass/2015/AGB/raw/ --source-region us-west-2
+# aws s3 cp s3://ctrees-agb-100m-global/cogs/global_agb_100m_landsat0024_all_2015_densenet_l1_agb_mosaic_100m_base_cd_ts_uncertainty_sem.tif s3://gfw2-data/climate/Ctrees_biomass/2015/AGB_uncertainty/raw/ --source-region us-west-2
+# Note: Raw pixel values are multiplied by 10 to save space. To retrieve the actual biomass density in Mg/ha, divide the raw pixel value by 10
+ctrees_agb_raw_nodata = -9999
+ctrees_agb_processed_nodata = 0
+ctrees_agb_scale_factor = 0.1
+ctrees_agb_output_dtype = "Int16"
+
+ctrees_agb_2015_dir_raw = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/AGB/raw/"
+ctrees_agb_2015_pattern_raw = "global_agb_100m_landsat0024_all_2015_densenet_l1_agb_mosaic_100m_base_cd_ts"
+ctrees_agb_2015_dir_processed = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/AGB/processed/20260629/"
+ctrees_agb_2015_pattern = "AGB_2015_Ctrees_Mg_AGB_ha"
+
+ctrees_agb_uncertainty_2015_dir_raw = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/AGB_uncertainty/raw/"
+ctrees_agb_uncertainty_2015_pattern_raw = "global_agb_100m_landsat0024_all_2015_densenet_l1_agb_mosaic_100m_base_cd_ts_uncertainty_sem"
+ctrees_agb_uncertainty_2015_dir_processed = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/AGB_uncertainty/processed/20260629/"
+ctrees_agb_uncertainty_2015_pattern = "AGB_uncertainty_2015_Ctrees_Mg_AGB_ha"
+
 
 # Carbon density patterns (also used in path names)
 agb_dens_pattern = "AGB_density_MgAGB_ha"
