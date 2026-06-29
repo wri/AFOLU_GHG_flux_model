@@ -1,4 +1,8 @@
 """
+Purpose: Calculates zonal statistics for vegetation model emissions, removals, and net flux using the IPCC land-use classification as contextual information. 
+The script converts per-hectare fluxes to per-pixel totals, aggregates annual fluxes and areas by IPCC land-use class, node, land-use change, and summary categories 
+for each 10×10° tile, and exports tile-level and combined long- and wide-format zonal statistics tables.
+
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 python -m src.utilities.create_cluster -n 25 -m 64 -cn IPCC_zonal_stats_10x10 --zonal_stats
