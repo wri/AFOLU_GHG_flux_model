@@ -1,6 +1,6 @@
 """
-Standalone script: recreates IPCC_summary in existing IPCC land use zarr as uint16
-and populates it from already-computed 1x1 IPCC_summary GeoTIFFs on S3.
+Purpose: Recreates IPCC_summary in existing IPCC land use zarr as uint16 and populates it from already-computed 1x1 IPCC_summary GeoTIFFs on S3.
+In the initial global run, the GLCLU classification code used uint16 for LU summary but the zarr code code initialized it as uint8 so none of the LU summary data was written to zarr during the global run. This deleted the empty uint8 LU summary dataset in the zarr, created a new empty LU summary uint16 dataset, and wrote all tiles to zarr. 
 
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model/
 
