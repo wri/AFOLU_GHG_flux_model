@@ -753,6 +753,19 @@ def get_tile_dataset_rio(uri, bounds, chunk_length_pixels, logger_worker, data_t
 
             return data, status
 
+        except rasterio.errors.WindowError as e:
+            # WindowError ("Bounds and transform are inconsistent") can occur transiently when a
+            # GeoTIFF header is read under high S3 concurrency and GDAL gets a garbled transform back.
+            # Always retry -- if the file has a genuine data problem this will exhaust retries and raise.
+            # Per Claude session 'Failed Coiled tasks diagnosis'
+            if attempt < MAX_RETRIES - 1:
+                sleep_time = min(30.0, 1.0 * (2 ** attempt)) + random.uniform(0.0, 1.0)
+                lu.print_and_log(f"WindowError for {uri} on attempt {attempt} ({e}). Retrying in {sleep_time:.2f}s...: {timestr()}", False, logger_worker)
+                time.sleep(sleep_time)
+                continue
+            else:
+                raise RuntimeError(f"WindowError persisted after {MAX_RETRIES} retries for {uri}: {timestr()}") from e
+
         # From https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/68c3235e-a590-832d-bfdc-c1531416c311
         except rasterio.errors.RasterioIOError as e:
             err_msg = str(e)

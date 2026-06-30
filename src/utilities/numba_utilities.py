@@ -742,7 +742,6 @@ def calc_Cf_forest(climate_domain_cell, drivers_cell, ifl_primary_cell, model_ty
             else:  # Outside ecozone bounds, no driver assigned
                 Cf_forest = 0.34     # Row "All boreal forest"
 
-
     return Cf_forest
 
 
@@ -1706,7 +1705,8 @@ def calc_NT_cropland_gain(c_pools_no_fire, c_dens_in, RF_array):
 # Gross fluxes and ending carbon stocks for cropland converted to non-cropland (without tall vegetation).
 # Removals only if converted to short vegetation. Non-CO2 emissions only if fire.
 @jit(nopython=True)
-def calc_cropland_non_cropland(node, c_dens_in, c_pools_no_fire, times_burned_in_interval, RF_post_dist):
+def calc_cropland_non_cropland(node, c_dens_in, c_pools_no_fire, times_burned_in_interval, RF_post_dist,
+                               Cf_crop_residue, Gef_CH4_crop_residue, Gef_N2O_crop_residue):
 
     # Retrieves the starting densities for each carbon pool from the input array (Mg C/ha)
     agc_dens_in, bgc_dens_in, deadwood_c_dens_in, litter_c_dens_in = unpack_starting_carbon_densities(c_dens_in)
@@ -1740,8 +1740,7 @@ def calc_cropland_non_cropland(node, c_dens_in, c_pools_no_fire, times_burned_in
         residue_carbon = c_dens_in[0] * cn.cropland_residue_harvest_ratio
 
         # Calculates non-CO2 fire emissions using aboveground carbon (only cropland pool) for a single year of burning
-        ch4_flux_out, n2o_flux_out = non_CO2_fire_equations(residue_carbon, cn.Cf_crop_residue_standard,
-                                                            cn.Gef_CH4_crop_residue_standard, cn.Gef_N2O_crop_residue_standard)
+        ch4_flux_out, n2o_flux_out = non_CO2_fire_equations(residue_carbon, Cf_crop_residue, Gef_CH4_crop_residue, Gef_N2O_crop_residue)
 
         # Multiplies the per-burn emissions by the number of times burned to get total emissions during the interval
         ch4_flux_out = ch4_flux_out * times_burned_in_interval
@@ -1770,7 +1769,7 @@ def calc_cropland_non_cropland(node, c_dens_in, c_pools_no_fire, times_burned_in
 # Carbon densities don't change.
 # No CO2 emissions or removals but there are non-CO2 emissions if there is fire (crop residue burning).
 @jit(nopython=True)
-def calc_cropland_cropland(node, c_dens_in, times_burned_in_interval):
+def calc_cropland_cropland(node, c_dens_in, times_burned_in_interval, Cf_crop_residue, Gef_CH4_crop_residue, Gef_N2O_crop_residue):
 
     # Step 1: Calculates carbon densities, carbon gross emissions and carbon gross removals (no changes to any)
     c_dens_out = np.array(c_dens_in).astype('float32')
@@ -1792,8 +1791,7 @@ def calc_cropland_cropland(node, c_dens_in, times_burned_in_interval):
         residue_carbon = c_dens_in[0] * cn.cropland_residue_harvest_ratio
 
         # Calculates non-CO2 fire emissions using aboveground carbon (only cropland pool) for a single year of burning
-        ch4_flux_out, n2o_flux_out = non_CO2_fire_equations(residue_carbon, cn.Cf_crop_residue_standard,
-                                                            cn.Gef_CH4_crop_residue_standard, cn.Gef_N2O_crop_residue_standard)
+        ch4_flux_out, n2o_flux_out = non_CO2_fire_equations(residue_carbon, Cf_crop_residue, Gef_CH4_crop_residue, Gef_N2O_crop_residue)
 
         # Multiplies the per-burn emissions by the number of times burned to get total emissions during the interval
         ch4_flux_out = ch4_flux_out * times_burned_in_interval
@@ -1848,7 +1846,7 @@ def calc_short_veg_gain(rf):
 # No CO2 removals. CO2 emissions occur.
 # There are non-CO2 emissions where there is fire (biomass burning).
 @jit(nopython=True)
-def calc_short_veg_loss(node, c_dens_in, c_pools_no_fire, times_burned_in_interval):
+def calc_short_veg_loss(node, c_dens_in, c_pools_no_fire, times_burned_in_interval, Cf_grassland, Gef_CH4_grassland, Gef_N2O_grassland):
 
     # Retrieves the starting densities for each carbon pool from the input array (Mg C/ha)
     agc_dens_in, bgc_dens_in, deadwood_c_dens_in, litter_c_dens_in = unpack_starting_carbon_densities(c_dens_in)
@@ -1883,8 +1881,7 @@ def calc_short_veg_loss(node, c_dens_in, c_pools_no_fire, times_burned_in_interv
         state_out = accrete_node(node, cn.land_state_node_fire_value)
 
         # Calculates non-CO2 fire emissions using aboveground carbon only for a single year of burning
-        ch4_flux_out, n2o_flux_out = non_CO2_fire_equations(c_dens_in[0],
-                                                            cn.Cf_grassland_standard, cn.Gef_CH4_grassland_standard, cn.Gef_N2O_grassland_standard)
+        ch4_flux_out, n2o_flux_out = non_CO2_fire_equations(c_dens_in[0], Cf_grassland, Gef_CH4_grassland, Gef_N2O_grassland)
 
         # Multiplies the per-burn emissions by the number of times burned to get total emissions during the interval
         ch4_flux_out = ch4_flux_out * times_burned_in_interval
@@ -1912,7 +1909,7 @@ def calc_short_veg_loss(node, c_dens_in, c_pools_no_fire, times_burned_in_interv
 # Carbon densities don't change.
 # No CO2 emissions or removals but there are non-CO2 emissions if there is fire (biomass burning).
 @jit(nopython=True)
-def calc_short_veg_short_veg(node, c_dens_in, times_burned_in_interval):
+def calc_short_veg_short_veg(node, c_dens_in, times_burned_in_interval, Cf_grassland, Gef_CH4_grassland, Gef_N2O_grassland):
 
     # Step 1: Calculates carbon densities, carbon gross emissions and carbon gross removals (no changes to any)
     c_dens_out = np.array(c_dens_in).astype('float32')
@@ -1931,8 +1928,7 @@ def calc_short_veg_short_veg(node, c_dens_in, times_burned_in_interval):
         state_out = accrete_node(node, cn.land_state_node_fire_value)
 
         # Calculates non-CO2 fire emissions using aboveground carbon only for a single year of burning
-        ch4_flux_out, n2o_flux_out = non_CO2_fire_equations(c_dens_in[0],
-                                                            cn.Cf_grassland_standard, cn.Gef_CH4_grassland_standard, cn.Gef_N2O_grassland_standard)
+        ch4_flux_out, n2o_flux_out = non_CO2_fire_equations(c_dens_in[0], Cf_grassland, Gef_CH4_grassland, Gef_N2O_grassland)
 
         # Multiplies the per-burn emissions by the number of times burned to get total emissions during the interval
         ch4_flux_out = ch4_flux_out * times_burned_in_interval
