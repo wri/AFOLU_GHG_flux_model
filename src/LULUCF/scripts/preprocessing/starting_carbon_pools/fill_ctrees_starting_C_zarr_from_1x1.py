@@ -19,8 +19,13 @@ Test run:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 8 -cn fill_starting_carbon_pools_zarr__Ctrees
 python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.fill_ctrees_starting_C_zarr_from_1x1 -cn fill_starting_carbon_pools_zarr__Ctrees -bb -80 30 -70 40
 
+Global run:
 python -m src.utilities.create_cluster -n 100 -t 1 -m 8 -cn fill_starting_carbon_pools_zarr__Ctrees
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.fill_ctrees_starting_C_zarr_from_1x1 -cn fill_starting_carbon_pools_zarr__Ctrees
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.fill_ctrees_starting_C_zarr_from_1x1 -cn fill_starting_carbon_pools_zarr__Ctrees -mpd Ctrees
+
+Global rerun for failed 520 chunks:
+python -m src.utilities.create_cluster -n 100 -t 1 -m 8 -cn fill_starting_carbon_pools_zarr__Ctrees
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.fill_ctrees_starting_C_zarr_from_1x1 -cn fill_starting_carbon_pools_zarr__Ctrees  -mpd Ctrees -fct /mnt/c/GIS/AFOLU_flux_model/ctrees_failed_1x1_chunks.txt
 
 """
 
@@ -30,6 +35,8 @@ from dask.distributed import as_completed
 import os
 
 import math
+import random
+import time
 import fsspec
 import numpy as np
 import rasterio
@@ -44,9 +51,45 @@ from src.utilities import log_utilities as lu
 YEAR = 2015
 
 
-def read_1x1_tif(s3_uri):
-    with rasterio.open(s3_uri) as src:
-        return src.read(1)
+def read_1x1_tif(s3_uri, max_retries=6, base_sleep=2):
+    """Read one GeoTIFF band with retry/backoff for transient S3/rasterio throttling."""
+    last_error = None
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            with rasterio.Env(GDAL_DISABLE_READDIR_ON_OPEN="TRUE"):
+                with rasterio.open(s3_uri) as src:
+                    return src.read(1)
+
+        except (rasterio.errors.RasterioIOError, OSError) as e:
+            last_error = e
+
+            if attempt == max_retries:
+                break
+
+            sleep_seconds = base_sleep * (2 ** (attempt - 1)) + random.uniform(0, 1)
+            time.sleep(sleep_seconds)
+
+    raise last_error
+
+
+def read_chunk_ids_from_txt(chunk_txt_path):
+    """Read chunk IDs from a local or S3 text file; ignore blanks and comment lines."""
+    chunk_ids = []
+
+    with fsspec.open(chunk_txt_path, "rt") as src:
+        for line in src:
+            line = line.strip()
+
+            if not line or line.startswith("#"):
+                continue
+
+            # Accept either a one-column txt or a CSV-like first column.
+            chunk_ids.append(line.split(",")[0].strip())
+
+    # Preserve order while removing duplicates.
+    return list(dict.fromkeys(chunk_ids))
+
 
 def batched(items, batch_size):
     for i in range(0, len(items), batch_size):
@@ -140,7 +183,7 @@ def write_tile_to_zarr(bounds, zarr_path, output_dirs, output_patterns, year, no
 
 
 def main(cluster_name, model_type, model_path_description, bounding_box=None,
-         chunk_shapefile_uri=None, first_chunks=None, no_upload=False):
+         chunk_shapefile_uri=None, first_chunks=None, failed_chunks_txt=None, no_upload=False):
 
     stage = "backfill_ctrees_starting_C_zarr_from_1x1"
     cluster, client, run_local = uu.connect_to_Coiled_cluster(cluster_name, False)
@@ -154,7 +197,39 @@ def main(cluster_name, model_type, model_path_description, bounding_box=None,
 
     fishnet_iso_df = uu.fishnet_with_GADM_iso(chunk_shapefile_uri)
 
-    if bounding_box:
+    if failed_chunks_txt:
+        failed_chunk_ids = read_chunk_ids_from_txt(failed_chunks_txt)
+        valid_chunk_ids = set(fishnet_iso_df["chunk_id"])
+
+        missing_from_fishnet = [
+            chunk_id for chunk_id in failed_chunk_ids
+            if chunk_id not in valid_chunk_ids
+        ]
+
+        if missing_from_fishnet:
+            main_logger.warning(
+                f"{len(missing_from_fishnet)} chunk IDs from {failed_chunks_txt} "
+                f"were not found in the 1x1 fishnet and will be skipped. "
+                f"First few missing: {missing_from_fishnet[:10]}"
+            )
+
+        failed_chunk_ids = [
+            chunk_id for chunk_id in failed_chunk_ids
+            if chunk_id in valid_chunk_ids
+        ]
+
+        if first_chunks:
+            failed_chunk_ids = failed_chunk_ids[:first_chunks]
+
+        chunk_list = [uu.process_chunk_id(chunk_id) for chunk_id in failed_chunk_ids]
+        chunk_size_pixels = cn.chunk_dims
+
+        main_logger.info(
+            f"Using failed 1x1 chunk text file {failed_chunks_txt}; "
+            f"{len(chunk_list)} chunks selected"
+        )
+
+    elif bounding_box:
         xmin, ymin, xmax, ymax = bounding_box
 
         def chunk_intersects_bb(chunk_id):
@@ -194,7 +269,8 @@ def main(cluster_name, model_type, model_path_description, bounding_box=None,
     if run_local:
         batch_size = 1
     else:
-        batch_size = max(1, int(n_workers) * 10)
+        batch_size = max(1, int(n_workers) * 2)
+        #batch_size = max(1, int(n_workers) * 10)
 
     total_batches = math.ceil(len(chunk_list) / batch_size)
 
@@ -265,7 +341,7 @@ def main(cluster_name, model_type, model_path_description, bounding_box=None,
             f"chunks {batch_start_idx + 1}-{batch_end_idx} of {len(chunk_list)}"
         )
 
-        futures = [
+        future_to_bounds = {
             client.submit(
                 write_tile_to_zarr,
                 bounds,
@@ -275,22 +351,29 @@ def main(cluster_name, model_type, model_path_description, bounding_box=None,
                 YEAR,
                 no_upload,
                 retries=0,
-            )
+            ): bounds
             for bounds in batch
-        ]
+        }
 
         batch_written = 0
         batch_skipped = 0
         batch_failed = 0
 
-        for future in as_completed(futures):
+        for future in as_completed(list(future_to_bounds.keys())):
             try:
                 result = future.result()
             except Exception as e:
                 failed_chunk_count += 1
                 total_failed += len(output_patterns)
                 batch_failed += len(output_patterns)
-                main_logger.warning(f"FAILED chunk task before returning summary: {repr(e)}")
+
+                bounds = future_to_bounds.get(future)
+                bounds_str = uu.boundstr(bounds) if bounds is not None else "unknown_chunk"
+                tile_id = uu.xy_to_tile_id(bounds[0], bounds[3]) if bounds is not None else "unknown_tile"
+
+                main_logger.warning(
+                    f"FAILED chunk task before returning summary for {bounds_str} in {tile_id}: {repr(e)}"
+                )
                 continue
 
             completed_chunk_count += 1
@@ -321,24 +404,24 @@ def main(cluster_name, model_type, model_path_description, bounding_box=None,
 
             for item in result["written"]:
                 filename = os.path.basename(item["tif_uri"])
-                main_logger.info(
-                    f"  Wrote {item['zarr_key']} from {filename}"
-                )
+                # main_logger.info(
+                #     f"  Wrote {item['zarr_key']} from {filename}"
+                # )
 
             for item in result["skipped"]:
                 filename = os.path.basename(item["tif_uri"])
-                main_logger.info(
-                    f"  Skipped {item['zarr_key']} from {filename}; "
-                    f"reason={item['reason']}"
-                )
+                # main_logger.info(
+                #     f"  Skipped {item['zarr_key']} from {filename}; "
+                #     f"reason={item['reason']}"
+                # )
 
             for item in result["failed"]:
                 tif_uri = item.get("tif_uri", "N/A")
                 filename = os.path.basename(tif_uri) if tif_uri != "N/A" else "N/A"
-                main_logger.warning(
-                    f"  Failed {item.get('zarr_key', 'N/A')} from {filename}; "
-                    f"reason={item['reason']}; detail={item.get('detail', '')}"
-                )
+                # main_logger.warning(
+                #     f"  Failed {item.get('zarr_key', 'N/A')} from {filename}; "
+                #     f"reason={item['reason']}; detail={item.get('detail', '')}"
+                # )
 
         main_logger.info(
             f"Finished batch {batch_num}/{total_batches}: "
@@ -363,17 +446,11 @@ if __name__ == "__main__":
     parser.add_argument("-bb", "--bounding_box", nargs=4, type=float)
     parser.add_argument("-cshp", "--chunk_shapefile_uri")
     parser.add_argument("-f", "--first_chunks", type=int)
+    parser.add_argument("-fct", "--failed_chunks_txt", help="Local or S3 text file of 1x1 chunk IDs to rerun, one chunk_id per line")
     parser.add_argument("-mt", "--model_type", default="standard")
     parser.add_argument("-mpd", "--model_path_description", default="global")
     parser.add_argument("--no_upload", action="store_true")
     args = parser.parse_args()
 
-    main(
-        args.cluster_name,
-        args.model_type,
-        args.model_path_description,
-        bounding_box=args.bounding_box,
-        chunk_shapefile_uri=args.chunk_shapefile_uri,
-        first_chunks=args.first_chunks,
-        no_upload=args.no_upload,
-    )
+    main(args.cluster_name, args.model_type, args.model_path_description, bounding_box=args.bounding_box,
+         chunk_shapefile_uri=args.chunk_shapefile_uri, first_chunks=args.first_chunks, failed_chunks_txt=args.failed_chunks_txt, no_upload=args.no_upload)
