@@ -968,8 +968,8 @@ def upload_zarr_chunk_stat_comparisons(chunks_count_exceeding_total, chunks_with
 
 
 # Extracts a 10x10° tile from a Zarr store and writes to GeoTIFF on S3
-def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_base,
-                                      model_version, model_type, model_path_description, no_upload, use_start_year, no_data_val):
+def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_base, model_version, model_type,
+                                      model_path_description, no_upload, use_start_year, no_data_val, append_start_year_to_var=False):
 
     process = psutil.Process(os.getpid())
 
@@ -1024,7 +1024,10 @@ def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_b
     # Renames variable to use units and year.
     if use_start_year == True:
         year = cn.first_model_year_annual
-        var_with_unit = var_per_ha
+        if append_start_year_to_var:
+            var_with_unit = f"{var_per_ha}_{year}"
+        else:
+            var_with_unit = var_per_ha
     else:      # For timeseries data, uses specified output years (e.g., vegetation, SOC density, SOC change)
         if "SOC_density" in var:
             year = cn.SOC_density_intervals[year_idx]
