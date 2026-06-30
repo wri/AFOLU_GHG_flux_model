@@ -14,7 +14,9 @@ python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetat
 
 Coiled small tests (1x1 deg chunk needs 32GB worker):
 python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn vegetation_model
-python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt standard -mpd test_box -bb -64 -22 -63 -21 -cs 1 --create_zarr
+python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt standard -mpd test_box -bb 10 49 11 50 -cs 1 --create_zarr
+python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt low_partial_dist_EF -mpd test_box -bb 10 49 11 50 -cs 1 --create_zarr
+python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt high_partial_dist_EF -mpd test_box -bb 10 49 11 50 -cs 1 --create_zarr
 
 Coiled Cerrado test (174 features):
 python -m src.utilities.create_cluster -n 20 -t 1 -m 32 -cn vegetation_model
@@ -36,7 +38,7 @@ which is the situation for large analyses, obviously.
 https://app.asana.com/1/25496124013636/task/1206230383901961/comment/1210641504248464?focus=true
 
 #TODO change NoData in flux outputs to something besides 0 because 0 has a meaning for fluxes
-#TODO update 1km drivers to correct year. Currently using through 2023.
+#TODO update 1km drivers to correct year. Currently using through 2023. (But this would also mean changing it for zonal stats, including organic soil and mineral soil zstats. So, need to think through that.)
 #TODO add AGC removal factor, AGC emission fraction, and forest age to zarr output (for use in zonal statistics)
 #TODO make all outputs have a unit where /PER_HA_OR_PIXEL/ currently is-- change it to /UNIT/ so that non-flux/density outputs have a unit, too
 #TODO Check for changes to zarr creation and usage (including 10x10 creation and zonal stats) from working on SOC
@@ -2229,12 +2231,16 @@ def main(cluster_name, year_range, model_type,
 
     ### Step 1: Preparation
 
+    if model_type not in cn.model_type_options:
+        sys.exit(f'model_type not found. Must use value from {cn.model_type_options}')
+
     # Model stage being run
     stage = 'vegetation_fluxes'
 
     # Runs chunks in batches of specified size.
     # Each batch slows down processing because chunks inevitably lag and that happens more the more batches there are.
-    batch_size = 3800  # 5 batches to cover all chunks
+    # batch_size = 3800  # 5 batches to cover all chunks
+    batch_size = 4000  # 1 batch for the full Xu et al. regrowth extent (3973 chunks)
     # batch_size = 8  # large-scale testing
 
     # Determines if arguments for start and end year are valid
@@ -2473,6 +2479,7 @@ def main(cluster_name, year_range, model_type,
         EF_tab = cn.partial_disturbance_emission_factor_table_tab_high_EF
     else:  # Standard model and sensitivity analyses in which EFs are not changed
         EF_tab = cn.partial_disturbance_emission_factor_table_tab_standard
+    main_logger.info(f'Using partial emission factor tab {EF_tab}')
 
     # Creates numpy array of emission factors for partially disturbed forest by driver and continent-ecozone combination
     partial_disturbance_EF_array = uu.convert_lookup_table_to_array(cn.partial_disturbance_emission_factor_table_full_path, EF_tab,

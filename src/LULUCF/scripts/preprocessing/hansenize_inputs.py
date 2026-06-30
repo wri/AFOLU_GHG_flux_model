@@ -132,6 +132,65 @@ def main(cluster_name, process, bounding_box, chunk_size, run_local, no_upload):
             'processed_pattern': cn.secondary_natural_forest_81_100_pattern
         }
 
+    # Add Robinson et al. secondary natural forest growth rates
+    if 'Xu_regrowth' in process:
+        download_upload_dictionary[f"Xu_regrowth_0_5"] = {
+            'raw_dir': cn.Xu_regrowth_AGC_rate_global_all_years_dir,
+            'raw_pattern': f"{cn.Xu_regrowth_AGC_rate_pattern}__0_5_years_{cn.Xu_global_date}",
+            'vrt': f"/tmp/secondary_natural_forest_0_5.vrt",
+            'processed_dir': f"{cn.Xu_regrowth_AGC_rate_base_dir}0_5_years/",
+            'processed_pattern': f"{cn.Xu_regrowth_AGC_rate_pattern}__0_5_years_{cn.Xu_global_date}"
+        }
+        download_upload_dictionary["Xu_regrowth_5_10"] = {
+            'raw_dir': cn.Xu_regrowth_AGC_rate_global_all_years_dir,
+            'raw_pattern': f"{cn.Xu_regrowth_AGC_rate_pattern}__5_10_years_{cn.Xu_global_date}",
+            'vrt': f"/tmp/secondary_natural_forest_5_10.vrt",
+            'processed_dir': f"{cn.Xu_regrowth_AGC_rate_base_dir}5_10_years/",
+            'processed_pattern': f"{cn.Xu_regrowth_AGC_rate_pattern}__5_10_years_{cn.Xu_global_date}"
+        }
+        download_upload_dictionary["Xu_regrowth_10_15"] = {
+            'raw_dir': cn.Xu_regrowth_AGC_rate_global_all_years_dir,
+            'raw_pattern': f"{cn.Xu_regrowth_AGC_rate_pattern}__10_15_years_{cn.Xu_global_date}",
+            'vrt': f"/tmp/secondary_natural_forest_10_15.vrt",
+            'processed_dir': f"{cn.Xu_regrowth_AGC_rate_base_dir}10_15_years/",
+            'processed_pattern': f"{cn.Xu_regrowth_AGC_rate_pattern}__10_15_years_{cn.Xu_global_date}"
+        }
+        download_upload_dictionary["Xu_regrowth_15_20"] = {
+            'raw_dir': cn.Xu_regrowth_AGC_rate_global_all_years_dir,
+            'raw_pattern': f"{cn.Xu_regrowth_AGC_rate_pattern}__15_20_years_{cn.Xu_global_date}",
+            'vrt': f"/tmp/secondary_natural_forest_15_20.vrt",
+            'processed_dir': f"{cn.Xu_regrowth_AGC_rate_base_dir}15_20_years/",
+            'processed_pattern': f"{cn.Xu_regrowth_AGC_rate_pattern}__15_20_years_{cn.Xu_global_date}"
+        }
+        download_upload_dictionary["Xu_regrowth_20_40"] = {
+            'raw_dir': cn.Xu_regrowth_AGC_rate_global_all_years_dir,
+            'raw_pattern': f"{cn.Xu_regrowth_AGC_rate_pattern}__20_40_years_{cn.Xu_global_date}",
+            'vrt': f"/tmp/secondary_natural_forest_20_40.vrt",
+            'processed_dir': f"{cn.Xu_regrowth_AGC_rate_base_dir}20_40_years/",
+            'processed_pattern': f"{cn.Xu_regrowth_AGC_rate_pattern}__20_40_years_{cn.Xu_global_date}"
+        }
+        download_upload_dictionary["Xu_regrowth_40_60"] = {
+            'raw_dir': cn.Xu_regrowth_AGC_rate_global_all_years_dir,
+            'raw_pattern': f"{cn.Xu_regrowth_AGC_rate_pattern}__40_60_years_{cn.Xu_global_date}",
+            'vrt': f"/tmp/secondary_natural_forest_40_60.vrt",
+            'processed_dir': f"{cn.Xu_regrowth_AGC_rate_base_dir}40_60_years/",
+            'processed_pattern': f"{cn.Xu_regrowth_AGC_rate_pattern}__40_60_years_{cn.Xu_global_date}"
+        }
+        download_upload_dictionary["Xu_regrowth_60_80"] = {
+            'raw_dir': cn.Xu_regrowth_AGC_rate_global_all_years_dir,
+            'raw_pattern': f"{cn.Xu_regrowth_AGC_rate_pattern}__60_80_years_{cn.Xu_global_date}",
+            'vrt': f"/tmp/secondary_natural_forest_60_80.vrt",
+            'processed_dir': f"{cn.Xu_regrowth_AGC_rate_base_dir}60_80_years/",
+            'processed_pattern': f"{cn.Xu_regrowth_AGC_rate_pattern}__60_80_years_{cn.Xu_global_date}"
+        }
+        download_upload_dictionary["Xu_regrowth_80_100"] = {
+            'raw_dir': cn.Xu_regrowth_AGC_rate_global_all_years_dir,
+            'raw_pattern': f"{cn.Xu_regrowth_AGC_rate_pattern}__80_100_years_{cn.Xu_global_date}",
+            'vrt': f"/tmp/secondary_natural_forest_80_100.vrt",
+            'processed_dir': f"{cn.Xu_regrowth_AGC_rate_base_dir}80_100_years/",
+            'processed_pattern': f"{cn.Xu_regrowth_AGC_rate_pattern}__80_100_years_{cn.Xu_global_date}"
+        }
+
     if 'AGB2015' in process:
         download_upload_dictionary["AGB2015"] = {
             'raw_dir': cn.agb_2015_dir_raw,

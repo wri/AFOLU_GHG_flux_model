@@ -125,7 +125,7 @@ mangrove_rate_ratio_tab = 'mang gain and Cratios,for model'
 # Emission factors for partial disturbances (by 1km driver)
 partial_disturbance_emission_factor_table_name = "partial_disturbance_emission_factors_LULUCF_model_w_sensit_anlys__20260627.xlsx"
 partial_disturbance_emission_factor_table_full_path = f"{EF_RF_C_ratio_spreadsheet_URL}{partial_disturbance_emission_factor_table_name}"
-partial_disturbance_emission_factor_table_tab_standard = "EF_combined"
+partial_disturbance_emission_factor_table_tab_standard = "EF_combined_std"
 partial_disturbance_emission_factor_table_tab_low_EF = "EF_combined_low"
 partial_disturbance_emission_factor_table_tab_high_EF = "EF_combined_high"
 
@@ -638,6 +638,20 @@ secondary_forest_curve_run_date = '20250616'
 natural_forest_growth_curve_dir = f"{full_bucket_prefix}/climate/secondary_forest_carbon_curves__Robinson_et_al/processed/{secondary_forest_curve_run_date}/"
 natural_forest_growth_curve_pattern = "natural_forest_mean_growth_rate__Mg_AGC_ha_yr"
 natural_forest_growth_curve_intervals = ['0_5', '6_10', '11_15', '16_20', '21_40', '41_60', '61_80', '81_100']
+
+# Xu et al. 2026 Chapman-Richards regrowth curves (other degraded forest, 1-degree resolution)
+# From https://drive.google.com/drive/folders/1ANjxrL4LItXtteHIGFRU70_MfZiFVF9n?usp=sharing
+# Using on the "other degraded" curves for the sensitivity analysis
+Xu_global_date = '20260629'
+Xu_regrowth_base_dir = f"{full_bucket_prefix}/climate/regrowth_curves__Xu_et_al/from_Yidi_Xu_20260628/"
+Xu_regrowth_raw_dir = f"{Xu_regrowth_base_dir}raw/"
+Xu_regrowth_raw_pattern = "growthcurve_otherdeg.tif"
+Xu_regrowth_AGB_rate_dir = f"{Xu_regrowth_base_dir}AGB_density_by_age/all_ages_global/"
+Xu_regrowth_AGB_rate_pattern = "Xu_other_degrad_regrowth_density__Mg_AGB_ha"   # append __{age}_years_{date}.tif
+
+Xu_regrowth_AGC_rate_base_dir = f"{Xu_regrowth_base_dir}AGC_rate/"
+Xu_regrowth_AGC_rate_global_all_years_dir = f"{Xu_regrowth_AGC_rate_base_dir}all_ages_global/"
+Xu_regrowth_AGC_rate_pattern = "Xu_other_degrad_regrowth_rate__Mg_AGC_ha_yr"   # append __{age_min}_{age_max}_years_{date}.tif
 
 #TODO: @Mel Update to path pattern instead of processed_dir/ pattern in hansenize. Delete processed after.
 drivers_run_date = '20250414'
@@ -2159,3 +2173,5 @@ low_EF = 'low_partial_dist_EF'
 high_EF = 'high_partial_dist_EF'
 alt_AGB = 'alternative_initial_AGB'
 alt_RF = 'alternative_RF'
+
+model_type_options = ['standard', low_EF, high_EF, alt_AGB, alt_RF]
