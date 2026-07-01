@@ -6,7 +6,7 @@ outputs that are useful for QC and potentially as contextual layers (e.g., compo
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Local test (Dask part does not work because of client.submit()):
-python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -bb 10 49.75 10.25 50 -cs 0.25 --run_local --no_upload
+python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -mt standard -mpd test_box -bb 10 49.75 10.25 50 -cs 0.25 --run_local --no_upload
 
 Coiled small tests:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn vegetation_model
@@ -17,6 +17,7 @@ python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn vegetation_model
 python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt standard -mpd test_box -bb 10 49 11 50 -cs 1 --create_zarr
 python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt low_partial_dist_EF -mpd test_box -bb 110 -1 111 0 -cs 1 --create_zarr
 python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt high_partial_dist_EF -mpd test_box -bb 110 -1 111 0 -cs 1 --create_zarr
+python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model_2 -mt alternative_RF -mpd test_box -bb -72 -15 -70 -13 -cs 1 --create_zarr
 
 Coiled Cerrado test (174 features):
 python -m src.utilities.create_cluster -n 20 -t 1 -m 32 -cn vegetation_model
@@ -2046,7 +2047,7 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
         raise RuntimeError(f"Download timed out after {cn.download_timeout}s for {bounds_str} ({tile_id}): {uu.timestr()}")
 
     # Test prints
-    # print(layers)
+    # print(bounds_str, layers)
     # print(layers['burned_area_2015'].max())
     # print(layers[cn.climate_zone_pattern].max())
     # print(layers[cn.planted_forest_AGC_BGC_removal_factor_pattern])
@@ -2396,9 +2397,16 @@ def main(cluster_name, year_range, model_type,
 
     # Young natural forest rasters (several age intervals).
     # Each growth interval's rate is in its own folder.
-    for growth_interval in cn.natural_forest_growth_curve_intervals:
-        download_dict[f"{cn.natural_forest_growth_curve_pattern}__{growth_interval}_years"] = \
-            f"{cn.natural_forest_growth_curve_dir}rate_{growth_interval}/{sample_tile_id}_{cn.natural_forest_growth_curve_pattern}__{growth_interval}_years__nibble_{cn.secondary_forest_curve_run_date}.tif"
+    if model_type == cn.alt_RF:  # Sensitivity analysis using Xu et al. regrowth rates. Key uses Robinson age intervals (0-5, 6-10, 11-15, etc.) for Xu age intervals (0-5, 5-10, 10-15, etc.)
+        main_logger.info(f"Using Xu regrowth rates because model_type is {model_type}")
+        for xu_interval, robinson_interval in zip(cn.Xu_regrowth_intervals, cn.natural_forest_growth_curve_intervals):
+            download_dict[f"{cn.natural_forest_growth_curve_pattern}__{robinson_interval}_years"] = \
+                f"{cn.Xu_regrowth_AGC_rate_tiles_dir}{xu_interval}/{sample_tile_id}_{cn.Xu_regrowth_AGC_rate_pattern}__{xu_interval}_{cn.Xu_global_date}.tif"
+    else:  # All other model types
+        main_logger.info(f"Using Robinson regrowth rates because model_type is {model_type}")
+        for growth_interval in cn.natural_forest_growth_curve_intervals:
+            download_dict[f"{cn.natural_forest_growth_curve_pattern}__{growth_interval}_years"] = \
+                f"{cn.natural_forest_growth_curve_dir}rate_{growth_interval}/{sample_tile_id}_{cn.natural_forest_growth_curve_pattern}__{growth_interval}_years__nibble_{cn.secondary_forest_curve_run_date}.tif"
 
     # Burned area rasters (every year)-- same code for annual, 5-year model, or hybrid.
     # Each burned area year needs to be in its own folder.
