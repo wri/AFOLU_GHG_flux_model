@@ -130,7 +130,9 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
     # Root:shoot (unitless)
     r_s_ratio_non_mang_block = in_dict_float32[cn.r_s_ratio_non_mang_pattern]
 
-    # Natural forest regrowth curves (Mg C/ha/yr)
+    # Natural forest regrowth curves (Mg C/ha/yr).
+    # Note that these keys are used regardless of whether the values come from Robinson et al. (0-5, 6-10, 11-15, etc.)
+    # or Xu et al. (0-5, 5-10, 10-15, etc.). Keeping the keys the same regardless of data source for simplicity.
     natrl_forest_curve_0_5_AGC_RF_block = in_dict_float32[f"{cn.natural_forest_growth_curve_pattern}__0_5_years"]
     natrl_forest_curve_6_10_AGC_RF_block = in_dict_float32[f"{cn.natural_forest_growth_curve_pattern}__6_10_years"]
     natrl_forest_curve_11_15_AGC_RF_block = in_dict_float32[f"{cn.natural_forest_growth_curve_pattern}__11_15_years"]
@@ -466,7 +468,8 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                 mang_timeseries = np.array([mang_1996, mang_2007, mang_2008, mang_2009, mang_2010,
                                             mang_2015, mang_2016, mang_2017, mang_2018, mang_2019, mang_2020]).astype('uint8')
 
-                # Secondary forest removal factors (Mg AGC/ha/yr)
+                # Secondary forest removal factors (Mg AGC/ha/yr).
+                # From Xu et al. for RF sensitivity analysis.
                 natrl_forest_curve_0_5_AGC_RF = natrl_forest_curve_0_5_AGC_RF_block[row, col]
                 natrl_forest_curve_6_10_AGC_RF = natrl_forest_curve_6_10_AGC_RF_block[row, col]
                 natrl_forest_curve_11_15_AGC_RF = natrl_forest_curve_11_15_AGC_RF_block[row, col]
@@ -573,6 +576,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                 # So, for a five-year interval, if the starting age is 39 years, it will use the 20-40 year RF for the entire interval
                 # rather than using 20-40 for the first 2 years then 41-60 for the rest of the interval. A fine simplification.
                 # Adds 1 to forest_age_start_of_interval to downward adjust the age for the beginning of the interval.
+                # From Xu et al. for RF sensitivity analysis.
                 if 0 <= forest_age_start_of_interval + 1 <= 5:
                     natrl_forest_age_dependent_agc_rf = natrl_forest_curve_0_5_AGC_RF
                 elif 6 <= forest_age_start_of_interval + 1 <= 10:
