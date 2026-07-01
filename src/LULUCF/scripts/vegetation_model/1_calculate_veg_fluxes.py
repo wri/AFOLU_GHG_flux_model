@@ -17,7 +17,7 @@ python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn vegetation_model
 python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt standard -mpd test_box -bb 10 49 11 50 -cs 1 --create_zarr
 python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt low_partial_dist_EF -mpd test_box -bb 110 -1 111 0 -cs 1 --create_zarr
 python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt high_partial_dist_EF -mpd test_box -bb 110 -1 111 0 -cs 1 --create_zarr
-python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model_2 -mt alternative_RF -mpd test_box -bb -72 -15 -70 -13 -cs 1 --create_zarr
+python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt alternative_RF -mpd test_box -bb -72 -15 -70 -13 -cs 1 --create_zarr
 
 Coiled Cerrado test (174 features):
 python -m src.utilities.create_cluster -n 20 -t 1 -m 32 -cn vegetation_model
@@ -2305,8 +2305,8 @@ def main(cluster_name, year_range, model_type,
 
     # Runs chunks in batches of specified size.
     # Each batch slows down processing because chunks inevitably lag and that happens more the more batches there are.
-    batch_size = 3800  # 5 batches to cover all chunks
-    # batch_size = 4000  # 1 batch for the full Xu et al. regrowth extent (3973 chunks)
+    # batch_size = 3800  # 5 batches to cover all chunks
+    batch_size = 4000  # 1 batch for the full Xu et al. regrowth extent (3973 chunks)
     # batch_size = 8  # large-scale testing
 
     # Determines if arguments for start and end year are valid
