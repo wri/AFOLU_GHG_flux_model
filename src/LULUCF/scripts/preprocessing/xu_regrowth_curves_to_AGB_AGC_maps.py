@@ -39,7 +39,7 @@ from src.utilities import constants_and_names as cn
 # --- Paths (patterns defined in cn) ---
 INPUT_S3   = f"{cn.Xu_regrowth_raw_dir}{cn.Xu_regrowth_raw_pattern}"
 AGB_S3_DIR = cn.Xu_regrowth_AGB_rate_dir
-AGC_S3_DIR = cn.Xu_regrowth_AGC_rate_global_all_years_dir
+AGC_S3_DIR = cn.Xu_regrowth_AGC_rate_global_all_ages_dir
 
 LOCAL_TMP     = "/tmp/xu_regrowth/"
 LOCAL_OUT_DIR = "/mnt/c/GIS/AFOLU_flux_model/LULUCF/Xu_et_al_2026_regrowth_rasters/from_Yidi_Xu_20260628/"

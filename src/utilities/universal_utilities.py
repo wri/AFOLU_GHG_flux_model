@@ -35,6 +35,7 @@ import zarr
 import tempfile
 import rasterio.errors
 from urllib.parse import urlparse
+from botocore.exceptions import ClientError
 import botocore
 
 # Project imports
@@ -729,7 +730,12 @@ def get_tile_dataset_rio(uri, bounds, chunk_length_pixels, logger_worker, data_t
                     # Per https://chatgpt.com/c/67dcb99b-edb8-800a-abd8-f718de76043c
                     if data.shape != expected_shape:
                         original_shape = data.shape
-                        padded_data = np.full(expected_shape, np.nan, dtype=data_type)
+
+                        # Necessary for OGH vegetation height data. Otherwise, it errors because of a type issue.
+                        # This is outside the OGH veg height extent.
+                        # Per Claude session 'Quick task completion analysis'
+                        fill_value = np.nan if np.issubdtype(np.dtype(numpy_dtype), np.floating) else 0
+                        padded_data = np.full(expected_shape, fill_value, dtype=numpy_dtype)
 
                         # Calculates offset in pixels relative to chunk
                         row_offset = max(0, int(window.row_off))
@@ -827,8 +833,8 @@ def prepare_to_download_chunk(bounds, download_dict, chunk_length_pixels, is_fin
     # Submits requests to S3 for input chunks but doesn't actually download them yet.
     # This queueing of the requests before downloading then speeds up the downloading.
     # Approach is to download all the input chunks up front for every year to make downloading more efficient, even though it means storing more upfront.
-    # Set max_workers specifically to reduce the simultaneous s3 download requests when a cluster starts
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+    # Without setting max_workers, it uses 1 per vCPU + 1 more (according to ChatGPT)
+    with concurrent.futures.ThreadPoolExecutor() as executor:
         lu.print_and_log(f"Requesting data in chunk {bounds_str} in {tile_id}: {timestr()}", is_final, logger_worker)
 
         for key, value in download_dict.items():
@@ -1484,7 +1490,10 @@ def count_successful_chunks(chunk_list, is_final, main_logger, results):
     # Processes the chunk stats and returned messages
     # Results are the messages from the chunks and chunk stats
     for result in results:
-        try:
+        try:  # Counts errored tasks correctly, per Claude session 'Quick task completion analysis'
+            if isinstance(result, dict) and result.get("status") == "failed":
+                error_chunk_count += 1
+                continue
             return_message, chunk_stats = result
         except Exception as e:
             main_logger.error(f"Malformed result: {result} | Error: {e}")
@@ -1522,7 +1531,7 @@ def count_successful_chunks(chunk_list, is_final, main_logger, results):
 
     # Doesn't compare the difference between submitted and processed chunks if it is reporting on
     # merging 1x1 deg rasters because calculating the difference is too complicated.
-    if "Success merging" not in return_messages[0]:
+    if return_messages and "Success merging" not in return_messages[0]:
         main_logger.info(f"Difference between submitted chunks and processed chunks: {len(chunk_list) - (success_count + skipping_chunk_count + error_chunk_count + other_message_count)}")
     main_logger.info("\n")
 
@@ -2365,16 +2374,25 @@ def rename_s3_task_file(stage, chunk_id, new_status, is_final, logger_worker):
         old_key = f"{cn.progress_tracking_path}{prefix}{tile_id}_{chunk_id_str}_{stage}.txt"
         new_key = f"{cn.progress_tracking_path}{new_status}{tile_id}_{chunk_id_str}_{stage}.txt"
 
-        try:
-            # Copies to new name and delete the old file
-            s3.copy_object(Bucket=cn.short_bucket_prefix,
-                           CopySource={'Bucket': cn.short_bucket_prefix, 'Key': old_key}, Key=new_key)
-            s3.delete_object(Bucket=cn.short_bucket_prefix, Key=old_key)
-            return  # Stop after renaming the first matching file
-        except s3.exceptions.ClientError as e:
-            if e.response["Error"]["Code"] == "NoSuchKey":
-                continue  # Try the next possible prefix
-            else:
+        # Retries renaming of task files in case there's a burst of renaming like at the start of the cluster
+        # Per Claude session 'Quick task completion analysis'
+        for attempt in range(5):
+            try:
+                s3.copy_object(Bucket=cn.short_bucket_prefix, CopySource={'Bucket': cn.short_bucket_prefix, 'Key': old_key}, Key=new_key)
+                s3.delete_object(Bucket=cn.short_bucket_prefix, Key=old_key)
+                return
+            except ClientError as e:
+                code = e.response["Error"]["Code"]
+                if code == "NoSuchKey":
+                    break  # File not at this prefix; try next prefix
+                elif code in ("SlowDown", "503", "RequestLimitExceeded"):
+                    sleep_time = min(30, 1.0 * (2 ** attempt)) + random.uniform(0.0, 1.0)
+                    time.sleep(sleep_time)
+                    continue  # Retry same prefix
+                else:
+                    print(f"Error renaming task file {old_key}: {e}")
+                    return
+            except Exception as e:
                 print(f"Error renaming task file {old_key}: {e}")
                 return
 

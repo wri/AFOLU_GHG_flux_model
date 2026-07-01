@@ -1982,6 +1982,8 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
 
     chunk_start_time = time.time()
 
+    lu.print_and_log(f"Starting chunk {uu.boundstr(bounds)}: {uu.timestr()}", is_large_run, logger_worker)
+
     uu.rename_s3_task_file(stage, bounds, "preprocessing_", is_large_run, logger_worker)
 
     bounds_str = uu.boundstr(bounds)  # String form of chunk bounds, from e.g., [8, -1, 9, 0] to 8_-1_9_0

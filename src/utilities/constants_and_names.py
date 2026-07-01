@@ -650,8 +650,10 @@ Xu_regrowth_AGB_rate_dir = f"{Xu_regrowth_base_dir}AGB_density_by_age/all_ages_g
 Xu_regrowth_AGB_rate_pattern = "Xu_other_degrad_regrowth_density__Mg_AGB_ha"   # append __{age}_years_{date}.tif
 
 Xu_regrowth_AGC_rate_base_dir = f"{Xu_regrowth_base_dir}AGC_rate/"
-Xu_regrowth_AGC_rate_global_all_years_dir = f"{Xu_regrowth_AGC_rate_base_dir}all_ages_global/"
+Xu_regrowth_AGC_rate_global_all_ages_dir = f"{Xu_regrowth_AGC_rate_base_dir}all_ages_global/"
+Xu_regrowth_AGC_rate_tiles_dir = f"{Xu_regrowth_AGC_rate_base_dir}all_ages_tiled/"
 Xu_regrowth_AGC_rate_pattern = "Xu_other_degrad_regrowth_rate__Mg_AGC_ha_yr"   # append __{age_min}_{age_max}_years_{date}.tif
+Xu_regrowth_intervals = ["0_5_years", "5_10_years", "10_15_years", "15_20_years", "20_40_years", "40_60_years", "60_80_years", "80_100_years"]
 
 #TODO: @Mel Update to path pattern instead of processed_dir/ pattern in hansenize. Delete processed after.
 drivers_run_date = '20250414'
