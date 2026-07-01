@@ -27,6 +27,11 @@ python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p AGB
     # Could be that it is stored closer on memory or that we just got a faster cluster the second time around.
 Note: Try with 1 thread per worker
 
+Coiled full run for XU et al. regrowth rates
+python -m src.utilities.create_cluster -cn Hansenize_Xu_regrowth -n 15 -t 1 -m 8  # Didn't try different numbers of threads. Running overnight, so just let it take its time and be safe
+python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize_Xu_regrowth -p Xu_regrowth -bb -180 -40 180 30 -cs 10  # Because latitudinal range only extends from 34S to 28N.
+
+
 todo:
 - delete .keep in each processed directory
 - delete local tmp shp after they have been uploaded to s3 (double check that all files from vrt and gdal_warp are also deleted because memory is growing with each dataset x step)
