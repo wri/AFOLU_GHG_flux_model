@@ -48,6 +48,7 @@ https://app.asana.com/1/25496124013636/task/1206230383901961/comment/12106415042
 #TODO Delete all references to 5-year intervals (including s3 paths)
 #TODO Change all runtimes to decimal hours from HH:MM:SS
 #TODO Change error/exception logic for input downloads to catcha and retry everything (rather than exception types individually), per Claude session 'Failed Coiled tasks diagnosis'
+#TODO Figure out why log is only including some tasks (including performance stats at the end) and how to make it include all tasks
 """
 
 import argparse

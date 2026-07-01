@@ -27,7 +27,7 @@ python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p AGB
     # Could be that it is stored closer on memory or that we just got a faster cluster the second time around.
 Note: Try with 1 thread per worker
 
-Coiled full run for XU et al. regrowth rates
+Coiled full run for Xu et al. regrowth rates (1 hr 52 min with 15x 8GB workers with 1 thread each)
 python -m src.utilities.create_cluster -cn Hansenize_Xu_regrowth -n 15 -t 1 -m 8  # Didn't try different numbers of threads. Running overnight, so just let it take its time and be safe
 python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize_Xu_regrowth -p Xu_regrowth -bb -180 -40 180 30 -cs 10  # Because latitudinal range only extends from 34S to 28N.
 
