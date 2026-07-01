@@ -25,12 +25,18 @@ from src.utilities.constants_and_names import intervals_annual
 
 ### Settings-- modify these
 
-# For vegetation model outputs
-# bounds = [23, -4, 24, -3]
-bounds = [-111, 60, -110, 61]
-zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/mega_zarr/annual_intervals/4000_pixels/20260130/vegetation_zarr.zarr'
-var_name = 'gross_emissions__all_C_pools__all_gases__MgCO2e_ha_yr'
+# For Ctrees sensitivity analysis
+bounds = [-80, 39, -79, 40]
+zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__ctrees_starting_AGC__test_box/mega_zarr/annual_intervals/4000_pixels/20260701/vegetation_zarr.zarr'
+var_name = 'carbon_density__AGC__MgC_ha'
 interval_end_years = cn.interval_end_years_annual
+
+# # For vegetation model outputs
+# # bounds = [23, -4, 24, -3]
+# bounds = [-111, 60, -110, 61]
+# zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/mega_zarr/annual_intervals/4000_pixels/20260130/vegetation_zarr.zarr'
+# var_name = 'gross_emissions__all_C_pools__all_gases__MgCO2e_ha_yr'
+# interval_end_years = cn.interval_end_years_annual
 
 # # For carbon density timeseries
 # bounds = [110, -1 ,111, 0]

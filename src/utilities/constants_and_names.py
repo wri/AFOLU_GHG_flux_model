@@ -2189,7 +2189,7 @@ fraction_base_cmap = 'RdPu'
 # Variant names
 low_EF = 'low_partial_dist_EF'
 high_EF = 'high_partial_dist_EF'
-alt_AGB = 'alternative_initial_AGB'
+alt_AGB = 'ctrees_starting_AGC'
 alt_RF = 'alternative_RF'
 
 model_type_options = ['standard', low_EF, high_EF, alt_AGB, alt_RF]

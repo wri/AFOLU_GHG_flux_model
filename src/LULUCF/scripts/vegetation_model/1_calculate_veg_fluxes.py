@@ -30,6 +30,16 @@ Full run:
 python -m src.utilities.create_cluster -n 200 -t 1 -m 32 -cn vegetation_model
 python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt standard -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "This is a global run for model v1.0.4 (2016-2024). Hopefully, it is the run used for the published model."
 
+For AGB sensitivity analysis using Ctrees
+Coiled small tests:
+python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn vegetation_model__Ctrees
+python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model__Ctrees --c_trees --create_zarr -mt ctrees_starting_AGC -mpd test_box -bb -80 39 -79 40 -cs 1
+
+Global
+python -m src.utilities.create_cluster -n 200 -t 1 -m 32 -cn vegetation_model__Ctrees --on_demand
+python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model__Ctrees --c_trees --create_zarr -rd 20260701 -mt ctrees_starting_AGC -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "This is the global sensitivity run for model v1.0.5 (2016-2024) using C-Trees starting carbon pools"
+
+
 To download all outputs locally:
 python src/utilities/download_outputs_local.py v1_test_name 23_-4_24_-3
 
@@ -2227,7 +2237,7 @@ def safe_task_wrapper(*args, **kwargs):
 def main(cluster_name, year_range, model_type,
          run_local=False, no_stats=False, no_log=False, no_upload=False, create_zarr=False,
          chunk_shapefile_uri=False, bounding_box=None, chunk_size_deg=None, first_chunks=None,
-         run_date=None, model_path_description=None, log_note=None):
+         run_date=None, model_path_description=None, log_note=None, starting_c_pool_sensitivity_analysis=False):
 
     ### Step 1: Preparation
 
@@ -2239,8 +2249,8 @@ def main(cluster_name, year_range, model_type,
 
     # Runs chunks in batches of specified size.
     # Each batch slows down processing because chunks inevitably lag and that happens more the more batches there are.
-    # batch_size = 3800  # 5 batches to cover all chunks
-    batch_size = 4000  # 1 batch for the full Xu et al. regrowth extent (3973 chunks)
+    batch_size = 2100  # 9 batches to cover all chunks
+    # batch_size = 4000  # 1 batch for the full Xu et al. regrowth extent (3973 chunks)
     # batch_size = 8  # large-scale testing
 
     # Determines if arguments for start and end year are valid
@@ -2277,6 +2287,9 @@ def main(cluster_name, year_range, model_type,
     main_logger.info(f"Batch size: {batch_size} chunks")
     main_logger.info(f"no_upload: {no_upload}")
     main_logger.info(f"Tolerance for comparison between model and zarr chunk stat metrics: {cn.zarr_difference_tolerance}")
+
+
+
 
     # Calculates the interval type, difference between start and end years of intervals, and the model output years
     # for the model run
@@ -2352,10 +2365,16 @@ def main(cluster_name, year_range, model_type,
         download_dict[cn.deadwood_c_LC_masked_dens_pattern] = f"{cn.deadwood_c_2000_LC_masked_dir}{sample_tile_id}__{cn.deadwood_c_2000_LC_masked_pattern}.tif"
         download_dict[cn.litter_c_LC_masked_dens_pattern] = f"{cn.litter_c_2000_LC_masked_dir}{sample_tile_id}__{cn.litter_c_2000_LC_masked_pattern}.tif"
     elif start_year == 2015:
-        download_dict[cn.agc_LC_masked_dens_pattern] = f"{cn.agc_2015_LC_masked_dir}{sample_tile_id}__{cn.agc_2015_LC_masked_pattern}.tif"
-        download_dict[cn.bgc_LC_masked_dens_pattern] = f"{cn.bgc_2015_LC_masked_dir}{sample_tile_id}__{cn.bgc_2015_LC_masked_pattern}.tif"
-        download_dict[cn.deadwood_c_LC_masked_dens_pattern] = f"{cn.deadwood_c_2015_LC_masked_dir}{sample_tile_id}__{cn.deadwood_c_2015_LC_masked_pattern}.tif"
-        download_dict[cn.litter_c_LC_masked_dens_pattern] = f"{cn.litter_c_2015_LC_masked_dir}{sample_tile_id}__{cn.litter_c_2015_LC_masked_pattern}.tif"
+        if starting_c_pool_sensitivity_analysis:
+            download_dict[cn.agc_LC_masked_dens_pattern] = (f"{cn.agc_2015_ctrees_LC_masked_dir}{sample_tile_id}__{cn.agc_LC_masked_dens_pattern}_2015.tif")
+            download_dict[cn.bgc_LC_masked_dens_pattern] = (f"{cn.bgc_2015_ctrees_LC_masked_dir}{sample_tile_id}__{cn.bgc_LC_masked_dens_pattern}_2015.tif")
+            download_dict[cn.deadwood_c_LC_masked_dens_pattern] = (f"{cn.deadwood_c_2015_ctrees_LC_masked_dir}{sample_tile_id}__{cn.deadwood_c_LC_masked_dens_pattern}_2015.tif")
+            download_dict[cn.litter_c_LC_masked_dens_pattern] = (f"{cn.litter_c_2015_ctrees_LC_masked_dir}{sample_tile_id}__{cn.litter_c_LC_masked_dens_pattern}_2015.tif")
+        else:
+            download_dict[cn.agc_LC_masked_dens_pattern] = f"{cn.agc_2015_LC_masked_dir}{sample_tile_id}__{cn.agc_2015_LC_masked_pattern}.tif"
+            download_dict[cn.bgc_LC_masked_dens_pattern] = f"{cn.bgc_2015_LC_masked_dir}{sample_tile_id}__{cn.bgc_2015_LC_masked_pattern}.tif"
+            download_dict[cn.deadwood_c_LC_masked_dens_pattern] = f"{cn.deadwood_c_2015_LC_masked_dir}{sample_tile_id}__{cn.deadwood_c_2015_LC_masked_pattern}.tif"
+            download_dict[cn.litter_c_LC_masked_dens_pattern] = f"{cn.litter_c_2015_LC_masked_dir}{sample_tile_id}__{cn.litter_c_2015_LC_masked_pattern}.tif"
     else:
         sys.exit('interval_type not found')
 
@@ -2805,6 +2824,7 @@ if __name__ == "__main__":
     parser.add_argument('--no_log', action='store_true', help='Do not create the combined log')
     parser.add_argument('--no_upload', action='store_true', help='Do not save and upload outputs to s3')
     parser.add_argument('--create_zarr', action='store_true', help='Create and populate global mega-zarr with model outputs')
+    parser.add_argument('--c_trees', action='store_true', help='Use Ctrees-derived 2015 starting carbon pools instead of ESA CCI-derived starting carbon pools for sensetivity analysis.')
 
     args = parser.parse_args()
 
@@ -2824,8 +2844,9 @@ if __name__ == "__main__":
     no_log = args.no_log
     no_upload = args.no_upload
     create_zarr = args.create_zarr
+    starting_c_pool_sensitivity_analysis = args.c_trees
 
     # Create the cluster with command line arguments
     main(cluster_name, year_range, model_type, run_local, no_stats, no_log, no_upload, create_zarr, chunk_shapefile_uri,
          bounding_box=bounding_box, chunk_size_deg=chunk_size_deg, first_chunks=first_chunks,
-         run_date=run_date, model_path_description=model_path_description, log_note=log_note)
+         run_date=run_date, model_path_description=model_path_description, log_note=log_note, starting_c_pool_sensitivity_analysis=starting_c_pool_sensitivity_analysis)
