@@ -827,8 +827,8 @@ def prepare_to_download_chunk(bounds, download_dict, chunk_length_pixels, is_fin
     # Submits requests to S3 for input chunks but doesn't actually download them yet.
     # This queueing of the requests before downloading then speeds up the downloading.
     # Approach is to download all the input chunks up front for every year to make downloading more efficient, even though it means storing more upfront.
-    # BTW, the threads per worker for this is vCPU+4 according to ChatGPT, so that's 6 threads/worker on a vCPU worker.
-    with concurrent.futures.ThreadPoolExecutor() as executor:
+    # Set max_workers specifically to reduce the simultaneous s3 download requests when a cluster starts
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         lu.print_and_log(f"Requesting data in chunk {bounds_str} in {tile_id}: {timestr()}", is_final, logger_worker)
 
         for key, value in download_dict.items():
