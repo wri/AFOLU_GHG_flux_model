@@ -2305,8 +2305,10 @@ def main(cluster_name, year_range, model_type,
 
     # Runs chunks in batches of specified size.
     # Each batch slows down processing because chunks inevitably lag and that happens more the more batches there are.
-    # batch_size = 3800  # 5 batches to cover all chunks
-    batch_size = 4000  # 1 batch for the full Xu et al. regrowth extent (3973 chunks)
+    if model_type == cn.alt_RF:
+        batch_size = 4000  # 1 batch for the full Xu et al. regrowth extent (3973 chunks)
+    else:
+        batch_size = 3800  # 5 batches to cover all chunks
     # batch_size = 8  # large-scale testing
 
     # Determines if arguments for start and end year are valid
@@ -2623,6 +2625,7 @@ def main(cluster_name, year_range, model_type,
 
     # Iterates through the batches
     for i, chunk_batch in enumerate(chunk_batches):
+    # for i, chunk_batch in enumerate(chunk_batches[3:], start=3):  # To resume at a specific batch
         main_logger.info(f"Processing batch {i + 1}/{len(chunk_batches)} ({len(chunk_batch)} chunks): {uu.timestr()}")
         main_logger.info("Creating batch task txts in s3...")
         uu.create_s3_task_files(stage, chunk_batch)
