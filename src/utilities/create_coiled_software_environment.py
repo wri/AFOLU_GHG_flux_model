@@ -34,36 +34,41 @@ This may take a few minutes.
 import coiled
 import re
 
-# # To create software environment for cluster performing zonal stats
-# coiled.create_software_environment(
-#     name="afolu_zonal_stats_20251222",    # Software environment name
-#
-#     # Made manually, with Claude's help. Has the main/key Python packages and specifies versions
-#     conda="/mnt/c/GIS/git/AFOLU_GHG_flux_model/conda_envs/AFOLU_zonal_stats_20251222.yml"
-# )
+# Project imports
+from src.utilities import constants_and_names as cn
 
-# # To create software for cluster not performing zonal stats
-# # Made with Claude session 'Coiled cluster creation error'. Uses conda-lock file, converted to regular yml
-
-# Strips build strings from yml
-with open('conda_envs/AFOLU_not_zonal_stats_20251119.locked.linux-aarch64.yml') as f:
-    lines = f.readlines()
-
-result = []
-for line in lines:
-    # Match conda dep lines: "  - name=version=build_string" -> "  - name=version"
-    m = re.match(r'^(\s+- [a-zA-Z0-9_\-\.]+=[0-9][^=\s]*)=[^\s]+(.*)$', line.rstrip())
-    if m:
-        result.append(m.group(1) + m.group(2) + '\n')
-    else:
-        result.append(line)
-
-with open('conda_envs/AFOLU_not_zonal_stats_20251119_no_build_string.yml', 'w') as f:
-    f.writelines(result)
-print('Done stripping build strings')
-
-# Creates software environment
+# To create software environment for cluster performing zonal stats
 coiled.create_software_environment(
-    name="afolu_not_zonal_stats_20251119",
-    conda="conda_envs/AFOLU_not_zonal_stats_20251119_no_build_string.yml"
+    workspace=cn.Coiled_workspace,
+    name="afolu_zonal_stats_20251222",    # Software environment name
+
+    # Made manually, with Claude's help. Has the main/key Python packages and specifies versions
+    conda="/mnt/c/GIS/git/AFOLU_GHG_flux_model/conda_envs/AFOLU_zonal_stats_20251222.yml"
 )
+
+# # # To create software for cluster not performing zonal stats
+# # # Made with Claude session 'Coiled cluster creation error'. Uses conda-lock file, converted to regular yml
+#
+# # Strips build strings from yml
+# with open('conda_envs/AFOLU_not_zonal_stats_20251119.locked.linux-aarch64.yml') as f:
+#     lines = f.readlines()
+#
+# result = []
+# for line in lines:
+#     # Match conda dep lines: "  - name=version=build_string" -> "  - name=version"
+#     m = re.match(r'^(\s+- [a-zA-Z0-9_\-\.]+=[0-9][^=\s]*)=[^\s]+(.*)$', line.rstrip())
+#     if m:
+#         result.append(m.group(1) + m.group(2) + '\n')
+#     else:
+#         result.append(line)
+#
+# with open('conda_envs/AFOLU_not_zonal_stats_20251119_no_build_string.yml', 'w') as f:
+#     f.writelines(result)
+# print('Done stripping build strings')
+#
+# # Creates software environment
+# coiled.create_software_environment(
+#     workspace=cn.Coiled_workspace,
+#     name="afolu_not_zonal_stats_20251119",
+#     conda="conda_envs/AFOLU_not_zonal_stats_20251119_no_build_string.yml"
+# )

@@ -40,6 +40,8 @@ s3_client = boto3.client("s3")
 tile_id_pattern = r"[0-9]{2}[A-Z][_][0-9]{3}[A-Z]"
 small_chunk_pattern = r'__-?\d+_-?\d+_-?\d+_-?\d+__'
 
+Coiled_workspace = "wri-forest-research"
+
 ### m^2 to hectares
 m2_to_ha = 1/10000
 

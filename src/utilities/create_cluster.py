@@ -41,6 +41,9 @@ import tempfile
 import os
 import zipfile
 
+# Project imports
+from src.utilities import constants_and_names as cn
+
 
 # Function to write Google Cloud Project credentials to all workers
 def write_gcp_creds():
@@ -187,8 +190,8 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
         idle_timeout=idle_timeout,
         region="us-east-1",
         name=cluster_name,
-        workspace='wri-forest-research',
-        tags = {"project": "AFOLU_flux_model"},
+        workspace=cn.Coiled_workspace,
+        tags = {"wri:project": "AFOLU_flux_model"},
         allow_cross_zone=allow_cross_zone,
         scheduler_vm_types = scheduler_vm_type,
         worker_vm_types = worker_vm_type,
