@@ -10,6 +10,9 @@ python -m src.LULUCF.scripts.zonal_statistics.IPCC_vegetation_zonal_stats -cn IP
 
 Notes:
     - Took 5 minutes to run for 10x10 degree area with 25 workers (00N_110E). Analysis layers = Emissions, removals, and net flux. Contextual layers = IPCC class, node, change and summary (2016-2024).
+
+TODO:
+- Include CO2-only fluxes for comparison with NGHGIs
 """
 
 import argparse

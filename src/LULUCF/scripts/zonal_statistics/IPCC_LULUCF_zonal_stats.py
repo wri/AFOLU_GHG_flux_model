@@ -33,6 +33,8 @@ Notes:
         Contextual layers = IPCC class, node, change and summary, land state node, continent/ecozone, driver, primary/IFL
     - Toook 19 minutes to run for Central Africa (8 tiles) with 50 workers (128 credits, $7)
 
+TODO:
+- Include CO2-only fluxes for comparison with NGHGIs
 """
 
 import argparse

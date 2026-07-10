@@ -436,13 +436,13 @@ def connect_to_Coiled_cluster(cluster_name, run_local, fallback_to_local_on_fail
     # If no local run flag, it tries to attach to the named cluster
     try:
         # Gets info on all Coiled clusters (including terminated ones)
-        all_clusters = coiled.list_clusters()
+        all_clusters = coiled.list_clusters(workspace='wri-land-research')
 
         # Iterates through clusters and identifies the running one of the correct name to connect to
         for cluster in all_clusters:
             if (cluster.get("name") == cluster_name) and (cluster.get("current_state", {}).get("state") in ['scaling', 'ready']):
                 print(f"Connecting to running cluster '{cluster_name}'.")
-                cluster = coiled.Cluster(name=cluster_name)
+                cluster = coiled.Cluster(name=cluster_name, workspace='wri-land-research')
                 client = Client(cluster)
                 return cluster, client, run_local
 
@@ -729,7 +729,7 @@ def get_tile_dataset_rio(uri, bounds, chunk_length_pixels, logger_worker, data_t
                     # Per https://chatgpt.com/c/67dcb99b-edb8-800a-abd8-f718de76043c
                     if data.shape != expected_shape:
                         original_shape = data.shape
-                        padded_data = np.full(expected_shape, np.nan, dtype=data_type)
+                        padded_data = np.full(expected_shape, np.nan, dtype=numpy_dtype)
 
                         # Calculates offset in pixels relative to chunk
                         row_offset = max(0, int(window.row_off))
@@ -1471,6 +1471,12 @@ def count_successful_chunks(chunk_list, is_final, main_logger, results):
     # Processes the chunk stats and returned messages
     # Results are the messages from the chunks and chunk stats
     for result in results:
+        if isinstance(result, dict) and result.get("status") == "failed":
+            error_chunk_count += 1
+            return_messages.append(result.get("error", "failed task"))
+            main_logger.error(result.get("traceback", result))
+            continue
+
         try:
             return_message, chunk_stats = result
         except Exception as e:

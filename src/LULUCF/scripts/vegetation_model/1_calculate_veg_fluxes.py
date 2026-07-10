@@ -88,6 +88,17 @@ from src.utilities import universal_utilities as uu
 from src.utilities import zarr_utilities as zu
 from src.utilities import resize_cluster
 
+# Reads a text file of chunk IDs to keep or skip.
+def read_chunk_ids_file(chunk_ids_file):
+    with open(chunk_ids_file, "r") as f:
+        chunk_ids = {
+            line.strip()
+            for line in f
+            if line.strip() and not line.strip().startswith("#")
+        }
+
+    return chunk_ids
+
 # To get enhanced logging from workers so that I can tell why they are lost. I don't know if this works.
 # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6949a74e-1388-832d-8f8e-5e9bf084ecb8
 dask.config.set({
@@ -2237,7 +2248,7 @@ def safe_task_wrapper(*args, **kwargs):
 def main(cluster_name, year_range, model_type,
          run_local=False, no_stats=False, no_log=False, no_upload=False, create_zarr=False,
          chunk_shapefile_uri=False, bounding_box=None, chunk_size_deg=None, first_chunks=None,
-         run_date=None, model_path_description=None, log_note=None, starting_c_pool_sensitivity_analysis=False):
+         run_date=None, model_path_description=None, log_note=None, starting_c_pool_sensitivity_analysis=False, chunk_ids_file=None, chunk_ids_to_skip=None):
 
     ### Step 1: Preparation
 
@@ -2302,6 +2313,27 @@ def main(cluster_name, year_range, model_type,
 
     # Creates the list of chunks to process, depending on the approach: shapefile attribute table or a bounding box
     chunk_list, chunk_size_pixels = uu.create_chunk_list(bounding_box, chunk_shapefile_uri, chunk_size_deg, first_chunks, fishnet_iso_df, main_logger)
+
+    # Filter to only chunks listed in a text file
+    if chunk_ids_file:
+        keep_set = read_chunk_ids_file(chunk_ids_file)
+        original_count = len(chunk_list)
+
+        chunk_list = [chunk for chunk in chunk_list if uu.boundstr(chunk) in keep_set]
+        main_logger.info(f"Selected {len(chunk_list)} of {original_count} chunks from {chunk_ids_file}.")
+
+        if len(chunk_list) == 0:
+            raise ValueError(f"No chunks from {chunk_ids_file} matched the generated chunk_list. Check that the chunk IDs use uu.boundstr() format.")
+
+    # Filter out chunks listed in a text file
+    if chunk_ids_to_skip:
+        skip_set = read_chunk_ids_file(chunk_ids_to_skip)
+        original_count = len(chunk_list)
+
+        chunk_list = [chunk for chunk in chunk_list if uu.boundstr(chunk) not in skip_set]
+
+        main_logger.info(f"Skipped {original_count - len(chunk_list)} chunks from {chunk_ids_to_skip}. {len(chunk_list)} chunks remain to process.")
+
     main_logger.info(f"Chunks to process: {len(chunk_list)}")
 
     # Determines if the output file names for final versions of outputs should be used
@@ -2825,6 +2857,8 @@ if __name__ == "__main__":
     parser.add_argument('--no_upload', action='store_true', help='Do not save and upload outputs to s3')
     parser.add_argument('--create_zarr', action='store_true', help='Create and populate global mega-zarr with model outputs')
     parser.add_argument('--c_trees', action='store_true', help='Use Ctrees-derived 2015 starting carbon pools instead of ESA CCI-derived starting carbon pools for sensetivity analysis.')
+    parser.add_argument("--chunk_ids_file", help="Text file containing chunk IDs to process, one per line.")
+    parser.add_argument("--chunk_ids_to_skip", help="Text file containing chunk IDs to skip, one per line.")
 
     args = parser.parse_args()
 
@@ -2849,4 +2883,5 @@ if __name__ == "__main__":
     # Create the cluster with command line arguments
     main(cluster_name, year_range, model_type, run_local, no_stats, no_log, no_upload, create_zarr, chunk_shapefile_uri,
          bounding_box=bounding_box, chunk_size_deg=chunk_size_deg, first_chunks=first_chunks,
-         run_date=run_date, model_path_description=model_path_description, log_note=log_note, starting_c_pool_sensitivity_analysis=starting_c_pool_sensitivity_analysis)
+         run_date=run_date, model_path_description=model_path_description, log_note=log_note, starting_c_pool_sensitivity_analysis=starting_c_pool_sensitivity_analysis,
+         chunk_ids_file=args.chunk_ids_file, chunk_ids_to_skip=args.chunk_ids_to_skip)

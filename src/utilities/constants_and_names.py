@@ -379,7 +379,7 @@ ctrees_run_date = '20260629'
 ctrees_agb_raw_nodata = -9999
 ctrees_agb_processed_nodata = 0
 ctrees_agb_scale_factor = 0.1
-ctrees_agb_output_dtype = "Uint16"
+ctrees_agb_output_dtype = "uint16"
 
 ctrees_agb_2015_dir_raw = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/AGB/raw/"
 ctrees_agb_2015_pattern_raw = "global_agb_100m_landsat0024_all_2015_densenet_l1_agb_mosaic_100m_base_cd_ts"
