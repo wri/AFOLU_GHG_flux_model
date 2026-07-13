@@ -2,12 +2,13 @@ This document describes the steps for creating starting forest carbon densities 
 Inputs:
 1. WHRC/Woodwell AGB 2000 geotifs (for 2000 C pools only)
 2. ESA CCI 2015 geotifs (Hansenized) (for 2015 C pools only)
-3. "Smoothed" mangrove AGB 2000 (for 2000 C pools only) (smoothed = GMW timeseries with potentially erroneous years adjusted)
-4. GLAD GLCLU land cover composite geotifs for 2000 and 2015
-5. GLAD GLCLU vegetation height geotifs for 2000 and 2015
-6. Global Mangrove Watch v3 mangrove extent for 1996 (representing 2000) and 2015
-7. Other contextual geotifs for assigning carbon pool ratios: elevation, precipitation, climate domain, climate zone, root-shoot ratio, continent-ecozone combo
-8. Excel spreadsheet with lookup tables for carbon pool ratios
+3. Ctrees 2015 geotifs (Hansenized) (for 2015 C pools sensitivity analysis only)
+4. "Smoothed" mangrove AGB 2000 (for 2000 C pools only) (smoothed = GMW timeseries with potentially erroneous years adjusted)
+5. GLAD GLCLU land cover composite geotifs for 2000 and 2015
+6. GLAD GLCLU vegetation height geotifs for 2000 and 2015
+7. Global Mangrove Watch v3 mangrove extent for 1996 (representing 2000) and 2015
+8. Other contextual geotifs for assigning carbon pool ratios: elevation, precipitation, climate domain, climate zone, root-shoot ratio, continent-ecozone combo
+9. Excel spreadsheet with lookup tables for carbon pool ratios
 
 Outputs:
 1a. 1x1 deg geotif sets of aboveground carbon density, belowground carbon density, deadwood carbon density, litter carbon density, and

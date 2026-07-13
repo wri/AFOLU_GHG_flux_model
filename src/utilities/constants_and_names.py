@@ -377,20 +377,20 @@ mangrove_agb_2000_pattern = "mangrove_agb_t_ha_2000"
 # aws s3 cp s3://ctrees-agb-100m-global/cogs/global_agb_100m_landsat0024_all_2015_densenet_l1_agb_mosaic_100m_base_cd_ts.tif s3://gfw2-data/climate/Ctrees_biomass/2015/AGB/raw/ --source-region us-west-2
 # aws s3 cp s3://ctrees-agb-100m-global/cogs/global_agb_100m_landsat0024_all_2015_densenet_l1_agb_mosaic_100m_base_cd_ts_uncertainty_sem.tif s3://gfw2-data/climate/Ctrees_biomass/2015/AGB_uncertainty/raw/ --source-region us-west-2
 # Note: Raw pixel values are multiplied by 10 to save space. To retrieve the actual biomass density in Mg/ha, divide the raw pixel value by 10
+ctrees_run_date = '20260629'
 ctrees_agb_raw_nodata = -9999
 ctrees_agb_processed_nodata = 0
 ctrees_agb_scale_factor = 0.1
-ctrees_agb_output_dtype = "Int16"
+ctrees_agb_output_dtype = "uint16"
 
 ctrees_agb_2015_dir_raw = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/AGB/raw/"
 ctrees_agb_2015_pattern_raw = "global_agb_100m_landsat0024_all_2015_densenet_l1_agb_mosaic_100m_base_cd_ts"
-ctrees_agb_2015_dir_processed = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/AGB/processed/20260629/"
+ctrees_agb_2015_dir_processed = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/AGB/processed/{ctrees_run_date}/"
 ctrees_agb_2015_pattern = "AGB_2015_Ctrees_Mg_AGB_ha"
 
 ctrees_agb_uncertainty_2015_dir_raw = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/AGB_uncertainty/raw/"
 ctrees_agb_uncertainty_2015_pattern_raw = "global_agb_100m_landsat0024_all_2015_densenet_l1_agb_mosaic_100m_base_cd_ts_uncertainty_sem"
-ctrees_agb_uncertainty_2015_dir_processed = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/AGB_uncertainty/processed/20260629/"
-ctrees_agb_uncertainty_2015_pattern = "AGB_uncertainty_2015_Ctrees_Mg_AGB_ha"
+
 
 
 # Carbon density patterns (also used in path names)
@@ -498,6 +498,24 @@ starting_C_densities_2015_path_mega_zarr = f"{full_bucket_prefix}/climate/ESA_CC
 # Code that describes the source for the starting carbon densities in the landcover-masked outputs
 starting_C_pools_LC_masked_source_flag_pattern = "carbon_density_source_flag_landcover_masked"
 starting_C_pools_LC_masked_state_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{starting_C_pools_LC_masked_source_flag_pattern}/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+
+
+### 2015 sensitivity analysis
+agc_2015_ctrees_raw_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{agc_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+bgc_2015_ctrees_raw_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{bgc_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+deadwood_c_2015_ctrees_raw_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{deadwood_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+litter_c_2015_ctrees_raw_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{litter_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+non_soil_c_2015_ctrees_raw_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{non_soil_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+
+agc_2015_ctrees_LC_masked_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{agc_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+bgc_2015_ctrees_LC_masked_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{bgc_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+deadwood_c_2015_ctrees_LC_masked_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{deadwood_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+litter_c_2015_ctrees_LC_masked_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{litter_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+non_soil_c_2015_ctrees_LC_masked_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{non_soil_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+
+starting_C_densities_2015_ctrees_path_mega_zarr = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/mega_zarr/CHUNK_SIZE_pixels/RUN_DATE/starting_C_densities_zarr.zarr"
+
+starting_C_pools_ctrees_LC_masked_state_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{starting_C_pools_LC_masked_source_flag_pattern}/CHUNK_SIZE_pixels/{ctrees_run_date}/"
 
 
 ### Other inputs
@@ -2175,7 +2193,7 @@ fraction_base_cmap = 'RdPu'
 # Variant names
 low_EF = 'low_partial_dist_EF'
 high_EF = 'high_partial_dist_EF'
-alt_AGB = 'alternative_initial_AGB'
+alt_AGB = 'ctrees_starting_AGC'
 alt_RF = 'alternative_RF'
 
 model_type_options = ['standard', low_EF, high_EF, alt_AGB, alt_RF]

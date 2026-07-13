@@ -18,7 +18,7 @@ python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Ctrees_AGB2015_t
 
 Coiled full run (running with 20 workers causes an error of not finding the vrt, perhaps because it's being accessed too quickly-- better to run with fewer workers for now):
 Note: use -m 8 for all other datasets other than Ctrees_AGB2015. Scale factor (divide all values by 10) requires more memory.
-python -m src.utilities.create_cluster -cn Ctrees_AGB2015 -n 10 -t 1 -m 32 --on_demand
+python -m src.utilities.create_cluster -cn Ctrees_AGB2015 -n 10 -t 1 -m 32
 python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Ctrees_AGB2015 -p Ctrees_AGB2015 -bb -180 -60 180 80 -cs 10
 
 python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p AGB2015 AGB2015_stdev -bb -180 -60 180 80 -cs 10

@@ -31,6 +31,16 @@ Full run:
 python -m src.utilities.create_cluster -n 200 -t 1 -m 32 -cn vegetation_model
 python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt standard -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "This is a global run for model v1.0.4 (2016-2024). Hopefully, it is the run used for the published model."
 
+For AGB sensitivity analysis using Ctrees
+Coiled small tests:
+python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn vegetation_model__Ctrees
+python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model__Ctrees --c_trees --create_zarr -mt ctrees_starting_AGC -mpd test_box -bb -80 39 -79 40 -cs 1
+
+Global
+python -m src.utilities.create_cluster -n 200 -t 1 -m 32 -cn vegetation_model__Ctrees --on_demand
+python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model__Ctrees --c_trees --create_zarr -rd 20260701 -mt ctrees_starting_AGC -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "This is the global sensitivity run for model v1.0.5 (2016-2024) using C-Trees starting carbon pools"
+
+
 To download all outputs locally:
 python src/utilities/download_outputs_local.py v1_test_name 23_-4_24_-3
 
@@ -80,6 +90,17 @@ from src.utilities import numba_utilities as nu
 from src.utilities import universal_utilities as uu
 from src.utilities import zarr_utilities as zu
 from src.utilities import resize_cluster
+
+# Reads a text file of chunk IDs to keep or skip.
+def read_chunk_ids_file(chunk_ids_file):
+    with open(chunk_ids_file, "r") as f:
+        chunk_ids = {
+            line.strip()
+            for line in f
+            if line.strip() and not line.strip().startswith("#")
+        }
+
+    return chunk_ids
 
 # To get enhanced logging from workers so that I can tell why they are lost. I don't know if this works.
 # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6949a74e-1388-832d-8f8e-5e9bf084ecb8
@@ -2293,7 +2314,7 @@ def safe_task_wrapper(*args, **kwargs):
 def main(cluster_name, year_range, model_type,
          run_local=False, no_stats=False, no_log=False, no_upload=False, create_zarr=False,
          chunk_shapefile_uri=False, bounding_box=None, chunk_size_deg=None, first_chunks=None,
-         run_date=None, model_path_description=None, log_note=None):
+         run_date=None, model_path_description=None, log_note=None, starting_c_pool_sensitivity_analysis=False, chunk_ids_file=None, chunk_ids_to_skip=None):
 
     ### Step 1: Preparation
 
