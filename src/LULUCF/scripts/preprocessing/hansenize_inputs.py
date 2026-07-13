@@ -73,68 +73,13 @@ def main(cluster_name, process, bounding_box, chunk_size, run_local, no_upload):
 
     # Add Robinson et al. secondary natural forest growth rates
     if 'secondary_natural_forest' in process:
-        download_upload_dictionary[f"secondary_natural_forest_0_5"] = {
-            'raw_dir': cn.secondary_natural_forest_5_year_raw_dir,
-            'raw_pattern': f"{cn.secondary_natural_forest_0_5_pattern}_{cn.Robinson_5_year_raw_date}",
-            'vrt': f"/tmp/secondary_natural_forest_0_5.vrt",
-            'processed_dir': cn.secondary_natural_forest_0_5_processed_dir,
-            'processed_pattern': cn.secondary_natural_forest_0_5_pattern
-        }
-        download_upload_dictionary["secondary_natural_forest_6_10"] = {
-            'raw_dir': cn.secondary_natural_forest_5_year_raw_dir,
-            'raw_pattern': f"{cn.secondary_natural_forest_6_10_pattern}_{cn.Robinson_5_year_raw_date}",
-            'vrt': f"/tmp/secondary_natural_forest_6_10.vrt",
-            'processed_dir': cn.secondary_natural_forest_6_10_processed_dir,
-            'processed_pattern': cn.secondary_natural_forest_6_10_pattern
-        }
-        download_upload_dictionary["secondary_natural_forest_11_15"] = {
-            'raw_dir': cn.secondary_natural_forest_5_year_raw_dir,
-            'raw_pattern': f"{cn.secondary_natural_forest_11_15_pattern}_{cn.Robinson_5_year_raw_date}",
-            'vrt': f"/tmp/secondary_natural_forest_11_15.vrt",
-            'processed_dir': cn.secondary_natural_forest_11_15_processed_dir,
-            'processed_pattern': cn.secondary_natural_forest_11_15_pattern
-        }
-        download_upload_dictionary["secondary_natural_forest_16_20"] = {
-            'raw_dir': cn.secondary_natural_forest_5_year_raw_dir,
-            'raw_pattern': f"{cn.secondary_natural_forest_16_20_pattern}_{cn.Robinson_5_year_raw_date}",
-            'vrt': f"/tmp/secondary_natural_forest_16_20.vrt",
-            'processed_dir': cn.secondary_natural_forest_16_20_processed_dir,
-            'processed_pattern': cn.secondary_natural_forest_16_20_pattern
-        }
-        download_upload_dictionary["secondary_natural_forest_21_100"] = {
-            'raw_dir': cn.secondary_natural_forest_20_year_raw_dir,
-            'raw_pattern': f"{cn.secondary_natural_forest_21_100_pattern}_{cn.Robinson_20_year_raw_date}",
-            'vrt': f"/tmp/secondary_natural_forest_21_100.vrt",
-            'processed_dir': cn.secondary_natural_forest_21_100_processed_dir,
-            'processed_pattern': cn.secondary_natural_forest_21_100_pattern
-        }
-        download_upload_dictionary["secondary_natural_forest_21_40"] = {
-            'raw_dir': cn.secondary_natural_forest_20_year_raw_dir,
-            'raw_pattern': f"{cn.secondary_natural_forest_21_40_pattern}_{cn.Robinson_20_year_raw_date}",
-            'vrt': f"/tmp/secondary_natural_forest_21_40.vrt",
-            'processed_dir': cn.secondary_natural_forest_21_40_processed_dir,
-            'processed_pattern': cn.secondary_natural_forest_21_40_pattern
-        }
-        download_upload_dictionary["secondary_natural_forest_41_60"] = {
-            'raw_dir': cn.secondary_natural_forest_20_year_raw_dir,
-            'raw_pattern': f"{cn.secondary_natural_forest_41_60_pattern}_{cn.Robinson_20_year_raw_date}",
-            'vrt': f"/tmp/secondary_natural_forest_41_60.vrt",
-            'processed_dir': cn.secondary_natural_forest_41_60_processed_dir,
-            'processed_pattern': cn.secondary_natural_forest_41_60_pattern
-        }
-        download_upload_dictionary["secondary_natural_forest_61_80"] = {
-            'raw_dir': cn.secondary_natural_forest_20_year_raw_dir,
-            'raw_pattern': f"{cn.secondary_natural_forest_61_80_pattern}_{cn.Robinson_20_year_raw_date}",
-            'vrt': f"/tmp/secondary_natural_forest_61_80.vrt",
-            'processed_dir': cn.secondary_natural_forest_61_80_processed_dir,
-            'processed_pattern': cn.secondary_natural_forest_61_80_pattern
-        }
-        download_upload_dictionary["secondary_natural_forest_81_100"] = {
-            'raw_dir': cn.secondary_natural_forest_20_year_raw_dir,
-            'raw_pattern': f"{cn.secondary_natural_forest_81_100_pattern}_{cn.Robinson_20_year_raw_date}",
-            'vrt': f"/tmp/secondary_natural_forest_81_100.vrt",
-            'processed_dir': cn.secondary_natural_forest_81_100_processed_dir,
-            'processed_pattern': cn.secondary_natural_forest_81_100_pattern
+        for interval in cn.natural_forest_growth_curve_intervals:
+            download_upload_dictionary[f"secondary_natural_forest_{interval}"] = {
+                'raw_dir': cn.natural_forest_growth_curve_raw_dir,
+                'raw_pattern': f"{cn.natural_forest_growth_curve_pattern}__{interval}_years__nibble_{cn.secondary_forest_curve_run_date}",
+                'vrt': f"/tmp/secondary_natural_forest_{interval}.vrt",
+                'processed_dir': f"{cn.natural_forest_growth_curve_dir}rate_{interval}/",
+                'processed_pattern': f"{cn.natural_forest_growth_curve_pattern}__{interval}_years__nibble_{cn.secondary_forest_curve_run_date}",
         }
 
     # Add Xu et al. regrowth rates for different age ranges

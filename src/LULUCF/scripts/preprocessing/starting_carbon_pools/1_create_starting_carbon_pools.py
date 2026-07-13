@@ -24,19 +24,18 @@ python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starti
 
 Test run 2015 for sensitivity analysis:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 8 -cn starting_carbon_pools__Ctrees
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools__Ctrees --sensitivity_analysis -bb -80 30 -70 40 -cs 1 --create_zarr -mpd test --year 2015
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools__Ctrees -mt ctrees_starting_AGC -bb -80 30 -70 40 -cs 1 --create_zarr -mpd test_box --year 2015
 
 Full run 2015 for sensitivity analysis:
 python -m src.utilities.create_cluster -n 100 -t 1 -m 8 -cn starting_carbon_pools__Ctrees
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools__Ctrees --sensitivity_analysis --create_zarr -mpd global --year 2015 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive global run for carbon pool 2015 creation using Ctrees."
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools__Ctrees -mt ctrees_starting_AGC --create_zarr -mpd global --year 2015 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive global run for carbon pool 2015 creation using Ctrees."
 
 To create a vrt of the 10x10 deg outputs, do:
 aws s3 ls s3://gfw2-data/climate/ESA_CCI_biomass/v5_01/2015/year_2015_derived_carbon_pools/litter_C_density_MgC_ha/40000_pixels/ --recursive | grep .tif$ | awk '{print "/vsis3/gfw2-data/"$4}' > litter_C_2015_file_list.txt
 gdalbuildvrt -input_file_list litter_C_2015_file_list.txt deadwood_C2015_mosaic.vrt
 
 TODO Correct starting BGC, deadwood C and litter C for oil palm. Those are currently using natural forest ratios but should use oil palm specifically (Mokany et al for BGC, 0 for deadwood and litter). Make sure veg flux calcs are consistent with this.
-- Step 5, writing outputs to pre-existing global mega-zarr, didnt work for Ctrees. The zarr is initialized with names like carbon_density__AGC__raw__MgC_ha_2015 but populate_zarr() expects core patterns like carbon_density__AGC__raw__MgC because it calls add_units_year_to_pattern() internally before looking up zarr arrays.
-
+TODO: Step 5, writing outputs to pre-existing global mega-zarr, didnt work for Ctrees. The zarr is initialized with names like carbon_density__AGC__raw__MgC_ha_2015 but populate_zarr() expects core patterns like carbon_density__AGC__raw__MgC because it calls add_units_year_to_pattern() internally before looking up zarr arrays.
 """
 
 import argparse
@@ -610,7 +609,7 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
 
 def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log=False, no_upload= False, create_zarr=False,
          chunk_shapefile_uri=False, bounding_box=None, chunk_size=None, first_chunks=None,
-         model_path_description=None, log_note=None, sensitivity_analysis=False):
+         model_path_description=None, log_note=None):
 
     ### Step 1: Preparation
 
@@ -634,8 +633,8 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
     # Creates the log for the main function and populates it with basic run information
     main_logger, main_log_local_path, n_workers = lu.populate_main_log_header(client, cluster, log_note, run_local, model_type, stage)
 
-    if sensitivity_analysis and year != 2015:
-        raise ValueError("--sensitivity_analysis is only valid for year 2015.")
+    if model_type == cn.alt_AGB and year != 2015:
+        raise ValueError("sensitivity analysis is only valid for year 2015.")
 
     if year == 2000:
         biomass_source = "WHRC"
@@ -643,7 +642,7 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
         agb_2015_pattern = None
         agb_2015_dir_processed = None
 
-    elif year == 2015 and sensitivity_analysis:
+    elif year == 2015 and model_type == cn.alt_AGB:
         biomass_source = "Ctrees"
         run_date = cn.ctrees_run_date
         agb_2015_pattern = cn.ctrees_agb_2015_pattern
@@ -740,7 +739,7 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
         for LC_year in range(cn.first_model_year_annual, cn.last_model_year_annual + 1):
             download_dict[f"{cn.vegetation_height_pattern}_{LC_year}"] = f"{cn.vegetation_height_annual_path}{LC_year}/{sample_tile_id}.tif"
 
-        if sensitivity_analysis:
+        if model_type == cn.alt_AGB:
             output_dir_list = [cn.agc_2015_ctrees_raw_dir, cn.bgc_2015_ctrees_raw_dir, cn.deadwood_c_2015_ctrees_raw_dir, cn.litter_c_2015_ctrees_raw_dir, cn.non_soil_c_2015_ctrees_raw_dir,
                                cn.agc_2015_ctrees_LC_masked_dir, cn.bgc_2015_ctrees_LC_masked_dir, cn.deadwood_c_2015_ctrees_LC_masked_dir, cn.litter_c_2015_ctrees_LC_masked_dir,
                                cn.non_soil_c_2015_ctrees_LC_masked_dir, cn.starting_C_pools_ctrees_LC_masked_state_dir]
@@ -800,7 +799,7 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
     # Only creates the global mega-zarr if needed (large runs or otherwise specified)
     starting_C_zarr_root = (
         cn.starting_C_densities_2015_ctrees_path_mega_zarr
-        if sensitivity_analysis
+        if model_type == cn.alt_AGB
         else cn.starting_C_densities_2015_path_mega_zarr
     )
 
@@ -1001,7 +1000,6 @@ if __name__ == "__main__":
     parser.add_argument('--no_log', action='store_true', help='Do not create the combined log')
     parser.add_argument('--no_upload', action='store_true', help='Do not save and upload outputs to s3')
     parser.add_argument('--create_zarr', action='store_true', help='Create and populate global mega-zarr with model outputs')
-    parser.add_argument('--sensitivity_analysis', action='store_true', help='Use Ctrees 2015 AGB instead of ESA CCI 2015 AGB for starting carbon pools.')
 
     args = parser.parse_args()
 
@@ -1020,9 +1018,8 @@ if __name__ == "__main__":
     no_log = args.no_log
     no_upload = args.no_upload
     create_zarr = args.create_zarr
-    sensitivity_analysis = args.sensitivity_analysis
 
     main(cluster_name, year, model_type, run_local, no_stats, no_log, no_upload, create_zarr, chunk_shapefile_uri,
          bounding_box=bounding_box, chunk_size=chunk_size,
-         first_chunks=first_chunks,  model_path_description=model_path_description, log_note=log_note, sensitivity_analysis=sensitivity_analysis)
+         first_chunks=first_chunks,  model_path_description=model_path_description, log_note=log_note)
 

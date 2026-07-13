@@ -18,6 +18,7 @@ python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetat
 python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt low_partial_dist_EF -mpd test_box -bb 110 -1 111 0 -cs 1 --create_zarr
 python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt high_partial_dist_EF -mpd test_box -bb 110 -1 111 0 -cs 1 --create_zarr
 python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt alternative_RF -mpd test_box -bb -72 -15 -70 -13 -cs 1 --create_zarr
+python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt ctrees_starting_AGC -mpd test_box -bb 110 -1 111 0 -cs 1 --create_zarr
 
 Coiled Cerrado test (174 features):
 python -m src.utilities.create_cluster -n 20 -t 1 -m 32 -cn vegetation_model
@@ -30,16 +31,6 @@ python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetat
 Full run:
 python -m src.utilities.create_cluster -n 200 -t 1 -m 32 -cn vegetation_model
 python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt standard -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "This is a global run for model v1.0.4 (2016-2024). Hopefully, it is the run used for the published model."
-
-For AGB sensitivity analysis using Ctrees
-Coiled small tests:
-python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn vegetation_model__Ctrees
-python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model__Ctrees --c_trees --create_zarr -mt ctrees_starting_AGC -mpd test_box -bb -80 39 -79 40 -cs 1
-
-Global
-python -m src.utilities.create_cluster -n 200 -t 1 -m 32 -cn vegetation_model__Ctrees --on_demand
-python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model__Ctrees --c_trees --create_zarr -rd 20260701 -mt ctrees_starting_AGC -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "This is the global sensitivity run for model v1.0.5 (2016-2024) using C-Trees starting carbon pools"
-
 
 To download all outputs locally:
 python src/utilities/download_outputs_local.py v1_test_name 23_-4_24_-3
@@ -2314,7 +2305,7 @@ def safe_task_wrapper(*args, **kwargs):
 def main(cluster_name, year_range, model_type,
          run_local=False, no_stats=False, no_log=False, no_upload=False, create_zarr=False,
          chunk_shapefile_uri=False, bounding_box=None, chunk_size_deg=None, first_chunks=None,
-         run_date=None, model_path_description=None, log_note=None, starting_c_pool_sensitivity_analysis=False, chunk_ids_file=None, chunk_ids_to_skip=None):
+         run_date=None, model_path_description=None, log_note=None, chunk_ids_file=None):
 
     ### Step 1: Preparation
 
@@ -2378,6 +2369,16 @@ def main(cluster_name, year_range, model_type,
 
     # Creates the list of chunks to process, depending on the approach: shapefile attribute table or a bounding box
     chunk_list, chunk_size_pixels = uu.create_chunk_list(bounding_box, chunk_shapefile_uri, chunk_size_deg, first_chunks, fishnet_iso_df, main_logger)
+
+    # Filter to only chunks listed in a text file (if provided)
+    if chunk_ids_file:
+        keep_set = read_chunk_ids_file(chunk_ids_file)
+        original_count = len(chunk_list)
+        chunk_list = [chunk for chunk in chunk_list if uu.boundstr(chunk) in keep_set]
+        main_logger.info(f"Selected {len(chunk_list)} of {original_count} chunks from {chunk_ids_file}.")
+        if len(chunk_list) == 0:
+            raise ValueError(f"No chunks from {chunk_ids_file} matched the generated chunk_list. Check that the chunk IDs use uu.boundstr() format.")
+
     main_logger.info(f"Chunks to process: {len(chunk_list)}")
 
     # Determines if the output file names for final versions of outputs should be used
@@ -2448,10 +2449,24 @@ def main(cluster_name, year_range, model_type,
         download_dict[cn.deadwood_c_LC_masked_dens_pattern] = f"{cn.deadwood_c_2000_LC_masked_dir}{sample_tile_id}__{cn.deadwood_c_2000_LC_masked_pattern}.tif"
         download_dict[cn.litter_c_LC_masked_dens_pattern] = f"{cn.litter_c_2000_LC_masked_dir}{sample_tile_id}__{cn.litter_c_2000_LC_masked_pattern}.tif"
     elif start_year == 2015:
-        download_dict[cn.agc_LC_masked_dens_pattern] = f"{cn.agc_2015_LC_masked_dir}{sample_tile_id}__{cn.agc_2015_LC_masked_pattern}.tif"
-        download_dict[cn.bgc_LC_masked_dens_pattern] = f"{cn.bgc_2015_LC_masked_dir}{sample_tile_id}__{cn.bgc_2015_LC_masked_pattern}.tif"
-        download_dict[cn.deadwood_c_LC_masked_dens_pattern] = f"{cn.deadwood_c_2015_LC_masked_dir}{sample_tile_id}__{cn.deadwood_c_2015_LC_masked_pattern}.tif"
-        download_dict[cn.litter_c_LC_masked_dens_pattern] = f"{cn.litter_c_2015_LC_masked_dir}{sample_tile_id}__{cn.litter_c_2015_LC_masked_pattern}.tif"
+        if model_type == cn.alt_AGB:
+            download_dict[cn.agc_LC_masked_dens_pattern] = (
+                f"{cn.agc_2015_ctrees_LC_masked_dir}{sample_tile_id}__{cn.agc_LC_masked_dens_pattern}_2015.tif")
+            download_dict[cn.bgc_LC_masked_dens_pattern] = (
+                f"{cn.bgc_2015_ctrees_LC_masked_dir}{sample_tile_id}__{cn.bgc_LC_masked_dens_pattern}_2015.tif")
+            download_dict[cn.deadwood_c_LC_masked_dens_pattern] = (
+                f"{cn.deadwood_c_2015_ctrees_LC_masked_dir}{sample_tile_id}__{cn.deadwood_c_LC_masked_dens_pattern}_2015.tif")
+            download_dict[cn.litter_c_LC_masked_dens_pattern] = (
+                f"{cn.litter_c_2015_ctrees_LC_masked_dir}{sample_tile_id}__{cn.litter_c_LC_masked_dens_pattern}_2015.tif")
+        else:
+            download_dict[
+                cn.agc_LC_masked_dens_pattern] = f"{cn.agc_2015_LC_masked_dir}{sample_tile_id}__{cn.agc_2015_LC_masked_pattern}.tif"
+            download_dict[
+                cn.bgc_LC_masked_dens_pattern] = f"{cn.bgc_2015_LC_masked_dir}{sample_tile_id}__{cn.bgc_2015_LC_masked_pattern}.tif"
+            download_dict[
+                cn.deadwood_c_LC_masked_dens_pattern] = f"{cn.deadwood_c_2015_LC_masked_dir}{sample_tile_id}__{cn.deadwood_c_2015_LC_masked_pattern}.tif"
+            download_dict[
+                cn.litter_c_LC_masked_dens_pattern] = f"{cn.litter_c_2015_LC_masked_dir}{sample_tile_id}__{cn.litter_c_2015_LC_masked_pattern}.tif"
     else:
         sys.exit('interval_type not found')
 
@@ -2904,6 +2919,8 @@ if __name__ == "__main__":
     parser.add_argument('--no_upload', action='store_true', help='Do not save and upload outputs to s3')
     parser.add_argument('--create_zarr', action='store_true', help='Create and populate global mega-zarr with model outputs')
 
+    parser.add_argument("--chunk_ids_file", help="Text file containing chunk IDs to process, one per line.")
+
     args = parser.parse_args()
 
     cluster_name = args.cluster_name
@@ -2922,8 +2939,9 @@ if __name__ == "__main__":
     no_log = args.no_log
     no_upload = args.no_upload
     create_zarr = args.create_zarr
+    chunk_ids_file = args.chunk_ids_file
 
     # Create the cluster with command line arguments
     main(cluster_name, year_range, model_type, run_local, no_stats, no_log, no_upload, create_zarr, chunk_shapefile_uri,
          bounding_box=bounding_box, chunk_size_deg=chunk_size_deg, first_chunks=first_chunks,
-         run_date=run_date, model_path_description=model_path_description, log_note=log_note)
+         run_date=run_date, model_path_description=model_path_description, log_note=log_note, chunk_ids_file=chunk_ids_file)
