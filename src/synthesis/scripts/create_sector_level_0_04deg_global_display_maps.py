@@ -67,11 +67,13 @@ With https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/67634e63-bbcc-800a-826
 Continued at https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/68d6d26f-b054-8323-98bb-731a86582e74
 This specific code at https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69778c22-2538-8325-a70e-1a2b70312505
 
+#TODO LULUCF gross removals 0.04deg map doesn't have pixels where veg gross removals map does. Something is off with the LULUCF summative global maps. Need to investigate. Maybe because of projection?
 #TODO Average mineral and organic soil values for last two intervals instead of using just the most recent value.
 For mineral soil, I could calculate the annual density change for 2015 vs. 2022, rather than averaging the two change values.
 For organic soil, I'll have to average the two periods of emissions.
-#TODO I'm going to add the sign switching to the mineral soil processing step, so I won't need to do it in this script.
+#TODO I added sign switching and conversion to CO2 to the mineral soil processing step, so I won't need to do it in this script.
 #TODO In the emissions fraction maps, mineral soil fraction is the residual of veg and organic soil for now but I want to calculate it on its own once I have corrected mineral soil
+#TODO Include LULUCF and AFOLU versions in output map names and/or folders
 """
 
 import argparse

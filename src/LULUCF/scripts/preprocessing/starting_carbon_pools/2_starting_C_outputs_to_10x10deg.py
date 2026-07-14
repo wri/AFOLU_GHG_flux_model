@@ -22,8 +22,8 @@ python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn starting_carbon_pools
 python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools -bb 23 -4 24 -3 -fv 2 -ft 2 -mt standard -mpd global -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260129_14_36_42__KEEP.xlsx  --input_date YYYYMMDD
 
 Coiled small tests:
-python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn starting_carbon_pools
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools -bb -64 -22 -63 -21 -fv 3 -ft 3 -mt standard -mpd global -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260129_14_36_42__KEEP.xlsx --input_date YYYYMMDD
+python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn starting_carbon_pools_10x10__Ctrees
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools_10x10__Ctrees -bb -80 30 -70 40 -mpd global --input_date 20260629 -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260630_00_52_24.xlsx
 
 Coiled Cerrado test (174 features):
 python -m src.utilities.create_cluster -n 20 -t 1 -m 32 -cn starting_carbon_pools
@@ -36,6 +36,18 @@ python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_ou
 Full run:
 python -m src.utilities.create_cluster -n 200 -t 1 -m 32 -cn starting_carbon_pools
 python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools -mt standard -mpd global -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260129_14_36_42__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --input_date YYYYMMDD --log_note "Global 10x10 deg creation for starting carbon pools using ESA CCI AGB v6, with starting carbon pool adjustments."
+
+For sensitivity anlysis:
+Coiled small tests:
+python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn starting_carbon_pools_10x10__Ctrees
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools_10x10__Ctrees -mt ctrees_starting_AGC -bb -60 -20 -50 -10 -mpd test_box -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260630_00_52_24.xlsx
+
+python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn starting_carbon_pools_10x10__Ctrees
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools_10x10__Ctrees -mt ctrees_starting_AGC -bb -80 30 -70 40 -mpd test_box -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260630_00_52_24.xlsx
+
+Full run:
+python -m src.utilities.create_cluster -n 200 -t 1 -m 32 -cn starting_carbon_pools_10x10__Ctrees
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools_10x10__Ctrees -mt ctrees_starting_AGC -mpd global -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260630_00_52_24.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Global 10x10 deg creation for starting carbon pools using C-Trees AGB."
 
 Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/690a21cd-2ea0-8333-9c7f-7091f8016fb3
 """
@@ -54,8 +66,7 @@ from src.utilities import resize_cluster
 
 
 def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, model_chunk_stats_table_name, chunk_shapefile_uri=False, bounding_box=None,
-         first_variables_to_process=None, first_years_to_process=None,
-         first_tiles_to_process=None, model_path_description=None, log_note=None):
+         first_variables_to_process=None, first_years_to_process=None, first_tiles_to_process=None, model_path_description=None, log_note=None):
 
 
     ### Step 1: Preparation
@@ -76,9 +87,30 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     # Assuming I'm only going to run this on carbon pools for 2015 for now
     year = cn.first_model_year_annual
 
+    if model_type == cn.alt_AGB:
+        biomass_source = "Ctrees"
+        zarr_root = cn.starting_C_densities_2015_ctrees_path_mega_zarr
+        output_base = f"{cn.full_bucket_prefix}/climate/Ctrees_biomass/{year}/year_2015_derived_carbon_pools/PATTERN/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{cn.ctrees_run_date}/"
+        output_dir_list = [cn.agc_2015_ctrees_raw_dir, cn.bgc_2015_ctrees_raw_dir, cn.deadwood_c_2015_ctrees_raw_dir,
+                           cn.litter_c_2015_ctrees_raw_dir, cn.non_soil_c_2015_ctrees_raw_dir, cn.agc_2015_ctrees_LC_masked_dir,
+                           cn.bgc_2015_ctrees_LC_masked_dir, cn.deadwood_c_2015_ctrees_LC_masked_dir, cn.litter_c_2015_ctrees_LC_masked_dir,
+                           cn.non_soil_c_2015_ctrees_LC_masked_dir, cn.starting_C_pools_ctrees_LC_masked_state_dir]
+    else:
+        biomass_source = "ESA_CCI"
+        zarr_root = cn.starting_C_densities_2015_path_mega_zarr
+        output_base = f"{cn.full_bucket_prefix}/climate/ESA_CCI_biomass/{cn.esa_AGB_v}/{year}/year_2015_derived_carbon_pools/PATTERN/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{cn.carbon_2015_creation_date}/"
+        output_dir_list = [cn.agc_2015_raw_dir, cn.bgc_2015_raw_dir, cn.deadwood_c_2015_raw_dir, cn.litter_c_2015_raw_dir,
+                           cn.non_soil_c_2015_raw_dir, cn.agc_2015_LC_masked_dir, cn.bgc_2015_LC_masked_dir, cn.deadwood_c_2015_LC_masked_dir,
+                           cn.litter_c_2015_LC_masked_dir, cn.non_soil_c_2015_LC_masked_dir, cn.starting_C_pools_LC_masked_state_dir]
+
     start_time = uu.timestr() # Starting time for stage
     main_logger.info(f"Stage {stage} started at: {start_time}")
-    main_logger.info(f"ESA CCI AGB version: {cn.esa_AGB_v}")
+    if biomass_source == "Ctrees":
+        main_logger.info("Starting biomass source: Ctrees 2015 AGB sensitivity analysis")
+        main_logger.info(f"Ctrees AGB input pattern: {cn.ctrees_agb_2015_pattern}")
+    elif biomass_source == "ESA_CCI":
+        main_logger.info("Starting biomass source: ESA CCI 2015 AGB standard run")
+        main_logger.info(f"ESA CCI AGB version: {cn.esa_AGB_v}")
     main_logger.info(f"Model path descriptor: {model_path_description}")
     main_logger.info(f"Year for carbon pools: {year}")
     main_logger.info(f"Input date: {input_date}")
@@ -110,13 +142,6 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
                        cn.starting_C_pools_LC_masked_source_flag_pattern]
     # full_list_of_vars = [cn.starting_C_pools_LC_masked_source_flag_pattern]
 
-    # For counting files in s3 output folders
-    output_dir_list = [cn.agc_2015_raw_dir, cn.bgc_2015_raw_dir, cn.deadwood_c_2015_raw_dir, cn.litter_c_2015_raw_dir,
-                       cn.non_soil_c_2015_raw_dir,
-                       cn.agc_2015_LC_masked_dir, cn.bgc_2015_LC_masked_dir, cn.deadwood_c_2015_LC_masked_dir,
-                       cn.litter_c_2015_LC_masked_dir, cn.non_soil_c_2015_LC_masked_dir,
-                       cn.starting_C_pools_LC_masked_state_dir]
-
     # Limits the processed variables to the supplied number (for testing)
     if first_variables_to_process:
         vars_to_process = full_list_of_vars[0:first_variables_to_process]
@@ -134,12 +159,9 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     source_zarr_chunk_size = cn.chunk_dims  #4000x4000
 
     # The zarr path that's being used
-    mega_zarr_path = zu.create_zarr_path(cn.starting_C_densities_2015_path_mega_zarr, chunk_size_pixels, str(year),
-                                         model_type, cn.veg_model_version_underscore, model_path_description,
-                                         input_date, main_logger)
+    mega_zarr_path = zu.create_zarr_path(zarr_root, chunk_size_pixels, str(year), model_type, cn.veg_model_version_underscore,
+                                         model_path_description, input_date, main_logger)
     main_logger.info(f"Aggregating from zarr ({source_zarr_chunk_size} pixel chunks): {mega_zarr_path}")
-
-    output_base = f"{cn.full_bucket_prefix}/climate/ESA_CCI_biomass/{cn.esa_AGB_v}/{year}/year_2015_derived_carbon_pools/PATTERN/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{cn.carbon_2015_creation_date}/"
     main_logger.info(f"Core output path for aggregation: {output_base}")
 
 
@@ -185,9 +207,11 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
 
         for tile_id in tile_ids_to_process:
 
+            append_start_year_to_var = model_type == cn.alt_AGB #TODO: Not needed after fixing populate_zarr (see Step 5 TODO in 1_create_starting_carbon_pools.py)
+
             future = client.submit(zu.create_10x10_deg_geotif_from_zarr,
-                                   var_name, 0, tile_id, mega_zarr_path, output_base,
-                                   cn.esa_AGB_v, model_type, model_path_description, no_upload, True, 0)
+                                   var_name, 0, tile_id, mega_zarr_path, output_base, biomass_source,
+                                   model_type, model_path_description, no_upload, True, 0, append_start_year_to_var)
             futures.append(future)
 
     main_logger.info(f"There are {len(futures)} tiles to aggregate ({len(tile_ids_to_process)} tiles x {len(vars_to_process)} variables)")

@@ -1,14 +1,20 @@
 """
-Creates 10x10 deg per-hectare and per-pixel geotifs from global zarr for numeric model outputs.
+Creates 10x10 deg per-hectare, per-pixel, and 0.04x0.04 deg geotifs from global zarr for numeric model outputs.
 It creates a task list for all datasets, years, and 10x10 deg tiles for the variables, years, and area of interest,
 then runs that giant task list in parallel in batches (as a safeguard against failure during a large task list).
 
-Unit numerator is Mg C, not Mg CO2
-
-All gross stock change values are positive (loss and gain).
-For net stock change, positive is SOC gain and negative is SOC loss (opposite of signs for vegetation).
-Neither change nor density converted to Mg CO2.
+Density in Mg C; loss, gain and net change are in Mg CO2.
+For net stock change, negative is SOC gain and positive is SOC loss (same as signs for vegetation).
+Gross gain is negative and gross loss is positive (same as signs for vegetation).
 Calling gross values gain and loss instead of emissions and removals to differentiate them from vegetation emissions and removals (which are in CO2(e).)
+
+NoData value is np.nan.
+NoData used for:
+density- pixels without a value;
+net change- pixels without a value;
+loss and gain- pixels without a value in the relevant direction (i.e. a loss pixel with gain gets NaN)
+0 is reserved for net, loss, and gain pixels that had no change in density.
+Thus, when consecutive densities are the same, net, loss, and gain will all have 0s.
 
 Providing a bounding box with -bb or a chunk shapefile limits the 10x10 deg creation
 to the 10x10 deg tiles that contain the bounding box or shapefile.
@@ -25,25 +31,26 @@ python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10d
 
 Coiled small tests (needs 32 GB because of per-ha and per-pixel outputs):
 python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -bb 10 49 11 50 -fy 2 -fv 2 -ft 2 -mt standard -mpd test_box -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx  --input_date YYYYMMDD
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -bb 10 49 11 50 -fy 1 -fv 1 -ft 1 -mt standard -mpd test_box -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__with_pivots__KEEP.xlsx  --input_date YYYYMMDD
 
 Coiled small tests:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -bb -64 -22 -63 -21 -fy 3 -fv 3 -ft 3 -mt standard -mpd test_box -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx --input_date YYYYMMDD
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -bb -64 -22 -63 -21 -fy 3 -fv 3 -ft 3 -mt standard -mpd test_box -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__with_pivots__KEEP.xlsx --input_date YYYYMMDD
 
 Coiled Cerrado test (174 features):
 python -m src.utilities.create_cluster -n 20 -t 1 -m 32 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -mt standard -mpd Cerrado -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp --input_date YYYYMMDD
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -mt standard -mpd Cerrado -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__with_pivots__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp --input_date YYYYMMDD
 
 Coiled large shapefile test (1884 features):
 python -m src.utilities.create_cluster -n 100 -t 1 -m 32 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -mt standard -mpd 1884_features -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp --input_date YYYYMMDD
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -mt standard -mpd 1884_features -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__with_pivots__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp --input_date YYYYMMDD
 
 Full run:
 python -m src.utilities.create_cluster -n 200 -t 1 -m 32 -cn mineral_soil
-python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -mt standard -mpd global -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20251224_20_16_36__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --input_date YYYYMMDD --log_note "10x10 deg tile creation for SOC v1.0.0 (2000-2022)."
+python -m src.LULUCF.scripts.mineral_soil_organic_carbon.2_SOC_outputs_to_10x10deg -cn mineral_soil -mt standard -mpd global -mcstn soil_carbon_densities_and_changes_1x1_chunk_statistics_20260526_15_43_37__with_pivots__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --input_date YYYYMMDD --log_note "10x10 deg tile creation for SOC v1.0.1 (2000-2022, revised organic/mineral soil split)."
 
 Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/690a21cd-2ea0-8333-9c7f-7091f8016fb3
+#TODO Parallelize 10x10 deg tile uploads in create_10x10_deg_geotif_from_zarr, per Claude session 'LULUCF 30-m outputs script'. Applies to veg, SOC, and LULUCF. Haven't tried at all.
 """
 
 import argparse
@@ -88,7 +95,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
 
     start_time = uu.timestr() # Starting time for stage
     main_logger.info(f"Stage {stage} started at: {start_time}")
-    main_logger.info(f"Model version: {cn.SOC_model_version}")
+    main_logger.info(f"SOC model version: {cn.SOC_model_version}")
     main_logger.info(f"Model path descriptor: {model_path_description}")
     main_logger.info(f"Start year: 2000; end year: {cn.SOC_density_intervals[-1]}")
     main_logger.info(f"Input date: {input_date}")
@@ -391,11 +398,20 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     output_dir_list_aggreg = [path.replace("PER_HA_OR_PIXEL", cn.flux_aggreg_pixel_meaning) for path in output_dir_list]
     output_dir_list_aggreg = [path.replace(str(cn.full_raster_dims), str(cn.global_aggregation_factor)) for path in output_dir_list_aggreg]  # Need to replace the tile dimensions
     # print("output_dir_list_per_pixel:", output_dir_list_aggreg)
+
     output_dir_list_aggreg.sort()
     if not no_upload:
         for output_folder in output_dir_list_aggreg:
             geotiff_files, file_count = uu.list_raster_full_paths_in_s3_folder_and_count(output_folder)
             main_logger.info(f"Output aggregated rasters in {output_folder}: {file_count}")
+            # print(geotiff_files)
+
+    if not no_upload and is_large_run:
+        for output_folder in output_dir_list_aggreg:
+            geotiff_files, file_count = uu.list_raster_full_paths_in_s3_folder_and_count(output_folder)
+            main_logger.info(f"Output aggregated rasters in {output_folder}: {file_count}")
+            if file_count != len(tile_ids_to_process):
+                main_logger.warning(f"WARNING: Output file count in {output_folder} does not match expectations!")
             # print(geotiff_files)
 
     uu.stage_duration(start_time, uu.timestr(), f"{stage} with output counts", main_logger)

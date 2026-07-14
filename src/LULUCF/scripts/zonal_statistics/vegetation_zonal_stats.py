@@ -36,9 +36,6 @@ python -m src.LULUCF.scripts.zonal_statistics.vegetation_zonal_stats -cn vegetat
 Full run:
 python -m src.utilities.create_cluster -n 50 -m 64 -cn vegetation_zonal_stats --zonal_stats
 python -m src.LULUCF.scripts.zonal_statistics.vegetation_zonal_stats -cn vegetation_zonal_stats -mt standard -mpd global --input_date YYYYMMDD -zd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Zonal stats for vegetation model v1.0.5 (2016-2024)."
-
-#TODO Add TCL 1km driver contextual layer from supplemental script
-#TODO Add forest age classes in 20-year increments (or at least <20 and >20) as contextual layer. Not sure how to do that, though.
 """
 
 import argparse
@@ -61,7 +58,7 @@ from src.utilities import log_utilities as lu
 from src.utilities import universal_utilities as uu
 from src.utilities import zarr_utilities as zu
 from src.utilities import zonal_stats_utilities as zsu
-from src.utilities import resize_cluster
+from src.utilities import terminate_cluster
 
 
 def main(cluster_name, input_date, model_type, no_upload, zonal_stats_description,
@@ -74,6 +71,8 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
 
     # Model stage being run
     stage = 'vegetation_zonal_statistics'
+    model_version = cn.veg_model_version_underscore
+    output_path = cn.veg_outputs_path
 
     # Connects to Coiled cluster if not running locally and the named cluster exists
     cluster, client, run_local = uu.connect_to_Coiled_cluster(cluster_name, False)
@@ -125,7 +124,8 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
                          cn.ch4_gross_emis_pattern, cn.n2o_gross_emis_pattern,
                          cn.agc_gross_removals_pattern, cn.bgc_gross_removals_pattern, cn.deadwood_c_gross_removals_pattern, cn.litter_c_gross_removals_pattern,
                          cn.net_flux_all_C_pools_CO2_only_pattern, cn.net_flux_all_C_pools_all_gases_pattern,
-                         cn.non_soil_c_modeled_dens_pattern
+                         cn.non_soil_c_modeled_dens_pattern,
+                         cn.agc_emission_factor, cn.agc_rf_pre_dist_pattern
                          ]
 
     full_list_of_vars_with_units = [
@@ -151,7 +151,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
 
     # The zarr path that's being used
     zarr_path = zu.create_zarr_path(cn.veg_outputs_path_mega_zarr, source_zarr_chunk_size, 'annual',
-                                         model_type, cn.veg_model_version_underscore, model_path_description,
+                                         model_type, model_version, model_path_description,
                                          input_date, main_logger)
     main_logger.info(f"Zonal stats from zarr ({source_zarr_chunk_size} pixel chunks): {zarr_path}")
 
@@ -186,8 +186,9 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     cont_eco_xr = xr.open_zarr(cn.cont_eco_zarr_path, consolidated=False).rename_vars(band_data=cn.cont_eco_zstats_pattern)
     landmark_xr = xr.open_zarr(cn.landmark_zarr_path, consolidated=False).rename_vars(band_data=cn.landmark_pattern)
     composite_primary_xr = xr.open_zarr(cn.starting_composite_primary_forest_zarr_path, consolidated=False)  # No rename because it's created by a different process where the variable is named starting_composite_primary_forest
-    # KBA_xr = xr.open_zarr(cn.KBA_zarr_path, consolidated=False).rename_vars(band_data=cn.KBA_pattern)
-    # watersheds_xr = xr.open_zarr(cn.watersheds_zarr_path, consolidated=False).rename_vars(band_data=cn.watersheds_pattern)
+    KBA_xr = xr.open_zarr(cn.KBA_zarr_path, consolidated=False).rename_vars(band_data=cn.KBA_pattern)
+    watersheds_xr = xr.open_zarr(cn.watersheds_zarr_path, consolidated=False).rename_vars(band_data=cn.watersheds_pattern)
+    drivers_xr = xr.open_zarr(cn.drivers_of_loss_zarr_path, consolidated=False).rename_vars(band_data=cn.drivers_of_loss_pattern)
     # BRA_biomes_xr = xr.open_zarr(cn.BRA_biomes_zarr_path, consolidated=False).rename_vars(band_data=cn.BRA_biomes_pattern)
     # managed_land_CAN_xr = xr.open_zarr(cn.managed_land_CAN_zarr_path, consolidated=False).rename_vars(band_data=cn.managed_land_CAN_pattern)
     # managed_land_USA_xr = xr.open_zarr(cn.managed_land_USA_zarr_path, consolidated=False).rename_vars(band_data=cn.managed_land_USA_pattern)
@@ -204,12 +205,14 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     cont_eco_xr = zsu.round_coords(cont_eco_xr)
     landmark_xr = zsu.round_coords(landmark_xr)
     composite_primary_xr = zsu.round_coords(composite_primary_xr)
-    # KBA_xr = zsu.round_coords(KBA_xr)
-    # watersheds_xr = zsu.round_coords(watersheds_xr)
+    KBA_xr = zsu.round_coords(KBA_xr)
+    watersheds_xr = zsu.round_coords(watersheds_xr)
+    drivers_xr = zsu.round_coords(drivers_xr)
     # BRA_biomes_xr = zsu.round_coords(BRA_biomes_xr)
     # managed_land_CAN_xr = zsu.round_coords(managed_land_CAN_xr)
     # managed_land_USA_xr = zsu.round_coords(managed_land_USA_xr)
     land_state_node = zsu.round_coords(ds[cn.land_state_pattern])
+    forest_age = zsu.round_coords(ds[cn.forest_age_output_pattern])
 
     main_logger.info(f"Cropping: {uu.timestr()}")
     pixel_area_aligned = reference
@@ -218,13 +221,18 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     cont_eco_aligned = zsu.safe_crop(cont_eco_xr, reference)
     landmark_aligned = zsu.safe_crop(landmark_xr, reference)
     composite_primary_aligned = zsu.safe_crop(composite_primary_xr, reference)
-    # KBA_aligned = zsu.safe_crop(KBA_xr, reference)
-    # watersheds_aligned = zsu.safe_crop(watersheds_xr, reference)
+    KBA_aligned = zsu.safe_crop(KBA_xr, reference)
+    watersheds_aligned = zsu.safe_crop(watersheds_xr, reference)
+    drivers_aligned = zsu.safe_crop(drivers_xr, reference)
     # BRA_biomes_aligned = zsu.safe_crop(BRA_biomes_xr, reference)
     # managed_land_CAN_aligned = zsu.safe_crop(managed_land_CAN_xr, reference)
     # managed_land_USA_aligned = zsu.safe_crop(managed_land_USA_xr, reference)
     land_state_node_aligned = zsu.safe_crop(land_state_node, reference)
+    forest_age_aligned = zsu.safe_crop(forest_age, reference)
     ds_selected_analysis_vars_aligned = zsu.safe_crop(ds_selected_analysis_vars, reference)
+
+    # Categorizes age into specified categories
+    forest_age_cat_xr = zsu.categorize_age(forest_age_aligned).astype(np.uint8).rename(cn.forest_age_category_pattern).to_dataset()
 
     main_logger.info(f"Selecting datasets: {uu.timestr()}")
     # List of selected variable names (already aligned and cropped)
@@ -316,16 +324,18 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
         cont_eco_aligned_subset = cont_eco_aligned.sel(x=slice(west, east), y=slice(north, south))
         landmark_aligned_subset = landmark_aligned.sel(x=slice(west, east), y=slice(north, south))
         composite_primary_aligned_subset = composite_primary_aligned.sel(x=slice(west, east), y=slice(north, south))
-        # KBA_aligned_subset = KBA_aligned.sel(x=slice(west, east), y=slice(north, south))
-        # watersheds_aligned_subset = watersheds_aligned.sel(x=slice(west, east), y=slice(north, south))
+        KBA_aligned_subset = KBA_aligned.sel(x=slice(west, east), y=slice(north, south))
+        watersheds_aligned_subset = watersheds_aligned.sel(x=slice(west, east), y=slice(north, south))
+        drivers_aligned_subset = drivers_aligned.sel(x=slice(west, east), y=slice(north, south))
         # BRA_biomes_aligned_subset = BRA_biomes_aligned.sel(x=slice(west, east), y=slice(north, south))
         # managed_land_CAN_aligned_subset = managed_land_CAN_aligned.sel(x=slice(west, east), y=slice(north, south))
         # managed_land_USA_aligned_subset = managed_land_USA_aligned.sel(x=slice(west, east), y=slice(north, south))
         land_state_node_aligned_subset = land_state_node_aligned.sel(x=slice(west, east), y=slice(north, south))
+        forest_age_cat_subset = forest_age_cat_xr.sel(x=slice(west, east), y=slice(north, south))
         pixel_area_expanded_subset = pixel_area_expanded.sel(x=slice(west, east), y=slice(north, south))
 
         # Creates xarrays of 0s if contextual layer doesn't extend to the current tile.
-        # Don't need to do with lnd_state_nodes because those should exist everywhere there are model outputs.
+        # Don't need to do with land_state_nodes because those should exist everywhere there are model outputs.
         # Also, don't need to do with pixel_area because that should exist everywhere.
         # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6995f836-b304-8333-8b92-cf24f95d812f
         if adm0_aligned_subset[cn.adm0_pattern].sizes.get("x", 0) == 0 or adm0_aligned_subset[cn.adm0_pattern].sizes.get("y", 0) == 0:
@@ -352,18 +362,30 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
         else:
             landmark_da = landmark_aligned_subset[cn.landmark_pattern]
 
-        # if KBA_aligned_subset[cn.KBA_pattern].sizes.get("x", 0) == 0 or KBA_aligned_subset[cn.KBA_pattern].sizes.get("y", 0) == 0:
-        #     KBA_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(cn.KBA_pattern)
-        #     main_logger.info(f"  {cn.KBA_pattern} not in {tile_id}. Creating xarray of all 0s.")
-        # else:
-        #     KBA_da = KBA_aligned_subset[cn.KBA_pattern]
-        #
-        # if watersheds_aligned_subset[cn.watersheds_pattern].sizes.get("x", 0) == 0 or watersheds_aligned_subset[cn.watersheds_pattern].sizes.get("y", 0) == 0:
-        #     watersheds_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(cn.watersheds_pattern)
-        #     main_logger.info(f"  {cn.watersheds_pattern} not in {tile_id}. Creating xarray of all 0s.")
-        # else:
-        #     watersheds_da = watersheds_aligned_subset[cn.watersheds_pattern]
-        #
+        if KBA_aligned_subset[cn.KBA_pattern].sizes.get("x", 0) == 0 or KBA_aligned_subset[cn.KBA_pattern].sizes.get("y", 0) == 0:
+            KBA_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(cn.KBA_pattern)
+            main_logger.info(f"  {cn.KBA_pattern} not in {tile_id}. Creating xarray of all 0s.")
+        else:
+            KBA_da = KBA_aligned_subset[cn.KBA_pattern]
+
+        if watersheds_aligned_subset[cn.watersheds_pattern].sizes.get("x", 0) == 0 or watersheds_aligned_subset[cn.watersheds_pattern].sizes.get("y", 0) == 0:
+            watersheds_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(cn.watersheds_pattern)
+            main_logger.info(f"  {cn.watersheds_pattern} not in {tile_id}. Creating xarray of all 0s.")
+        else:
+            watersheds_da = watersheds_aligned_subset[cn.watersheds_pattern]
+
+        if drivers_aligned_subset[cn.drivers_of_loss_pattern].sizes.get("x", 0) == 0 or drivers_aligned_subset[cn.drivers_of_loss_pattern].sizes.get("y", 0) == 0:
+            drivers_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(cn.drivers_of_loss_pattern)
+            main_logger.info(f"  {cn.drivers_of_loss_pattern} not in {tile_id}. Creating xarray of all 0s.")
+        else:
+            drivers_da = drivers_aligned_subset[cn.drivers_of_loss_pattern]
+
+        if forest_age_cat_subset[cn.forest_age_category_pattern].sizes.get("x", 0) == 0 or forest_age_cat_subset[cn.forest_age_category_pattern].sizes.get("y", 0) == 0:
+            forest_age_cat_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(cn.forest_age_category_pattern)
+            main_logger.info(f"  {cn.forest_age_category_pattern} not in {tile_id}. Creating xarray of all 0s.")
+        else:
+            forest_age_cat_da = forest_age_cat_subset[cn.forest_age_category_pattern]
+
         # if BRA_biomes_aligned_subset[cn.BRA_biomes_pattern].sizes.get("x", 0) == 0 or BRA_biomes_aligned_subset[
         #     cn.BRA_biomes_pattern].sizes.get("y", 0) == 0:
         #     bra_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(cn.BRA_biomes_pattern)
@@ -406,8 +428,10 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
          cont_eco_da,
          landmark_da,
          composite_primary_da,
-         # KBA_da,
-         # watersheds_da,
+         KBA_da,
+         watersheds_da,
+         drivers_da,
+         forest_age_cat_da,
          # bra_da,
          # managed_land_CAN_da,
          # managed_land_USA_da,
@@ -420,8 +444,10 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
             cont_eco_da,
             landmark_da,
             composite_primary_da,
-            # KBA_da,
-            # watersheds_da,
+            KBA_da,
+            watersheds_da,
+            drivers_da,
+            forest_age_cat_da,
             # bra_da,
             # managed_land_CAN_da,
             # managed_land_USA_da,
@@ -439,8 +465,10 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
                 cont_eco_da,
                 landmark_da,
                 composite_primary_da,
-                # KBA_da,
-                # watersheds_da,
+                KBA_da,
+                watersheds_da,
+                drivers_da,
+                forest_age_cat_da,
                 # bra_da,
                 # managed_land_CAN_da,
                 # managed_land_USA_da,
@@ -454,8 +482,10 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
                 cn.cont_eco_codes,
                 cn.landmark_codes,
                 cn.composite_primary_codes,
-                # cn.KBA_codes,
-                # cn.watershed_codes,
+                cn.KBA_codes,
+                cn.watershed_codes,
+                cn.drivers_codes,
+                cn.forest_age_category_codes,
                 # cn.BRA_biomes_codes,
                 # cn.managed_land_codes,  # For Canada
                 # cn.managed_land_codes,  # For USA
@@ -474,8 +504,10 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
             cn.cont_eco_zstats_pattern,
             cn.landmark_pattern,
             cn.starting_composite_primary_forest_pattern,
-            # cn.KBA_pattern,
-            # cn.watersheds_pattern,
+            cn.KBA_pattern,
+            cn.watersheds_pattern,
+            cn.drivers_of_loss_pattern,
+            cn.forest_age_category_pattern,
             # cn.BRA_biomes_pattern,
             # cn.managed_land_CAN_pattern,
             # cn.managed_land_USA_pattern,
@@ -489,7 +521,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
 
 
         main_logger.info(f"  Saving {tile_id} output table: {uu.timestr()}")
-        tile_df_name = f'veg_model_zonal_stats_{tile_id}_v{cn.veg_model_version_underscore}_{zonal_stats_description}_{time.strftime('%Y%m%d_%H_%M_%S')}'
+        tile_df_name = f'veg_model_zonal_stats_{tile_id}_v{model_version}_{zonal_stats_description}_{time.strftime('%Y%m%d_%H_%M_%S')}'
         df.to_parquet(f"{local_zonal_stats_folder}/{tile_df_name}.parquet")
 
         # Clean up at end of tile
@@ -510,16 +542,10 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     else:
         main_logger.info("No tiles processed")
 
-    workers = client.scheduler_info()["workers"]
-    n_workers = len(workers)
+    # Terminates cluster because all further processing is done locally
+    terminate_cluster.terminate_cluster(cluster_name)
 
-    # Reduces number of workers in the cluster down to 1 if there is more than 10
-    if n_workers > 10:
-        main_logger.info("Resizing cluster to 1 worker")
-
-        resize_cluster.resize_coiled_cluster(cluster_name, 1)
-
-    # Collect all tile parquet files
+    # Collects all tile parquet files
     parquet_files = sorted(
         str(local_zonal_stats_folder / f)
         for f in os.listdir(local_zonal_stats_folder)
@@ -533,46 +559,62 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     # List of dataframes from each tile, to be combined
     df_list = []
 
-    # Converts parquets to csvs, and makes a list of all the dataframes to combine them into one giant table.
-    # Does it here with 1 worker because writing csvs is slow and not a good use of a full cluster
-    main_logger.info(f"Converting parquet files to csvs: {uu.timestr()}")
+    # Rows in all output tables
+    total_rows = 0
+
+    # Iterates through all tiles to sum rows
+    main_logger.info(f"Counting rows in all output tables: {uu.timestr()}")
     for parquet_output in parquet_files:
+        main_logger.info(f"Getting row count in {parquet_output}: {uu.timestr()}")
         df = pd.read_parquet(parquet_output)
-        csv_output = parquet_output.replace('parquet', 'csv')
-        df.to_csv(csv_output, index=False)
-        df_list.append(df)
+        total_rows += len(df.index)
 
-    # Combines all the tile-level df_list in the list into a single df
-    main_logger.info(f"Combining dataframes: {uu.timestr()}")
-    combined_df = pd.concat(df_list, axis=0, ignore_index=True)
+    main_logger.info(f"Total rows: {total_rows}")
 
-    main_logger.info(f"Rows in combined dataframe: {len(combined_df.index)}")
-    main_logger.info(combined_df.head())
+    # Only tries to combine tables into one table if less than specified number of rows
+    if total_rows > 30_000_000:
+        main_logger.info("Too many rows to aggregate into global df. Skipping.")
+    else:
+        main_logger.info(f"Combining all parquets: {uu.timestr()}")
+        for parquet_output in parquet_files:
+            main_logger.info(f"Reading {parquet_output}: {uu.timestr()}")
+            df = pd.read_parquet(parquet_output)
+            df_list.append(df)
+            total_rows += len(df.index)
 
-    combined_df_name = f'veg_model_zonal_stats_v{cn.veg_model_version_underscore}_{time.strftime('%Y%m%d_%H_%M_%S')}'
-    combined_df.to_parquet(f"{local_zonal_stats_folder}/{combined_df_name}.parquet")
-    if len(combined_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
-        combined_df.to_csv(f"{local_zonal_stats_folder}/{combined_df_name}.csv", index=False)
+        # Combines all the tile-level dfs in the list into a single df
+        main_logger.info(f"Combining dataframes: {uu.timestr()}")
+        combined_df = pd.concat(df_list, axis=0, ignore_index=True)
 
-    # Converts from long to wide df
-    combined_wide_df = zsu.create_wide_df(combined_df)
+        main_logger.info(f"Rows in combined dataframe: {len(combined_df.index)}")
+        if len(combined_df.index) != total_rows:
+            main_logger.warning("Sum of row count from individual tables and row count in combined table do not match!")
+        main_logger.info(combined_df.head())
 
-    combined_wide_df_name = f'veg_model_zonal_stats_v{cn.veg_model_version_underscore}_wide_{time.strftime('%Y%m%d_%H_%M_%S')}'
-    combined_wide_df.to_parquet(f"{local_zonal_stats_folder}/{combined_wide_df_name}.parquet")
-    if len(combined_wide_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
-        combined_wide_df.to_csv(f"{local_zonal_stats_folder}/{combined_wide_df_name}.csv", index=False)
+        combined_df_name = f'veg_model_zonal_stats_v{model_version}_{time.strftime('%Y%m%d_%H_%M_%S')}'
+        combined_df.to_parquet(f"{local_zonal_stats_folder}/{combined_df_name}.parquet")
+        if len(combined_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
+            combined_df.to_csv(f"{local_zonal_stats_folder}/{combined_df_name}.csv", index=False)
 
-    # Converts from long to wide df
-    combined_wide_df = zsu.create_wide_df(combined_df, main_logger)
+        # Converts combined df from long to wide
+        combined_wide_df = zsu.create_wide_df(combined_df, main_logger)
 
-    combined_wide_df_name = f'veg_model_zonal_stats_v{cn.veg_model_version_underscore}_wide_{time.strftime('%Y%m%d_%H_%M_%S')}'
-    combined_wide_df.to_parquet(f"{local_zonal_stats_folder}/{combined_wide_df_name}.parquet")
-    if len(combined_wide_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
-        combined_wide_df.to_csv(f"{local_zonal_stats_folder}/{combined_wide_df_name}.csv", index=False)
+        combined_wide_df_name = f'veg_model_zonal_stats_v{model_version}_wide_{time.strftime('%Y%m%d_%H_%M_%S')}'
+        combined_wide_df.to_parquet(f"{local_zonal_stats_folder}/{combined_wide_df_name}.parquet")
+        if len(combined_wide_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
+            combined_wide_df.to_csv(f"{local_zonal_stats_folder}/{combined_wide_df_name}.csv", index=False)
 
-    # Uploads outputs to s3 if the run is large enough
-    zsu.upload_zstats_to_s3(stage, local_zonal_stats_folder, main_logger,
-                        model_path_description, model_type, cn.veg_model_version_underscore, tiles_processed)
+    # # Converts each parquet to csv
+    # main_logger.info(f"Converting parquet files to csvs: {uu.timestr()}")
+    # for parquet_output in parquet_files:
+    #     main_logger.info(f"Converting {parquet_output} to csv: {uu.timestr()}")
+    #     df = pd.read_parquet(parquet_output)
+    #     csv_output = parquet_output.replace('parquet', 'csv')
+    #     df.to_csv(csv_output, index=False)
+    #
+    # # Uploads outputs to s3 if the run is large enough
+    # zsu.upload_zstats_to_s3(stage, local_zonal_stats_folder, output_path, main_logger,
+    #                     model_path_description, model_type, model_version, tiles_processed)
 
     end_time = time.time()
     main_logger.info(f"Finished zonal stats, took {round(end_time - prep_start_time)} seconds: {uu.timestr()}")

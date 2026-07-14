@@ -3,6 +3,7 @@ import boto3
 import fsspec
 import pandas as pd
 import sys
+import dask
 from dask.distributed import print
 import dask.array as da
 import xarray as xr
@@ -209,6 +210,102 @@ def initialize_global_zarr(store_url, dataset_keys, n_years, chunk_size, main_lo
     end_time = time.time()
     main_logger.info(f"Initialized spatial mega-zarr metadata at {store_url} in {round(end_time-start_time)} seconds: {uu.timestr()}")
 
+def initialize_ipcc_global_zarr(store_url, chunk_size, main_logger, fill_value=0):
+    dataset_keys = [
+        cn.IPCC_class_pattern,
+        cn.IPCC_node_pattern,
+        cn.IPCC_change_pattern,
+        cn.IPCC_summary_pattern,
+    ]
+
+    dtype_map = {
+        cn.IPCC_class_pattern: "uint8",
+        cn.IPCC_node_pattern: "uint16",
+        cn.IPCC_change_pattern: "uint8",
+        cn.IPCC_summary_pattern: "uint8",
+    }
+
+    fs = fsspec.filesystem("s3", anon=False)
+
+    if fs.exists(store_url):
+        main_logger.info(f"IPCC zarr already exists at {store_url}. Skipping initialization: {uu.timestr()}")
+        return
+
+    lat_size = int(180 / cn.resolution)
+    lon_size = int(360 / cn.resolution)
+
+    lats = np.arange(90.0 - cn.resolution / 2, -90, -cn.resolution)[:lat_size]
+    lons = np.arange(-180.0 + cn.resolution / 2, 180, cn.resolution)[:lon_size]
+
+    # 10 slots:
+    # class/node: 2015-2024
+    # change: 2015_2016 through 2023_2024, plus empty index 9
+    # summary: 2015_2024 in index 0, empty indices 1-9
+    year_index = np.arange(10)
+
+    compressor = {
+        "name": "zstd",
+        "configuration": {"level": 3}
+    }
+
+    spatial_attrs = {
+        "grid_mapping_name": "latitude_longitude",
+        "epsg_code": 4326,
+        "semi_major_axis": 6378137.0,
+        "inverse_flattening": 298.257223563,
+    }
+
+    data_vars = {}
+    encoding = {}
+
+    for key in dataset_keys:
+        dtype = dtype_map[key]
+        dask_data = da.full(
+            (10, lat_size, lon_size),
+            fill_value,
+            dtype=dtype,
+            chunks=chunk_size,
+        )
+
+        data_vars[key] = xr.DataArray(
+            dask_data,
+            dims=("year", "y", "x"),
+            coords={"year": year_index, "y": lats, "x": lons},
+            name=key,
+            attrs={"grid_mapping": "spatial_ref"},
+        )
+
+        encoding[key] = {
+            "compressors": compressor,
+        }
+
+    ds = xr.Dataset(
+        data_vars=data_vars,
+        coords={"x": lons, "y": lats, "year": year_index},
+    )
+
+    ds["spatial_ref"] = xr.DataArray(
+        np.array(0, dtype="int32"),
+        attrs=spatial_attrs,
+    )
+
+    mapper = fs.get_mapper(store_url)
+    ds.to_zarr(
+        store=mapper,
+        mode="w",
+        compute=False,
+        encoding=encoding,
+        zarr_format=3,
+    )
+
+    z = zarr.open_group(store=mapper, mode="r+")
+    for key in z.array_keys():
+        arr = z[key]
+        if "_FillValue" in arr.attrs:
+            del arr.attrs["_FillValue"]
+
+    main_logger.info(f"Initialized IPCC global zarr at {store_url}: {uu.timestr()}")
+
 
 # Populates pre-existing global mega-zarr with select output numpy arrays (out_dict_all_dtypes)
 # Accelerated by writing all years at once
@@ -217,8 +314,7 @@ def populate_zarr(bounds, bounds_str, create_zarr, interval_end_years, is_large_
                   out_dict_all_dtypes, outputs_to_zarr, stage, tile_id):
 
     if not create_zarr:
-        lu.print_and_log(f"Not writing outputs for {bounds_str} in {tile_id} to global zarr: {uu.timestr()}", False,
-                         logger_worker)
+        lu.print_and_log(f"Not writing outputs for {bounds_str} in {tile_id} to global zarr: {uu.timestr()}", False, logger_worker)
         return
 
     lu.print_and_log(f"Writing select outputs to global zarr for {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
@@ -302,16 +398,124 @@ def populate_zarr(bounds, bounds_str, create_zarr, interval_end_years, is_large_
     lu.print_and_log(f"Wrote outputs to global zarr for {bounds_str} in {tile_id} in {round(zarr_end - zarr_start)} seconds: {uu.timestr()}",False, logger_worker)
 
 
+def populate_ipcc_zarr(bounds, bounds_str, create_zarr, is_large_run, logger_worker,
+                       mega_zarr_path, out_dict, stage, tile_id):
+    if not create_zarr:
+        lu.print_and_log(f"Not writing IPCC outputs for {bounds_str} in {tile_id} to global zarr: {uu.timestr()}",False, logger_worker)
+        return
+
+    lu.print_and_log(f"Writing IPCC outputs to global zarr for {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
+    uu.rename_s3_task_file(stage, bounds, "zarr_population_", is_large_run, logger_worker)
+
+    fs = fsspec.filesystem("s3", anon=False)
+    mapper = fs.get_mapper(mega_zarr_path)
+    z = zarr.open_group(mapper, mode="r+")
+
+    lat_start, lon_start = latlon_to_global_zarr_indices(bounds[3], bounds[0], cn.resolution)
+    lat_end, lon_end = latlon_to_global_zarr_indices(bounds[1], bounds[2], cn.resolution)
+
+    # Annual land use and node code: indices 0-9 map to 2015-2024.
+    for i, year in enumerate(cn.years_annual):
+        class_key = f"{cn.IPCC_class_pattern}_{year}"
+        node_key = f"{cn.IPCC_node_pattern}_{year}"
+
+        if class_key in out_dict:
+            z[cn.IPCC_class_pattern][i, lat_start:lat_end, lon_start:lon_end] = out_dict[class_key]
+
+        if node_key in out_dict:
+            z[cn.IPCC_node_pattern][i, lat_start:lat_end, lon_start:lon_end] = out_dict[node_key]
+
+    # LU change: indices 1-9 (based on end year) map to intervals, index 0 stays empty.
+    for i, (start_year, end_year) in enumerate(zip(cn.years_annual[:-1], cn.years_annual[1:])):
+        change_key = f"{cn.IPCC_change_pattern}_{start_year}_{end_year}"
+
+        if change_key in out_dict:
+            z[cn.IPCC_change_pattern][i+1, lat_start:lat_end, lon_start:lon_end] = out_dict[change_key]
+
+    # Summary: index 0 stores 2015_2024 summary, indices 1-9 stay empty.
+    summary_key = f"{cn.IPCC_summary_pattern}_2015_2024"
+    if summary_key in out_dict:
+        z[cn.IPCC_summary_pattern][0, lat_start:lat_end, lon_start:lon_end] = out_dict[summary_key]
+    else:
+        lu.print_and_log(f"WARNING: {summary_key} not found in out_dict for {bounds_str}", False, logger_worker)
+
+    lu.print_and_log( f"Wrote IPCC outputs to global zarr for {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker)
+
+# Checks composite ds for each tile against the original geotif to make sure geotifs haven't been flipped north-south
+# (as happened for pixel area once).
+# This doesn't actually check the final zarr but the two checks included here should be sufficient to
+# detect issues in the creation of the global ds from the geotif tile set.
+# Per Claude session 'SOC chunk stats mismatch investigation'
+def validate_xarray_assembly(ds, tile_uris, main_logger):
+    """
+    Confirms that open_mfdataset assembled tiles with correct north-south orientation.
+    Raises ValueError if any tile's top-left pixel value in the assembled dataset
+    doesn't match the value read directly from the source GeoTIF via rasterio.
+    """
+
+    var_name = list(ds.data_vars)[0]
+
+    # Check 1: global y-axis should decrease north→south
+    y_vals = ds.y.values
+    if not np.all(np.diff(y_vals) < 0):
+        raise ValueError(
+            "Assembled dataset y-coordinates are not monotonically decreasing (north→south). "
+            "open_mfdataset may have flipped or misordered latitude bands."
+        )
+
+    # Check 2: per-tile northwest corner pixel comparison (single pixel only, but would detect a north-south inversion).
+    # Reading northwest pixel of geotifs serially but reading corresponding pixels of global ds in parallel to speed things up.
+    # Reading the northwest pixel of each geotif still takes several minutes and doesn't use Dask at all.
+    uris = []
+    geotif_vals = []
+    assembled_selects = []
+
+    main_logger.info(f"Starting pixel-level check: {uu.timestr()}")
+    for i, uri in enumerate(tile_uris.values):
+        main_logger.info(f"Reading {uri} for y-axis inversion, tile {i} of {len(tile_uris)}")
+        with rasterio.open(uri) as src:
+            geotif_val = float(src.read(1, window=rasterio.windows.Window(0, 0, 1, 1))[0, 0])
+            lat = src.transform.f + src.transform.e * 0.5
+            lon = src.transform.c + src.transform.a * 0.5
+
+        uris.append(uri)
+        geotif_vals.append(geotif_val)
+        assembled_selects.append(ds[var_name].sel(y=lat, x=lon, method='nearest'))
+
+    assembled_vals = dask.compute(*assembled_selects)
+
+    errors = []
+    for uri, geotif_val, assembled_val in zip(uris, geotif_vals, assembled_vals):
+        if not np.isclose(geotif_val, float(assembled_val), rtol=1e-4):
+            errors.append(
+                f"  {uri}\n"
+                f"    rasterio NW corner: {geotif_val:.6f}\n"
+                f"    assembled:          {float(assembled_val):.6f}"
+            )
+        else:
+            main_logger.info(f"Northwest pixels match for {uri}: geotif={geotif_val:.6f}, ds={float(assembled_val):.6f}")
+
+    main_logger.info(f"Ending pixel-level check: {uu.timestr()}")
+
+    if errors:
+        raise ValueError(
+            f"Tile assembly mismatch for {len(errors)} of {len(tile_uris)} tiles:\n"
+            + "\n".join(errors)
+        )
+
+
 # Makes xarray dataframe (I think not a dataset) from list of s3 uris.
 # This came from Solomon Negusse and I haven't really changed it.
 # He said that an online forum suggested using xr.open_mfdataset to open non-overlapping geotifs.
-def make_xarray_chunks(tile_uris, chunk_size):
+def make_xarray_chunks(tile_uris, chunk_size, main_logger):
 
     xarray_chunks = xr.open_mfdataset(
         tile_uris.values.tolist(),
         parallel=True,
         chunks={'x': chunk_size, 'y':chunk_size}
     ).squeeze()
+
+    validate_xarray_assembly(xarray_chunks, tile_uris, main_logger)
 
     return xarray_chunks
 
@@ -413,6 +617,45 @@ def run_parallel_stats(client, chunk_list, var, zarr_path, interval_end_years):
     results = client.gather(futures)
 
     return results
+
+def ipcc_zarr_1x1_deg_stats(bounds, var, zarr_path):
+    bounds_str = uu.boundstr(bounds)
+    tile_id = uu.xy_to_tile_id(bounds[0], bounds[3])
+
+    lat0, lon0 = latlon_to_global_zarr_indices(bounds[3], bounds[0], cn.resolution)
+    lat1, lon1 = latlon_to_global_zarr_indices(bounds[1], bounds[2], cn.resolution)
+
+    fs = fsspec.filesystem("s3", anon=False)
+    mapper = fs.get_mapper(zarr_path)
+    z = zarr.open_group(mapper, mode="r")
+
+    stats = []
+
+    if var in {cn.IPCC_class_pattern, cn.IPCC_node_pattern}:
+        for i, year in enumerate(cn.years_annual):
+            key = f"{var}_{year}"
+            arr = z[var][i, lat0:lat1, lon0:lon1]
+            stats.append(uu.calculate_ipcc_stats(arr, key, bounds_str, tile_id, "zarr_stats"))
+    elif var == cn.IPCC_change_pattern:
+        for i, (start_year, end_year) in enumerate(zip(cn.years_annual[:-1], cn.years_annual[1:])):
+            key = f"{cn.IPCC_change_pattern}_{start_year}_{end_year}"
+            arr = z[var][i+1, lat0:lat1, lon0:lon1]
+            stats.append(uu.calculate_ipcc_stats(arr, key, bounds_str, tile_id, "zarr_stats"))
+    elif var == cn.IPCC_summary_pattern:
+        arr = z[var][0, lat0:lat1, lon0:lon1]
+        stats.append(uu.calculate_ipcc_stats(arr, cn.IPCC_summary_pattern, bounds_str, tile_id, "zarr_stats"))
+    else:
+        raise ValueError(f"Unsupported IPCC zarr variable: {var}")
+
+    return stats
+
+def run_parallel_ipcc_stats(client, chunk_list, var, zarr_path):
+    if client is None:
+        return [ipcc_zarr_1x1_deg_stats(chunk, var, zarr_path) for chunk in chunk_list]
+    futures = [client.submit( ipcc_zarr_1x1_deg_stats, chunk, var, zarr_path, retries=2) for chunk in chunk_list]
+    results_nested = client.gather(futures)
+
+    return [item for result in results_nested for item in result]
 
 
 # Compares chunk stats from model and from zarr for a dataset-year combination
@@ -725,8 +968,8 @@ def upload_zarr_chunk_stat_comparisons(chunks_count_exceeding_total, chunks_with
 
 
 # Extracts a 10x10° tile from a Zarr store and writes to GeoTIFF on S3
-def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_base,
-                                      model_version, model_type, model_path_description, no_upload, use_start_year, no_data_val):
+def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_base, model_version, model_type,
+                                      model_path_description, no_upload, use_start_year, no_data_val, append_start_year_to_var=False):
 
     process = psutil.Process(os.getpid())
 
@@ -781,7 +1024,10 @@ def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_b
     # Renames variable to use units and year.
     if use_start_year == True:
         year = cn.first_model_year_annual
-        var_with_unit = var_per_ha
+        if append_start_year_to_var:
+            var_with_unit = f"{var_per_ha}_{year}"
+        else:
+            var_with_unit = var_per_ha
     else:      # For timeseries data, uses specified output years (e.g., vegetation, SOC density, SOC change)
         if "SOC_density" in var:
             year = cn.SOC_density_intervals[year_idx]
@@ -849,48 +1095,54 @@ def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_b
     if y0_pixel_area > y1_pixel_area:
         y0_pixel_area, y1_pixel_area = y1_pixel_area, y0_pixel_area
 
-    pixel_area = pixel_area_zarr_store['band_data'][y0_pixel_area:y1_pixel_area, x0_pixel_area:x1_pixel_area]
-    # print("y0:", y0_pixel_area)
-    # print("y1:", y1_pixel_area)
-    # print("x0:", x0_pixel_area)
-    # print("x1:", x1_pixel_area)
-    # print(pixel_area)
-    # sys.quit()
+    # Only calculates per-pixel and aggregated geotifs if output is float32 (skips outputs like land_state)
+    if model_zarr_store[var_with_unit].dtype == np.float32:
+        pixel_area = pixel_area_zarr_store['band_data'][y0_pixel_area:y1_pixel_area, x0_pixel_area:x1_pixel_area]
+        # print("y0:", y0_pixel_area)
+        # print("y1:", y1_pixel_area)
+        # print("x0:", x0_pixel_area)
+        # print("x1:", x1_pixel_area)
+        # print(pixel_area)
+        # sys.quit()
 
-    # Converts per-ha to per-pixel
-    data_per_pixel = data_per_ha * pixel_area * cn.m2_to_ha
+        # Converts per-ha to per-pixel
+        data_per_pixel = data_per_ha * pixel_area * cn.m2_to_ha
 
-    # Cleanup. Without this, memory exceeds 24GB/worker and eventually tasks get repeated because of too much memory spillage or something
-    del pixel_area
+        # Cleanup. Without this, memory exceeds 24GB/worker and eventually tasks get repeated because of too much memory spillage or something
+        del pixel_area
 
-    # Creates 0.04x0.04 deg geotif in Mg CO2(e)/0.04x0.04deg pixel/yr
-    # per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c/c/69d50592-48b8-8329-b529-2babe02f7f27
-    # Should write NaN when there are no valid pixels.
+        # Creates 0.04x0.04 deg geotif in Mg CO2(e)/0.04x0.04deg pixel/yr
+        # per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c/c/69d50592-48b8-8329-b529-2babe02f7f27
+        # Should write NaN when there are no valid pixels.
 
-    # Trims fine grid so it splits evenly into coarse blocks
-    ny, nx = data_per_pixel.shape
-    ny_trim = ny - (ny % cn.global_aggregation_factor)
-    nx_trim = nx - (nx % cn.global_aggregation_factor)
-    data_fine_trim = data_per_pixel[:ny_trim, :nx_trim]
+        # Trims fine grid so it splits evenly into coarse blocks
+        ny, nx = data_per_pixel.shape
+        ny_trim = ny - (ny % cn.global_aggregation_factor)
+        nx_trim = nx - (nx % cn.global_aggregation_factor)
+        data_fine_trim = data_per_pixel[:ny_trim, :nx_trim]
 
-    # Reshape into coarse blocks
-    reshaped = data_fine_trim.reshape(
-        ny_trim // cn.global_aggregation_factor, cn.global_aggregation_factor,
-        nx_trim // cn.global_aggregation_factor, cn.global_aggregation_factor
-    )
+        # Reshape into coarse blocks
+        reshaped = data_fine_trim.reshape(
+            ny_trim // cn.global_aggregation_factor, cn.global_aggregation_factor,
+            nx_trim // cn.global_aggregation_factor, cn.global_aggregation_factor
+        )
 
-    # Sum valid values within each coarse block
-    coarse_agg = np.nansum(reshaped, axis=(1, 3)).astype(np.float32)
+        # Sum valid values within each coarse block
+        coarse_agg = np.nansum(reshaped, axis=(1, 3)).astype(np.float32)
 
-    # Count how many valid fine pixels contributed to each coarse block
-    valid_counts = np.sum(~np.isnan(reshaped), axis=(1, 3))
+        # Count how many valid fine pixels contributed to each coarse block
+        valid_counts = np.sum(~np.isnan(reshaped), axis=(1, 3))
 
-    # If no fine pixels contributed, restore NoData
-    coarse_agg[valid_counts == 0] = np.nan
+        # If no fine pixels contributed, restore NoData
+        coarse_agg[valid_counts == 0] = np.nan
 
-    # Warning if there are no valid aggregated pixels
-    if not np.isfinite(coarse_agg).any():
-        logger_worker.warning(f"All-NaN coarse aggregation for {tile_id}, {var}, {year}")
+        # Warning if there are no valid aggregated pixels
+        if not np.isfinite(coarse_agg).any():
+            logger_worker.warning(f"All-NaN coarse aggregation for {tile_id}, {var}, {year}")
+
+    else:
+        data_per_pixel = None
+        coarse_agg = None
 
     extract_end_time = time.time()
     lu.print_and_log(f"  Calculated {var_with_unit} for {year} for {tile_id} in {round(extract_end_time - extract_start_time)} seconds: {uu.timestr()}", False, logger_worker)

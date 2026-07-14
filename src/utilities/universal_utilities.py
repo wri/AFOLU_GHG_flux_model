@@ -35,11 +35,14 @@ import zarr
 import tempfile
 import rasterio.errors
 from urllib.parse import urlparse
+from botocore.exceptions import ClientError
 import botocore
 
 # Project imports
 from src.utilities import constants_and_names as cn
 from src.utilities import log_utilities as lu
+
+#TODO: Create separate utilities for land use specific functions. Keep all other general utilities and microservices here.
 
 
 # Turns off a FutureWarning about gdal.UseExceptions() vs. gdal.DontUseExceptions()
@@ -124,7 +127,7 @@ def check_s3_file_created(s3_path):
 
     try:
         s3.head_object(Bucket=bucket, Key=key)
-        lu.print_and_log.info(f"File successfully created at: {s3_path}", False, logger_worker)
+        lu.print_and_log(f"File successfully created at: {s3_path}", False, logger_worker)
         return True
     except s3.exceptions.ClientError as e:
         if e.response['Error']['Code'] == "404":
@@ -434,13 +437,13 @@ def connect_to_Coiled_cluster(cluster_name, run_local, fallback_to_local_on_fail
     # If no local run flag, it tries to attach to the named cluster
     try:
         # Gets info on all Coiled clusters (including terminated ones)
-        all_clusters = coiled.list_clusters()
+        all_clusters = coiled.list_clusters(workspace=cn.Coiled_workspace)
 
         # Iterates through clusters and identifies the running one of the correct name to connect to
         for cluster in all_clusters:
             if (cluster.get("name") == cluster_name) and (cluster.get("current_state", {}).get("state") in ['scaling', 'ready']):
                 print(f"Connecting to running cluster '{cluster_name}'.")
-                cluster = coiled.Cluster(name=cluster_name)
+                cluster = coiled.Cluster(name=cluster_name, workspace=cn.Coiled_workspace)
                 client = Client(cluster)
                 return cluster, client, run_local
 
@@ -587,16 +590,16 @@ def get_interval_info(start_year, end_year, main_logger):
         output_years = cn.interval_end_years_5_years
     elif start_year == 2015 and end_year == cn.last_model_year_annual:
         interval_type = cn.intervals_annual
-        interval_length = [1] * len(cn.interval_end_years_annual)
+        interval_length = [1] * cn.end_year_count
         # interval_length = [1, 1, 1, 1, 1, 1, 1, 1, 1]  # Expected for 2015-2024
-        interval_year_diff = [1] * len(cn.interval_end_years_annual)
+        interval_year_diff = [1] * cn.end_year_count
         # interval_year_diff = [1, 1, 1, 1, 1, 1, 1, 1, 1]  # Expected for 2015-2024
         output_years = cn.interval_end_years_annual
     elif start_year == 2000 and end_year == cn.last_model_year_annual:  # Hybrid model (2000-2024)
         interval_type = cn.intervals_hybrid
-        interval_length = [cn.five_year_interval_duration] * len(cn.interval_end_years_5_years[:-1]) + [1] * len(cn.interval_end_years_annual)
+        interval_length = [cn.five_year_interval_duration] * len(cn.interval_end_years_5_years[:-1]) + [1] * cn.end_year_count
         # interval_length = [5, 5, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1]  # Expected for 2000-2024
-        interval_year_diff = [cn.five_year_interval_duration - 1] * len(cn.interval_end_years_5_years[:-1]) + [1] * len(cn.interval_end_years_annual)
+        interval_year_diff = [cn.five_year_interval_duration - 1] * len(cn.interval_end_years_5_years[:-1]) + [1] * cn.end_year_count
         # interval_year_diff = [4, 4, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1]  # Expected for 2000-2024
         output_years = cn.interval_end_years_5_years[:-1] + cn.interval_end_years_annual
     else:
@@ -722,11 +725,17 @@ def get_tile_dataset_rio(uri, bounds, chunk_length_pixels, logger_worker, data_t
                     window = rasterio.windows.from_bounds(*bounds, ds.transform)
                     data = ds.read(1, window=window)
 
-                    # Checks if array shape is not what we expect (full chunk size) and pads the array if the array is incomplete.
+                    # Checks if array shape is not what we expect (full chunk size) and pads the array with np.NaN if the array is incomplete.
+                    # Was using 0s before but 0 has meaning and np.NaN doesn't.
                     # Per https://chatgpt.com/c/67dcb99b-edb8-800a-abd8-f718de76043c
                     if data.shape != expected_shape:
                         original_shape = data.shape
-                        padded_data = np.zeros(expected_shape, dtype=numpy_dtype)
+
+                        # Necessary for OGH vegetation height data. Otherwise, it errors because of a type issue.
+                        # This is outside the OGH veg height extent.
+                        # Per Claude session 'Quick task completion analysis'
+                        fill_value = np.nan if np.issubdtype(np.dtype(numpy_dtype), np.floating) else 0
+                        padded_data = np.full(expected_shape, fill_value, dtype=numpy_dtype)
 
                         # Calculates offset in pixels relative to chunk
                         row_offset = max(0, int(window.row_off))
@@ -749,6 +758,19 @@ def get_tile_dataset_rio(uri, bounds, chunk_length_pixels, logger_worker, data_t
                 lu.print_and_log(f"Succeeded downloading {uri} on attempt {attempt}: {timestr()}",False, logger_worker)
 
             return data, status
+
+        except rasterio.errors.WindowError as e:
+            # WindowError ("Bounds and transform are inconsistent") can occur transiently when a
+            # GeoTIFF header is read under high S3 concurrency and GDAL gets a garbled transform back.
+            # Always retry -- if the file has a genuine data problem this will exhaust retries and raise.
+            # Per Claude session 'Failed Coiled tasks diagnosis'
+            if attempt < MAX_RETRIES - 1:
+                sleep_time = min(30.0, 1.0 * (2 ** attempt)) + random.uniform(0.0, 1.0)
+                lu.print_and_log(f"WindowError for {uri} on attempt {attempt} ({e}). Retrying in {sleep_time:.2f}s...: {timestr()}", False, logger_worker)
+                time.sleep(sleep_time)
+                continue
+            else:
+                raise RuntimeError(f"WindowError persisted after {MAX_RETRIES} retries for {uri}: {timestr()}") from e
 
         # From https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/68c3235e-a590-832d-bfdc-c1531416c311
         except rasterio.errors.RasterioIOError as e:
@@ -811,7 +833,7 @@ def prepare_to_download_chunk(bounds, download_dict, chunk_length_pixels, is_fin
     # Submits requests to S3 for input chunks but doesn't actually download them yet.
     # This queueing of the requests before downloading then speeds up the downloading.
     # Approach is to download all the input chunks up front for every year to make downloading more efficient, even though it means storing more upfront.
-    # BTW, the threads per worker for this is vCPU+4 according to ChatGPT, so that's 6 threads/worker on a vCPU worker.
+    # Without setting max_workers, it uses 1 per vCPU + 1 more (according to ChatGPT)
     with concurrent.futures.ThreadPoolExecutor() as executor:
         lu.print_and_log(f"Requesting data in chunk {bounds_str} in {tile_id}: {timestr()}", is_final, logger_worker)
 
@@ -1468,7 +1490,10 @@ def count_successful_chunks(chunk_list, is_final, main_logger, results):
     # Processes the chunk stats and returned messages
     # Results are the messages from the chunks and chunk stats
     for result in results:
-        try:
+        try:  # Counts errored tasks correctly, per Claude session 'Quick task completion analysis'
+            if isinstance(result, dict) and result.get("status") == "failed":
+                error_chunk_count += 1
+                continue
             return_message, chunk_stats = result
         except Exception as e:
             main_logger.error(f"Malformed result: {result} | Error: {e}")
@@ -1506,7 +1531,7 @@ def count_successful_chunks(chunk_list, is_final, main_logger, results):
 
     # Doesn't compare the difference between submitted and processed chunks if it is reporting on
     # merging 1x1 deg rasters because calculating the difference is too complicated.
-    if "Success merging" not in return_messages[0]:
+    if return_messages and "Success merging" not in return_messages[0]:
         main_logger.info(f"Difference between submitted chunks and processed chunks: {len(chunk_list) - (success_count + skipping_chunk_count + error_chunk_count + other_message_count)}")
     main_logger.info("\n")
 
@@ -1576,6 +1601,74 @@ def calculate_stats(array_per_ha, name, bounds_str, tile_id, in_out, array_per_p
             'sum_value': sum_value,
             'data_type': array_per_ha.dtype.name
         }
+
+
+# Calculates summary statistics for an IPCC land-use output raster at the chunk level. 
+# Reports metadata, minimum/maximum values, dominant class, unique classes, and either pixel counts or area (ha) by class, depending on whether a pixel area raster is provided
+def calculate_ipcc_stats(array, name, bounds_str, tile_id, in_out, pixel_area=None):
+
+    out_pattern, year_range = strip_and_extract_years(name)
+
+    base = {
+        "chunk_id": bounds_str,
+        "tile_id": tile_id,
+        "layer_name": name,
+        "pattern": out_pattern,
+        "years": year_range,
+        "chunk_name": f"{tile_id}__{bounds_str}__{out_pattern}_{year_range}.tif",
+        "tile_name": f"{tile_id}__{out_pattern}_{year_range}.tif",
+        "in_out": in_out,
+    }
+
+    if array is None or not np.any(array):
+        return {
+            **base,
+            "min_value": "no data",
+            "max_value": "no data",
+            "count_value": "no data",
+            "mode_value": "no data",
+            "unique_values": "no data",
+            "pixel_counts": "no data",
+            "data_type": "no data",
+        }
+
+    valid = array != 0
+    values = np.unique(array[valid])
+
+    if pixel_area is not None:
+
+        pixel_area_ha = pixel_area * cn.m2_to_ha
+
+        flat_classes = array.ravel().astype(np.int32)
+        flat_area = pixel_area_ha.ravel()
+
+        area_sums = np.bincount( flat_classes, weights=flat_area)
+
+        values = np.nonzero(area_sums)[0]
+        values = values[values != 0]
+
+        count_cols = { f"count_{int(v)}": float(area_sums[v]) for v in values}
+        total_area = float(area_sums[values].sum())
+        mode_value = int(values[np.argmax(area_sums[values])])
+
+    else:
+
+        _, counts = np.unique(array[valid], return_counts=True)
+
+        count_cols = {f"count_{int(value)}": int(count) for value, count in zip(values, counts)}
+        mode_value = int(values[np.argmax(counts)])
+        total_area = int(np.sum(counts))
+
+    return {
+        **base,
+        "min_value": int(np.min(values)),
+        "max_value": int(np.max(values)),
+        "count_value": total_area,
+        "mode_value": mode_value,
+        "unique_values": [int(v) for v in values],
+        **count_cols,
+        "data_type": array.dtype.name,
+    }
 
 # Makes sure that all columns in output chunk stats Pandas dataframe are indeed numeric
 # From https://chatgpt.com/c/68751cbe-6888-800a-bf9d-3657b048a810
@@ -1801,6 +1894,107 @@ def compile_1x1_chunk_stats(all_1x1_stats, chunk_shapefile_uri, stage, no_upload
         return local_spreadsheet
 
 
+def compile_ipcc_1x1_chunk_stats(all_1x1_stats, chunk_shapefile_uri, stage, no_upload, main_logger):
+    """
+    Compiles IPCC 1x1 chunk stats to Excel with separate tabs for:
+      - raw_chunk_stats
+      - class
+      - node_code
+      - change
+      - summary
+
+    count_* columns represent either:
+      - total area in hectares, if calculate_ipcc_stats was called with pixel_area
+      - pixel counts, if calculate_ipcc_stats was called without pixel_area
+    """
+
+    s3_client = boto3.client("s3")
+
+    main_logger.info(f"Starting to aggregate and export IPCC chunk stats: {timestr()}")
+
+    df = pd.DataFrame(all_1x1_stats)
+
+    if df.empty:
+        main_logger.warning("No IPCC chunk stats to compile.")
+        return None
+
+    # Add ISO/country code from fishnet
+    gdf = gpd.read_file(chunk_shapefile_uri)
+    fishnet_shapefile_df = gdf[["chunk_id", "iso"]]
+
+    df = df.merge(fishnet_shapefile_df, on="chunk_id", how="left")
+    df["iso"] = df["iso"].fillna("unknown")
+
+    # Identify count columns. These are count_* but may contain area in ha.
+    count_cols = [col for col in df.columns if col.startswith("count_")]
+
+    valid_ipcc_class_count_cols = [f"count_{code}" for code in cn.ipcc_class_codes]
+    valid_ipcc_node_count_cols = [f"count_{code}" for code in cn.ipcc_node_codes]
+    valid_ipcc_change_summary_count_cols = [f"count_{code}" for code in cn.ipcc_change_codes]
+
+    for col in count_cols + ["count_value", "min_value", "max_value", "mode_value"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # Layer-type grouping
+    def ipcc_layer_group(pattern):
+        if pattern == cn.IPCC_class_pattern:
+            return "class"
+        if pattern == cn.IPCC_node_pattern:
+            return "node_code"
+        if pattern == cn.IPCC_change_pattern:
+            return "change"
+        if pattern == cn.IPCC_summary_pattern:
+            return "summary"
+        return "other"
+
+    df["ipcc_layer_group"] = df["pattern"].apply(ipcc_layer_group)
+
+    # Summarize each IPCC layer type by ISO, years, and class/code columns
+    def summarize_group(group_name, valid_count_cols):
+        group_df = df[df["ipcc_layer_group"] == group_name].copy()
+
+        if group_df.empty:
+            return pd.DataFrame()
+
+        group_cols = ["iso", "pattern", "years"]
+
+        # Keep only count columns valid for this IPCC output type.
+        # Add missing valid columns as 0 so every tab has consistent columns.
+        for col in valid_count_cols:
+            if col not in group_df.columns:
+                group_df[col] = 0
+
+        summary = (group_df.groupby(group_cols, dropna=False)[valid_count_cols].sum(numeric_only=True).reset_index())
+        summary["total_count_or_area"] = summary[valid_count_cols].sum(axis=1)
+
+        return summary
+
+    class_stats = summarize_group("class", valid_ipcc_class_count_cols)
+    node_code_stats = summarize_group("node_code", valid_ipcc_node_count_cols)
+    change_stats = summarize_group("change", valid_ipcc_change_summary_count_cols)
+    summary_stats = summarize_group("summary", valid_ipcc_change_summary_count_cols)
+
+    # Save to Excel
+    out_spreadsheet = f"{stage}__IPCC_1x1_chunk_stats__{timestr()}.xlsx"
+    local_spreadsheet = f"{cn.local_chunk_stats_path}{out_spreadsheet}"
+
+    with pd.ExcelWriter(local_spreadsheet) as writer:
+        df.to_excel(writer, sheet_name="raw_chunk_stats", index=False)
+        class_stats.to_excel(writer, sheet_name="class", index=False)
+        node_code_stats.to_excel(writer, sheet_name="node_code", index=False)
+        change_stats.to_excel(writer, sheet_name="change", index=False)
+        summary_stats.to_excel(writer, sheet_name="summary", index=False)
+
+    main_logger.info(f"Saved IPCC chunk stats locally: {local_spreadsheet}")
+
+    if not no_upload:
+        s3_path = f"{cn.s3_chunk_stats_path}{out_spreadsheet}"
+        bucket, key = split_s3_path(f"s3://{cn.short_bucket_prefix}/{s3_path}")
+        s3_client.upload_file(local_spreadsheet, Bucket=bucket, Key=key)
+        main_logger.info(f"Uploaded IPCC chunk stats to s3://{bucket}/{key}")
+
+    return local_spreadsheet
 
 def aggregate_10x10_chunk_stats(counts_10x10_df, stage, no_upload, main_logger):
 
@@ -2083,6 +2277,7 @@ def write_single_geotiff_to_s3(var, year, tile_id, data, no_data_val, transform,
         "tiled": True,
         "blockxsize": 400,
         "blockysize": 400,
+        "BIGTIFF": "YES",  # For geotifs >4 GB
     }
 
     # Counts non-zero and non-NaN pixels for comparison with 1x1 deg geotifs
@@ -2179,16 +2374,25 @@ def rename_s3_task_file(stage, chunk_id, new_status, is_final, logger_worker):
         old_key = f"{cn.progress_tracking_path}{prefix}{tile_id}_{chunk_id_str}_{stage}.txt"
         new_key = f"{cn.progress_tracking_path}{new_status}{tile_id}_{chunk_id_str}_{stage}.txt"
 
-        try:
-            # Copies to new name and delete the old file
-            s3.copy_object(Bucket=cn.short_bucket_prefix,
-                           CopySource={'Bucket': cn.short_bucket_prefix, 'Key': old_key}, Key=new_key)
-            s3.delete_object(Bucket=cn.short_bucket_prefix, Key=old_key)
-            return  # Stop after renaming the first matching file
-        except s3.exceptions.ClientError as e:
-            if e.response["Error"]["Code"] == "NoSuchKey":
-                continue  # Try the next possible prefix
-            else:
+        # Retries renaming of task files in case there's a burst of renaming like at the start of the cluster
+        # Per Claude session 'Quick task completion analysis'
+        for attempt in range(5):
+            try:
+                s3.copy_object(Bucket=cn.short_bucket_prefix, CopySource={'Bucket': cn.short_bucket_prefix, 'Key': old_key}, Key=new_key)
+                s3.delete_object(Bucket=cn.short_bucket_prefix, Key=old_key)
+                return
+            except ClientError as e:
+                code = e.response["Error"]["Code"]
+                if code == "NoSuchKey":
+                    break  # File not at this prefix; try next prefix
+                elif code in ("SlowDown", "503", "RequestLimitExceeded"):
+                    sleep_time = min(30, 1.0 * (2 ** attempt)) + random.uniform(0.0, 1.0)
+                    time.sleep(sleep_time)
+                    continue  # Retry same prefix
+                else:
+                    print(f"Error renaming task file {old_key}: {e}")
+                    return
+            except Exception as e:
                 print(f"Error renaming task file {old_key}: {e}")
                 return
 
@@ -2299,7 +2503,11 @@ def mosaic_tiles_to_global(var_name, year_idx, first_tiles_to_process, base_path
     # Output s3 folder for dataset and year
     output_path = base_path.replace("CHUNK_SIZE_pixels", "global")
 
-    output_name = f"{var_name}{units}_v{model_version}_{year}_global.tif"
+    # If processing an annual average map, it uses that for the year, e.g., avg_2016_2024. Otherwise, just uses the year.
+    # Per Claude session 'LULUCF global geotif setup'
+    avg_match = re.search(r'avg_\d{4}_\d{4}', base_path)
+    year_for_name = avg_match.group(0) if avg_match else year
+    output_name = f"{var_name}{units}_v{model_version}_{year_for_name}_global.tif"
     # print(output_name)
 
     # Collects s3 tiles for the dataset-year
@@ -2317,7 +2525,7 @@ def mosaic_tiles_to_global(var_name, year_idx, first_tiles_to_process, base_path
 
     # Creates a temporary working directory for worker
     tmpdir = tempfile.mkdtemp(prefix="mosaic_")
-    safe_name = re.sub(r'[^0-9a-zA-Z]+', '_', input_path.strip('/'))
+    safe_name = re.sub(r'[^0-9a-zA-Z]+', '_', input_path.strip('/'))[-180:]  # Shortens name if too long, per Claude session 'LULUCF global geotif setup'
     list_path = os.path.join(tmpdir, f"tile_list_{safe_name}.txt")
     vrt_path = os.path.join(tmpdir, f"mosaic_{safe_name}.vrt")
 
@@ -2537,7 +2745,7 @@ def warp_to_hansen_local(source_raster_s3_path, output_raster_s3_path, xmin, ymi
 
 # Creates a 10x10 deg raster at 0.00025x0.00025 resolution from a VRT for a specified bounding box
 def warp_to_hansen_coiled(source_vrt_path, filename, output_raster_s3_path_and_name, xmin, ymin, xmax, ymax,
-                          dt, no_data, tiled=True, x_pixel_window=400, y_pixel_window=400):
+                          dt, no_data, tiled=True, x_pixel_window=400, y_pixel_window=400, src_nodata=None, scale_factor=1, round_scaled=False):
     #Note: If tiled=False, set x_pixel_window=None, y_pixel_window=None
 
     logger_worker = lu.setup_logging_worker()
@@ -2557,35 +2765,52 @@ def warp_to_hansen_coiled(source_vrt_path, filename, output_raster_s3_path_and_n
 
     #Code to run gdal warp using Python API
     if dataset:
+        warp_kwargs = dict(
+            format="GTiff", # Output format
+            dstSRS='EPSG:4326',  # Reproject to WGS84
+            xRes=cn.resolution,  # X resolution (10 degrees)
+            yRes=cn.resolution,  # Y resolution (10 degrees)
+            targetAlignedPixels=True,  # Ensure target aligned pixels (-tap)
+            outputBounds=[xmin, ymin, xmax, ymax],  # Output bounds
+            dstNodata=no_data,  # Set no data
+            outputType=dt,  # Output data type
+        )
+
         if tiled == True:
-            options = gdal.WarpOptions(
-                dstSRS='EPSG:4326',  # Reproject to WGS84
-                xRes=cn.resolution,  # X resolution (10 degrees)
-                yRes=cn.resolution,  # Y resolution (10 degrees)
-                targetAlignedPixels=True,  # Ensure target aligned pixels (-tap)
-                outputBounds=[xmin, ymin, xmax, ymax],  # Output bounds
-                dstNodata=no_data,  # Set no data
-                outputType=dt,  # Output data type
-                creationOptions=['COMPRESS=DEFLATE', 'TILED=YES',  # Tiling with user-specified dimensions
-                                 f'BLOCKXSIZE={x_pixel_window}',
-                                 f'BLOCKYSIZE={y_pixel_window}'],
-                format='GTiff'  # Output format
-            )
+            warp_kwargs["creationOptions"] = ['COMPRESS=DEFLATE', 'TILED=YES',  # Tiling with user-specified dimensions
+                                             f'BLOCKXSIZE={x_pixel_window}',
+                                             f'BLOCKYSIZE={y_pixel_window}']
         else:
-            options = gdal.WarpOptions(
-                dstSRS='EPSG:4326',
-                xRes=cn.resolution,
-                yRes=cn.resolution,
-                targetAlignedPixels=True,
-                outputBounds=[xmin, ymin, xmax, ymax],
-                dstNodata=no_data,
-                outputType=dt,
-                creationOptions=['COMPRESS=DEFLATE', 'TILED=NO'],  # No tiling (i.e. 40,000 x 1)
-                format='GTiff'
-            )
+            warp_kwargs["creationOptions"] = ['COMPRESS=DEFLATE', 'TILED=NO']  # No tiling (i.e. 40,000 x 1)
+
+        if src_nodata is not None:
+            warp_kwargs["srcNodata"] = src_nodata
+
+        options = gdal.WarpOptions(**warp_kwargs)
 
         gdal.Warp(str(Path(filename)), str(Path(source_vrt_path)), options=options)
         lu.print_and_log(f"{filename} created: {timestr('time')}", True, logger_worker)
+
+        # Fixing scale factor (divide by 10) for Ctrees AGB data
+        if scale_factor != 1:
+            np_dtype = map_to_numpy_dtype(gdal_to_string_dtype_mapping[dt])
+
+            with rasterio.open(str(Path(filename)), "r+") as dst:
+                data = dst.read(1)
+
+                valid_mask = data != no_data
+
+                scaled = data.astype(np.float32)
+                scaled[valid_mask] = scaled[valid_mask] * scale_factor
+
+                if round_scaled:
+                    scaled[valid_mask] = np.rint(scaled[valid_mask])
+
+                data_out = np.full(data.shape, no_data, dtype=np_dtype)
+                data_out[valid_mask] = scaled[valid_mask].astype(np_dtype)
+
+                dst.write(data_out, 1)
+                dst.update_tags(1, scale_factor_applied=scale_factor, rounded=round_scaled)
 
         #Fixing greyscale colormap in GMWv3 data
         if "mangrove" in source_vrt_path:

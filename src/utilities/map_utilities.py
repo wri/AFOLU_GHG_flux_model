@@ -255,16 +255,17 @@ def create_divergent_legend_asymmetric(fig, vmin, vmax, title_text, tick_labels,
     if add_intermediate_ticks:
         # 1/3 and 2/3 of the saturated values on each side, in data/display units.
         # These directly mirror the gross emissions intermediate ticks (1/3 and 2/3 of max range),
-        # making the colour progressions comparable across panels.
-        d_sink_1 = round(2 * vmin / 3)
-        d_sink_2 = round(vmin / 3)
-        d_src_1  = round(vmax / 3)
-        d_src_2  = round(2 * vmax / 3)
+        # making the color progressions comparable across panels.
+        # Prints to one decimal place in case the legend min and max aren't easily divisible by 3.
+        d_sink_1 = round(2 * vmin / 3, 1)  # was round(2 * vmin / 3)
+        d_sink_2 = round(vmin / 3, 1)  # was round(vmin / 3)
+        d_src_1 = round(vmax / 3, 1)  # was round(vmax / 3)
+        d_src_2 = round(2 * vmax / 3, 1)  # was round(2 * vmax / 3)
         tick_data = [vmin, d_sink_1, d_sink_2, 0, d_src_1, d_src_2, vmax]
         tick_labels_full = [tick_labels[0],
-                            f"{d_sink_1:.0f}", f"{d_sink_2:.0f}",
+                            f"{d_sink_1:.1f}", f"{d_sink_2:.1f}",  # was :.0f
                             tick_labels[1],
-                            f"{d_src_1:.0f}", f"{d_src_2:.0f}",
+                            f"{d_src_1:.1f}", f"{d_src_2:.1f}",  # was :.0f
                             tick_labels[2]]
         cb.set_ticks(tick_data)
         cb.set_ticklabels(tick_labels_full, fontsize=cn.legend_fontsize)

@@ -11,6 +11,19 @@ This makes them less costly on AWS and use fewer Coiled credits.
 
 List available worker types for Coiled clusters with: coiled.list_instance_types() in the Python shell
 
+Clusters for zonal stats and non-zonal stats runs have different configurations:
+    --Zonal stats clusters need zarr v3.1.3. Those clusters use their own Coiled software environment.
+        They do no use functions from the repo on workers and use .compute(), so they just need a stable conda environment
+        but not the project src files to be distributed to workers.
+    --Non-zonal stats clusters need zarr v3.1.6. Because some other packages that I hadn't pinned keep changing,
+      I made a different software environment for these clusters with a more fixed package list.
+      But because these clusters use functions from the repo (src) on workers, they also need src available to them,
+      so that's where the src zipping and uploading below comes in.
+      This is per Claude session 'Coiled cluster creation error'.
+    --Claude summary: " .compute() sends data operations;
+      client.submit() with a src.* function sends a module reference that the worker has to be able to import."
+
+
 Using more than 1 thread/worker slows down processing a lot when there are more tasks than workers for the core LULUCF model,
 which is the situation for large analyses, obviously.
 """
@@ -22,6 +35,15 @@ import os
 import base64
 from dask.distributed import Client
 from dask import config
+import subprocess
+import glob
+import tempfile
+import os
+import zipfile
+
+# Project imports
+from src.utilities import constants_and_names as cn
+
 
 # Function to write Google Cloud Project credentials to all workers
 def write_gcp_creds():
@@ -73,8 +95,12 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
 
     elif worker_memory == 16:
         idle_timeout = 25
-        scheduler_vm_type = "x2gd.medium"   # 1 vCPU/worker
-        worker_vm_type = "x2gd.medium"
+        if zonal_stats == True:
+            scheduler_vm_type = "r7g.medium"    # 2 vCPU/worker, same series as Solomon used for zonal stats
+            worker_vm_type = "r7g.large"
+        else:
+            scheduler_vm_type = "x2gd.medium"   # 1 vCPU/worker
+            worker_vm_type = "x2gd.medium"
 
     elif worker_memory == 8:
         idle_timeout = 25
@@ -112,10 +138,10 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
         purchase_option = "on-demand"
         use_best_zone = False
         allow_cross_zone = False
-        software = "afolu-env_coiled_20251119"  # pins zarr==3.1.3 for xr.open_zarr compatibility
+        software = "afolu_zonal_stats_20251222"  # pins zarr==3.1.3 for xr.open_zarr compatibility
     else:
         print("Not using zonal stats worker configuration")
-        software = None  # use default package sync (uploads local src wheel)
+        software = "afolu_not_zonal_stats_20251119"  # pins zarr==3.1.6
         # Uses on-demand workers for large jobs. Otherwise, prefers spot workers.
         if n_workers > 120:
             purchase_option = "on-demand"
@@ -164,17 +190,36 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
         idle_timeout=idle_timeout,
         region="us-east-1",
         name=cluster_name,
-        workspace='wri-forest-research',
-        tags = {"project": "AFOLU_flux_model"},
+        workspace=cn.Coiled_workspace,
+        tags = {"wri:project": "AFOLU_flux_model", "wri:program": "FLW"},
         allow_cross_zone=allow_cross_zone,
         scheduler_vm_types = scheduler_vm_type,
         worker_vm_types = worker_vm_type,
         worker_options = worker_options,
         environ=env,  # pass env vars to scheduler/workers
-        **({'software': software} if software else {})
+        **({'software': software} if software else {}),
     )
 
     client = Client(cluster)
+
+    # Adds the src files to the workers so that they have access to those.
+    # Otherwise, workers don't have access to src files, which only matters for non-zonal stats runs
+    # (not for zonal stats because src functions aren't assigned to workers).
+    # This is not actually necessary for zonal stats clusters right now because they don't use src on workers,
+    # but there's no harm in making this happen for all clusters.
+    # Per Claude session 'Coiled cluster creation error'
+    print("Uploading src to workers")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zip_path = os.path.join(tmpdir, "src.zip")
+        project_root = "/mnt/c/GIS/git/AFOLU_GHG_flux_model"
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for root, dirs, files in os.walk(os.path.join(project_root, "src")):
+                for file in files:
+                    if file.endswith(".py"):
+                        filepath = os.path.join(root, file)
+                        zf.write(filepath, os.path.relpath(filepath, project_root))
+        client.upload_file(zip_path)
+    print("Uploaded src to workers")
 
     # If gcp flag is initialized, write Google credentials file onto every worker
     if gcp:

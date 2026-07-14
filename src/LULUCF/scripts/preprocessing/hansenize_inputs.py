@@ -12,17 +12,25 @@ python -m src.LULUCF.scripts.preprocessing.gmw_smooth_mangrove_extent_timeseries
 python -m src.LULUCF.scripts.preprocessing.gmw_smooth_mangrove_extent_timeseries.1_aggregate_smoothed_mangrove_extent_1x1_degree -cn Hansenize --first_10x10s_to_process 1 --no_upload
 
 Coiled test area with data:
-python -m src.utilities.create_cluster -cn Hansenize -n 2 -m 4
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p mangroves -bb 100 -10 110 10 -cs 10
+Note: use -m 8 for all other datasets other than Ctrees_AGB2015. Scale factor (divide all values by 10) requires more memory.
+python -m src.utilities.create_cluster -cn Ctrees_AGB2015_test -n 1 -m 32
+python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Ctrees_AGB2015_test -p Ctrees_AGB2015 -bb -80 30 -70 40 -cs 10
 
-Coiled full run (running with 20 clusters causes an error  of not finding the vrt, perhaps because it's being accessed too quickly-- better to run with fewer workers for now):
-python -m src.utilities.create_cluster -cn Hansenize -n 10 -t 1 -m 4
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p mangroves -bb -180 -60 180 80 -cs 10
+Coiled full run (running with 20 workers causes an error of not finding the vrt, perhaps because it's being accessed too quickly-- better to run with fewer workers for now):
+Note: use -m 8 for all other datasets other than Ctrees_AGB2015. Scale factor (divide all values by 10) requires more memory.
+python -m src.utilities.create_cluster -cn Ctrees_AGB2015 -n 10 -t 1 -m 32
+python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Ctrees_AGB2015 -p Ctrees_AGB2015 -bb -180 -60 180 80 -cs 10
+
 python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p AGB2015 AGB2015_stdev -bb -180 -60 180 80 -cs 10
 # Note: Tried this with -n 20 -t 12 -m 16 (for mangrove extent from 1996 to 2016) and then again with -n 20 -t 12 -m 8 (for mangrove extent from 2017 to 2020).
     # After reducing the memory to 8 and using a smaller vm type, gdal_warp per dataset finshed 2x a fast (10 minutes in stead of 20).
     # Could be that it is stored closer on memory or that we just got a faster cluster the second time around.
 Note: Try with 1 thread per worker
+
+Coiled full run for Xu et al. regrowth rates (1 hr 52 min with 15x 8GB workers with 1 thread each)
+python -m src.utilities.create_cluster -cn Hansenize_Xu_regrowth -n 15 -t 1 -m 8  # Didn't try different numbers of threads. Running overnight, so just let it take its time and be safe
+python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize_Xu_regrowth -p Xu_regrowth -bb -180 -40 180 30 -cs 10  # Because latitudinal range only extends from 34S to 28N.
+
 
 todo:
 - delete .keep in each processed directory
@@ -39,6 +47,7 @@ import sys
 import argparse
 import dask
 from dask.distributed import print
+import math
 
 from src.utilities import constants_and_names as cn, log_utilities as lu, universal_utilities as uu
 
@@ -64,68 +73,25 @@ def main(cluster_name, process, bounding_box, chunk_size, run_local, no_upload):
 
     # Add Robinson et al. secondary natural forest growth rates
     if 'secondary_natural_forest' in process:
-        download_upload_dictionary[f"secondary_natural_forest_0_5"] = {
-            'raw_dir': cn.secondary_natural_forest_5_year_raw_dir,
-            'raw_pattern': f"{cn.secondary_natural_forest_0_5_pattern}_{cn.Robinson_5_year_raw_date}",
-            'vrt': f"/tmp/secondary_natural_forest_0_5.vrt",
-            'processed_dir': cn.secondary_natural_forest_0_5_processed_dir,
-            'processed_pattern': cn.secondary_natural_forest_0_5_pattern
+        for interval in cn.natural_forest_growth_curve_intervals:
+            download_upload_dictionary[f"secondary_natural_forest_{interval}"] = {
+                'raw_dir': cn.natural_forest_growth_curve_raw_dir,
+                'raw_pattern': f"{cn.natural_forest_growth_curve_pattern}__{interval}_years__nibble_{cn.secondary_forest_curve_run_date}",
+                'vrt': f"/tmp/secondary_natural_forest_{interval}.vrt",
+                'processed_dir': f"{cn.natural_forest_growth_curve_dir}rate_{interval}/",
+                'processed_pattern': f"{cn.natural_forest_growth_curve_pattern}__{interval}_years__nibble_{cn.secondary_forest_curve_run_date}",
         }
-        download_upload_dictionary["secondary_natural_forest_6_10"] = {
-            'raw_dir': cn.secondary_natural_forest_5_year_raw_dir,
-            'raw_pattern': f"{cn.secondary_natural_forest_6_10_pattern}_{cn.Robinson_5_year_raw_date}",
-            'vrt': f"/tmp/secondary_natural_forest_6_10.vrt",
-            'processed_dir': cn.secondary_natural_forest_6_10_processed_dir,
-            'processed_pattern': cn.secondary_natural_forest_6_10_pattern
-        }
-        download_upload_dictionary["secondary_natural_forest_11_15"] = {
-            'raw_dir': cn.secondary_natural_forest_5_year_raw_dir,
-            'raw_pattern': f"{cn.secondary_natural_forest_11_15_pattern}_{cn.Robinson_5_year_raw_date}",
-            'vrt': f"/tmp/secondary_natural_forest_11_15.vrt",
-            'processed_dir': cn.secondary_natural_forest_11_15_processed_dir,
-            'processed_pattern': cn.secondary_natural_forest_11_15_pattern
-        }
-        download_upload_dictionary["secondary_natural_forest_16_20"] = {
-            'raw_dir': cn.secondary_natural_forest_5_year_raw_dir,
-            'raw_pattern': f"{cn.secondary_natural_forest_16_20_pattern}_{cn.Robinson_5_year_raw_date}",
-            'vrt': f"/tmp/secondary_natural_forest_16_20.vrt",
-            'processed_dir': cn.secondary_natural_forest_16_20_processed_dir,
-            'processed_pattern': cn.secondary_natural_forest_16_20_pattern
-        }
-        download_upload_dictionary["secondary_natural_forest_21_100"] = {
-            'raw_dir': cn.secondary_natural_forest_20_year_raw_dir,
-            'raw_pattern': f"{cn.secondary_natural_forest_21_100_pattern}_{cn.Robinson_20_year_raw_date}",
-            'vrt': f"/tmp/secondary_natural_forest_21_100.vrt",
-            'processed_dir': cn.secondary_natural_forest_21_100_processed_dir,
-            'processed_pattern': cn.secondary_natural_forest_21_100_pattern
-        }
-        download_upload_dictionary["secondary_natural_forest_21_40"] = {
-            'raw_dir': cn.secondary_natural_forest_20_year_raw_dir,
-            'raw_pattern': f"{cn.secondary_natural_forest_21_40_pattern}_{cn.Robinson_20_year_raw_date}",
-            'vrt': f"/tmp/secondary_natural_forest_21_40.vrt",
-            'processed_dir': cn.secondary_natural_forest_21_40_processed_dir,
-            'processed_pattern': cn.secondary_natural_forest_21_40_pattern
-        }
-        download_upload_dictionary["secondary_natural_forest_41_60"] = {
-            'raw_dir': cn.secondary_natural_forest_20_year_raw_dir,
-            'raw_pattern': f"{cn.secondary_natural_forest_41_60_pattern}_{cn.Robinson_20_year_raw_date}",
-            'vrt': f"/tmp/secondary_natural_forest_41_60.vrt",
-            'processed_dir': cn.secondary_natural_forest_41_60_processed_dir,
-            'processed_pattern': cn.secondary_natural_forest_41_60_pattern
-        }
-        download_upload_dictionary["secondary_natural_forest_61_80"] = {
-            'raw_dir': cn.secondary_natural_forest_20_year_raw_dir,
-            'raw_pattern': f"{cn.secondary_natural_forest_61_80_pattern}_{cn.Robinson_20_year_raw_date}",
-            'vrt': f"/tmp/secondary_natural_forest_61_80.vrt",
-            'processed_dir': cn.secondary_natural_forest_61_80_processed_dir,
-            'processed_pattern': cn.secondary_natural_forest_61_80_pattern
-        }
-        download_upload_dictionary["secondary_natural_forest_81_100"] = {
-            'raw_dir': cn.secondary_natural_forest_20_year_raw_dir,
-            'raw_pattern': f"{cn.secondary_natural_forest_81_100_pattern}_{cn.Robinson_20_year_raw_date}",
-            'vrt': f"/tmp/secondary_natural_forest_81_100.vrt",
-            'processed_dir': cn.secondary_natural_forest_81_100_processed_dir,
-            'processed_pattern': cn.secondary_natural_forest_81_100_pattern
+
+    # Add Xu et al. regrowth rates for different age ranges
+    if 'Xu_regrowth' in process:
+        for Xu_interval in cn.Xu_regrowth_intervals:
+            download_upload_dictionary[f"Xu_regrowth_{Xu_interval}"] = {
+                'raw_dir': cn.Xu_regrowth_AGC_rate_global_all_ages_dir,
+                'raw_pattern': f"{cn.Xu_regrowth_AGC_rate_pattern}__{Xu_interval}_{cn.Xu_global_date}",
+                'vrt': f"/tmp/Xu_regrowth_{Xu_interval}.vrt",
+                'processed_dir': f"{cn.Xu_regrowth_AGC_rate_tiles_dir}{Xu_interval}/",
+                'processed_pattern': f"{cn.Xu_regrowth_AGC_rate_pattern}__{Xu_interval}_{cn.Xu_global_date}",
+                'dst_nodata': -999,  # Arbitrary non-0 value because I want 0s to stay as 0s in the outputs and not be NoData
         }
 
     if 'AGB2015' in process:
@@ -146,6 +112,32 @@ def main(cluster_name, process, bounding_box, chunk_size, run_local, no_upload):
             'processed_pattern': cn.agb_stdev_2015_pattern
         }
 
+    if 'Ctrees_AGB2015' in process:
+        download_upload_dictionary["Ctrees_AGB2015"] = {
+            'raw_dir': cn.ctrees_agb_2015_dir_raw,
+            'raw_pattern': cn.ctrees_agb_2015_pattern_raw,
+            'vrt': f"/tmp/Ctrees_agb2015.vrt",
+            'processed_dir': cn.ctrees_agb_2015_dir_processed,
+            'processed_pattern': cn.ctrees_agb_2015_pattern,
+            'src_nodata': cn.ctrees_agb_raw_nodata,
+            'dst_nodata': cn.ctrees_agb_processed_nodata,
+            'scale_factor': cn.ctrees_agb_scale_factor,
+            'round_scaled': True,
+            'output_dtype': cn.ctrees_agb_output_dtype
+        }
+
+    if 'Ctrees_AGB2015_uncertainty' in process:
+        download_upload_dictionary["Ctrees_AGB2015_uncertainty"] = {
+            'raw_dir': cn.ctrees_agb_uncertainty_2015_dir_raw,
+            'raw_pattern': cn.ctrees_agb_uncertainty_2015_pattern_raw,
+            'vrt': f"/tmp/Ctrees_agb2015_uncertainty.vrt",
+            'processed_dir': cn.ctrees_agb_uncertainty_2015_dir_processed,
+            'processed_pattern': cn.ctrees_agb_uncertainty_2015_pattern,
+            'src_nodata': cn.ctrees_agb_raw_nodata,
+            'dst_nodata': cn.ctrees_agb_processed_nodata,
+            'output_dtype': cn.ctrees_agb_output_dtype
+        }
+
     if 'climate_zone' in process:
         download_upload_dictionary["climate_zone"] = {
             'raw_dir': cn.climate_zone_raw_dir,
@@ -160,9 +152,19 @@ def main(cluster_name, process, bounding_box, chunk_size, run_local, no_upload):
             download_upload_dictionary[f"mangrove_extent_{year}"] = {
                 'raw_dir': f"{cn.mangrove_extent_raw_dir}{year}/",
                 'raw_pattern': cn.mangrove_extent_raw_pattern,
-                'vrt': f"/tmp/mangrove_extent_{year}_{cn.GMW_version}.vrt",
+                'vrt': f"/tmp/mangrove_extent_{year}.vrt",
                 'processed_dir': f"{cn.mangrove_extent_hansenized_dir}{year}/",
                 'processed_pattern': f"{cn.mangrove_extent_hansenized_pattern}_{year}"
+            }
+
+    if 'grasslands' in process:
+        for year in cn.years_annual:
+            download_upload_dictionary[f"grassland_extent_{year}"] = {
+                'raw_dir': f"{cn.GPW_extent_raw_dir}",
+                'raw_pattern': f"{cn.GPW_extent_raw_pattern}_{year}",
+                'vrt': f"/tmp/grasslands_extent_{year}.vrt",
+                'processed_dir': f"{cn.GPW_extent_processed_dir}{year}/",
+                'processed_pattern': f"{cn.GPW_extent_processed_pattern}_{year}"
             }
 
     if 'cropland_fertilizer' in process:
@@ -248,7 +250,7 @@ def main(cluster_name, process, bounding_box, chunk_size, run_local, no_upload):
 
         # Add output_vrt_s3 to dictionary
         output_vrt_s3 = f"{items['raw_dir']}{os.path.basename(items['vrt'])}"
-        main_logger.info(f"output_vrt_s3: {output_vrt_s3}") #todo
+        main_logger.info(f"output_vrt_s3: {output_vrt_s3}")
         main_logger.info(f"Adding output_vrt_s3 path to dictionary: {output_vrt_s3}")
         download_upload_dictionary[key]['output_vrt_s3'] = output_vrt_s3
 
@@ -312,29 +314,42 @@ def main(cluster_name, process, bounding_box, chunk_size, run_local, no_upload):
 
         # Get dataset information
         dt = items['dt']
+        src_nodata = items.get('src_nodata', None)
+        dst_nodata = items.get('dst_nodata', 0)
+        scale_factor = items.get('scale_factor', 1)
+        round_scaled = items.get('round_scaled', False)
+
+        if items.get('output_dtype'):
+            dt = uu.string_to_gdal_dtype_mapping[items['output_dtype']]
+
         output_vrt_s3 = f"{items['raw_dir']}{os.path.basename(items['vrt'])}"
         main_logger.info(f"Using {output_vrt_s3} for Hansenization")
 
         # Separate tile_futures list for each dataset being processed
         tile_start_time = uu.timestr()
-        tile_futures = []  #creates tiles in parallel for each dataset
+        batch_size = max(1, n_workers * 2)
 
-        # Iterates through all tiles in a given dataset
-        for chunk in chunk_list:
-            tile_id = uu.xy_to_tile_id(chunk[0], chunk[3])
-            output_filename = f"{tile_id}_{items['processed_pattern']}.tif"  #TODO make sure all patterns don't have tif extension
-            output_tile_s3 = f"{items['processed_dir']}{output_filename}"
-            xmin, ymin, xmax, ymax = uu.get_10x10_tile_bounds(tile_id)
+        for batch_start in range(0, len(chunk_list), batch_size):
+            batch_chunks = chunk_list[batch_start:batch_start + batch_size]
+            tile_futures = []
 
-            # Create 10 x 10 degree hansenized tile for each dataset in dictionary
-            tile_future = client.submit(uu.warp_to_hansen_coiled, output_vrt_s3, output_filename, output_tile_s3,
-                                        xmin, ymin, xmax, ymax, dt, 0, True, 400, 400)
-            tile_futures.append(tile_future)
+            main_logger.info(
+                f"Submitting tile batch {batch_start // batch_size + 1} "
+                f"of {math.ceil(len(chunk_list) / batch_size)} "
+                f"({len(batch_chunks)} tiles)"
+            )
 
-        main_logger.info(f"Tiles to process: {len(tile_futures)}")
+            for chunk in batch_chunks:
+                tile_id = uu.xy_to_tile_id(chunk[0], chunk[3])
+                output_filename = f"{tile_id}_{items['processed_pattern']}.tif"
+                output_tile_s3 = f"{items['processed_dir']}{output_filename}"
+                xmin, ymin, xmax, ymax = uu.get_10x10_tile_bounds(tile_id)
 
-        # Collect the results once they are finished
-        client.gather(tile_futures)
+                tile_future = client.submit( uu.warp_to_hansen_coiled, output_vrt_s3, output_filename, output_tile_s3,
+                                             xmin, ymin, xmax, ymax, dt, dst_nodata, True, 400, 400, src_nodata, scale_factor, round_scaled, retries=0,)
+                tile_futures.append(tile_future)
+
+            client.gather(tile_futures)
 
         main_logger.info(f"Completed Hansenizing {len(tile_futures)} tiles for {key}: {uu.timestr('time')}")
         uu.stage_duration(tile_start_time, uu.timestr(), f"Hansenize {key}", main_logger, "time")
@@ -352,7 +367,7 @@ def main(cluster_name, process, bounding_box, chunk_size, run_local, no_upload):
 
         # The key for the dictionary: the s3 path with a tile set that will be indexed
         path = items['processed_dir'].replace(cn.veg_outputs_path, "")
-        print(path) #TODO
+        print(path)
 
         # The value for the dictionary: the pattern to use for naming the output shapefile
         value = items['processed_pattern']

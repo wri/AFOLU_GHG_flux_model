@@ -63,7 +63,7 @@ def main(cluster_name, layers_to_process, no_upload, log_note=None):
             'test_chunk': cn.adm0_test_chunk
         }
 
-    if 'pixel_area' in layers_to_process:  # Didn't use this script to create zarr; used notebook predecessor
+    if 'pixel_area' in layers_to_process:
         layers_to_zarr["pixel_area"] = {
             'zarr_date': cn.pixel_area_zarr_date,
             'zarr_dtype': cn.pixel_area_zarr_dtype,
@@ -156,6 +156,15 @@ def main(cluster_name, layers_to_process, no_upload, log_note=None):
             'test_chunk': cn.drivers_of_loss_test_chunk
         }
 
+    if 'first_year_LC_composite' in layers_to_process:
+        layers_to_zarr["first_year_LC_composite"] = {
+            'zarr_date': cn.first_year_LC_composite_zarr_date,
+            'zarr_dtype': cn.first_year_LC_composite_zarr_dtype,
+            'geotif_dir': cn.first_year_LC_composite_geotif_path,
+            'zarr_dir': cn.first_year_LC_composite_zarr_path,
+            'test_chunk': cn.first_year_LC_composite_test_chunk
+        }
+
     main_logger.info(f"Contextual layers to zarr ({len(layers_to_zarr)} layers): {layers_to_zarr}")
 
     # Iterates through supplied contextual layers
@@ -173,7 +182,11 @@ def main(cluster_name, layers_to_process, no_upload, log_note=None):
         main_logger.info(f"  Tile count in {layer_to_zarr}: {geotif_count}")
 
         main_logger.info(f"  Reading {layer_to_zarr}: {uu.timestr()}")
-        layer_xarray_chunks = zu.make_xarray_chunks(geotif_uris_series, cn.chunk_dims)
+        # This now includes a comparison of the northwest pixel of each geotif and the corresponding pixel of the global ds
+        # to make sure tiles aren't being flipped when they're combined by open_mfdataset,
+        # which happened with at least pixel_area for three tiles.
+        # Done with Claude session 'SOC chunk stats mismatch investigation'
+        layer_xarray_chunks = zu.make_xarray_chunks(geotif_uris_series, cn.chunk_dims, main_logger)
         layer_xarray_chunks['band_data'] = layer_xarray_chunks['band_data'].astype(values['zarr_dtype'])
 
         main_logger.info(f"  Zarring {layer_to_zarr}: {uu.timestr()}")
@@ -231,6 +244,7 @@ def main(cluster_name, layers_to_process, no_upload, log_note=None):
         # Array from zarr chunk
         zarr_chunk_array = zarr_array[lat0:lat1, lon0:lon1]
 
+        main_logger.info(f"Test chunk stats:")
         main_logger.info(f"  zarr_chunk_array: {zarr_chunk_array}")
         main_logger.info(f"  Min for {values['test_chunk']}: {float(np.nanmin(zarr_chunk_array))}")
         main_logger.info(f"  Mean for {values['test_chunk']}: {float(np.nanmean(zarr_chunk_array))}")

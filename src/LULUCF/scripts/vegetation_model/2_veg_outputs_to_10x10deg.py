@@ -46,11 +46,13 @@ python -m src.LULUCF.scripts.vegetation_model.2_veg_outputs_to_10x10deg -cn vege
 Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/690a21cd-2ea0-8333-9c7f-7091f8016fb3
 
 #TODO change NoData in flux outputs to something besides 0 because 0 has a meaning for fluxes
+#TODO Parallelize 10x10 deg tile uploads in create_10x10_deg_geotif_from_zarr, per Claude session 'LULUCF 30-m outputs script'. Applies to veg, SOC, and LULUCF. Haven't tried at all.
 """
 
 import argparse
 import pandas as pd
 import os
+from distributed import KilledWorker
 from dask.distributed import print
 
 # Project imports
@@ -133,8 +135,8 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     if first_years_to_process:
         years_to_process = first_years_to_process
     else:
-        years_to_process = len(cn.interval_end_years_annual)
-    main_logger.info(f"Years to aggregate to 10x10 deg and compare chunk stats for: {years_to_process} out of {len(cn.interval_end_years_annual)}")
+        years_to_process = cn.end_year_count
+    main_logger.info(f"Years to aggregate to 10x10 deg and compare chunk stats for: {years_to_process} out of {cn.end_year_count}")
 
     if first_tiles_to_process:
         tile_ids_to_process = unique_tile_ids[0:first_tiles_to_process]
@@ -227,7 +229,18 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
         # 'pattern': 'gross_emissions__all_C_pools__CO2_only__MgCO2', 'years': 2016, 'min_value': 'no data', 'mean_value': 'no data',
         # 'max_value': 'no data', 'count_value': 7912448, 'sum_value': 'no data', 'data_type': 'no data'}]),
         # ([{'chunk_id': 'N/A', ... 'data_type': 'no data'}])]
-        batch_results = client.gather(futures)
+        # Theoretically, catches cluster failure due to exceeded memory so that failures are clearer. Not fully tested.
+        # Per Claude session 'Cluster task retry failures in vegetation outputs'
+        try:
+            batch_results = client.gather(futures)
+        except KilledWorker as e:
+            main_logger.error(
+                f"BATCH {i + 1} FAILED: A task was killed after 4 worker deaths — "
+                f"almost certainly out of memory. Check peak memory logs for the affected tile. "
+                f"Consider re-running with larger worker memory (-m 64). "
+                f"Dask error: {e}"
+            )
+            raise
         # print(batch_results)
 
         all_results.extend(batch_results)

@@ -9,15 +9,24 @@ from src.utilities import universal_utilities as uu
 ### Constants
 ########
 
-### Model version
+### Model versions. Written order should be as below for consistency.
+
+AFOLU_model_version = "1.0.0"
+AFOLU_model_version_underscore = AFOLU_model_version.replace(".", "_")
+
+LULUCF_model_version = "1.0.0"
+LULUCF_model_version_underscore = LULUCF_model_version.replace(".", "_")
+
 veg_model_version = "1.0.5"
 veg_model_version_underscore = veg_model_version.replace(".", "_")
+
+organic_soil_model_version = "1.0.1"
+organic_soil_model_version_underscore = organic_soil_model_version.replace(".", "_")
 
 SOC_model_version = "1.0.1"
 SOC_model_version_underscore = SOC_model_version.replace(".", "_")
 
-organic_soil_model_version = "1.0.1"
-organic_soil_model_version_underscore = organic_soil_model_version.replace(".", "_")
+LULUCF_full_version_underscore = (f"LULUCF_version_{LULUCF_model_version_underscore}_MODEL_TYPE__MODEL_PATH_DESCRIPTION__veg_v{veg_model_version_underscore}__org_soil_v{organic_soil_model_version_underscore}__min_soil_v{SOC_model_version_underscore}")
 
 
 ### s3 buckets
@@ -30,6 +39,8 @@ s3_client = boto3.client("s3")
 ### Pattern for tile_ids in regex form
 tile_id_pattern = r"[0-9]{2}[A-Z][_][0-9]{3}[A-Z]"
 small_chunk_pattern = r'__-?\d+_-?\d+_-?\d+_-?\d+__'
+
+Coiled_workspace = "wri-forest-research"
 
 ### m^2 to hectares
 m2_to_ha = 1/10000
@@ -51,6 +62,8 @@ last_model_year_annual = 2024   # Last year of annual data
 
 years_annual = [2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
 interval_end_years_annual = years_annual[1:]
+end_year_count = len(interval_end_years_annual)
+year_range_str = f"{interval_end_years_annual[0]}_{last_model_year_annual}"
 
 possible_task_statuses = ["pending_", "loading_", "preprocessing_", "calculating_",
                           "zarr_population_", "uploading_", "error_"]
@@ -59,6 +72,9 @@ possible_task_statuses = ["pending_", "loading_", "preprocessing_", "calculating
 intervals_five_years = "five_years"
 intervals_annual = "annual"
 intervals_hybrid = "hybrid"
+
+# Seconds until a file download timeouts (and potentially retries)
+download_timeout = 300
 
 
 ### Carbon constants
@@ -109,9 +125,11 @@ IPCC_removal_factor_table_tab = "natrl fores gain, for std model"
 mangrove_rate_ratio_tab = 'mang gain and Cratios,for model'
 
 # Emission factors for partial disturbances (by 1km driver)
-partial_disturbance_emission_factor_table_name = "partial_disturbance_emission_factors_LULUCF_model__20260424.xlsx"
+partial_disturbance_emission_factor_table_name = "partial_disturbance_emission_factors_LULUCF_model_w_sensit_anlys__20260627.xlsx"
 partial_disturbance_emission_factor_table_full_path = f"{EF_RF_C_ratio_spreadsheet_URL}{partial_disturbance_emission_factor_table_name}"
-partial_disturbance_emission_factor_table_tab = "EF_combined"
+partial_disturbance_emission_factor_table_tab_standard = "EF_combined_std"
+partial_disturbance_emission_factor_table_tab_low_EF = "EF_combined_low"
+partial_disturbance_emission_factor_table_tab_high_EF = "EF_combined_high"
 
 # Aboveground carbon removal factor for oil palm (Mg C/ha/yr) (IPCC 2019 Cropland Table 5.3)
 oil_palm_agc_rf = 2.4
@@ -134,7 +152,9 @@ gwp_n2o = 273 # AR6 WG1 Table 7.15
 # Combustion factor for trees that had fire but no height reduction or other sign of disturbance
 # (i.e. undisturbed trees remaining trees).
 # From IPCC 2019, Table 2.6, "Boreal forest- surface fire" (applied globally, though boreal)
-Cf_forest_undisturbed = 0.15
+Cf_forest_undisturbed_standard = 0.15  # Standard model and sensitivity analyses in which EFs are not changed
+Cf_forest_undisturbed_low = (0.15-0.08)  # For sensitivity analysis: value-st dev
+Cf_forest_undisturbed_high = (0.15+0.08)  # For sensitivity analysis: value+st dev
 
 other_landcover_node = 7
 
@@ -148,21 +168,33 @@ cropland_node = 5
 cropland_residue_harvest_ratio = 1.0
 
 # Emission factors for crop residue burning (IPCC 2019, V4, Ch. 2, Table 2.5-- agricultural residues)
-Gef_CH4_crop_residue = 2.7
-Gef_N2O_crop_residue = 0.07
+Gef_CH4_crop_residue_standard = 2.7  # Standard model and sensitivity analyses in which EFs are not changed
+Gef_N2O_crop_residue_standard = 0.07  # Standard model and sensitivity analyses in which EFs are not changed
+Gef_CH4_crop_residue_low_EF = (2.7-1.5)  # For sensitivity analysis: value-best professional judgement st dev because IPCC has no st dev
+Gef_N2O_crop_residue_low_EF = (0.07-0.03)  # For sensitivity analysis: value-best professional judgement st dev because IPCC has no st dev
+Gef_CH4_crop_residue_high_EF = (2.7+1.5)  # For sensitivity analysis: value+best professional judgement st dev because IPCC has no st dev
+Gef_N2O_crop_residue_high_EF = (0.07+0.03)  # For sensitivity analysis: value+best professional judgement st dev because IPCC has no st dev
 
 # Combustion factor for crop residue burning (IPCC 2019, V4, Ch. 2, Table 2.6-- agricultural residues, other crops)
-Cf_crop_residue = 0.85
+Cf_crop_residue_standard = 0.85  # Standard model and sensitivity analyses in which EFs are not changed
+Cf_crop_residue_low = (0.85-0.15)  # For sensitivity analysis: value-best professional judgement st dev because IPCC has no st dev
+Cf_crop_residue_high = (0.85+0.15)  # For sensitivity analysis: value-best professional judgement st dev because IPCC has no st dev
 
 # Value for short/medium vegetation nodes in land state node decision tree (for gain, loss, or remaining)
 grassland_node = 6
 
 # Emission factors for savanna and grassland burning (IPCC 2019, V4, Ch. 2, Table 2.5-- savanna and grassland)
-Gef_CH4_grassland = 2.3
-Gef_N2O_grassland = 0.21
+Gef_CH4_grassland_standard = 2.3  # Standard model and sensitivity analyses in which EFs are not changed
+Gef_N2O_grassland_standard = 0.21  # Standard model and sensitivity analyses in which EFs are not changed
+Gef_CH4_grassland_low_EF = (2.3-0.9)  # For sensitivity analysis: value-st dev
+Gef_N2O_grassland_low_EF = (0.21-0.10)  # For sensitivity analysis: value-st dev
+Gef_CH4_grassland_high_EF = (2.3+0.9)  # For sensitivity analysis: value+st dev
+Gef_N2O_grassland_high_EF = (0.21+0.10)  # For sensitivity analysis: value+st dev
 
 # Combustion factor for savanna and grassland burning (IPCC 2019, V4, Ch. 2, Table 2.6-- all savanna grasslands (mid/late dry season burns)
-Cf_grassland = 0.77
+Cf_grassland_standard = 0.77  # Standard model and sensitivity analyses in which EFs are not changed
+Cf_grassland_low = (0.77-0.26)  # For sensitivity analysis: value-st dev
+Cf_grassland_high = 1  # For sensitivity analysis: value+st dev (0.77+0.26>1, so capping at 1).
 
 
 ### GLCLU cover codes
@@ -339,6 +371,27 @@ agb_stdev_2015_pattern = "AGB_stdev_2015_ESA_CCI_Mg_AGB_ha"
 mangrove_agb_2000_dir = f"{full_bucket_prefix}/climate/carbon_model/mangrove_biomass/processed/standard/20190220/"
 mangrove_agb_2000_pattern = "mangrove_agb_t_ha_2000"
 
+# Data available at https://ctrees-agb-100m-global.s3.us-west-2.amazonaws.com/index.html#cogs/
+# Description available at https://registry.opendata.aws/ctrees-agb-100m-global/
+# CTrees 2015 AGB and uncertainty global COGs (used for starting carboon pool sensitivity analysis)
+# aws s3 cp s3://ctrees-agb-100m-global/cogs/global_agb_100m_landsat0024_all_2015_densenet_l1_agb_mosaic_100m_base_cd_ts.tif s3://gfw2-data/climate/Ctrees_biomass/2015/AGB/raw/ --source-region us-west-2
+# aws s3 cp s3://ctrees-agb-100m-global/cogs/global_agb_100m_landsat0024_all_2015_densenet_l1_agb_mosaic_100m_base_cd_ts_uncertainty_sem.tif s3://gfw2-data/climate/Ctrees_biomass/2015/AGB_uncertainty/raw/ --source-region us-west-2
+# Note: Raw pixel values are multiplied by 10 to save space. To retrieve the actual biomass density in Mg/ha, divide the raw pixel value by 10
+ctrees_run_date = '20260629'
+ctrees_agb_raw_nodata = -9999
+ctrees_agb_processed_nodata = 0
+ctrees_agb_scale_factor = 0.1
+ctrees_agb_output_dtype = "uint16"
+
+ctrees_agb_2015_dir_raw = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/AGB/raw/"
+ctrees_agb_2015_pattern_raw = "global_agb_100m_landsat0024_all_2015_densenet_l1_agb_mosaic_100m_base_cd_ts"
+ctrees_agb_2015_dir_processed = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/AGB/processed/{ctrees_run_date}/"
+ctrees_agb_2015_pattern = "AGB_2015_Ctrees_Mg_AGB_ha"
+
+ctrees_agb_uncertainty_2015_dir_raw = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/AGB_uncertainty/raw/"
+ctrees_agb_uncertainty_2015_pattern_raw = "global_agb_100m_landsat0024_all_2015_densenet_l1_agb_mosaic_100m_base_cd_ts_uncertainty_sem"
+
+
 
 # Carbon density patterns (also used in path names)
 agb_dens_pattern = "AGB_density_MgAGB_ha"
@@ -447,6 +500,24 @@ starting_C_pools_LC_masked_source_flag_pattern = "carbon_density_source_flag_lan
 starting_C_pools_LC_masked_state_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{starting_C_pools_LC_masked_source_flag_pattern}/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 
 
+### 2015 sensitivity analysis
+agc_2015_ctrees_raw_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{agc_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+bgc_2015_ctrees_raw_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{bgc_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+deadwood_c_2015_ctrees_raw_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{deadwood_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+litter_c_2015_ctrees_raw_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{litter_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+non_soil_c_2015_ctrees_raw_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{non_soil_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+
+agc_2015_ctrees_LC_masked_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{agc_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+bgc_2015_ctrees_LC_masked_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{bgc_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+deadwood_c_2015_ctrees_LC_masked_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{deadwood_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+litter_c_2015_ctrees_LC_masked_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{litter_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+non_soil_c_2015_ctrees_LC_masked_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{non_soil_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+
+starting_C_densities_2015_ctrees_path_mega_zarr = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/mega_zarr/CHUNK_SIZE_pixels/RUN_DATE/starting_C_densities_zarr.zarr"
+
+starting_C_pools_ctrees_LC_masked_state_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{starting_C_pools_LC_masked_source_flag_pattern}/CHUNK_SIZE_pixels/{ctrees_run_date}/"
+
+
 ### Other inputs
 
 elevation_dir = f"{full_bucket_prefix}/climate/carbon_model/inputs_for_carbon_pools/processed/elevation/20190418/"
@@ -537,58 +608,30 @@ starting_composite_primary_forest_zarr_path = f"{full_bucket_prefix}/climate/AFO
 # out_raster.save(r"C:\GIS\Carbon_seqr_mapping\secondary_forests\average_rates_for_LULUCF_model\natural_forest_mean_growth_rate__Mg_AGC_ha_yr__21_40_years__nibble_20250516.tif")
 # Then, uploaded to s3.
 
-#TODO: @Mel Make sure all refrences to the old commented out names are updated
-# Refactor Hansenize inputs: 
-# Robinson_5_year_rates_processed_date or Robinson_20_year_rates_processed_date --> Robinson_processed_date
-# Robinson_processed_date --> secondary_forest_curve_run_date
-
-Robinson_processed_date = '20250616'
-
-#Robinson 5-year rates
-Robinson_5_year_raw_date = '20250616'
-secondary_natural_forest_5_year_raw_dir =  f"{full_bucket_prefix}/climate/secondary_forest_carbon_curves__Robinson_et_al/raw/{Robinson_5_year_raw_date}/"
-secondary_natural_forest_0_5_pattern =  "natural_forest_mean_growth_rate__Mg_AGC_ha_yr__0_5_years__nibble"
-secondary_natural_forest_6_10_pattern =  "natural_forest_mean_growth_rate__Mg_AGC_ha_yr__6_10_years__nibble"
-secondary_natural_forest_11_15_pattern =  "natural_forest_mean_growth_rate__Mg_AGC_ha_yr__11_15_years__nibble"
-secondary_natural_forest_16_20_pattern =  "natural_forest_mean_growth_rate__Mg_AGC_ha_yr__16_20_years__nibble"
-
-secondary_natural_forest_0_5_processed_dir = f"{full_bucket_prefix}/climate/secondary_forest_carbon_curves__Robinson_et_al/processed/{Robinson_processed_date}/rate_0_5/"
-secondary_natural_forest_6_10_processed_dir = f"{full_bucket_prefix}/climate/secondary_forest_carbon_curves__Robinson_et_al/processed/{Robinson_processed_date}/rate_6_10/"
-secondary_natural_forest_11_15_processed_dir = f"{full_bucket_prefix}/climate/secondary_forest_carbon_curves__Robinson_et_al/processed/{Robinson_processed_date}/rate_11_15/"
-secondary_natural_forest_16_20_processed_dir = f"{full_bucket_prefix}/climate/secondary_forest_carbon_curves__Robinson_et_al/processed/{Robinson_processed_date}/rate_16_20/"
-
-#Robinson 20+-year rates
-Robinson_20_year_raw_date = '20250516'
-secondary_natural_forest_20_year_raw_dir =  f"{full_bucket_prefix}/climate/secondary_forest_carbon_curves__Robinson_et_al/raw/{Robinson_20_year_raw_date}/"
-secondary_natural_forest_21_40_pattern =  "natural_forest_mean_growth_rate__Mg_AGC_ha_yr__21_40_years__nibble"
-secondary_natural_forest_41_60_pattern =  "natural_forest_mean_growth_rate__Mg_AGC_ha_yr__41_60_years__nibble"
-secondary_natural_forest_61_80_pattern =  "natural_forest_mean_growth_rate__Mg_AGC_ha_yr__61_80_years__nibble"
-secondary_natural_forest_81_100_pattern =  "natural_forest_mean_growth_rate__Mg_AGC_ha_yr__81_100_years__nibble"
-secondary_natural_forest_21_100_pattern =  "natural_forest_mean_growth_rate__Mg_AGC_ha_yr__21_100_years__nibble"
-
-secondary_natural_forest_21_40_processed_dir = f"{full_bucket_prefix}/climate/secondary_forest_carbon_curves__Robinson_et_al/processed/{Robinson_processed_date}/rate_21_40/"
-secondary_natural_forest_41_60_processed_dir = f"{full_bucket_prefix}/climate/secondary_forest_carbon_curves__Robinson_et_al/processed/{Robinson_processed_date}/rate_41_60/"
-secondary_natural_forest_61_80_processed_dir = f"{full_bucket_prefix}/climate/secondary_forest_carbon_curves__Robinson_et_al/processed/{Robinson_processed_date}/rate_61_80/"
-secondary_natural_forest_81_100_processed_dir = f"{full_bucket_prefix}/climate/secondary_forest_carbon_curves__Robinson_et_al/processed/{Robinson_processed_date}/rate_81_100/"
-secondary_natural_forest_21_100_processed_dir = f"{full_bucket_prefix}/climate/secondary_forest_carbon_curves__Robinson_et_al/processed/{Robinson_processed_date}/rate_21_100/"
-
-# secondary_natural_forest_raw_dir =  f"{full_bucket_prefix}/climate/secondary_forest_carbon_curves__Robinson_et_al/raw/20250516/"
-# secondary_natural_forest_0_5_pattern =  "natural_forest_mean_growth_rate__Mg_AGC_ha_yr__0_5_years__nibble_20250516"   # both the raw raster name and processed pattern for hansenized tiles
-# secondary_natural_forest_6_10_pattern =  "natural_forest_mean_growth_rate__Mg_AGC_ha_yr__6_10_years__nibble_20250516"
-# secondary_natural_forest_11_15_pattern =  "natural_forest_mean_growth_rate__Mg_AGC_ha_yr__11_15_years__nibble_20250516"
-# secondary_natural_forest_16_20_pattern =  "natural_forest_mean_growth_rate__Mg_AGC_ha_yr__16_20_years__nibble_20250516"
-# secondary_natural_forest_21_40_pattern =  "natural_forest_mean_growth_rate__Mg_AGC_ha_yr__21_40_years__nibble_20250516"
-# secondary_natural_forest_41_60_pattern =  "natural_forest_mean_growth_rate__Mg_AGC_ha_yr__41_60_years__nibble_20250516"
-# secondary_natural_forest_61_80_pattern =  "natural_forest_mean_growth_rate__Mg_AGC_ha_yr__61_80_years__nibble_20250516"
-# secondary_natural_forest_81_100_pattern =  "natural_forest_mean_growth_rate__Mg_AGC_ha_yr__81_100_years__nibble_20250516"
-# secondary_natural_forest_21_100_pattern =  "natural_forest_mean_growth_rate__Mg_AGC_ha_yr__21_100_years__nibble_20250516"
-
+#Robinson regrowth rates (5-year rates for ages 0-20 and 20-year rates for ages 20+)
 secondary_forest_curve_run_date = '20250616'
+natural_forest_growth_curve_base_dir = f"{full_bucket_prefix}/climate/secondary_forest_carbon_curves__Robinson_et_al/"
+natural_forest_growth_curve_raw_dir = f"{natural_forest_growth_curve_base_dir}raw/{secondary_forest_curve_run_date}/"
 natural_forest_growth_curve_dir = f"{full_bucket_prefix}/climate/secondary_forest_carbon_curves__Robinson_et_al/processed/{secondary_forest_curve_run_date}/"
 natural_forest_growth_curve_pattern = "natural_forest_mean_growth_rate__Mg_AGC_ha_yr"
 natural_forest_growth_curve_intervals = ['0_5', '6_10', '11_15', '16_20', '21_40', '41_60', '61_80', '81_100']
 
-#TODO: @Mel Update to path pattern instead of processed_dir/ pattern in hansenize. Delete processed after.
+# Xu et al. 2026 Chapman-Richards regrowth curves (other degraded forest, 1-degree resolution)
+# From https://drive.google.com/drive/folders/1ANjxrL4LItXtteHIGFRU70_MfZiFVF9n?usp=sharing
+# Using on the "other degraded" curves for the sensitivity analysis
+Xu_global_date = '20260629'
+Xu_regrowth_base_dir = f"{full_bucket_prefix}/climate/regrowth_curves__Xu_et_al/from_Yidi_Xu_20260628/"
+Xu_regrowth_raw_dir = f"{Xu_regrowth_base_dir}raw/"
+Xu_regrowth_raw_pattern = "growthcurve_otherdeg.tif"
+Xu_regrowth_AGB_rate_dir = f"{Xu_regrowth_base_dir}AGB_density_by_age/all_ages_global/"
+Xu_regrowth_AGB_rate_pattern = "Xu_other_degrad_regrowth_density__Mg_AGB_ha"   # append __{age}_years_{date}.tif
+
+Xu_regrowth_AGC_rate_base_dir = f"{Xu_regrowth_base_dir}AGC_rate/"
+Xu_regrowth_AGC_rate_global_all_ages_dir = f"{Xu_regrowth_AGC_rate_base_dir}all_ages_global/"
+Xu_regrowth_AGC_rate_tiles_dir = f"{Xu_regrowth_AGC_rate_base_dir}all_ages_tiled/"
+Xu_regrowth_AGC_rate_pattern = "Xu_other_degrad_regrowth_rate__Mg_AGC_ha_yr"   # append __{age_min}_{age_max}_years_{date}.tif
+Xu_regrowth_intervals = ["0_5_years", "5_10_years", "10_15_years", "15_20_years", "20_40_years", "40_60_years", "60_80_years", "80_100_years"]
+
 drivers_run_date = '20250414'
 drivers_raw_dir = f"{full_bucket_prefix}/drivers_of_loss/1_km/raw/update2023_20241218/"
 drivers_raw_pattern = "drivers_forest_loss_1km_2023_band1.tif"
@@ -657,7 +700,7 @@ oil_palm_2000_extent_pattern = "plantation_2000_or_earlier_processed"
 
 # Descals et al. 2024: https://essd.copernicus.org/articles/16/5111/2024/essd-16-5111-2024-discussion.html
 oil_palm_first_year_dir = f"{AFOLU_dir}organic_soils/inputs/processed/descals_plantation/year/20241105/"
-oil_palm_first_year_pattern = "descals_year"
+oil_palm_first_year_pattern = "plantation_year"
 
 # Originally from gfw-data-lake, so it's in 400x400 windows
 planted_forest_tree_crop_dir = f"{full_bucket_prefix}/climate/carbon_model/other_emissions_inputs/plantation_simpleType__planted_forest_tree_crop/SDPTv2/20230911/"
@@ -684,6 +727,16 @@ mangrove_1x1deg_smoothed_dir = f"{full_bucket_prefix}/global-mangrove-extent/ver
 mangrove_extent_processed_dir = f"{full_bucket_prefix}/global-mangrove-extent/version3/smoothed/raster/"
 mangrove_extent_processed_pattern = f"GMW{GMW_version}_smoothed_mangrove_extent"
 
+# Global pasture watch grasslands extent (1 = cultivated grassland, 2 = natural/semi-natural grassland)
+GPW_version = "v1.1"
+GPW_years = range(2000, 2025)
+
+GPW_extent_raw_dir = f"{full_bucket_prefix}/lcl/gpw/grasslands/{GPW_version}/raw/"
+GPW_extent_raw_pattern = "grasslands"
+
+GPW_extent_processed_dir = f"{full_bucket_prefix}/lcl/gpw/grasslands/{GPW_version}/processed/"
+GPW_extent_processed_pattern = f"GPW_grasslands_extent"
+
 # Global Pasture Watch median vegetation height (https://stac.openlandmap.org/gpw_gsvh-30m/collection.json?.language=en,
 # from Hunter et al. 2025 (https://www.nature.com/articles/s41597-025-05739-6)
 GPW_MVH_uri = f"https://s3.opengeohub.org/gpw/arco/gpw_short.veg.height_egbt_m_30m_s_YYYY0101_YYYY1231_go_epsg.4326_v1.tif"
@@ -694,8 +747,13 @@ GPW_MVH_pattern = f"GPW_height"
 # Organic soil mask, created by Erin Glen based on Hengl et al. 2026 and
 # https://opengeohub.medium.com/global-organic-soils-extent-and-peat-depth-at-30-m-spatial-resolution-based-on-multisource-eo-data-c6e00f390069
 # Erin confirmed that it didn't matter which interval I used for the organic soil mask; all are equivalent.
-organic_soil_extent_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/outputs/version_{organic_soil_model_version_underscore}/organic_soil/ogh_mixed_f1_f15_f2_20260513/five_year_intervals/2001_2005/40000_pixels/20260525/"
-organic_soil_extent_pattern = "organic_soil__2001_2005"
+organic_soil_extent_dir = f"s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/outputs/version_{organic_soil_model_version_underscore}/organic_soil/ogh_mixed_f1_f15_f2_20260513/five_year_intervals/2021_2024/40000_pixels/20260525/"
+organic_soil_extent_pattern = "organic_soil__2021_2024"
+organic_soil_burned_pattern   = "burned_total_Mg_CO2e"
+organic_soil_drained_pattern  = "drained_total_Mg_CO2e"
+organic_soil_year_intervals   = ['2016_2020', '2021_2024']  # update when a new interval is added
+
+organic_soil_zarr_path = f"s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/outputs/version_{organic_soil_model_version_underscore}/mega_zarr/ogh_mixed_f1_f15_f2_20260513/five_year/4000_pixels/20260525/mega.zarr"
 
 
 # Cropland emissions
@@ -755,21 +813,38 @@ global_cropland_total_amount_all_crops_nonpeat_2019_processed_pattern = f"all_GH
 
 ##### Outputs
 
+#IPCC LUC translation version number
+IPCC_LU_version = "1.0.0"
+IPCC_LU_version_underscore = IPCC_LU_version.replace(".", "_")
+
 ### IPCC classes and change
-IPCC_class_path = "IPCC_basic_classes"
-IPCC_class_pattern = "IPCC_classes"
-IPCC_change_path = "IPCC_basic_change"
+IPCC_class_path = "IPCC_class"
+IPCC_class_pattern = "IPCC_class"
+IPCC_node_path = "IPCC_node_code"
+IPCC_node_pattern = "IPCC_node_code"
+IPCC_change_path = "IPCC_change"
 IPCC_change_pattern = "IPCC_change"
+IPCC_summary_path = "IPCC_summary"
+IPCC_summary_pattern = "IPCC_summary"
 
 ### IPCC codes
-forest_IPCC = 1
+# Based in IPCC LU heirarchy: Settlements > Cropland > Forest Land > Grassland > Wetland > Other Land
+settlement_IPCC = 1
 cropland_IPCC = 2
-settlement_IPCC = 3
-wetland_IPCC = 4
-grassland_IPCC = 5
+forest_IPCC = 3
+grassland_IPCC = 4
+wetland_IPCC = 5
 otherland_IPCC = 6
 
-IPCC_class_max_val = 6  # Maximum value of IPCC class codes
+#IPCC_class_max_val = 6  # Maximum value of IPCC class codes
+
+IPCC_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/land_use/{IPCC_LU_version}"
+IPCC_class_dir = f"{IPCC_outputs_path}/{IPCC_class_path}/YEAR/CHUNK_SIZE_pixels/RUN_DATE/"
+IPCC_node_dir = f"{IPCC_outputs_path}/{IPCC_node_path}/YEAR/CHUNK_SIZE_pixels/RUN_DATE/"
+IPCC_change_dir = f"{IPCC_outputs_path}/{IPCC_change_path}/START_END/CHUNK_SIZE_pixels/RUN_DATE/"
+IPCC_summary_dir = f"{IPCC_outputs_path}/{IPCC_summary_path}/2015_2024/CHUNK_SIZE_pixels/RUN_DATE/"
+
+IPCC_outputs_path_mega_zarr = f"{IPCC_outputs_path}/mega_zarr/MODEL_INTERVAL_TYPE_intervals/CHUNK_SIZE_pixels/RUN_DATE/land_use_zarr.zarr"
 
 land_state_pattern = "land_state_node"
 land_state_node_fire_value = 9  # State nodes that end in this value had fire
@@ -938,8 +1013,8 @@ veg_summative_for_LULUCF_output_dirs = [
 
 ### Soil organic carbon (SOC) timeseries from OpenGeoHub (OGH) (URIs from https://github.com/openlandmap/soildb/blob/main/tables/OpenLandMap_soildb_COGS.csv)
 
-# Threshold probabiltiy for counting pixel as organic soil (per Erin Glen via Slack 2026-04-07)
-organic_soil_prob_threshold = 10
+# Value for organic soil, from Erin Glen's organic soil mask
+organic_soil_mask_val = 1
 
 # From Hengl et al. 2026 (https://essd.copernicus.org/articles/18/989/2026/)
 # Confirmed to be up-to-date by Tom Hengl on 2025-12-19 via email.
@@ -959,27 +1034,43 @@ SOC_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/output
 SOC_density_intervals = [2005, 2010, 2015, 2020, 2022]
 # Value refers to the end year of the second OGH reporting block, e.g., 2010 is the comparison of 2000-2005 block vs. 2005-2010 block
 SOC_change_intervals = [2010, 2015, 2020, 2022]
+SOC_change_interval_length = 5 # years
+
+SOC_density_intervals_annual = [2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022]
+SOC_change_intervals_annual = [2016, 2017, 2018, 2019, 2020, 2021, 2022]
 
 SOC_path_zarr = f"{SOC_outputs_path}zarr/CHUNK_SIZE_pixels/RUN_DATE/SOC_zarr.zarr"
+
+# Converts the raw COG's kg C/m^3 (top 30 cm) that is rescaled by 10 -> Mg C/ha without the rescaling.
+# OGH rescaled the global COGs by 10 to make them ints instead of floats to save storage.
+# OGH COG encoding: raw integer × 0.1 = kg C/m³ volumetric density.
+# Depth: 0–30 cm = 0.3 m.
+# Conversion to Mg C per pixel: density × depth × pixel_area_m² / 1000 (=0.3)
+OGH_SCALE  = np.float64(0.1)    # raw → kg C/m³
+DEPTH_M    = np.float64(0.3)    # 0–30 cm layer
+M2_PER_HA  = np.float64(10000) # m²/ha
+KG_TO_MG   = np.float64(1000)  # kg/Mg
+SOC_conversion_factor = np.float32(OGH_SCALE * DEPTH_M * M2_PER_HA / KG_TO_MG)
+
 
 # Extent of raw COGs
 SOC_density_full_extent_pattern = "SOC_density__full_extent__0-30cm_MgC"
 SOC_density_full_extent_dir = f"{SOC_outputs_path}{SOC_density_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_loss_full_extent_pattern = "SOC_loss__full_extent__0-30cm_MgC"
+SOC_loss_full_extent_pattern = "SOC_loss__full_extent__0-30cm_MgCO2"
 SOC_loss_full_extent_dir = f"{SOC_outputs_path}{SOC_loss_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_gain_full_extent_pattern = "SOC_gain__full_extent__0-30cm_MgC"
+SOC_gain_full_extent_pattern = "SOC_gain__full_extent__0-30cm_MgCO2"
 SOC_gain_full_extent_dir = f"{SOC_outputs_path}{SOC_gain_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_net_full_extent_pattern = "SOC_net__full_extent__0-30cm_MgC"
+SOC_net_full_extent_pattern = "SOC_net__full_extent__0-30cm_MgCO2"
 SOC_net_full_extent_dir = f"{SOC_outputs_path}{SOC_net_full_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
 
 # Extent of mineral soil (excludes thresholded organic soil extent created by Erin Glen)
 SOC_density_min_soil_extent_pattern = "SOC_density__mineral_soil_extent__0-30cm_MgC"
 SOC_density_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_density_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_loss_min_soil_extent_pattern = "SOC_loss__mineral_soil_extent__0-30cm_MgC"
+SOC_loss_min_soil_extent_pattern = "SOC_loss__mineral_soil_extent__0-30cm_MgCO2"
 SOC_loss_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_loss_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_gain_min_soil_extent_pattern = "SOC_gain__mineral_soil_extent__0-30cm_MgC"
+SOC_gain_min_soil_extent_pattern = "SOC_gain__mineral_soil_extent__0-30cm_MgCO2"
 SOC_gain_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_gain_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
-SOC_net_min_soil_extent_pattern = "SOC_net__mineral_soil_extent__0-30cm_MgC"
+SOC_net_min_soil_extent_pattern = "SOC_net__mineral_soil_extent__0-30cm_MgCO2"
 SOC_net_min_soil_extent_dir = f"{SOC_outputs_path}{SOC_net_min_soil_extent_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
 
 SOC_outputs_to_zarr = [
@@ -988,6 +1079,11 @@ SOC_outputs_to_zarr = [
     SOC_loss_full_extent_pattern, SOC_loss_min_soil_extent_pattern,
     SOC_gain_full_extent_pattern, SOC_gain_min_soil_extent_pattern
 ]
+
+
+# S3 base path (without s3://gfw2-data/)
+SOC_uncertainty_output_base = (f'{SOC_outputs_path}mineral_soil_uncertainty/')
+SOC_uncertainty_output_intermediates = (f'{SOC_uncertainty_output_base}intermediates/')
 
 
 ### Soil summative outputs
@@ -1010,8 +1106,8 @@ soil_output_dirs = [
 
 ### LULUCF summative outputs
 
-LULUCF_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs_LULUCF/{model_version_type_description_placeholder}/"
-LULUCF_outputs_path_mega_zarr = f"{LULUCF_outputs_path}mega_zarr/MODEL_INTERVAL_TYPE_intervals/CHUNK_SIZE_pixels/RUN_DATE/"
+LULUCF_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs_LULUCF_totals/{model_version_type_description_placeholder}/"
+LULUCF_outputs_path_zarr = f"{LULUCF_outputs_path}zarr/MODEL_INTERVAL_TYPE_intervals/CHUNK_SIZE_pixels/RUN_DATE/"
 
 LULUCF_output_patterns = [
     gross_emis_all_C_pools_CO2_only_LULUCF_pattern,
@@ -1030,6 +1126,9 @@ LULUCF_output_dirs = [
     f"{LULUCF_outputs_path}{net_flux_all_C_pools_all_gases_LULUCF_pattern}/MODEL_INTERVAL_TYPE_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
 ]
 
+LULUCF_annual_zarr_name = "LULUCF_annual.zarr"
+LULUCF_avg_zarr_name = f"LULUCF_avg_{interval_end_years_annual[0]}_{interval_end_years_annual[-1]}.zarr"
+
 
 #######
 ### Zonal stats resources
@@ -1041,81 +1140,88 @@ contextual_zarr_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/contextua
 
 adm0_zarr_date = '20251209'
 adm0_zarr_dtype = 'uint16'
+adm0_pattern = 'adm0'
 adm0_geotif_path = "s3://gfw2-data/gadm_administrative_boundaries/v4.1/v4.1.64__from_gfw-data-lake/raster/epsg-4326/10/40000/adm0/gdal-geotiff/"
 adm0_zarr_path = f"{contextual_zarr_path}GADM4_1_adm0_global/{adm0_zarr_date}_fillValue_removed/global_GADM41_adm0_{adm0_zarr_date}.zarr"
 adm0_test_chunk = [13, 48, 14, 49]  # Three countries meet in Europe, with different values in three corners (50N_010E)
-adm0_pattern = 'adm0'
 
-pixel_area_zarr_date = '20251209'
+pixel_area_zarr_date = '20260531'
 pixel_area_zarr_dtype = 'float32'
-pixel_area_geotif_path = "s3://gfw2-data/analyses/umd_area_2013__from_gfw-data-lake/v1.10/raster/epsg-4326/10/40000/area_m/gdal-geotiff/"
+pixel_area_zstats_pattern = 'pixel_area'
+pixel_area_geotif_path = pixel_area_dir
 pixel_area_zarr_path = f"{contextual_zarr_path}pixel_area/{pixel_area_zarr_date}_fillValue_removed/global_pixel_area_{pixel_area_zarr_date}.zarr"
 pixel_area_test_chunk = [13, 48, 14, 49]  # 50N_010E
-pixel_area_zstats_pattern = 'pixel_area'
 
 WDPA_zarr_date = '20251229'
 WDPA_zarr_dtype = 'uint8'
+WDPA_pattern = 'WDPA'
 WDPA_geotif_path = "s3://gfw2-data/conservation/wdpa_licensed_proteced_areas__from_data_lake/v202511/raster/epsg-4326/10/40000/detailed_iucn_cat/gdal-geotiff/"
 WDPA_zarr_path = f"{contextual_zarr_path}WDPAv202511/{WDPA_zarr_date}_fillValue_removed/wdpa_{WDPA_zarr_date}.zarr"
 WDPA_test_chunk = [21, -3, 22, -2]  # Has WDPA 0, 3 (bottom left, top right), and 9 (top left) (00N_020E)
-WDPA_pattern = 'WDPA'
 
 BRA_biomes_zarr_date = '20251229'
 BRA_biomes_zarr_dtype = 'uint8'
+BRA_biomes_pattern = 'BRA_biomes'
 BRA_biomes_geotif_path = "s3://gfw2-data/country/bra/bra_biomes_geotif/"
 BRA_biomes_zarr_path = f"{contextual_zarr_path}BRA_biomes/{BRA_biomes_zarr_date}_fillValue_removed/BRA_biomes_{BRA_biomes_zarr_date}.zarr"
 BRA_biomes_test_chunk = [-58, -16, -57, -15]  # Three biomes meet, with different values in three corners (10S_060W)
-BRA_biomes_pattern = 'BRA_biomes'
 
 cont_eco_zarr_date = '20260206'
 cont_eco_zarr_dtype = 'uint16'
+cont_eco_zstats_pattern = 'cont_eco'
 cont_eco_geotif_path = "s3://gfw2-data/climate/carbon_model/fao_ecozones/ecozone_continent/20190116/processed/"
 cont_eco_zarr_path = f"{contextual_zarr_path}FAO_ecozone_continents/{cont_eco_zarr_date}_fillValue_removed/FAO_ecozone_continents_{cont_eco_zarr_date}.zarr"
-cont_eco_test_chunk = [119, -6, 120, -5]  # Mix of 0, 4018 and 4020, with 4020 in upper right (00N_110E)
-cont_eco_zstats_pattern = 'cont_eco'
+cont_eco_test_chunk = [119, -6, 120, -5]  # Mix of 0, 4018 and 4020, with 4020 in upper right (00N_110E)=
 
 landmark_zarr_date = '20260213'
 landmark_zarr_dtype = 'uint8'
+landmark_pattern = 'Landmark'
 landmark_geotif_path = "s3://gfw2-data/landmark/gfw-data-lake/landmark_ip_lc_and_indicative_poly/v20250909/raster/epsg-4326/10/40000/is/geotiff/"
 landmark_zarr_path = f"{contextual_zarr_path}landmark/v20250909/{landmark_zarr_date}_fillValue_removed/landmark_{landmark_zarr_date}.zarr"
 landmark_test_chunk = [29, -1, 30, 0]  # 1 in upper left and lower left (00N_020E)
-landmark_pattern = 'Landmark'
 
 KBA_zarr_date = '20260213'
 KBA_zarr_dtype = 'uint16'
+KBA_pattern = 'KBA'
 KBA_geotif_path = "s3://gfw2-data/conservation/Key_Biodiversity_Areas/KBA_2024_09/KBA_v20240903__from_gfw-data-lake/raster/epsg-4326/10/40000/is/geotiff/"
 KBA_zarr_path = f"{contextual_zarr_path}KBA/v20240903/{KBA_zarr_date}_fillValue_removed/KBA_{KBA_zarr_date}.zarr"
 KBA_test_chunk = [29, -1, 30, 0]  # 1 in upper right; roughly 1/3-1/2 of chunk is KBA (00N_020E)
-KBA_pattern = 'KBA'
 
 # watersheds_zarr_date = '20260213'
 watersheds_zarr_date = '20260508'
 watersheds_zarr_dtype = 'uint16'
+watersheds_pattern = 'watershed'
 watersheds_geotif_path = "s3://gfw2-data/water/mapbox_river_basins__from_gfw-data-lake/v2018/raster/epsg-4326/10/40000/id/gdal-geotiff/"
 watersheds_zarr_path = f"{contextual_zarr_path}river_basins/v2018/{watersheds_zarr_date}_fillValue_removed/river_basins_{watersheds_zarr_date}.zarr"
 watersheds_test_chunk = [29, -1, 30, 0]  # 7005 in upper and lower left corners, 7003 in upper and lower right corners; should have nearly full coverage (00N_020E)
-watersheds_pattern = 'watershed'
 
 managed_land_CAN_zarr_date = '20260322'
 managed_land_CAN_zarr_dtype = 'uint8'  # 1=managed, 2=unmanaged
+managed_land_CAN_pattern = 'managed_land_Canada'
 managed_land_CAN_geotif_path = "s3://gfw2-data/climate/jrc_managed_land_can__from_gfw-data-lake/v20260218/raster/epsg-4326/10/40000/managed_land_extent/geotiff/"
 managed_land_CAN_zarr_path = f"{contextual_zarr_path}jrc_managed_land_can/v20260218/{managed_land_CAN_zarr_date}_fillValue_removed/jrc_managed_land_can_{managed_land_CAN_zarr_date}.zarr"
 managed_land_CAN_test_chunk = [-141, 61, -140, 62]  # 1 (managed) in bottom corners, 2 (unmanaged) in top corners. Should have full coverage. (70N_150W)
-managed_land_CAN_pattern = 'managed_land_Canada'
 
 managed_land_USA_zarr_date = '20260219'
 managed_land_USA_zarr_dtype = 'uint8'  # 1=managed, 2=unmanaged
+managed_land_USA_pattern = 'managed_land_USA'
 managed_land_USA_geotif_path = "s3://gfw2-data/climate/jrc_managed_land_usa__from_gfw-data-lake/v20260218/raster/epsg-4326/10/40000/managed_land_extent/geotiff/"
 managed_land_USA_zarr_path = f"{contextual_zarr_path}jrc_managed_land_USA/v20260218/{managed_land_USA_zarr_date}_fillValue_removed/jrc_managed_land_USA_{managed_land_USA_zarr_date}.zarr"
 managed_land_USA_test_chunk = [-143, 61, -142, 62]  # 1 (managed) in top right, 2 (unmanaged) in other corners. Should have full coverage. (70N_150W)
-managed_land_USA_pattern = 'managed_land_USA'
 
 drivers_of_loss_zarr_date = '20260507'
 drivers_of_loss_zarr_dtype = 'uint8'
+drivers_of_loss_pattern = 'drivers_of_TCL_1_km'
 drivers_of_loss_geotif_path = drivers_processed_dir
 drivers_of_loss_zarr_path = f"{contextual_zarr_path}drivers_of_TCL_1_km/v{drivers_run_date}/update2023_20241218__run_{drivers_of_loss_zarr_date}_fillValue_removed/drivers_of_TCL_1_km_{drivers_of_loss_zarr_date}.zarr"
 drivers_of_loss_test_chunk = [27, -9, 28, -8]  # 7 in top-left, 3 in top-right, 1 in bottom-right, NoData in bottom-left (00N_020E)
-drivers_of_loss_pattern = 'drivers_of_TCL_1_km'
+
+first_year_LC_composite_zarr_date = '20260611'
+first_year_LC_composite_zarr_dtype = 'uint8'
+first_year_LC_composite_pattern = 'first_year_LC_composite'
+first_year_LC_composite_geotif_path = f'{land_cover_annual_path}{first_model_year_annual}/'
+first_year_LC_composite_zarr_path = f"{contextual_zarr_path}{first_year_LC_composite_pattern}/v2/{first_year_LC_composite_zarr_date}_fillValue_removed/{first_year_LC_composite_pattern}_{first_year_LC_composite_zarr_date}.zarr"
+first_year_LC_composite_test_chunk = [19, 44, 20, 45] # 145 in top-left, 244 in top right, 24 in bottom right, 24 in bottom left
 
 
 ### Value options for contextual layer values.
@@ -1123,7 +1229,7 @@ drivers_of_loss_pattern = 'drivers_of_TCL_1_km'
 
 state_node_lookup_table_local = "/mnt/c/GIS/git/AFOLU_GHG_flux_model/src/LULUCF/LULUCF_state_node_lookup_table.xlsx"
 state_node_lookup_table_s3 = "http://gfw2-data.s3.amazonaws.com/climate/AFOLU_flux_model/LULUCF/state_node_lookup_tables/LULUCF_state_node_lookup_table.xlsx"
-sheet = "v105_20260518"
+sheet = "v105_20260601"
 
 primary_forest_IFL_codes = np.array([0, 1], dtype=np.uint8)
 
@@ -1211,6 +1317,121 @@ watershed_codes = np.array([0,
 drivers_codes = np.array([0, 1, 2, 3, 4, 5, 6, 7], dtype=np.uint8)
 
 managed_land_codes = np.array([0, 1, 2], dtype=np.uint8)
+
+forest_age_category_pattern = 'forest_age_category_end_of_interval'
+forest_age_category_codes = np.array([0, 1, 6, 21, 41, 61, 81, 101], dtype=np.uint8)
+
+ipcc_class_codes = np.arange(0, 9, dtype=np.uint8)
+
+ipcc_node_codes = np.array([
+    0,
+    10, 11, 12,
+    20, 21, 22, 23, 24, 29,
+    30, 301, 31, 32, 333, 334, 335, 337, 34, 351, 352, 353, 357, 358, 39,
+    40, 41, 430, 432, 436, 44, 451, 452, 453, 457, 458, 49,
+    50, 51, 52, 53, 59,
+    60, 61, 62, 69,
+    70, 71, 79,
+    80, 81, 89,
+], dtype=np.uint16)
+# Description of each node code in numeric_to_ipcc_node_code (below)
+
+ipcc_change_codes = np.array(
+    [0] + [10 * start + end for start in range(1, 9) for end in range(1, 9)],
+    dtype=np.uint8,
+)
+
+ipcc_summary_codes = np.array(
+    [0] + [10 * start + end for start in range(1, 9) for end in range(1, 9)],
+    dtype=np.uint16,
+)
+
+
+# Converts numeric classes into IPCC land use categories
+numeric_to_ipcc_class = {
+    1: "Settlements",
+    2: "Cropland",
+    3: "Forest Land",
+    4: "Grassland",
+    5: "Wetlands",
+    6: "Other Land (Bare)",
+    7: "Other Land (Water)",
+    8: "Other Land (Snow/Ice)"
+}
+
+# Converts numeric classes into IPCC land use change categories
+numeric_to_ipcc_change = {
+    int(f"{from_code}{to_code}"): (
+        f"{from_class} remaining {to_class}"
+        if from_code == to_code
+        else f"{from_class} to {to_class}"
+    )
+    for from_code, from_class in numeric_to_ipcc_class.items()
+    for to_code, to_class in numeric_to_ipcc_class.items()
+}
+
+# Converts numeric node codes into text description of rule applied for land use classification
+numeric_to_ipcc_node_code = {
+    # 1) Settlements and Infrastructure:
+        10: "Built from GLAD data",
+        11: "Built following tall vegetation loss before built LC",
+        12: "Built after first built LC",
+
+    # 2) Cropland:
+        20: "Crop from GLAD data",
+        21: "Crop from oil palm extent or planting year",
+        22: "Crop from SDPT tree crop extent (not oil palm)",
+        23: "Crop following tall vegetation loss before crop LC",
+        24: "Crop from TCL + permanent agriculture driver",
+
+    # 3) Forest:
+        30 : "Forest from GLAD tall vegetation",
+        31 : "Forest from SDPT planted forest extent",
+        32 : "Forest from GMW mangrove extent",
+        333: "Forest from shifting cultivation driver",
+        334: "Forest from logging driver",
+        335: "Forest from wildfire driver",
+        337: "Forest from natural disturbance driver",
+        34 : "Unstocked forest after TCL and before oil palm planting",
+        353: "Forest from mixed tall/short vegetation rule",
+        357: "Forest from vegetation/water transition rule",
+        358: "Forest from mixed snow/ice rule",
+        39 : "Forest from majority years rule",
+
+    # 4) Grassland:
+        40 : "Grass from GLAD short vegetation",
+        41 : "Grass from TCL + permanent agriculture driver + GPW cultivated grassland extent",
+        430: "Grass from TCL + unknown driver",
+        432: "Grass from TCL + hard commodities driver",
+        436: "Grass from TCL + settlements/infrastructure driver",
+        44 : "Grass prior to oil palm establishment",
+        453: "Grass from mixed tall/short vegetation rule",
+        457: "Grass from vegetation/water transition rule",
+        458: "Grass from mixed snow/ice rule",
+        49 : "Grass from majority years rule",
+
+    # 5) Wetland:
+        50: "Wetland from GLAD data",
+        51: "Wetland from water/wetland/built transition rule",
+        52: "Wetland from vegetation/water transition rule",
+        53: "Wetland from bare/ice to water/wetland transition rule",
+        59: "Wetland from majority years in mixed water rule",
+
+    # 6) Other Land:
+        60: "Bare from GLAD data",
+        61: "Bare from mixed bare + tall/short vegetation rule",
+        62: "Bare from mixed snow/ice rule",
+        69: "Bare from majority years rule",
+
+        70: "Water from GLAD data",
+        79: "Water from majority years in mixed water rule",
+
+        80: "Snow/ice from GLAD data",
+        89: "Snow/ice from majority years rule",
+
+}
+
+
 
 # Converts numeric ISO values to ISO codes
 # From https://github.com/wri/project-zeno-data-infra/blob/main/notebooks/grasslands_areas_gadm_2000-2022.ipynb
@@ -1829,6 +2050,29 @@ managed_land_to_text = {
     2: "unmanaged",
 }
 
+forest_age_category_to_text = {
+    0: 'non_forest',
+    1: '1_5yr',
+    6: '6_20yr',
+    21: '21_40yr',
+    41: '41_60yr',
+    61: '61_80yr',
+    81: '81_100yr',
+    101: '>100yr'
+}
+
+GLAD_LC_to_text = {
+    0: "Unassigned",
+    1: "Forest",
+    2: "Cropland",
+    3: "Settlement",
+    4: "Wetland",
+    5: "Grassland",
+    6: "Other land",
+    7: "Not specified"
+}
+
+land_use_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/IPCC_land_use_v{IPCC_LU_version_underscore}_standard_global/"
 veg_local_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/vegetation_v{veg_model_version_underscore}_standard_global/"
 SOC_local_zonal_stats_table_folder = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/SOC_v{SOC_model_version_underscore}_standard_global/"
 
@@ -1843,7 +2087,7 @@ original_shapefile_path = "/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_m
 reprojected_shapefile_path = "/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/world-administrative-boundaries_simple__20250102_reproj.shp"
 
 local_jpeg_folder_vegetation = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/vegetation/v{veg_model_version_underscore}_standard_global/"
-local_jpeg_folder_LULUCF = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/LULUCF_totals/veg_v{veg_model_version_underscore}_standard_global__org_soil_v_{organic_soil_model_version_underscore}__min_soil_v_{SOC_model_version_underscore}/"
+local_jpeg_folder_LULUCF = f"/mnt/c/GIS/AFOLU_flux_model/LULUCF/4x4km_aggregated_maps/LULUCF_totals/{LULUCF_full_version_underscore}/"
 local_jpeg_folder_cropland = f"/mnt/c/GIS/AFOLU_flux_model/cropland_emissions/20250828/4x4km_aggregated_maps/"
 local_jpeg_folder_livestock = f"/mnt/c/GIS/AFOLU_flux_model/livestock_emissions/20251223/4x4km_aggregated_maps/"
 local_jpeg_folder_AFOLU = f"/mnt/c/GIS/AFOLU_flux_model/AFOLU_totals/4x4km_aggregated_maps/v{veg_model_version_underscore}__standard__global/"
@@ -1855,8 +2099,8 @@ Robinson_crs = "ESRI:54030"
 land_bkgrnd = (245, 245, 245) # Color for land where no raster data (light gray)
 # land_bkgrnd = (2, 2, 2) # Color for land where no raster data (black: for testing)
 # land_bkgrnd = (245, 245, 220) # Color for land where no raster data (light yellow: for testing)
-ocean_color = (235, 235, 235) # Color for land where no raster data (very light gray)
-# ocean_color = (255, 255, 255) # Color for land where no raster data (white)
+# ocean_color = (235, 235, 235) # Color for ocean (gray)
+ocean_color = (255, 255, 255) # Color for ocean (white)
 # ocean_color = (50, 50, 50) # Color for land where no raster data (dark gray: for testing)
 boundary_color = (150, 150, 150) # Color for country boundaries (medium gray)
 boundary_width = 0.2 # Width of country boundaries
@@ -1881,12 +2125,15 @@ emissions_percentiles = [5, 25, 50, 75, 99]
 removals_colors_rgb = net_colors_rgb[0:5]
 emissions_colors_rgb = net_colors_rgb[5:]
 
+# Percentile at which map color saturates and the min and max values on legend (0.5 -> 0.5 and 99.5 percentiles)
+saturation_percentile = 0.5
+
 veg_pres_text = f"Vegetation fluxes: v{veg_model_version}, {interval_end_years_annual[0]}-{last_model_year_annual}"
 organic_soil_pres_text = f"Organic soil: v{organic_soil_model_version}, 2021-2024"
 mineral_soil_pres_text = f"Mineral soil: v{SOC_model_version}, 2021-2022"
 cropland_pres_text = f"Cropland: vYYYYMMDD, ca. 2020"
 livestock_pres_text = f"Livestock: vYYYYMMDD, ca. 2020"
-legend_percentile_disclaimer = f"Legend value range represents 1 and 99 percentiles of fluxes."
+legend_percentile_disclaimer = f"Legend value range represents {saturation_percentile} and {1-saturation_percentile} percentiles of fluxes."
 
 # Output global aggregated jpeg names
 three_panel_jpeg_base = f"three_panels__4km_aggregation__v{veg_model_version}"
@@ -1895,3 +2142,14 @@ three_panel_jpeg_base = f"three_panels__4km_aggregation__v{veg_model_version}"
 fraction_base_cmap = 'RdPu'
 
 
+#######
+### Sensitivity analysis
+#######
+
+# Variant names
+low_EF = 'low_partial_dist_EF'
+high_EF = 'high_partial_dist_EF'
+alt_AGB = 'ctrees_starting_AGC'
+alt_RF = 'alternative_RF'
+
+model_type_options = ['standard', low_EF, high_EF, alt_AGB, alt_RF]

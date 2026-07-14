@@ -30,6 +30,7 @@ def create_state_node_df(state_node_lookup_table_local, state_node_lookup_table_
 
     return state_node_df
 
+
 # Crops one input to the other input's extent.
 # ref is the reference dataset that is being cropped to.
 # From long chat in https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/684749fe-7b30-800a-ba8b-c502377f2c3a
@@ -44,6 +45,38 @@ def round_coords(ds, decimals=5):
         'y': np.round(ds.coords['y'].values, decimals)
     })
     return ds
+
+
+# Reclassifies age zarr for a given year into 20-year bins
+# Per Claude session 'Forest age categorization in zonal stats'
+def categorize_age(da):
+    """Reclassify raw forest age (integer years) into 20-year category codes."""
+    return xr.where(da == 0, 0,
+                    xr.where(da <= 5, 1,
+                    xr.where(da <= 20, 6,
+                    xr.where(da <= 40, 21,
+                    xr.where(da <= 60, 41,
+                    xr.where(da <= 80, 61,
+                    xr.where(da <= 100, 81, 101)))))))
+
+
+# Reclassifies composite landcover zarr for a given year into basic landcover classes.
+# Codes are from the GLAD-IPCC crosswalk in the AFOLU flux model schematic slide deck
+# Adapted Claude session 'Forest age categorization in zonal stats'
+def categorize_composite_LC(da):
+    return xr.where(da <= 4, 6,             # Codes 0-4                                     Other land
+                    xr.where(da <= 26, 5,   # Codes 5-26                                    Grassland
+                    xr.where(da <= 48, 1,   # Codes 27-48                                   Forest
+                    xr.where(da <= 104, 6,  # Codes 49-104, but practically just 100-104    Other land
+                    xr.where(da <= 126, 5,  # Codes 105-126                                 Grassland
+                    xr.where(da <= 148, 1,  # Codes 127-148                                 Other land
+                    xr.where(da <= 204, 4,  # Codes 149-204, but practically just 200-204   Wetland
+                    xr.where(da <= 207, 6,  # Codes 205-207                                 Other land
+                    xr.where(da <= 241, 6,  # Codes 208-241, but practically just code 241  Other land
+                    xr.where(da <= 244, 2,  # Codes 242-244, but practically just code 244  Cropland
+                    xr.where(da <= 250, 3,  # Codes 245-250, but practically just code 250  Settlement
+                    xr.where(da <= 254, 6,  # Codes 251-254, but practically just code 254  Other land
+                                        7))))))))))))   # All other codes                   None of the above
 
 
 # Converts results of flox to coordinate dictionary.
@@ -213,10 +246,11 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
     df_with_areas["gas"] = "Unassigned"
     df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("CH4", na=False), "gas"] = "CH4"
     df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("N2O", na=False), "gas"] = "N2O"
-    df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("CO2_only", na=False), "gas"] = "CO2"
+    df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("CO2_only__MgCO2", na=False), "gas"] = "CO2"
     df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("non_CO2", na=False), "gas"] = "non-CO2"
     df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("all_gases", na=False), "gas"] = "all gases"
     df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("SOC", na=False), "gas"] = "CO2"
+    df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("C__MgCO2", na=False), "gas"] = "CO2"  # Captures individual carbon pools
 
     # Replaces the year index with the actual reporting year (differs for vegetation and SOC)
     if flux_type == "vegetation":
@@ -257,17 +291,29 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
             "United States of America (the)": "USA"
         })
 
-    # Maps cont_eco to continent and ecozone-continent if the contextual layer is used
+    # Maps cont_eco to continent, ecozone, ecozone-continent, and climate domain if the contextual layer is used
     # From https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/698a53aa-8674-832c-b734-4bd8afc6a6df
+    # Tiles without any ecozone information at all, e.g., 00N_020W, were causing errors for continent and ecozone.
+    # Fix per Claude session 'vegetation_zonal_stats performance'
     if cn.cont_eco_zstats_pattern in df_with_areas.columns:
-        df_with_areas['continent'] = df_with_areas[cn.cont_eco_zstats_pattern].map(lambda x: cn.cont_eco_to_text.get(x, {}).get('continent'))
-        df_with_areas['continent_ecozone'] = df_with_areas[cn.cont_eco_zstats_pattern].map(lambda x: cn.cont_eco_to_text.get(x, {}).get('ecozone'))
+        df_with_areas['continent'] = pd.Series(
+            [cn.cont_eco_to_text.get(int(v), {}).get('continent') or 'Unassigned'
+             for v in df_with_areas[cn.cont_eco_zstats_pattern]],
+            index=df_with_areas.index, dtype=object
+        )
+        df_with_areas['ecozone'] = pd.Series(
+            [cn.cont_eco_to_text.get(int(v), {}).get('ecozone') or 'Unassigned'
+             for v in df_with_areas[cn.cont_eco_zstats_pattern]],
+            index=df_with_areas.index, dtype=object
+        )
+        df_with_areas['continent_ecozone'] = df_with_areas['continent'] + "-" + df_with_areas['ecozone']
 
         # Assigns climate domain
         df_with_areas = assign_climate_domain(df_with_areas)
 
         # Because some rows for contextual layers may be blank
         df_with_areas["continent"] = df_with_areas["continent"].fillna("Unassigned")
+        df_with_areas["ecozone"] = df_with_areas["ecozone"].fillna("Unassigned")
         df_with_areas["continent_ecozone"] = df_with_areas["continent_ecozone"].fillna("Unassigned")
 
     # Maps watershed codes to names if the contextual layer is used
@@ -283,7 +329,7 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
         df_with_areas["WDPA_high_protection"] = "Other protection status"
 
         df_with_areas.loc[df_with_areas["WDPA_type"] == "NA", "WDPA_high_protection"] = "Not protected"
-        df_with_areas.loc[df_with_areas["WDPA_type"].isin(["Cateogry Ia", "Category Ib", "Category II", "Category III"]), "WDPA_high_protection"] = "High protection"
+        df_with_areas.loc[df_with_areas["WDPA_type"].isin(["Category Ia", "Category Ib", "Category II", "Category III"]), "WDPA_high_protection"] = "High protection"
 
     # Maps driver of loss codes to names if the contextual layer is used
     if cn.drivers_of_loss_pattern in df_with_areas.columns:
@@ -297,6 +343,30 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
         df_with_areas[cn.managed_land_USA_pattern] = df_with_areas[cn.managed_land_USA_pattern].map(cn.managed_land_to_text)
     if cn.BRA_biomes_pattern in df_with_areas.columns:
         df_with_areas[cn.BRA_biomes_pattern] = df_with_areas[cn.BRA_biomes_pattern].map(cn.BRA_biomes_to_text)
+    if cn.forest_age_category_pattern in df_with_areas.columns:
+        df_with_areas[cn.forest_age_category_pattern] = df_with_areas[cn.forest_age_category_pattern].map(cn.forest_age_category_to_text)
+        df_with_areas[cn.forest_age_category_pattern] = df_with_areas[cn.forest_age_category_pattern].fillna("Unassigned")
+
+    # Maps IPCC land use class codes to names if the contextual layer is used
+    if cn.IPCC_class_pattern in df_with_areas.columns:
+        df_with_areas[f"{cn.IPCC_class_pattern}_name"] = (df_with_areas[cn.IPCC_class_pattern].map(cn.numeric_to_ipcc_class).fillna("Unassigned"))
+
+    # Maps IPCC land use change codes to names if the contextual layer is used
+    if cn.IPCC_change_pattern in df_with_areas.columns:
+        df_with_areas[f"{cn.IPCC_change_pattern}_name"] = (df_with_areas[cn.IPCC_change_pattern].map(cn.numeric_to_ipcc_change).fillna("Unassigned"))
+
+    # Maps IPCC node codes to rule descriptions if the contextual layer is used
+    if cn.IPCC_node_pattern in df_with_areas.columns:
+        df_with_areas[f"{cn.IPCC_node_pattern}_name"] = (df_with_areas[cn.IPCC_node_pattern].map(cn.numeric_to_ipcc_node_code).fillna("Unassigned"))
+
+    # Maps IPCC summary codes to names if the contextual layer is used
+    if cn.IPCC_summary_pattern in df_with_areas.columns:
+        df_with_areas[f"{cn.IPCC_summary_pattern}_name"] = (df_with_areas[cn.IPCC_summary_pattern].map(cn.numeric_to_ipcc_change).fillna("Unassigned"))
+        
+    # Maps watershed codes to names if the contextual layer is used
+    if cn.first_year_LC_composite_pattern in df_with_areas.columns:
+        df_with_areas['first_year_LC_composite_name'] = df_with_areas[cn.first_year_LC_composite_pattern].map(cn.GLAD_LC_to_text)
+        df_with_areas["first_year_LC_composite_name"] = df_with_areas["first_year_LC_composite_name"].fillna("Unassigned")
 
     # Calculates flux density (Mg CO2(e)/ha) for each row
     df_with_areas['density__Mg_ha'] = df_with_areas['value'] / df_with_areas['pixel_area_ha'].replace(0, pd.NA)
@@ -305,6 +375,7 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
     df_with_areas = df_with_areas.rename(columns={'pixel_area_ha': 'area_ha'})
 
     return df_with_areas
+
 
 # Converts long-format df to wide-format df
 # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69fe3161-edb8-832e-a90d-d9e75e4012d3
@@ -345,14 +416,14 @@ def create_wide_df(combined_df, main_logger):
 
 
 # Uploads output tables (parquet and csv) if the run is large enough
-def upload_zstats_to_s3(stage, local_zonal_stats_folder, main_logger, model_path_description, model_type,
+def upload_zstats_to_s3(stage, local_zonal_stats_folder, s3_output_folder, main_logger, model_path_description, model_type,
                         model_version, tiles_processed):
 
     run_date = date.today().strftime("%Y%m%d")
 
     # Uploads output tables to s3 if it's a larger run where I might plausibly want to save the results
     if tiles_processed > 3:
-        s3_zonal_stats_folder = cn.veg_outputs_path.replace(cn.model_version_type_description_placeholder,
+        s3_zonal_stats_folder = s3_output_folder.replace(cn.model_version_type_description_placeholder,
                                                             f"version_{model_version}__{model_type}__{model_path_description}") + f"zonal_statistics/{run_date}_{stage}/"
 
         files_to_upload = [

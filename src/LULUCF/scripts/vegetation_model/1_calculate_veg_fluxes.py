@@ -6,7 +6,7 @@ outputs that are useful for QC and potentially as contextual layers (e.g., compo
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Local test (Dask part does not work because of client.submit()):
-python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -bb 10 49.75 10.25 50 -cs 0.25 --run_local --no_upload
+python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -mt standard -mpd test_box -bb 10 49.75 10.25 50 -cs 0.25 --run_local --no_upload
 
 Coiled small tests:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn vegetation_model
@@ -14,7 +14,11 @@ python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetat
 
 Coiled small tests (1x1 deg chunk needs 32GB worker):
 python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn vegetation_model
-python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt standard -mpd test_box -bb -64 -22 -63 -21 -cs 1 --create_zarr
+python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt standard -mpd test_box -bb 10 49 11 50 -cs 1 --create_zarr
+python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt low_partial_dist_EF -mpd test_box -bb 110 -1 111 0 -cs 1 --create_zarr
+python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt high_partial_dist_EF -mpd test_box -bb 110 -1 111 0 -cs 1 --create_zarr
+python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt alternative_RF -mpd test_box -bb -72 -15 -70 -13 -cs 1 --create_zarr
+python -m src.LULUCF.scripts.vegetation_model.1_calculate_veg_fluxes -cn vegetation_model -mt ctrees_starting_AGC -mpd test_box -bb 110 -1 111 0 -cs 1 --create_zarr
 
 Coiled Cerrado test (174 features):
 python -m src.utilities.create_cluster -n 20 -t 1 -m 32 -cn vegetation_model
@@ -36,12 +40,17 @@ which is the situation for large analyses, obviously.
 https://app.asana.com/1/25496124013636/task/1206230383901961/comment/1210641504248464?focus=true
 
 #TODO change NoData in flux outputs to something besides 0 because 0 has a meaning for fluxes
-#TODO update 1km drivers to correct year. Currently using through 2023.
+#TODO update 1km drivers to correct year. Currently using through 2023. (But this would also mean changing it for zonal stats, including organic soil and mineral soil zstats. So, need to think through that.)
 #TODO add AGC removal factor, AGC emission fraction, and forest age to zarr output (for use in zonal statistics)
 #TODO make all outputs have a unit where /PER_HA_OR_PIXEL/ currently is-- change it to /UNIT/ so that non-flux/density outputs have a unit, too
 #TODO Check for changes to zarr creation and usage (including 10x10 creation and zonal stats) from working on SOC
 #TODO potential change to 3112/3119
 #TODO potentially add branches for loss of primary forest (currently just have primary forest remaining primary forest)
+#TODO Add veg_ to the start of output patterns to distinguish them from SOC or organic soil
+#TODO Delete all references to 5-year intervals (including s3 paths)
+#TODO Change all runtimes to decimal hours from HH:MM:SS
+#TODO Change error/exception logic for input downloads to catcha and retry everything (rather than exception types individually), per Claude session 'Failed Coiled tasks diagnosis'
+#TODO Figure out why log is only including some tasks (including performance stats at the end) and how to make it include all tasks
 """
 
 import argparse
@@ -73,6 +82,17 @@ from src.utilities import universal_utilities as uu
 from src.utilities import zarr_utilities as zu
 from src.utilities import resize_cluster
 
+# Reads a text file of chunk IDs to keep or skip.
+def read_chunk_ids_file(chunk_ids_file):
+    with open(chunk_ids_file, "r") as f:
+        chunk_ids = {
+            line.strip()
+            for line in f
+            if line.strip() and not line.strip().startswith("#")
+        }
+
+    return chunk_ids
+
 # To get enhanced logging from workers so that I can tell why they are lost. I don't know if this works.
 # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6949a74e-1388-832d-8f8e-5e9bf084ecb8
 dask.config.set({
@@ -91,8 +111,9 @@ os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "TRUE"
 # Operates pixel by pixel, so uses numba (Python compiled to C++).
 @jit(nopython=True)
 def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int32, in_dict_float32,
-                      primary_forest_RF_array, partial_disturbance_EF_array, mangrove_C_ratio_array,
-                      model_start_year, end_year, interval_type, interval_year_diff_list, interval_length_list, interval_end_years, is_large_run):
+                      primary_forest_RF_array, partial_disturbance_EF_array, mangrove_C_ratio_array, model_start_year,
+                      end_year, interval_type, interval_year_diff_list, interval_length_list, interval_end_years,
+                      is_large_run, model_type):
 
     # Separate dictionaries for output numpy arrays of each datatype, named by output data type.
     # This is because a dictionary in a Numba function cannot have arrays with multiple data types, so each dictionary has to store only one data type,
@@ -121,7 +142,9 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
     # Root:shoot (unitless)
     r_s_ratio_non_mang_block = in_dict_float32[cn.r_s_ratio_non_mang_pattern]
 
-    # Natural forest regrowth curves (Mg C/ha/yr)
+    # Natural forest regrowth curves (Mg C/ha/yr).
+    # Note that these keys are used regardless of whether the values come from Robinson et al. (0-5, 6-10, 11-15, etc.)
+    # or Xu et al. (0-5, 5-10, 10-15, etc.). Keeping the keys the same regardless of data source for simplicity.
     natrl_forest_curve_0_5_AGC_RF_block = in_dict_float32[f"{cn.natural_forest_growth_curve_pattern}__0_5_years"]
     natrl_forest_curve_6_10_AGC_RF_block = in_dict_float32[f"{cn.natural_forest_growth_curve_pattern}__6_10_years"]
     natrl_forest_curve_11_15_AGC_RF_block = in_dict_float32[f"{cn.natural_forest_growth_curve_pattern}__11_15_years"]
@@ -179,6 +202,40 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
     # fallback_value is only used if the chunk doesn't have any climate_zone pixels in it at all.
     climate_zone_fallback = nu.fallback_conteco_climzone_value(climate_zone_block, 5)
 
+    # Fire-related emission factors for sensitivity analyses for forests, crop residue, and short veg
+    # Emission factor for forests if no height loss
+    if model_type == cn.low_EF:  # low emission factor model
+        Cf_forest_undisturbed = cn.Cf_forest_undisturbed_low
+
+        Cf_crop_residue = cn.Cf_crop_residue_low
+        Gef_CH4_crop_residue = cn.Gef_CH4_crop_residue_low_EF
+        Gef_N2O_crop_residue = cn.Gef_N2O_crop_residue_low_EF
+
+        Cf_grassland = cn.Cf_grassland_low
+        Gef_CH4_grassland = cn.Gef_CH4_grassland_low_EF
+        Gef_N2O_grassland = cn.Gef_N2O_grassland_low_EF
+
+    elif model_type == cn.high_EF:  # high emission factor model
+        Cf_forest_undisturbed = cn.Cf_forest_undisturbed_high
+
+        Cf_crop_residue = cn.Cf_crop_residue_high
+        Gef_CH4_crop_residue = cn.Gef_CH4_crop_residue_high_EF
+        Gef_N2O_crop_residue = cn.Gef_N2O_crop_residue_high_EF
+
+        Cf_grassland = cn.Cf_grassland_high
+        Gef_CH4_grassland = cn.Gef_CH4_grassland_high_EF
+        Gef_N2O_grassland = cn.Gef_N2O_grassland_high_EF
+
+    else:  # standard model and any that doesn't change the emission factors
+        Cf_forest_undisturbed = cn.Cf_forest_undisturbed_standard
+
+        Cf_crop_residue = cn.Cf_crop_residue_standard
+        Gef_CH4_crop_residue = cn.Gef_CH4_crop_residue_standard
+        Gef_N2O_crop_residue = cn.Gef_N2O_crop_residue_standard
+
+        Cf_grassland = cn.Cf_grassland_standard
+        Gef_CH4_grassland = cn.Gef_CH4_grassland_standard
+        Gef_N2O_grassland = cn.Gef_N2O_grassland_standard
 
     ## Test/intermediate outputs blocks
 
@@ -423,7 +480,8 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                 mang_timeseries = np.array([mang_1996, mang_2007, mang_2008, mang_2009, mang_2010,
                                             mang_2015, mang_2016, mang_2017, mang_2018, mang_2019, mang_2020]).astype('uint8')
 
-                # Secondary forest removal factors (Mg AGC/ha/yr)
+                # Secondary forest removal factors (Mg AGC/ha/yr).
+                # From Xu et al. for RF sensitivity analysis.
                 natrl_forest_curve_0_5_AGC_RF = natrl_forest_curve_0_5_AGC_RF_block[row, col]
                 natrl_forest_curve_6_10_AGC_RF = natrl_forest_curve_6_10_AGC_RF_block[row, col]
                 natrl_forest_curve_11_15_AGC_RF = natrl_forest_curve_11_15_AGC_RF_block[row, col]
@@ -530,6 +588,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                 # So, for a five-year interval, if the starting age is 39 years, it will use the 20-40 year RF for the entire interval
                 # rather than using 20-40 for the first 2 years then 41-60 for the rest of the interval. A fine simplification.
                 # Adds 1 to forest_age_start_of_interval to downward adjust the age for the beginning of the interval.
+                # From Xu et al. for RF sensitivity analysis.
                 if 0 <= forest_age_start_of_interval + 1 <= 5:
                     natrl_forest_age_dependent_agc_rf = natrl_forest_curve_0_5_AGC_RF
                 elif 6 <= forest_age_start_of_interval + 1 <= 10:
@@ -556,11 +615,11 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                     composite_primary_cell = 0
 
                 # Gef for fire emissions for different gases for forests specifically (grams respective gas/kg dry matter)
-                Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest = nu.calc_Gef_forest(climate_domain_cell)
+                Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest = nu.calc_Gef_forest(climate_domain_cell, model_type)
 
                 # Cf for fire emissions for all gases for forests specifically (unitless).
                 # Based on driver of loss, not the interval-end land cover.
-                Cf_forest = nu.calc_Cf_forest(climate_domain_cell, drivers_cell, composite_primary_cell)
+                Cf_forest = nu.calc_Cf_forest(climate_domain_cell, drivers_cell, composite_primary_cell, model_type)
 
                 # Sets all mangrove states to false and only initializes mangrove states if is_ever_mang is True below
                 before_mang = mang_gain = mang_loss = mang_remaining_mang = non_mang_remaining_non_mang = after_mang = False
@@ -1563,7 +1622,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         first_year_burned_during_interval,
                                         RF_AGC_final, RF_BGC_final, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                         interval_end_year, c_dens_in, most_recent_year_not_tall_veg,
-                                        cn.Cf_forest_undisturbed, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest, deadwood_c_ratio=0, litter_c_ratio=0)
+                                        Cf_forest_undisturbed, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest, deadwood_c_ratio=0, litter_c_ratio=0)
                                 else: # Planted trees not disturbed in the current interval (42212->422129/422122)
                                     node = nu.accrete_node(node, 2)
                                     RF_AGC_final = planted_forest_AGC_RF_cell
@@ -1576,7 +1635,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         first_year_burned_during_interval,
                                         RF_AGC_final, RF_BGC_final, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                         interval_end_year, c_dens_in, most_recent_year_not_tall_veg,
-                                        cn.Cf_forest_undisturbed, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest, deadwood_c_ratio=0, litter_c_ratio=0)
+                                        Cf_forest_undisturbed, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest, deadwood_c_ratio=0, litter_c_ratio=0)
                             else:  # Non-planted trees not disturbed in last interval (4222)
                                 node = nu.accrete_node(node, 2)
                                 if GLAD_tall_veg_LC_curr:  # Natural forest not disturbed in last interval (42221)
@@ -1592,7 +1651,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                             node, interval_length, forest_age_start_of_interval, first_year_burned_during_interval,
                                             RF_AGC_final, RF_BGC_final, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                             interval_end_year, c_dens_in, most_recent_year_not_tall_veg,
-                                            cn.Cf_forest_undisturbed, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest,
+                                            Cf_forest_undisturbed, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest,
                                             deadwood_c_ratio=deadwood_c_ratio_non_mang, litter_c_ratio=litter_c_ratio_non_mang)
                                     else:  # Natural forest undisturbed since model start (422212)
                                         node = nu.accrete_node(node, 2)
@@ -1607,7 +1666,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                                 node, interval_length, forest_age_start_of_interval, first_year_burned_during_interval,
                                                 RF_AGC_final, RF_BGC_final, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                                 interval_end_year, c_dens_in, most_recent_year_not_tall_veg,
-                                                cn.Cf_forest_undisturbed, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest,
+                                                Cf_forest_undisturbed, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest,
                                                 deadwood_c_ratio=deadwood_c_ratio_non_mang, litter_c_ratio=litter_c_ratio_non_mang)
                                         else: # Old secondary forest undisturbed since model start (4222122->42221229/42221222)
                                             node = nu.accrete_node(node, 2)
@@ -1620,7 +1679,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                                 node, interval_length, forest_age_start_of_interval, first_year_burned_during_interval,
                                                 RF_AGC_final, RF_BGC_final, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                                 interval_end_year, c_dens_in, most_recent_year_not_tall_veg,
-                                                cn.Cf_forest_undisturbed, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest,
+                                                Cf_forest_undisturbed, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest,
                                                 deadwood_c_ratio=deadwood_c_ratio_non_mang, litter_c_ratio=litter_c_ratio_non_mang)
                                 else:  # Trees outside forests not disturbed in the current interval (42222->422229/422222)
                                     node = nu.accrete_node(node, 2)
@@ -1633,7 +1692,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         node, interval_length, forest_age_start_of_interval, first_year_burned_during_interval,
                                         RF_AGC_final, RF_BGC_final, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                         interval_end_year, c_dens_in_ToF, most_recent_year_not_tall_veg,
-                                        cn.Cf_forest_undisturbed, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest, deadwood_c_ratio=0, litter_c_ratio=0)
+                                        Cf_forest_undisturbed, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest, deadwood_c_ratio=0, litter_c_ratio=0)
 
                 ### Non-cropland/non-tree to cropland (without trees)
                 elif (LC_prev != cn.cropland) and (LC_curr == cn.cropland):
@@ -1658,7 +1717,12 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                         rf_post_dist = short_veg_AGC_BGC_RF_adj  # Post conversion removals to short veg
                         forest_age_end_of_interval = 0  # Sets forest age to 0 because there's no forest
                         (state_out, c_gross_emis_out, c_gross_removals_out,
-                         c_dens_out, non_co2_flux_out) = nu.calc_cropland_non_cropland(node, c_dens_in, c_pools_EF_no_fire, times_burned_in_interval, rf_post_dist)
+                         c_dens_out, non_co2_flux_out) = nu.calc_cropland_non_cropland(node, c_dens_in,
+                                                                                       c_pools_EF_no_fire,
+                                                                                       times_burned_in_interval,
+                                                                                       rf_post_dist, Cf_crop_residue,
+                                                                                       Gef_CH4_crop_residue,
+                                                                                       Gef_N2O_crop_residue)
                     elif water_LC_curr:
                         node = nu.accrete_node(node, 2)  # Annual cropland converted to water (522->5222) (no fire option)
                         c_pools_EF_no_fire = cn.agc_emissions_only  # There should only be AGC in cropland anyway
@@ -1668,7 +1732,11 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                         forest_age_end_of_interval = 0  # Sets forest age to 0 because there's no forest
                         # No fire emissions when cropland is converted to water. Simplest way is to just overwrite the burned count.
                         (state_out, c_gross_emis_out, c_gross_removals_out,
-                         c_dens_out, non_co2_flux_out) = nu.calc_cropland_non_cropland(node, c_dens_in, c_pools_EF_no_fire, 0, rf_post_dist)
+                         c_dens_out, non_co2_flux_out) = nu.calc_cropland_non_cropland(node, c_dens_in,
+                                                                                       c_pools_EF_no_fire, 0,
+                                                                                       rf_post_dist, Cf_crop_residue,
+                                                                                       Gef_CH4_crop_residue,
+                                                                                       Gef_N2O_crop_residue)
                     else:
                         node = nu.accrete_node(node, 3)  # Annual cropland converted to anything else (522->5239/5232) (fire option permitted because water is its own branch)
                         c_pools_EF_no_fire = cn.agc_emissions_only  # There should only be AGC in cropland anyway
@@ -1677,7 +1745,12 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                         rf_post_dist = np.array([0.0, 0.0, 0.0, 0.0]).astype('float32')  # No post-conversion removals
                         forest_age_end_of_interval = 0  # Sets forest age to 0 because there's no forest
                         (state_out, c_gross_emis_out, c_gross_removals_out,
-                         c_dens_out, non_co2_flux_out) = nu.calc_cropland_non_cropland(node, c_dens_in, c_pools_EF_no_fire, times_burned_in_interval, rf_post_dist)
+                         c_dens_out, non_co2_flux_out) = nu.calc_cropland_non_cropland(node, c_dens_in,
+                                                                                       c_pools_EF_no_fire,
+                                                                                       times_burned_in_interval,
+                                                                                       rf_post_dist, Cf_crop_residue,
+                                                                                       Gef_CH4_crop_residue,
+                                                                                       Gef_N2O_crop_residue)
                 ### Cropland remaining cropland (without trees)
                 elif (LC_prev == cn.cropland) and (LC_curr == cn.cropland):
                     node = nu.accrete_node(node, cn.cropland_node)  # General cropland node code (5)
@@ -1685,7 +1758,10 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                     c_dens_in = c_dens_in_cropland
                     forest_age_end_of_interval = 0  # Sets forest age to 0 because there's no forest
                     (state_out, c_gross_emis_out, c_gross_removals_out,
-                     c_dens_out, non_co2_flux_out) = nu.calc_cropland_cropland(node, c_dens_in, times_burned_in_interval)
+                     c_dens_out, non_co2_flux_out) = nu.calc_cropland_cropland(node, c_dens_in,
+                                                                               times_burned_in_interval,
+                                                                               Cf_crop_residue, Gef_CH4_crop_residue,
+                                                                               Gef_N2O_crop_residue)
 
                 ### Non-tree/cropland converted to short vegetation
                 ### Requires 1/2) GLAD LC change and 3) GPW height shows sufficient veg at end of interval
@@ -1709,7 +1785,9 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                         forest_age_end_of_interval = 0  # Sets forest age to 0 because there's no forest
                         # No fire emissions when cropland is converted to water. Simplest way is to just overwrite the burned count.
                         (state_out, c_gross_emis_out, c_gross_removals_out,
-                         c_dens_out, non_co2_flux_out) = nu.calc_short_veg_loss(node, c_dens_in, c_pools_EF_no_fire, 0)
+                         c_dens_out, non_co2_flux_out) = nu.calc_short_veg_loss(node, c_dens_in, c_pools_EF_no_fire, 0,
+                                                                                Cf_grassland, Gef_CH4_grassland,
+                                                                                Gef_N2O_grassland)
                     else:
                         node = nu.accrete_node(node, 2)  # Short vegetation loss converted to non-water (622->6229/6222)
                         c_dens_in = c_dens_in_short_veg
@@ -1717,7 +1795,9 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                         agc_ef_out_cell = c_pools_EF_no_fire[0]  # Emission factor used for output geotif
                         forest_age_end_of_interval = 0  # Sets forest age to 0 because there's no forest
                         (state_out, c_gross_emis_out, c_gross_removals_out,
-                         c_dens_out, non_co2_flux_out) = nu.calc_short_veg_loss(node, c_dens_in, c_pools_EF_no_fire, times_burned_in_interval)
+                         c_dens_out, non_co2_flux_out) = nu.calc_short_veg_loss(node, c_dens_in, c_pools_EF_no_fire,
+                                                                                times_burned_in_interval, Cf_grassland,
+                                                                                Gef_CH4_grassland, Gef_N2O_grassland)
                 ### Short vegetation remaining short vegetation
                 elif GLAD_short_veg_LC_prev and GLAD_short_veg_LC_curr:
                     node = nu.accrete_node(node, cn.grassland_node)  # General short veg node code (6)
@@ -1725,7 +1805,8 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                     c_dens_in = c_dens_in_short_veg
                     forest_age_end_of_interval = 0  # Sets forest age to 0 because there's no forest
                     (state_out, c_gross_emis_out, c_gross_removals_out,
-                     c_dens_out, non_co2_flux_out) = nu.calc_short_veg_short_veg(node, c_dens_in, times_burned_in_interval)
+                     c_dens_out, non_co2_flux_out) = nu.calc_short_veg_short_veg(node, c_dens_in, times_burned_in_interval,
+                                                                                 Cf_grassland, Gef_CH4_grassland, Gef_N2O_grassland)
 
                 # When decision trees above do not apply (generally, carbon-less, non-vegetated land covers)
                 else:
@@ -1919,6 +2000,8 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
 
     chunk_start_time = time.time()
 
+    lu.print_and_log(f"Starting chunk {uu.boundstr(bounds)}: {uu.timestr()}", is_large_run, logger_worker)
+
     uu.rename_s3_task_file(stage, bounds, "preprocessing_", is_large_run, logger_worker)
 
     bounds_str = uu.boundstr(bounds)  # String form of chunk bounds, from e.g., [8, -1, 9, 0] to 8_-1_9_0
@@ -1958,7 +2041,7 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
     # Note: If running in a local Dask cluster, prints to console may be duplicated. Doesn't happen with a Coiled cluster of the same size (1 worker).
     # Seems to be a problem with local Dask getting overwhelmed by so many futures being created and downloaded from s3.
     # futures = uu.prepare_to_download_chunk(bounds, updated_download_dict, chunk_length_pixels, is_large_run, logger_worker, False)
-    futures = uu.prepare_to_download_chunk(bounds, updated_download_dict, chunk_length_pixels, is_large_run, logger_worker, False)
+    futures = uu.prepare_to_download_chunk(bounds, updated_download_dict, chunk_length_pixels, is_large_run, logger_worker, True)
     # print(futures)
 
     lu.print_and_log(f"Waiting for requests for data in chunk {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker)
@@ -1968,15 +2051,19 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
 
     # Ensures futures stores Future objects
     # Revised with https://chatgpt.com/share/e/67bde66c-d9a0-800a-a524-a9ef88c641a2 to return status messages for chunks
-    for future in concurrent.futures.as_completed(futures):
-        layer = futures[future]  # Gets the corresponding key
-        data, status = future.result()  # Unpacks the tuple result
-        # if 'success' not in status: # Prints and logs any inputs that couldn't be accessed (downloaded as all 0s) or had to be padded
-        #     lu.print_and_log(f"{status}: {uu.timestr()}", is_large_run, logger_worker)
-        layers[layer] = data
+    # Revised with Claude session 'SOC stock script hang at task 3799'
+    try:
+        for future in concurrent.futures.as_completed(futures, timeout=cn.download_timeout):
+            layer = futures[future]
+            data, status = future.result()
+            if 'success' not in status:
+                lu.print_and_log(f"{status}: {uu.timestr()}", False, logger_worker)
+            layers[layer] = data
+    except concurrent.futures.TimeoutError:
+        raise RuntimeError(f"Download timed out after {cn.download_timeout}s for {bounds_str} ({tile_id}): {uu.timestr()}")
 
     # Test prints
-    # print(layers)
+    # print(bounds_str, layers)
     # print(layers['burned_area_2015'].max())
     # print(layers[cn.climate_zone_pattern].max())
     # print(layers[cn.planted_forest_AGC_BGC_removal_factor_pattern])
@@ -2023,10 +2110,20 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
     uu.rename_s3_task_file(stage, bounds, "calculating_", is_large_run, logger_worker)
     calc_start = time.time()
 
-    out_dict_uint8, out_dict_uint16, out_dict_uint32, out_dict_float32 = vegetation_fluxes(
-        typed_dict_uint8, typed_dict_uint16, typed_dict_int16, typed_dict_int32, typed_dict_float32,
-        primary_forest_RF_array, partial_disturbance_EF_array, mangrove_C_ratio_array,
-        start_year, end_year, interval_type, interval_year_diff_list, interval_length_list, interval_end_years, is_large_run)
+    out_dict_uint8, out_dict_uint16, out_dict_uint32, out_dict_float32 = vegetation_fluxes(typed_dict_uint8,
+                                                                                           typed_dict_uint16,
+                                                                                           typed_dict_int16,
+                                                                                           typed_dict_int32,
+                                                                                           typed_dict_float32,
+                                                                                           primary_forest_RF_array,
+                                                                                           partial_disturbance_EF_array,
+                                                                                           mangrove_C_ratio_array,
+                                                                                           start_year, end_year,
+                                                                                           interval_type,
+                                                                                           interval_year_diff_list,
+                                                                                           interval_length_list,
+                                                                                           interval_end_years,
+                                                                                           is_large_run, model_type)
 
     calc_end = time.time()
     lu.print_and_log(f"Done calculating vegetation fluxes and carbon densities in {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
@@ -2158,7 +2255,7 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
         lu.print_and_log(f"Upload tasks created for {bounds_str} in {tile_id}. Uploading now: {uu.timestr()}", False, logger_worker)
 
         # Execute uploads in parallel
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=3) as executor:
             executor.map(lambda args: uu.upload_raster_to_s3(*args), upload_tasks)
 
         upload_end_time = time.time()
@@ -2195,6 +2292,7 @@ def safe_task_wrapper(*args, **kwargs):
 
         return {
             "status": "failed",
+            "chunk": uu.boundstr(args[0]),
             "error": str(e),
             "traceback": traceback.format_exc(),
             "memory_at_failure": {
@@ -2207,16 +2305,22 @@ def safe_task_wrapper(*args, **kwargs):
 def main(cluster_name, year_range, model_type,
          run_local=False, no_stats=False, no_log=False, no_upload=False, create_zarr=False,
          chunk_shapefile_uri=False, bounding_box=None, chunk_size_deg=None, first_chunks=None,
-         run_date=None, model_path_description=None, log_note=None):
+         run_date=None, model_path_description=None, log_note=None, chunk_ids_file=None):
 
     ### Step 1: Preparation
+
+    if model_type not in cn.model_type_options:
+        sys.exit(f'model_type not found. Must use value from {cn.model_type_options}')
 
     # Model stage being run
     stage = 'vegetation_fluxes'
 
     # Runs chunks in batches of specified size.
     # Each batch slows down processing because chunks inevitably lag and that happens more the more batches there are.
-    batch_size = 3800  # 5 batches to cover all chunks
+    if model_type == cn.alt_RF:
+        batch_size = 4000  # 1 batch for the full Xu et al. regrowth extent (3973 chunks)
+    else:
+        batch_size = 3800  # 5 batches to cover all chunks
     # batch_size = 8  # large-scale testing
 
     # Determines if arguments for start and end year are valid
@@ -2265,6 +2369,16 @@ def main(cluster_name, year_range, model_type,
 
     # Creates the list of chunks to process, depending on the approach: shapefile attribute table or a bounding box
     chunk_list, chunk_size_pixels = uu.create_chunk_list(bounding_box, chunk_shapefile_uri, chunk_size_deg, first_chunks, fishnet_iso_df, main_logger)
+
+    # Filter to only chunks listed in a text file (if provided)
+    if chunk_ids_file:
+        keep_set = read_chunk_ids_file(chunk_ids_file)
+        original_count = len(chunk_list)
+        chunk_list = [chunk for chunk in chunk_list if uu.boundstr(chunk) in keep_set]
+        main_logger.info(f"Selected {len(chunk_list)} of {original_count} chunks from {chunk_ids_file}.")
+        if len(chunk_list) == 0:
+            raise ValueError(f"No chunks from {chunk_ids_file} matched the generated chunk_list. Check that the chunk IDs use uu.boundstr() format.")
+
     main_logger.info(f"Chunks to process: {len(chunk_list)}")
 
     # Determines if the output file names for final versions of outputs should be used
@@ -2311,9 +2425,16 @@ def main(cluster_name, year_range, model_type,
 
     # Young natural forest rasters (several age intervals).
     # Each growth interval's rate is in its own folder.
-    for growth_interval in cn.natural_forest_growth_curve_intervals:
-        download_dict[f"{cn.natural_forest_growth_curve_pattern}__{growth_interval}_years"] = \
-            f"{cn.natural_forest_growth_curve_dir}rate_{growth_interval}/{sample_tile_id}_{cn.natural_forest_growth_curve_pattern}__{growth_interval}_years__nibble_{cn.secondary_forest_curve_run_date}.tif"
+    if model_type == cn.alt_RF:  # Sensitivity analysis using Xu et al. regrowth rates. Key uses Robinson age intervals (0-5, 6-10, 11-15, etc.) for Xu age intervals (0-5, 5-10, 10-15, etc.)
+        main_logger.info(f"Using Xu regrowth rates because model_type is {model_type}")
+        for xu_interval, robinson_interval in zip(cn.Xu_regrowth_intervals, cn.natural_forest_growth_curve_intervals):
+            download_dict[f"{cn.natural_forest_growth_curve_pattern}__{robinson_interval}_years"] = \
+                f"{cn.Xu_regrowth_AGC_rate_tiles_dir}{xu_interval}/{sample_tile_id}_{cn.Xu_regrowth_AGC_rate_pattern}__{xu_interval}_{cn.Xu_global_date}.tif"
+    else:  # All other model types
+        main_logger.info(f"Using Robinson regrowth rates because model_type is {model_type}")
+        for growth_interval in cn.natural_forest_growth_curve_intervals:
+            download_dict[f"{cn.natural_forest_growth_curve_pattern}__{growth_interval}_years"] = \
+                f"{cn.natural_forest_growth_curve_dir}rate_{growth_interval}/{sample_tile_id}_{cn.natural_forest_growth_curve_pattern}__{growth_interval}_years__nibble_{cn.secondary_forest_curve_run_date}.tif"
 
     # Burned area rasters (every year)-- same code for annual, 5-year model, or hybrid.
     # Each burned area year needs to be in its own folder.
@@ -2328,10 +2449,24 @@ def main(cluster_name, year_range, model_type,
         download_dict[cn.deadwood_c_LC_masked_dens_pattern] = f"{cn.deadwood_c_2000_LC_masked_dir}{sample_tile_id}__{cn.deadwood_c_2000_LC_masked_pattern}.tif"
         download_dict[cn.litter_c_LC_masked_dens_pattern] = f"{cn.litter_c_2000_LC_masked_dir}{sample_tile_id}__{cn.litter_c_2000_LC_masked_pattern}.tif"
     elif start_year == 2015:
-        download_dict[cn.agc_LC_masked_dens_pattern] = f"{cn.agc_2015_LC_masked_dir}{sample_tile_id}__{cn.agc_2015_LC_masked_pattern}.tif"
-        download_dict[cn.bgc_LC_masked_dens_pattern] = f"{cn.bgc_2015_LC_masked_dir}{sample_tile_id}__{cn.bgc_2015_LC_masked_pattern}.tif"
-        download_dict[cn.deadwood_c_LC_masked_dens_pattern] = f"{cn.deadwood_c_2015_LC_masked_dir}{sample_tile_id}__{cn.deadwood_c_2015_LC_masked_pattern}.tif"
-        download_dict[cn.litter_c_LC_masked_dens_pattern] = f"{cn.litter_c_2015_LC_masked_dir}{sample_tile_id}__{cn.litter_c_2015_LC_masked_pattern}.tif"
+        if model_type == cn.alt_AGB:
+            download_dict[cn.agc_LC_masked_dens_pattern] = (
+                f"{cn.agc_2015_ctrees_LC_masked_dir}{sample_tile_id}__{cn.agc_LC_masked_dens_pattern}_2015.tif")
+            download_dict[cn.bgc_LC_masked_dens_pattern] = (
+                f"{cn.bgc_2015_ctrees_LC_masked_dir}{sample_tile_id}__{cn.bgc_LC_masked_dens_pattern}_2015.tif")
+            download_dict[cn.deadwood_c_LC_masked_dens_pattern] = (
+                f"{cn.deadwood_c_2015_ctrees_LC_masked_dir}{sample_tile_id}__{cn.deadwood_c_LC_masked_dens_pattern}_2015.tif")
+            download_dict[cn.litter_c_LC_masked_dens_pattern] = (
+                f"{cn.litter_c_2015_ctrees_LC_masked_dir}{sample_tile_id}__{cn.litter_c_LC_masked_dens_pattern}_2015.tif")
+        else:
+            download_dict[
+                cn.agc_LC_masked_dens_pattern] = f"{cn.agc_2015_LC_masked_dir}{sample_tile_id}__{cn.agc_2015_LC_masked_pattern}.tif"
+            download_dict[
+                cn.bgc_LC_masked_dens_pattern] = f"{cn.bgc_2015_LC_masked_dir}{sample_tile_id}__{cn.bgc_2015_LC_masked_pattern}.tif"
+            download_dict[
+                cn.deadwood_c_LC_masked_dens_pattern] = f"{cn.deadwood_c_2015_LC_masked_dir}{sample_tile_id}__{cn.deadwood_c_2015_LC_masked_pattern}.tif"
+            download_dict[
+                cn.litter_c_LC_masked_dens_pattern] = f"{cn.litter_c_2015_LC_masked_dir}{sample_tile_id}__{cn.litter_c_2015_LC_masked_pattern}.tif"
     else:
         sys.exit('interval_type not found')
 
@@ -2448,9 +2583,17 @@ def main(cluster_name, year_range, model_type,
     mangrove_C_ratio_array = uu.convert_lookup_table_to_array(cn.RF_C_ratio_spreadsheet_full_path, cn.mangrove_rate_ratio_tab,
                                                               ['gainEcoCon', 'AGB_gain_tons_ha_yr', 'BGC_AGC', 'deadwood_AGC', 'litter_AGC'])
 
+    # Table of emissions factors from height loss depends on the model type
+    if model_type == cn.low_EF:  # Low emission factors
+        EF_tab = cn.partial_disturbance_emission_factor_table_tab_low_EF
+    elif model_type == cn.high_EF:  # High emission factors
+        EF_tab = cn.partial_disturbance_emission_factor_table_tab_high_EF
+    else:  # Standard model and sensitivity analyses in which EFs are not changed
+        EF_tab = cn.partial_disturbance_emission_factor_table_tab_standard
+    main_logger.info(f'Using partial emission factor tab {EF_tab}')
+
     # Creates numpy array of emission factors for partially disturbed forest by driver and continent-ecozone combination
-    partial_disturbance_EF_array = uu.convert_lookup_table_to_array(cn.partial_disturbance_emission_factor_table_full_path,
-                                                                    cn.partial_disturbance_emission_factor_table_tab,
+    partial_disturbance_EF_array = uu.convert_lookup_table_to_array(cn.partial_disturbance_emission_factor_table_full_path, EF_tab,
                                                                     ['gainEcoCon', '1_perm_ag_EF', '2_hard_comm_EF',
                                                                      '3_shift_cult_EF',	'4_logging_EF',	'5_wildfire_EF',
                                                                      '6_sett_infrastr_EF', '7_natrl_dist_EF'])
@@ -2485,7 +2628,7 @@ def main(cluster_name, year_range, model_type,
 
         # Creates the global mega-zarr with metadata only
         zu.initialize_global_zarr(zarr_path, outputs_to_zarr_with_unit, len(interval_year_diff_list),
-                                  ((len(cn.interval_end_years_annual)), chunk_size_pixels, chunk_size_pixels), main_logger)
+                                  ((cn.end_year_count), chunk_size_pixels, chunk_size_pixels), main_logger)
 
         # Checks the zarr coordinates and extent
         fs = fsspec.filesystem("s3", anon=False)
@@ -2518,6 +2661,7 @@ def main(cluster_name, year_range, model_type,
 
     # Iterates through the batches
     for i, chunk_batch in enumerate(chunk_batches):
+    # for i, chunk_batch in enumerate(chunk_batches[3:], start=3):  # To resume at a specific batch
         main_logger.info(f"Processing batch {i + 1}/{len(chunk_batches)} ({len(chunk_batch)} chunks): {uu.timestr()}")
         main_logger.info("Creating batch task txts in s3...")
         uu.create_s3_task_files(stage, chunk_batch)
@@ -2543,6 +2687,7 @@ def main(cluster_name, year_range, model_type,
             if isinstance(result, dict) and result.get("status") == "failed":
                 main_logger.error(
                     "Task failed\n"
+                    f"Chunk: {result.get('chunk', 'unknown')}\n"
                     f"Error: {result['error']}\n"
                     f"Memory at failure (GB): {result['memory_at_failure']}\n"
                     f"Traceback:\n{result['traceback']}"
@@ -2774,6 +2919,8 @@ if __name__ == "__main__":
     parser.add_argument('--no_upload', action='store_true', help='Do not save and upload outputs to s3')
     parser.add_argument('--create_zarr', action='store_true', help='Create and populate global mega-zarr with model outputs')
 
+    parser.add_argument("--chunk_ids_file", help="Text file containing chunk IDs to process, one per line.")
+
     args = parser.parse_args()
 
     cluster_name = args.cluster_name
@@ -2792,8 +2939,9 @@ if __name__ == "__main__":
     no_log = args.no_log
     no_upload = args.no_upload
     create_zarr = args.create_zarr
+    chunk_ids_file = args.chunk_ids_file
 
     # Create the cluster with command line arguments
     main(cluster_name, year_range, model_type, run_local, no_stats, no_log, no_upload, create_zarr, chunk_shapefile_uri,
          bounding_box=bounding_box, chunk_size_deg=chunk_size_deg, first_chunks=first_chunks,
-         run_date=run_date, model_path_description=model_path_description, log_note=log_note)
+         run_date=run_date, model_path_description=model_path_description, log_note=log_note, chunk_ids_file=chunk_ids_file)
