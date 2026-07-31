@@ -23,13 +23,12 @@ from src.utilities import log_utilities as lu
 from src.utilities import universal_utilities as uu
 
 # Creates the s3 paths for the raw and rechunked mega-zarrs
-def create_zarr_path(zarr_basic_path, chunk_size_pixels, interval_type,
+def create_zarr_path(zarr_basic_path, chunk_size_pixels,
                      model_type, model_version, model_path_description,
                      run_date, main_logger):
 
     # Sets the output zarr location based on the model run
     mega_zarr_path = zarr_basic_path.replace(cn.model_version_type_description_placeholder, f"version_{model_version}__{model_type}__{model_path_description}")
-    mega_zarr_path = mega_zarr_path.replace("MODEL_INTERVAL_TYPE", interval_type)
     mega_zarr_path = mega_zarr_path.replace("RUN_DATE", run_date)
     mega_zarr_path = mega_zarr_path.replace("CHUNK_SIZE", str(chunk_size_pixels))
 
@@ -603,20 +602,21 @@ def zarr_1x1_deg_stats(bounds, var_name, zarr_path, interval_end_years):
 
 
 # Parallelizes stats calculation in 1x1 deg chunks in zarr for a given dataset-year
-def run_parallel_stats(client, chunk_list, var, zarr_path, interval_end_years):
+def run_parallel_stats(client, chunk_list, var, zarr_path, output_years):
 
     futures = []
 
     # Iterates through all chunks in the list for a given dataset-year
     for chunk in chunk_list:
         future = client.submit(zarr_1x1_deg_stats,
-                               chunk, var, zarr_path, interval_end_years, retries=2)
+                               chunk, var, zarr_path, output_years, retries=2)
         futures.append(future)
 
     # List of dictionaries, where each dictionary is stats for a single chunk
     results = client.gather(futures)
 
     return results
+
 
 def ipcc_zarr_1x1_deg_stats(bounds, var, zarr_path):
     bounds_str = uu.boundstr(bounds)
@@ -648,6 +648,7 @@ def ipcc_zarr_1x1_deg_stats(bounds, var, zarr_path):
         raise ValueError(f"Unsupported IPCC zarr variable: {var}")
 
     return stats
+
 
 def run_parallel_ipcc_stats(client, chunk_list, var, zarr_path):
     if client is None:

@@ -51,6 +51,7 @@ https://app.asana.com/1/25496124013636/task/1206230383901961/comment/12106415042
 #TODO Change all runtimes to decimal hours from HH:MM:SS
 #TODO Change error/exception logic for input downloads to catcha and retry everything (rather than exception types individually), per Claude session 'Failed Coiled tasks diagnosis'
 #TODO Figure out why log is only including some tasks (including performance stats at the end) and how to make it include all tasks
+#TODO Stop using status txts and instead just have chunk stats uploaded to s3 so they can be reused if run fails part way through; won't need to run tasks in batches anymore
 """
 
 import argparse
@@ -1987,8 +1988,8 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
 
 # Downloads inputs, prepares data, calculates vegetation stocks and fluxes, and uploads outputs to s3
 def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, partial_disturbance_EF_array, mangrove_C_ratio_array,
-                                           download_dict_with_data_types, start_year, end_year, interval_type, interval_year_diff_list,
-                                           interval_length_list, interval_end_years, is_large_run, no_upload, create_zarr,
+                                           download_dict_with_data_types, start_year, end_year, interval_year_diff_list,
+                                           interval_length_list, output_years, is_large_run, no_upload, create_zarr,
                                            output_folders, stage, model_type, zarr_path=None, outputs_to_zarr=None):
 
     # Stores the min, mean, and max chunks for inputs and outputs for the chunk
@@ -2122,7 +2123,7 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
                                                                                            interval_type,
                                                                                            interval_year_diff_list,
                                                                                            interval_length_list,
-                                                                                           interval_end_years,
+                                                                                           output_years,
                                                                                            is_large_run, model_type)
 
     calc_end = time.time()
@@ -2164,8 +2165,8 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
 
     ### Part 5: Writes outputs to pre-existing global mega-zarr (only if activated)
 
-    zu.populate_zarr(bounds, bounds_str, create_zarr, interval_end_years, is_large_run, logger_worker, zarr_path,
-                  out_dict_all_dtypes, outputs_to_zarr, stage, tile_id)
+    zu.populate_zarr(bounds, bounds_str, create_zarr, output_years, is_large_run, logger_worker, zarr_path,
+                     out_dict_all_dtypes, outputs_to_zarr, stage, tile_id)
 
 
     ### Part 6: Calculates per ha min, per ha mean, per ha max, and per pixel sum for each output chunk.
@@ -2278,31 +2279,7 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
     return return_message, chunk_stats
 
 
-# Designed to report task/worker crashes, including memory usage at the time.
-# Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6949a74e-1388-832d-8f8e-5e9bf084ecb8
-def safe_task_wrapper(*args, **kwargs):
-    try:
-        result = calculate_and_upload_vegetation_fluxes(*args, **kwargs)
-        return result
-
-    except Exception as e:
-
-        proc = psutil.Process(os.getpid())
-        mem = proc.memory_info()
-
-        return {
-            "status": "failed",
-            "chunk": uu.boundstr(args[0]),
-            "error": str(e),
-            "traceback": traceback.format_exc(),
-            "memory_at_failure": {
-                "rss_gb": mem.rss / 1024**3,  # VMS is the important one
-                # "vms_gb": mem.vms / 1024**3,
-            },
-        }
-
-
-def main(cluster_name, year_range, model_type,
+def main(cluster_name, model_type,
          run_local=False, no_stats=False, no_log=False, no_upload=False, create_zarr=False,
          chunk_shapefile_uri=False, bounding_box=None, chunk_size_deg=None, first_chunks=None,
          run_date=None, model_path_description=None, log_note=None, chunk_ids_file=None):
@@ -2323,15 +2300,8 @@ def main(cluster_name, year_range, model_type,
         batch_size = 3800  # 5 batches to cover all chunks
     # batch_size = 8  # large-scale testing
 
-    # Determines if arguments for start and end year are valid
-    if year_range not in [[cn.first_model_year_5_years, cn.last_model_year_5_years],  # 2000-2020
-                          [cn.first_model_year_5_years, cn.last_model_year_annual],  # 2000-2024
-                          [cn.first_model_year_annual, cn.last_model_year_annual]]:  # 2015-2024
-        print("Year range selection not valid")
-        sys.exit()
-    else:
-        start_year = year_range[0]
-        end_year = year_range[1]
+    start_year = cn.first_model_year_annual
+    end_year = cn.last_model_year_annual
 
     # Connects to Coiled cluster if not running locally and the named cluster exists
     cluster, client, run_local = uu.connect_to_Coiled_cluster(cluster_name, run_local)
@@ -2352,15 +2322,16 @@ def main(cluster_name, year_range, model_type,
     main_logger.info(f"Stage {stage} started at: {start_time}")
     main_logger.info(f"Model version: {cn.veg_model_version}")
     main_logger.info(f"Model path descriptor: {model_path_description}")
-    main_logger.info(f"Start year: {start_year}; end year: {end_year}")
     main_logger.info(f"Run date: {run_date}")
     main_logger.info(f"Batch size: {batch_size} chunks")
     main_logger.info(f"no_upload: {no_upload}")
     main_logger.info(f"Tolerance for comparison between model and zarr chunk stat metrics: {cn.zarr_difference_tolerance}")
 
-    # Calculates the interval type, difference between start and end years of intervals, and the model output years
-    # for the model run
-    interval_type, interval_year_diff_list, interval_length_list, interval_end_years = uu.get_interval_info(start_year, end_year, main_logger)
+    interval_length_list = [1] * cn.end_year_count
+    # interval_length_list = [1, 1, 1, 1, 1, 1, 1, 1, 1]  # Expected for 2015-2024
+    output_years = cn.interval_end_years_annual
+    main_logger.info(f"Interval duration: {interval_length_list} years")
+    main_logger.info(f"Interval end years/Output years: {output_years}")
 
     # Returns a dataframe of chunk_id and ISO for the GADM4.1 1x1 deg fishnet.
     # chunk_ids for making chunk list if shapefile is supplied in command line.
@@ -2401,8 +2372,7 @@ def main(cluster_name, year_range, model_type,
     # It shouldn't really matter what the sample_tile_id is.
     sample_tile_id = "00N_000E"
 
-    # Dictionary of data to download (inputs to model).
-    # These inputs don't depend on the starting year of the model.
+    # Dictionary of data to download (inputs to model) that don't depend on the model type (sensitivity analysis) or have multiple years
     download_dict = {
         cn.r_s_ratio_non_mang_pattern: f"{cn.r_s_ratio_non_mang_dir}{sample_tile_id}_{cn.r_s_ratio_non_mang_pattern}.tif",
 
@@ -2420,7 +2390,9 @@ def main(cluster_name, year_range, model_type,
         cn.climate_zone_pattern: f"{cn.climate_zone_processed_dir}{sample_tile_id}_{cn.climate_zone_pattern}.tif",
         cn.precipitation_pattern: f"{cn.precipitation_dir}{sample_tile_id}_{cn.precipitation_pattern}.tif",
         cn.continent_ecozone_pattern: f"{cn.continent_ecozone_dir}{sample_tile_id}_{cn.continent_ecozone_pattern}.tif",
-        cn.pixel_area_pattern: f"{cn.pixel_area_dir}{cn.pixel_area_pattern}_{sample_tile_id}.tif"
+        cn.pixel_area_pattern: f"{cn.pixel_area_dir}{cn.pixel_area_pattern}_{sample_tile_id}.tif",
+
+        cn.forest_age_start_year_pattern: f"{cn.forest_age_2015_gap_filled_dir}{sample_tile_id}__{cn.forest_age_2015_gap_filled_pattern}.tif"
     }
 
     # Young natural forest rasters (several age intervals).
@@ -2442,89 +2414,40 @@ def main(cluster_name, year_range, model_type,
     for year in range(start_year+1, end_year + 1):  # Annual burned area maps start in 2000
         download_dict[f"{cn.burned_area_final_pattern}_{year}"] = f"{cn.full_bucket_prefix}/{cn.burned_area_final_dir}{year}/{sample_tile_id}_{cn.burned_area_final_pattern}_{year}.tif"
 
-    # Starting carbon pools depend on the starting year of the model
-    if start_year == 2000:
-        download_dict[cn.agc_LC_masked_dens_pattern] = f"{cn.agc_2000_LC_masked_dir}{sample_tile_id}__{cn.agc_2000_LC_masked_pattern}.tif"
-        download_dict[cn.bgc_LC_masked_dens_pattern] = f"{cn.bgc_2000_LC_masked_dir}{sample_tile_id}__{cn.bgc_2000_LC_masked_pattern}.tif"
-        download_dict[cn.deadwood_c_LC_masked_dens_pattern] = f"{cn.deadwood_c_2000_LC_masked_dir}{sample_tile_id}__{cn.deadwood_c_2000_LC_masked_pattern}.tif"
-        download_dict[cn.litter_c_LC_masked_dens_pattern] = f"{cn.litter_c_2000_LC_masked_dir}{sample_tile_id}__{cn.litter_c_2000_LC_masked_pattern}.tif"
-    elif start_year == 2015:
-        if model_type == cn.alt_AGB:
-            download_dict[cn.agc_LC_masked_dens_pattern] = (
-                f"{cn.agc_2015_ctrees_LC_masked_dir}{sample_tile_id}__{cn.agc_LC_masked_dens_pattern}_2015.tif")
-            download_dict[cn.bgc_LC_masked_dens_pattern] = (
-                f"{cn.bgc_2015_ctrees_LC_masked_dir}{sample_tile_id}__{cn.bgc_LC_masked_dens_pattern}_2015.tif")
-            download_dict[cn.deadwood_c_LC_masked_dens_pattern] = (
-                f"{cn.deadwood_c_2015_ctrees_LC_masked_dir}{sample_tile_id}__{cn.deadwood_c_LC_masked_dens_pattern}_2015.tif")
-            download_dict[cn.litter_c_LC_masked_dens_pattern] = (
-                f"{cn.litter_c_2015_ctrees_LC_masked_dir}{sample_tile_id}__{cn.litter_c_LC_masked_dens_pattern}_2015.tif")
-        else:
-            download_dict[
-                cn.agc_LC_masked_dens_pattern] = f"{cn.agc_2015_LC_masked_dir}{sample_tile_id}__{cn.agc_2015_LC_masked_pattern}.tif"
-            download_dict[
-                cn.bgc_LC_masked_dens_pattern] = f"{cn.bgc_2015_LC_masked_dir}{sample_tile_id}__{cn.bgc_2015_LC_masked_pattern}.tif"
-            download_dict[
-                cn.deadwood_c_LC_masked_dens_pattern] = f"{cn.deadwood_c_2015_LC_masked_dir}{sample_tile_id}__{cn.deadwood_c_2015_LC_masked_pattern}.tif"
-            download_dict[
-                cn.litter_c_LC_masked_dens_pattern] = f"{cn.litter_c_2015_LC_masked_dir}{sample_tile_id}__{cn.litter_c_2015_LC_masked_pattern}.tif"
+    # Starting carbon pools
+    if model_type == cn.alt_AGB:
+        download_dict[cn.agc_LC_masked_dens_pattern] = (
+            f"{cn.agc_2015_ctrees_LC_masked_dir}{sample_tile_id}__{cn.agc_LC_masked_dens_pattern}_2015.tif")
+        download_dict[cn.bgc_LC_masked_dens_pattern] = (
+            f"{cn.bgc_2015_ctrees_LC_masked_dir}{sample_tile_id}__{cn.bgc_LC_masked_dens_pattern}_2015.tif")
+        download_dict[cn.deadwood_c_LC_masked_dens_pattern] = (
+            f"{cn.deadwood_c_2015_ctrees_LC_masked_dir}{sample_tile_id}__{cn.deadwood_c_LC_masked_dens_pattern}_2015.tif")
+        download_dict[cn.litter_c_LC_masked_dens_pattern] = (
+            f"{cn.litter_c_2015_ctrees_LC_masked_dir}{sample_tile_id}__{cn.litter_c_LC_masked_dens_pattern}_2015.tif")
     else:
-        sys.exit('interval_type not found')
+        download_dict[
+            cn.agc_LC_masked_dens_pattern] = f"{cn.agc_2015_LC_masked_dir}{sample_tile_id}__{cn.agc_2015_LC_masked_pattern}.tif"
+        download_dict[
+            cn.bgc_LC_masked_dens_pattern] = f"{cn.bgc_2015_LC_masked_dir}{sample_tile_id}__{cn.bgc_2015_LC_masked_pattern}.tif"
+        download_dict[
+            cn.deadwood_c_LC_masked_dens_pattern] = f"{cn.deadwood_c_2015_LC_masked_dir}{sample_tile_id}__{cn.deadwood_c_2015_LC_masked_pattern}.tif"
+        download_dict[
+            cn.litter_c_LC_masked_dens_pattern] = f"{cn.litter_c_2015_LC_masked_dir}{sample_tile_id}__{cn.litter_c_2015_LC_masked_pattern}.tif"
 
-    # Starting forest age depends on the starting year of the model
-    if start_year == 2000:
-        download_dict[f"{cn.forest_age_start_year_pattern}"] = f"{cn.forest_age_2000_gap_filled_dir}{sample_tile_id}__{cn.forest_age_2000_gap_filled_pattern}.tif"
-    elif start_year == 2015:
-        download_dict[f"{cn.forest_age_start_year_pattern}"] = f"{cn.forest_age_2015_gap_filled_dir}{sample_tile_id}__{cn.forest_age_2015_gap_filled_pattern}.tif"
-    else:
-        sys.exit('interval_type not found')
+    # Source for assigning composite primary forests
+    #TODO Shouldn't this be unnecessary because the numba code is using the starting composite primary forest. Need to investigate.
+    download_dict[f"{cn.primary_2001_pattern}"] = f"{cn.primary_2001_dir}{sample_tile_id}.tif"
+    download_dict[f"{cn.ifl_2016_pattern}"] = f"{cn.ifl_2016_dir}{sample_tile_id}.tif"
+    download_dict[f"{cn.tree_cover_loss_pattern}"] = f"{cn.tree_cover_loss_dir}{cn.tree_cover_loss_pattern}_{sample_tile_id}.tif"
 
-    # Source for assigning composite primary forests depend on the starting year of the model
-    if start_year == 2000:
-        download_dict[f"{cn.ifl_primary_2000_pattern}"] = f"{cn.ifl_primary_2000_dir}{sample_tile_id}_{cn.ifl_primary_2000_pattern}.tif"
-    elif start_year == 2015:
-        download_dict[f"{cn.primary_2001_pattern}"] = f"{cn.primary_2001_dir}{sample_tile_id}.tif"
-        download_dict[f"{cn.ifl_2016_pattern}"] = f"{cn.ifl_2016_dir}{sample_tile_id}.tif"
-        download_dict[f"{cn.tree_cover_loss_pattern}"] = f"{cn.tree_cover_loss_dir}{cn.tree_cover_loss_pattern}_{sample_tile_id}.tif"
-    else:
-        sys.exit('interval_type not found')
-
-    # Land cover and vegetation height timeseries depend on interval_type (better expressed than using the start_year)
-    if interval_type == cn.intervals_five_years:
-        # Land cover and vegetation height rasters (5-year intervals)
-        for year in range(cn.first_model_year_5_years, cn.last_model_year_5_years + 1, cn.five_year_interval_duration):
-            download_dict[f"{cn.land_cover_pattern}_{year}"] = f"{cn.land_cover_5_year_path}{year}/{sample_tile_id}.tif"
-            download_dict[f"{cn.vegetation_height_pattern}_{year}"] = f"{cn.vegetation_height_5_year_path}{year}/{sample_tile_id}_{cn.vegetation_height_5_year_pattern}_{year}.tif"
-    elif interval_type == cn.intervals_annual:
-        # Land cover and vegetation height rasters (annual intervals)
-        for year in range(cn.first_model_year_annual, cn.last_model_year_annual + 1):
-            download_dict[f"{cn.land_cover_pattern}_{year}"] = f"{cn.land_cover_annual_path}{year}/{sample_tile_id}.tif"
-            download_dict[f"{cn.vegetation_height_pattern}_{year}"] = f"{cn.vegetation_height_annual_path}{year}/{sample_tile_id}.tif"
-    elif interval_type == cn.intervals_hybrid:
-        # Land cover and vegetation height rasters (5-year intervals for 2000, 2005, and 2010 only)
-        for year in range(cn.first_model_year_5_years, 2010+1, cn.five_year_interval_duration):
-            download_dict[f"{cn.land_cover_pattern}_{year}"] = f"{cn.land_cover_5_year_path}{year}/{sample_tile_id}.tif"
-            download_dict[f"{cn.vegetation_height_pattern}_{year}"] = f"{cn.vegetation_height_5_year_path}{year}/{sample_tile_id}_{cn.vegetation_height_5_year_pattern}_{year}.tif"
-        # Land cover and vegetation height rasters (annual intervals for 2015 onwards)
-        for year in range(cn.first_model_year_annual, cn.last_model_year_annual + 1):
-            download_dict[f"{cn.land_cover_pattern}_{year}"] = f"{cn.land_cover_annual_path}{year}/{sample_tile_id}.tif"
-            download_dict[f"{cn.vegetation_height_pattern}_{year}"] = f"{cn.vegetation_height_annual_path}{year}/{sample_tile_id}.tif"
-    else:
-        sys.exit('interval_type not found')
+    # Land cover and vegetation height timeseries
+    for year in range(cn.first_model_year_annual, cn.last_model_year_annual + 1):
+        download_dict[f"{cn.land_cover_pattern}_{year}"] = f"{cn.land_cover_annual_path}{year}/{sample_tile_id}.tif"
+        download_dict[f"{cn.vegetation_height_pattern}_{year}"] = f"{cn.vegetation_height_annual_path}{year}/{sample_tile_id}.tif"
 
     # GMW mangrove extent timeseries depend on start year (not end year since GMW data ends in 2020)
     for year in cn.mangrove_extent_years:
         download_dict[f"{cn.mangrove_extent_processed_pattern}_{year}"] = f"{cn.mangrove_extent_processed_dir}{year}/{sample_tile_id}__{cn.mangrove_extent_processed_pattern}_{year}.tif"
-
-    # Forest disturbance rasters (every year)-- only for 5-year intervals (including hybrid model)
-    # All years need to be in their own folder
-    if interval_type in cn.intervals_five_years:
-        for year in range(cn.first_model_year_5_years + 1, cn.last_model_year_5_years + 1):  # Annual forest disturbance maps start in 2001 and ends in 2020
-            download_dict[f"{cn.forest_disturbance_layer_name}_{year}"] = f"{cn.forest_disturbance_annual_dir}{year}/{year}_{sample_tile_id}.tif"
-    elif interval_type in cn.intervals_hybrid:
-        for year in range(cn.first_model_year_5_years + 1, cn.first_model_year_annual + 1):  # Hybrid model uses annual disturbance data through 2015. Annual data used in 2015-2016 onwards.
-            download_dict[f"{cn.forest_disturbance_layer_name}_{year}"] = f"{cn.forest_disturbance_annual_dir}{year}/{year}_{sample_tile_id}.tif"
-    else:  # Annual model does not use annual disturbance data
-        pass
 
     # Replaces the placeholder parts of the input paths with relevant values
     download_dict = {
@@ -2559,9 +2482,9 @@ def main(cluster_name, year_range, model_type,
 
     # Creates a list of output directories (core and intermediates) for all outputs and intervals based on specifics of the model run
     output_dir_list_core_intermediate = cn.veg_core_output_dirs + cn.veg_intermediate_output_dirs + cn.veg_summative_output_dirs
-    output_dir_list = uu.create_output_dir_name_list(output_dir_list_core_intermediate, interval_type, start_year,
-                                                     chunk_size_pixels, model_type, cn.veg_model_version_underscore, model_path_description, interval_end_years,
-                                                     interval_year_diff_list, run_date, False, "per_ha")
+    output_dir_list = uu.create_output_dir_name_list(output_dir_list_core_intermediate, start_year,
+                                                     chunk_size_pixels, model_type, cn.veg_model_version_underscore, model_path_description, output_years,
+                                                     run_date, False, "per_ha")
     output_dir_list.sort()  # Alphabetically order the outputs (modifies output_dir_list)
     if is_large_run:
         main_logger.info(f"output_dir_list for {stage}:")
@@ -2606,7 +2529,7 @@ def main(cluster_name, year_range, model_type,
     if create_zarr:
 
         # Creates s3 paths for the raw mega-zarr
-        zarr_path = zu.create_zarr_path(cn.veg_outputs_path_mega_zarr, chunk_size_pixels, interval_type,
+        zarr_path = zu.create_zarr_path(cn.veg_outputs_path_mega_zarr, chunk_size_pixels,
                                              model_type, cn.veg_model_version_underscore, model_path_description,
                                              run_date, main_logger)
 
@@ -2627,8 +2550,7 @@ def main(cluster_name, year_range, model_type,
         ]
 
         # Creates the global mega-zarr with metadata only
-        zu.initialize_global_zarr(zarr_path, outputs_to_zarr_with_unit, len(interval_year_diff_list),
-                                  ((cn.end_year_count), chunk_size_pixels, chunk_size_pixels), main_logger)
+        zu.initialize_global_zarr(zarr_path, outputs_to_zarr_with_unit, cn.end_year_count, ((cn.end_year_count), chunk_size_pixels, chunk_size_pixels), main_logger)
 
         # Checks the zarr coordinates and extent
         fs = fsspec.filesystem("s3", anon=False)
@@ -2673,10 +2595,10 @@ def main(cluster_name, year_range, model_type,
         futures = []
         for chunk in chunk_batch:
             future = client.submit(
-                        safe_task_wrapper,
+                        calculate_and_upload_vegetation_fluxes,
                         chunk, primary_forest_RF_array, partial_disturbance_EF_array, mangrove_C_ratio_array,
-                        download_dict_with_data_types, start_year, end_year, interval_type, interval_year_diff_list,
-                        interval_length_list, interval_end_years, is_large_run, no_upload, create_zarr,
+                        download_dict_with_data_types, start_year, end_year, interval_year_diff_list,
+                        interval_length_list, output_years, is_large_run, no_upload, create_zarr,
                         output_dir_list, stage, model_type, zarr_path, outputs_to_zarr,
                         retries=1, key=f"vegflux-{chunk}")  # Designed to prevent infinite retries and rerunning completed tasks (happens in global runs)
             futures.append(future)
@@ -2811,7 +2733,7 @@ def main(cluster_name, year_range, model_type,
                 chunk_list=chunk_list,
                 var=var_name,
                 zarr_path=zarr_path,
-                interval_end_years=interval_end_years
+                output_years=output_years
             )
             # print("chunk_stats_variable_year_zarr:", chunk_stats_variable_year_zarr)
 
@@ -2907,8 +2829,6 @@ if __name__ == "__main__":
     parser.add_argument('-cs', '--chunk_size_deg', type=float, help='Chunk size (degrees)')
     parser.add_argument('-cshp', '--chunk_shapefile_uri', help='s3 location for shapefile of 1x1 deg chunk footprints')
     parser.add_argument('-f', '--first_chunks', type=int, help='Number of chunks to process from shapefile')
-    parser.add_argument('-yr', '--year_range', nargs=2, type=int, default=[cn.first_model_year_annual, cn.last_model_year_annual],
-                        help='Starting and ending years for model. Start options: 2000, 2015. End options: 2020, 2024.')
     parser.add_argument('-mt', '--model_type', default='standard', help='Type of model run (e.g., standard).')
     parser.add_argument('-mpd', '--model_path_description', help='Description of model run (e.g., global, test, X_area).')
     parser.add_argument('-ln', '--log_note', help='Note to include in the log.')
@@ -2929,7 +2849,6 @@ if __name__ == "__main__":
     chunk_size_deg = args.chunk_size_deg
     chunk_shapefile_uri = args.chunk_shapefile_uri
     first_chunks = args.first_chunks
-    year_range = args.year_range
     model_type = args.model_type
     model_path_description = args.model_path_description
     log_note = args.log_note
@@ -2942,6 +2861,6 @@ if __name__ == "__main__":
     chunk_ids_file = args.chunk_ids_file
 
     # Create the cluster with command line arguments
-    main(cluster_name, year_range, model_type, run_local, no_stats, no_log, no_upload, create_zarr, chunk_shapefile_uri,
+    main(cluster_name, model_type, run_local, no_stats, no_log, no_upload, create_zarr, chunk_shapefile_uri,
          bounding_box=bounding_box, chunk_size_deg=chunk_size_deg, first_chunks=first_chunks,
          run_date=run_date, model_path_description=model_path_description, log_note=log_note, chunk_ids_file=chunk_ids_file)

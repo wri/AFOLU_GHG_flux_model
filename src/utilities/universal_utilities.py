@@ -575,43 +575,18 @@ def xy_to_tile_id(top_left_x, top_left_y):
 
     return f"{lat}_{lng}"
 
-# Interval info for model run.
-# interval_year_diff is the difference between the start and end years of the interval, not the number of years in the interval.
-# The difference between interval_length and interval_year_diff arises for 5-year intervals (e.g., 2016-2020), where there are 5 years in the interval
-# but the difference between the start and end years is 4.
-def get_interval_info(start_year, end_year, main_logger):
 
-    if start_year == 2000 and end_year == 2020:
-        interval_type = cn.intervals_five_years
-        interval_length = [cn.five_year_interval_duration] * len(cn.interval_end_years_5_years)
-        # interval_year_diff = [5, 5, 5, 5]  # Expected for 2000-2020
-        interval_year_diff = [cn.five_year_interval_duration - 1] * len(cn.interval_end_years_5_years)  # -1 because the interval really starts one year after the end of the previous interval
-        # interval_year_diff = [4, 4, 4, 4]  # Expected for 2000-2020
-        output_years = cn.interval_end_years_5_years
-    elif start_year == 2015 and end_year == cn.last_model_year_annual:
-        interval_type = cn.intervals_annual
-        interval_length = [1] * cn.end_year_count
-        # interval_length = [1, 1, 1, 1, 1, 1, 1, 1, 1]  # Expected for 2015-2024
-        interval_year_diff = [1] * cn.end_year_count
-        # interval_year_diff = [1, 1, 1, 1, 1, 1, 1, 1, 1]  # Expected for 2015-2024
-        output_years = cn.interval_end_years_annual
-    elif start_year == 2000 and end_year == cn.last_model_year_annual:  # Hybrid model (2000-2024)
-        interval_type = cn.intervals_hybrid
-        interval_length = [cn.five_year_interval_duration] * len(cn.interval_end_years_5_years[:-1]) + [1] * cn.end_year_count
-        # interval_length = [5, 5, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1]  # Expected for 2000-2024
-        interval_year_diff = [cn.five_year_interval_duration - 1] * len(cn.interval_end_years_5_years[:-1]) + [1] * cn.end_year_count
-        # interval_year_diff = [4, 4, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1]  # Expected for 2000-2024
-        output_years = cn.interval_end_years_5_years[:-1] + cn.interval_end_years_annual
-    else:
-        main_logger.error("interval_type not valid")
-        sys.exit(1)
+# Interval info for model run
+def get_interval_info(main_logger):
 
-    main_logger.info(f"Interval type: {interval_type}")
+    interval_length = [1] * cn.end_year_count
+    # interval_length = [1, 1, 1, 1, 1, 1, 1, 1, 1]  # Expected for 2015-2024
+    output_years = cn.interval_end_years_annual
+
     main_logger.info(f"Interval end years/Output years: {output_years}")
     main_logger.info(f"Interval duration: {interval_length} years")
-    main_logger.info(f"Interval year difference: {interval_year_diff} years")
 
-    return interval_type, interval_year_diff, interval_length, output_years
+    return interval_length, output_years
 
 
 # Creates the list of chunks to process given an approach: a bounding box or a shapefile attribute table
@@ -900,8 +875,8 @@ def check_for_tile(download_dict, is_final, logger):
 
 
 # Turns a list of basic output directory names into a list of fully specified directories based on output chunk size, run date, model type, and output years
-def create_output_dir_name_list(dir_list, interval_type, start_year, chunk_size_pixels,
-                                model_type, model_version, model_path_description, output_years, interval_duration,
+def create_output_dir_name_list(dir_list, start_year, chunk_size_pixels,
+                                model_type, model_version, model_path_description, output_years,
                                 run_date, include_full_period_totals, pixel_meaning=None):
 
     # List of directories for outputs
@@ -909,7 +884,6 @@ def create_output_dir_name_list(dir_list, interval_type, start_year, chunk_size_
 
     # Replaces placeholders in paths with values specific to the run
     dir_list = [path.replace(cn.model_version_type_description_placeholder, f"version_{model_version}__{model_type}__{model_path_description}") for path in dir_list]
-    dir_list = [path.replace("MODEL_INTERVAL_TYPE", interval_type) for path in dir_list]
     dir_list = [path.replace("RUN_DATE", run_date) for path in dir_list]
 
     # Replaces the chunk_size part of the path with global if this is a global aggregation
@@ -958,12 +932,7 @@ def create_output_dir_name_list(dir_list, interval_type, start_year, chunk_size_
                 output_dir = basic_output.replace('RUNSTART_END', f"{str(start_year)}_{str(output_year)}")
             # For outputs that cover an interval (fluxes)
             else:
-                if interval_type == cn.intervals_five_years:
-                    output_dir = basic_output.replace('START_END', str(output_year))
-                elif interval_type == cn.intervals_annual:
-                    output_dir = basic_output.replace('START_END', str(output_year))
-                else:  # Hybrid model (2000-2024)
-                    output_dir = basic_output.replace('START_END', str(output_year))
+                output_dir = basic_output.replace('START_END', str(output_year))
 
             sample_output_dir = basic_output
             output_full_dirs.append(output_dir)
