@@ -76,8 +76,8 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
     elif worker_memory == 64:
         idle_timeout = 15
         if zonal_stats == True:
-            scheduler_vm_type = "r7g.xlarge"  # 8 vCPU/worker, what Solomon used for zonal stats
-            worker_vm_type = "r7g.2xlarge"
+            scheduler_vm_type = "r8g.xlarge"  # 8 vCPU/worker, what Solomon used for zonal stats
+            worker_vm_type = "r8g.2xlarge"
         else:
             scheduler_vm_type = "x8g.xlarge"    # 4 vCPU/worker
             worker_vm_type = "x8g.xlarge"
@@ -85,8 +85,8 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
     elif worker_memory == 32:
         idle_timeout = 20
         if zonal_stats == True:
-            scheduler_vm_type = "r7g.large"    # 4 vCPU/worker, same series as Solomon used for zonal stats
-            worker_vm_type = "r7g.xlarge"
+            scheduler_vm_type = "r8g.large"    # 4 vCPU/worker, same series as Solomon used for zonal stats
+            worker_vm_type = "r8g.xlarge"
         else:
             scheduler_vm_type = "x8g.large"   # 2 vCPU/worker. x2gd.large also has this ratio, and theoretically lower interruption rates but has worse hardware.
             worker_vm_type = "x8g.large"      # per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/694bfc7f-fab0-8332-b903-d5efa84b61c3
@@ -96,8 +96,8 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
     elif worker_memory == 16:
         idle_timeout = 25
         if zonal_stats == True:
-            scheduler_vm_type = "r7g.medium"    # 2 vCPU/worker, same series as Solomon used for zonal stats
-            worker_vm_type = "r7g.large"
+            scheduler_vm_type = "r8g.medium"    # 2 vCPU/worker, same series as Solomon used for zonal stats
+            worker_vm_type = "r8g.large"
         else:
             scheduler_vm_type = "x2gd.medium"   # 1 vCPU/worker
             worker_vm_type = "x2gd.medium"

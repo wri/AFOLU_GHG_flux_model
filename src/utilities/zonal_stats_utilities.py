@@ -237,7 +237,7 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
 
     # Adds the state_node meaning and classifications to the dataframe
     if cn.land_state_pattern in df_with_areas.columns:
-        df_with_areas = df_with_areas.merge(state_node_df[['land_state', 'land_state_meaning', 'land_state_broad_class', 'land_state_detailed_class', 'tall_veg_type']],
+        df_with_areas = df_with_areas.merge(state_node_df[['land_state', 'land_state_meaning', 'land_state_broad_class', 'land_state_detailed_class', 'tall_veg_type', 'tree_focused_2x2']],
               left_on='land_state_node', right_on='land_state',
               how='left')
     # print("merged:", df_with_areas)
