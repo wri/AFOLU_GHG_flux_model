@@ -581,7 +581,7 @@ def save_mean_annual_geotif(local_reproj_folder, pattern_segment, year_path_repr
             'nodata': 0  # Match your other rasters
         })
 
-        out_path_mean_geotiff = f"{local_reproj_folder}/{pattern_segment}{cn.flux_aggreg_pixel_meaning}_v{cn.veg_model_version_underscore}_{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}_mean_global_reproj.tif"
+        out_path_mean_geotiff = f"{local_reproj_folder}/{pattern_segment}{cn.flux_aggreg_pixel_meaning}_v{cn.veg_model_version_underscore}_{cn.veg_outputs_years[0]}_{cn.veg_outputs_years[-1]}_mean_global_reproj.tif"
 
         with rasterio.open(out_path_mean_geotiff, 'w', **profile) as dst:
             dst.write(mean_data_to_write, 1)
@@ -607,7 +607,7 @@ def map_net_flux(s3_folders, model_type, model_path_description,
         bounding_box_proj = None
 
     # First pass: Reprojects input rasters
-    for i, year in enumerate(cn.interval_end_years_annual[0:]):
+    for i, year in enumerate(cn.veg_outputs_years[0:]):
     # for i, year in enumerate(cn.interval_end_years_annual[2:3]): # For testing a specific year
 
         # The s3 folder to process for this year
@@ -641,7 +641,7 @@ def map_net_flux(s3_folders, model_type, model_path_description,
     main_logger.info("\n\n---Computing mean raster to derive shared legend limits...")
     yearly_data_for_limits = []
 
-    for i, year in enumerate(cn.interval_end_years_annual[0:]):
+    for i, year in enumerate(cn.veg_outputs_years[0:]):
         s3_folder = s3_folders[i]
         parts = s3_folder.strip('/').split('/')
 
@@ -689,7 +689,7 @@ def map_net_flux(s3_folders, model_type, model_path_description,
     yearly_data_stack = []
     yearly_masked_data = []
 
-    for i, year in enumerate(cn.interval_end_years_annual[0:]):
+    for i, year in enumerate(cn.veg_outputs_years[0:]):
     # for i, year in enumerate(cn.interval_end_years_annual[0:2]): # For testing a specific year
     # for i, year in enumerate(cn.interval_end_years_annual[0:4]): # For testing a specific year
 
@@ -829,7 +829,7 @@ def map_net_flux(s3_folders, model_type, model_path_description,
             percentile_0_ref = percentile_0
 
     # Creates gifs of timeseries
-    gif_base_name = f"veg_{pattern_segment_revised}__{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}__v{cn.veg_model_version_underscore}"
+    gif_base_name = f"veg_{pattern_segment_revised}__{cn.veg_outputs_years[0]}_{cn.veg_outputs_years[-1]}__v{cn.veg_model_version_underscore}"
     create_gif(
         out_maps_for_gif, main_logger,
         output_gif_path=f"{local_gif_folder}/{gif_base_name}"
@@ -882,7 +882,7 @@ def map_net_flux(s3_folders, model_type, model_path_description,
     remove_ticks(ax)
 
     # Save the JPEG
-    core_jpeg_name_avg = f"veg_{pattern_segment_revised}__mean_{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}__v{cn.veg_model_version_underscore}__{uu.timestr()[0:8]}"
+    core_jpeg_name_avg = f"veg_{pattern_segment_revised}__mean_{cn.veg_outputs_years[0]}_{cn.veg_outputs_years[-1]}__v{cn.veg_model_version_underscore}__{uu.timestr()[0:8]}"
     if bounding_box_description:
         core_jpeg_name_avg += f"_{bounding_box_description}"
 
@@ -916,13 +916,13 @@ def map_net_flux(s3_folders, model_type, model_path_description,
         cbar_ax.text(0, 1.05, _title, fontsize=cn.legend_fontsize, ha="left", va="bottom",
                      transform=cbar_ax.transAxes)
 
-    core_jpeg_name_nine = f"veg_{pattern_segment_revised}__9panel_{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}__v{cn.veg_model_version_underscore}__{uu.timestr()[0:8]}"
+    core_jpeg_name_nine = f"veg_{pattern_segment_revised}__9panel_{cn.veg_outputs_years[0]}_{cn.veg_outputs_years[-1]}__v{cn.veg_model_version_underscore}__{uu.timestr()[0:8]}"
     if bounding_box_description:
         core_jpeg_name_nine += f"_{bounding_box_description}"
     nine_panel_jpeg = f"{local_jpeg_non_pres_folder}/{core_jpeg_name_nine}.jpeg"
 
     create_nine_panel_map(nine_panel_jpeg, yearly_masked_data, cmap, norm,
-                          raster_extent, country_shapefile, cn.interval_end_years_annual,
+                          raster_extent, country_shapefile, cn.veg_outputs_years,
                           bounding_box_proj, _legend_fn_net, main_logger)
 
     series_end_time = time.time()
@@ -945,7 +945,7 @@ def map_gross(s3_folders, model_type, model_path_description,
         bounding_box_proj = None
 
     # First pass: Reprojects input rasters
-    for i, year in enumerate(cn.interval_end_years_annual[0:]):
+    for i, year in enumerate(cn.veg_outputs_years[0:]):
     # for i, year in enumerate(cn.interval_end_years_annual[2:3]): # For testing a specific year
 
         # The s3 folder to process for this year
@@ -979,7 +979,7 @@ def map_gross(s3_folders, model_type, model_path_description,
     main_logger.info("\n\n---Computing mean raster to derive shared legend limits...")
     yearly_data_for_limits = []
 
-    for i, year in enumerate(cn.interval_end_years_annual[0:]):
+    for i, year in enumerate(cn.veg_outputs_years[0:]):
         s3_folder = s3_folders[i]
         parts = s3_folder.strip('/').split('/')
 
@@ -1041,7 +1041,7 @@ def map_gross(s3_folders, model_type, model_path_description,
     yearly_data_stack = []
     yearly_masked_data = []
 
-    for i, year in enumerate(cn.interval_end_years_annual[0:]):
+    for i, year in enumerate(cn.veg_outputs_years[0:]):
     # for i, year in enumerate(cn.interval_end_years_annual[0:2]): # For testing a specific year
     # for i, year in enumerate(cn.interval_end_years_annual[0:4]): # For testing a specific year
 
@@ -1164,7 +1164,7 @@ def map_gross(s3_folders, model_type, model_path_description,
         yearly_data_stack.append(data)
 
     # Creates gifs of timeseries
-    gif_base_name = f"veg_{pattern_segment_revised}__{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}__v{cn.veg_model_version_underscore}"
+    gif_base_name = f"veg_{pattern_segment_revised}__{cn.veg_outputs_years[0]}_{cn.veg_outputs_years[-1]}__v{cn.veg_model_version_underscore}"
     create_gif(out_maps_for_gif, main_logger, output_gif_path=f"{local_gif_folder}/{gif_base_name}")
 
     ### Creates map of annual average
@@ -1200,13 +1200,13 @@ def map_gross(s3_folders, model_type, model_path_description,
     remove_ticks(ax)
 
     # Saves the JPEG
-    core_jpeg_name_avg = f"veg_{pattern_segment_revised}__mean_{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}__v{cn.veg_model_version_underscore}__{uu.timestr()[0:8]}"
+    core_jpeg_name_avg = f"veg_{pattern_segment_revised}__mean_{cn.veg_outputs_years[0]}_{cn.veg_outputs_years[-1]}__v{cn.veg_model_version_underscore}__{uu.timestr()[0:8]}"
     if bounding_box_description:
         core_jpeg_name_avg += f"_{bounding_box_description}"
 
     jpeg_path_avg = f"{local_jpeg_non_pres_folder}/{core_jpeg_name_avg}.jpeg"
     jpeg_for_pres_path_avg = f"{local_jpeg_pres_folder}/{core_jpeg_name_avg}__for_pres.jpeg"
-    save_pres_non_pres_jpegs(ax, jpeg_path_avg, jpeg_for_pres_path_avg, f'{cn.interval_end_years_annual[0]}-{cn.interval_end_years_annual[-1]}',
+    save_pres_non_pres_jpegs(ax, jpeg_path_avg, jpeg_for_pres_path_avg, f'{cn.veg_outputs_years[0]}-{cn.veg_outputs_years[-1]}',
                              cn.veg_pres_text, main_logger)
 
     ### Creates 9-panel map (one panel per year, legend on first panel only)
@@ -1223,13 +1223,13 @@ def map_gross(s3_folders, model_type, model_path_description,
         cbar_ax.text(0, 1.1, title_text, fontsize=cn.legend_fontsize, ha="left", va="bottom",
                      transform=cbar_ax.transAxes)
 
-    core_jpeg_name_nine = f"veg_{pattern_segment_revised}__9panel_{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}__v{cn.veg_model_version_underscore}__{uu.timestr()[0:8]}"
+    core_jpeg_name_nine = f"veg_{pattern_segment_revised}__9panel_{cn.veg_outputs_years[0]}_{cn.veg_outputs_years[-1]}__v{cn.veg_model_version_underscore}__{uu.timestr()[0:8]}"
     if bounding_box_description:
         core_jpeg_name_nine += f"_{bounding_box_description}"
     nine_panel_jpeg = f"{local_jpeg_non_pres_folder}/{core_jpeg_name_nine}.jpeg"
 
     create_nine_panel_map(nine_panel_jpeg, yearly_masked_data, cmap, norm,
-                          raster_extent, country_shapefile, cn.interval_end_years_annual,
+                          raster_extent, country_shapefile, cn.veg_outputs_years,
                           bounding_box_proj, _legend_fn_gross, main_logger)
 
     series_end_time = time.time()
@@ -1333,7 +1333,7 @@ def create_nine_panel_map(nine_panel_jpeg_path, yearly_masked_data, cmap, norm,
         if idx == 0:
             legend_fn(ax, img)
 
-    year_range = f"{cn.interval_end_years_annual[0]}-{cn.interval_end_years_annual[-1]}"
+    year_range = f"{cn.veg_outputs_years[0]}-{cn.veg_outputs_years[-1]}"
     save_jpeg(nine_panel_jpeg_path, year_range, main_logger)
     plt.close()
 

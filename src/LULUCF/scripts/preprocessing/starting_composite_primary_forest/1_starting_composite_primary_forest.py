@@ -353,7 +353,7 @@ def main(cluster_name,
 
         # Creates the global mega-zarr with metadata only
         zu.initialize_global_zarr(zarr_path, outputs_to_zarr, 1,
-                                  ((cn.end_year_count), chunk_size_pixels, chunk_size_pixels), main_logger)
+                                  ((cn.veg_end_year_count), chunk_size_pixels, chunk_size_pixels), main_logger)
 
         # Checks the zarr coordinates and extent
         fs = fsspec.filesystem("s3", anon=False)

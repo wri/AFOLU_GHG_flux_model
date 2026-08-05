@@ -85,7 +85,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     main_logger, main_log_local_path, n_workers = lu.populate_main_log_header(client, cluster, log_note, run_local, model_type, stage)
 
     # Assuming I'm only going to run this on carbon pools for 2015 for now
-    year = cn.first_model_year_annual
+    year = cn.LC_first_year
 
     if model_type == cn.alt_AGB:
         biomass_source = "Ctrees"

@@ -239,7 +239,7 @@ def build_lulucf_s3_path(pattern, lulucf_date, model_type='standard', model_path
     Mirrors the path construction in 2_create_LULUCF_global_0_04x0_04deg.py /
     universal_utilities.mosaic_tiles_to_global.
     """
-    avg_year = f"avg_{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}"
+    avg_year = f"avg_{cn.veg_outputs_years[0]}_{cn.veg_outputs_years[-1]}"
     lulucf_run = (
         cn.LULUCF_full_version_underscore
         .replace("MODEL_TYPE", model_type)
@@ -593,7 +593,7 @@ def map_LULUCF_maps(lulucf_input_date,
 
         ### Vegetation
         # Vegetation net: reproject all years
-        veg_net_year_paths = _infer_veg_year_paths(veg_net_geotif, cn.interval_end_years_annual)
+        veg_net_year_paths = _infer_veg_year_paths(veg_net_geotif, cn.veg_outputs_years)
         main_logger.info(f"\nReprojecting net vegetation ({len(veg_net_year_paths)} years) to Robinson")
         veg_net_reprojected = [reproject_to_robinson(p, reproj_folder, main_logger, prefix='veg_') for p in veg_net_year_paths]
         veg_net_reproj_ref_grid = veg_net_reprojected[-1]  # reference grid for organic soil reprojection
@@ -602,7 +602,7 @@ def map_LULUCF_maps(lulucf_input_date,
         veg_net_arrays = [read_raster_clipped(p, bounding_box_proj)[0] for p in veg_net_reprojected]
         data_veg_net_avg = np.mean(np.stack(veg_net_arrays), axis=0)
         main_logger.info(f"Vegetation net flux: averaged {len(veg_net_arrays)} annual rasters")
-        veg_net_avg_path = f"{reproj_folder}veg_{cn.net_flux_all_C_pools_all_gases_pattern}_v{cn.flux_aggreg_pixel_meaning}{cn.veg_model_version_underscore}_{cn.year_range_str}_avg_global_reproj.tif"
+        veg_net_avg_path = f"{reproj_folder}veg_{cn.net_flux_all_C_pools_all_gases_pattern}_v{cn.flux_aggreg_pixel_meaning}{cn.veg_model_version_underscore}_{cn.veg_year_range_str}_avg_global_reproj.tif"
         save_array_as_geotif(data_veg_net_avg, veg_net_reprojected[-1], veg_net_avg_path, main_logger)
 
 
@@ -678,7 +678,7 @@ def map_LULUCF_maps(lulucf_input_date,
     has_gross_component_inputs = all([veg_emis_geotif, organic_soil_drained_s3, organic_soil_burned_s3, mineral_soil_loss_s3])
     if has_gross_component_inputs:
 
-        veg_emis_year_paths = _infer_veg_year_paths(veg_emis_geotif, cn.interval_end_years_annual)
+        veg_emis_year_paths = _infer_veg_year_paths(veg_emis_geotif, cn.veg_outputs_years)
         main_logger.info(f"\nReprojecting vegetation gross emissions ({len(veg_emis_year_paths)} years) to Robinson")
         veg_emis_reprojected = [reproject_to_robinson(p, reproj_folder, main_logger, prefix='veg_') for p in veg_emis_year_paths]
 
@@ -688,7 +688,7 @@ def map_LULUCF_maps(lulucf_input_date,
         veg_emis_arrays = [read_raster_clipped(p, bounding_box_proj)[0] for p in veg_emis_reprojected]
         data_veg_emis_avg = np.mean(np.stack(veg_emis_arrays), axis=0)
         main_logger.info(f"Vegetation gross emissions: averaged {len(veg_emis_arrays)} annual rasters")
-        veg_emis_avg_path = f"{reproj_folder}veg_{cn.gross_emis_all_C_pools_all_gases_pattern}{cn.flux_aggreg_pixel_meaning}_v{cn.veg_model_version_underscore}_{cn.year_range_str}_avg_reproj.tif"
+        veg_emis_avg_path = f"{reproj_folder}veg_{cn.gross_emis_all_C_pools_all_gases_pattern}{cn.flux_aggreg_pixel_meaning}_v{cn.veg_model_version_underscore}_{cn.veg_year_range_str}_avg_reproj.tif"
         save_array_as_geotif(data_veg_emis_avg, veg_emis_reprojected[-1], veg_emis_avg_path, main_logger)
         data_min_soil_loss, _ = read_raster_clipped(mineral_soil_loss_reproj, bounding_box_proj)
 
@@ -703,7 +703,7 @@ def map_LULUCF_maps(lulucf_input_date,
     jpeg_path_lulucf_emis = render_unidirectional_map(
         data_lulucf_emis, raster_extent, bounding_box_proj, country_shapefile,
         cn.emissions_colors_rgb, cn.emissions_percentiles,
-        title_text=f"Gross land-based emissions\n{cn.interval_end_years_annual[0]}-{cn.interval_end_years_annual[-1]}\nkt CO$_2$e yr$^{{-1}}$",
+        title_text=f"Gross land-based emissions\n{cn.veg_outputs_years[0]}-{cn.veg_outputs_years[-1]}\nkt CO$_2$e yr$^{{-1}}$",
         non_pres_folder=non_pres_folder, pres_folder=pres_folder,
         jpeg_name=jpeg_name(lulucf_emis_core, bounding_box_description),
         slide_text=lulucf_slide_text_with_disclaimer,
@@ -716,7 +716,7 @@ def map_LULUCF_maps(lulucf_input_date,
     jpeg_path_lulucf_remv = render_unidirectional_map(
         data_lulucf_remv, raster_extent, bounding_box_proj, country_shapefile,
         cn.removals_colors_rgb, cn.removals_percentiles,
-        title_text=f"Gross land-based removals\n{cn.interval_end_years_annual[0]}-{cn.interval_end_years_annual[-1]}\nkt CO$_2$ yr$^{{-1}}$",
+        title_text=f"Gross land-based removals\n{cn.veg_outputs_years[0]}-{cn.veg_outputs_years[-1]}\nkt CO$_2$ yr$^{{-1}}$",
         non_pres_folder=non_pres_folder, pres_folder=pres_folder,
         jpeg_name=jpeg_name(lulucf_remv_core, bounding_box_description),
         slide_text=lulucf_slide_text_with_disclaimer,
@@ -729,8 +729,8 @@ def map_LULUCF_maps(lulucf_input_date,
     jpeg_path_lulucf_net = render_divergent_map(
         data_lulucf_net, raster_extent, bounding_box_proj, country_shapefile,
         net_colors_rgb,
-        title_text=f"Net land-based flux\n{cn.interval_end_years_annual[0]}-{cn.interval_end_years_annual[-1]}\nkt CO$_2$e yr$^{{-1}}$",
-        veg_analysis_years=cn.year_range_str,
+        title_text=f"Net land-based flux\n{cn.veg_outputs_years[0]}-{cn.veg_outputs_years[-1]}\nkt CO$_2$e yr$^{{-1}}$",
+        veg_analysis_years=cn.veg_year_range_str,
         non_pres_folder=non_pres_folder, pres_folder=pres_folder,
         jpeg_name=jpeg_name(lulucf_net_core, bounding_box_description),
         slide_text=lulucf_slide_text_with_disclaimer,
@@ -764,12 +764,12 @@ def map_LULUCF_maps(lulucf_input_date,
 
         # Panel a: Vegetation net flux (annual average)
         main_logger.info(f"  Creating annual average vegetation net flux map")
-        veg_net_core = f"vegetation_net_flux_all_pools_all_gases_{cn.veg_model_version_underscore}__{cn.year_range_str}__ktCO2e_yr"
+        veg_net_core = f"vegetation_net_flux_all_pools_all_gases_{cn.veg_model_version_underscore}__{cn.veg_year_range_str}__ktCO2e_yr"
         jpeg_path_veg_net = render_divergent_map(
             data_veg_net_avg, raster_extent, bounding_box_proj, country_shapefile,
             net_colors_rgb,
-            title_text=f"Net greenhouse gas flux\nAll vegetation pools, all gases\n{cn.interval_end_years_annual[0]}-{cn.interval_end_years_annual[-1]}\nkt CO$_2$e yr$^{{-1}}$",
-            veg_analysis_years=cn.year_range_str,
+            title_text=f"Net greenhouse gas flux\nAll vegetation pools, all gases\n{cn.veg_outputs_years[0]}-{cn.veg_outputs_years[-1]}\nkt CO$_2$e yr$^{{-1}}$",
+            veg_analysis_years=cn.veg_year_range_str,
             non_pres_folder=non_pres_folder, pres_folder=pres_folder,
             jpeg_name=jpeg_name(veg_net_core, bounding_box_description),
             slide_text=cn.veg_pres_text,
@@ -784,8 +784,8 @@ def map_LULUCF_maps(lulucf_input_date,
         jpeg_path_min_soil = render_divergent_map(
             data_min_soil, raster_extent, bounding_box_proj, country_shapefile,
             net_colors_rgb,
-            title_text=f"Net mineral soil SOC change\n{cn.interval_end_years_annual[0]}-{cn.interval_end_years_annual[-1]}\nkt CO$_2$e yr$^{{-1}}$",
-            veg_analysis_years=cn.year_range_str,
+            title_text=f"Net mineral soil SOC change\n{cn.veg_outputs_years[0]}-{cn.veg_outputs_years[-1]}\nkt CO$_2$e yr$^{{-1}}$",
+            veg_analysis_years=cn.veg_year_range_str,
             non_pres_folder=non_pres_folder, pres_folder=pres_folder,
             jpeg_name=jpeg_name(min_soil_core, bounding_box_description),
             slide_text=lulucf_slide_text_with_disclaimer,
@@ -801,7 +801,7 @@ def map_LULUCF_maps(lulucf_input_date,
         jpeg_path_org_soil = render_unidirectional_map(
             data_org_soil, raster_extent, bounding_box_proj, country_shapefile,
             cn.emissions_colors_rgb, cn.emissions_percentiles,
-            title_text=f"Gross organic soil emissions\n{cn.interval_end_years_annual[0]}-{cn.interval_end_years_annual[-1]}\nkt CO$_2$e yr$^{{-1}}$",
+            title_text=f"Gross organic soil emissions\n{cn.veg_outputs_years[0]}-{cn.veg_outputs_years[-1]}\nkt CO$_2$e yr$^{{-1}}$",
             non_pres_folder=non_pres_folder, pres_folder=pres_folder,
             jpeg_name=jpeg_name(org_soil_core, bounding_box_description),
             slide_text=lulucf_slide_text_with_disclaimer,

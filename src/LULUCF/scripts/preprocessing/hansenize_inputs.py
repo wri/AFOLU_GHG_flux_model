@@ -158,7 +158,7 @@ def main(cluster_name, process, bounding_box, chunk_size, run_local, no_upload):
             }
 
     if 'grasslands' in process:
-        for year in cn.years_annual:
+        for year in cn.LC_years:
             download_upload_dictionary[f"grassland_extent_{year}"] = {
                 'raw_dir': f"{cn.GPW_extent_raw_dir}",
                 'raw_pattern': f"{cn.GPW_extent_raw_pattern}_{year}",

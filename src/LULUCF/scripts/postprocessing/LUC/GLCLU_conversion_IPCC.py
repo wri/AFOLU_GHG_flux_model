@@ -86,15 +86,15 @@ def get_sdpt_status(sdpt_type):
 # Checks if an oil palm planting year transition happens in the timeseries.
 def has_planting_transition(lu_dict):
     planting_year = lu_dict.get("planting_year", 0)
-    return (planting_year > min(cn.years_annual) and planting_year <= max(cn.years_annual))
+    return (planting_year > min(cn.LC_years) and planting_year <= max(cn.LC_years))
 
 # Gets oil palm planting year index in timeseries.
 def planting_idx(planting_year):
-    if planting_year <= min(cn.years_annual):
+    if planting_year <= min(cn.LC_years):
         return 0
-    if planting_year > max(cn.years_annual):
+    if planting_year > max(cn.LC_years):
         return None
-    return int(planting_year - min(cn.years_annual))
+    return int(planting_year - min(cn.LC_years))
 
 # Checks if there was TCL up to 5 years before oil palm planting year. If so, considered F->C transition.
 def tcl_prior_to_planting(tcl_year, planting_year):
@@ -459,7 +459,7 @@ def apply_extent_rules(lu_dict):
     # Get oil palm planting year
     crop_extent = lu_dict["sdpt_tree_crop"] or lu_dict["sdpt_oil_palm"]
     planting_year = lu_dict.get("planting_year", 0)
-    planting_later = planting_year > min(cn.years_annual)
+    planting_later = planting_year > min(cn.LC_years)
 
     # Crop is highest priority and extents are applied in this order: pre-2000 oil palm plantation -> Descals oil palm -> SDPT tree crop
     if lu_dict["pre_2000_plantation"]:
@@ -1045,7 +1045,7 @@ def apply_regex_rules(tokens, node_codes, driver, tcl_year, pre_2000_plantation,
         "node_codes": node_codes,
         "driver": driver,
         "tcl_year": tcl_year,
-        "tcl_prior": (tcl_year != 0 and tcl_year <= min(cn.years_annual)),  # convert to bool
+        "tcl_prior": (tcl_year != 0 and tcl_year <= min(cn.LC_years)),  # convert to bool
         "pre_2000_plantation": (pre_2000_plantation == 1),
         "planting_year": planting_year,
         "sdpt_oil_palm": (sdpt_oil_palm == 1),
@@ -1597,8 +1597,8 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
     model_type = 'standard_model'
 
     # Determines if arguments for start and end year are valid
-    start_year = cn.first_model_year_annual
-    end_year = cn.last_model_year_annual
+    start_year = cn.LC_first_year
+    end_year = cn.LC_last_year
 
     # Connects to Coiled cluster if not running locally and the named cluster exists
     cluster, client, run_local = uu.connect_to_Coiled_cluster(cluster_name, run_local)
@@ -1673,11 +1673,11 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
     }
 
     # GLCLU timeseries
-    for year in cn.years_annual:
+    for year in cn.LC_years:
         download_dict[f"{cn.land_cover_pattern}_{year}"] = f"{cn.land_cover_annual_path}{year}/{sample_tile_id}.tif"
 
     # GPW grassland extent timeseries
-    for year in cn.years_annual:
+    for year in cn.LC_years:
         download_dict[f"{cn.GPW_extent_processed_pattern}_{year}"] = f"{cn.GPW_extent_processed_dir}{year}/{sample_tile_id}_{cn.GPW_extent_processed_pattern}_{year}.tif"
 
     # GMW mangrove extent timeseries
@@ -1700,11 +1700,11 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
         main_logger.info(f"  {key}: {value}")
 
     # Creates a list of output directories for all outputs
-    class_node_output_dirs = uu.create_output_dir_name_list( [cn.IPCC_class_dir, cn.IPCC_node_dir], interval_type,
-                                                             start_year, chunk_size_pixels, model_type, cn.IPCC_LU_version,
-                                                             stage, cn.years_annual, interval_year_diff_list, run_date, False)
+    class_node_output_dirs = uu.create_output_dir_name_list([cn.IPCC_class_dir, cn.IPCC_node_dir], interval_type,
+                                                            start_year, chunk_size_pixels, model_type, cn.IPCC_LU_version,
+                                                            stage, cn.LC_years, interval_year_diff_list, run_date, False)
 
-    change_years = [f"{a}_{b}" for a, b in zip(cn.years_annual[:-1], cn.years_annual[1:])]
+    change_years = [f"{a}_{b}" for a, b in zip(cn.LC_years[:-1], cn.LC_years[1:])]
     change_output_dirs = uu.create_output_dir_name_list( [cn.IPCC_change_dir], interval_type, start_year, chunk_size_pixels,
                                                          model_type, cn.IPCC_LU_version, stage,
                                                          change_years, interval_year_diff_list, run_date, False)
@@ -1723,8 +1723,8 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
     output_dir_list_10x10 = None
 
     if make_10x10_outputs:
-        class_node_output_dirs_10x10 = uu.create_output_dir_name_list( [cn.IPCC_class_dir, cn.IPCC_node_dir], interval_type, start_year, cn.full_raster_dims,
-                                            model_type, cn.IPCC_LU_version, stage, cn.years_annual, interval_year_diff_list, run_date, False)
+        class_node_output_dirs_10x10 = uu.create_output_dir_name_list([cn.IPCC_class_dir, cn.IPCC_node_dir], interval_type, start_year, cn.full_raster_dims,
+                                                                      model_type, cn.IPCC_LU_version, stage, cn.LC_years, interval_year_diff_list, run_date, False)
         change_output_dirs_10x10 = uu.create_output_dir_name_list([cn.IPCC_change_dir], interval_type, start_year, cn.full_raster_dims,
                                             model_type, cn.IPCC_LU_version, stage, change_years, interval_year_diff_list, run_date, False)
         summary_dir_10x10 = (cn.IPCC_summary_dir .replace("RUN_DATE", run_date) .replace("CHUNK_SIZE", str(cn.full_raster_dims)))

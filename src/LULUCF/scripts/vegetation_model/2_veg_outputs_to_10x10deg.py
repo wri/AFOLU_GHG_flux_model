@@ -90,7 +90,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     main_logger.info(f"Stage {stage} started at: {start_time}")
     main_logger.info(f"Vegetation model version: {cn.veg_model_version}")
     main_logger.info(f"Vegatation model path descriptor: {model_path_description}")
-    main_logger.info(f"Start year: {cn.first_model_year_annual}; end year: {cn.last_model_year_annual}")
+    main_logger.info(f"Start year: {cn.LC_first_year}; end year: {cn.LC_last_year}")
     main_logger.info(f"Input date: {input_date}")
     main_logger.info(f"no_upload: {no_upload}")
     main_logger.info(f"Batch size: {batch_size} tasks")
@@ -100,7 +100,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
 
     # Calculates the interval type, difference between start and end years of intervals, and the model output years
     # for the model run
-    interval_type, interval_year_diff_list, interval_length_list, interval_end_years = uu.get_interval_info(cn.first_model_year_annual, cn.last_model_year_annual, main_logger)
+    interval_type, interval_year_diff_list, interval_length_list, interval_end_years = uu.get_interval_info(cn.LC_first_year, cn.LC_last_year, main_logger)
 
     # Returns a dataframe of chunk_id and ISO for the GADM4.1 1x1 deg fishnet.
     # chunk_ids for making chunk list if shapefile is supplied in command line.
@@ -135,8 +135,8 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     if first_years_to_process:
         years_to_process = first_years_to_process
     else:
-        years_to_process = cn.end_year_count
-    main_logger.info(f"Years to aggregate to 10x10 deg and compare chunk stats for: {years_to_process} out of {cn.end_year_count}")
+        years_to_process = cn.veg_end_year_count
+    main_logger.info(f"Years to aggregate to 10x10 deg and compare chunk stats for: {years_to_process} out of {cn.veg_end_year_count}")
 
     if first_tiles_to_process:
         tile_ids_to_process = unique_tile_ids[0:first_tiles_to_process]
@@ -328,9 +328,9 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     ### Step 6: Count output geotifs in s3
 
     # Counts per-hectare outputs
-    output_dir_list_per_ha = uu.create_output_dir_name_list(cn.veg_summative_output_dirs, 'annual', cn.first_model_year_annual,
-                                                     cn.full_raster_dims, model_type, cn.veg_model_version_underscore, model_path_description, interval_end_years,
-                                                     interval_year_diff_list, input_date, False, "per_ha")
+    output_dir_list_per_ha = uu.create_output_dir_name_list(cn.veg_summative_output_dirs, 'annual', cn.LC_first_year,
+                                                            cn.full_raster_dims, model_type, cn.veg_model_version_underscore, model_path_description, interval_end_years,
+                                                            interval_year_diff_list, input_date, False, "per_ha")
     output_dir_list_per_ha.sort()  # Alphabetically order the outputs (modifies output_dir_list_per_ha)
     if is_large_run:
         main_logger.info(f"output_dir_list_per_ha for {stage}:")
@@ -346,9 +346,9 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
             # print(geotiff_files)
 
     # Counts per-pixel outputs
-    output_dir_list_per_pixel = uu.create_output_dir_name_list(cn.veg_summative_output_dirs, 'annual', cn.first_model_year_annual,
-                                                     cn.full_raster_dims, model_type, cn.veg_model_version_underscore, model_path_description, interval_end_years,
-                                                     interval_year_diff_list, input_date, False, "per_pixel")
+    output_dir_list_per_pixel = uu.create_output_dir_name_list(cn.veg_summative_output_dirs, 'annual', cn.LC_first_year,
+                                                               cn.full_raster_dims, model_type, cn.veg_model_version_underscore, model_path_description, interval_end_years,
+                                                               interval_year_diff_list, input_date, False, "per_pixel")
     output_dir_list_per_pixel.sort()
     if is_large_run:
         main_logger.info(f"output_dir_list_per_pixel for {stage}:")
@@ -363,9 +363,9 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
             # print(geotiff_files)
 
     # Counts 0.04x0.04 deg outputs
-    output_dir_list_aggreg = uu.create_output_dir_name_list(cn.veg_summative_output_dirs, 'annual', cn.first_model_year_annual,
-                                                     cn.global_aggregation_factor, model_type, cn.veg_model_version_underscore, model_path_description, interval_end_years,
-                                                     interval_year_diff_list, input_date, False, "_0_04deg_yr")
+    output_dir_list_aggreg = uu.create_output_dir_name_list(cn.veg_summative_output_dirs, 'annual', cn.LC_first_year,
+                                                            cn.global_aggregation_factor, model_type, cn.veg_model_version_underscore, model_path_description, interval_end_years,
+                                                            interval_year_diff_list, input_date, False, "_0_04deg_yr")
     output_dir_list_aggreg.sort()
     if is_large_run:
         main_logger.info(f"output_dir_list_aggreg for {stage}:")

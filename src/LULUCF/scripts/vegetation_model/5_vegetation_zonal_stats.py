@@ -99,7 +99,7 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     main_logger.info(f"Vegetation model version: {cn.veg_model_version}")
     main_logger.info(f"Vegatation model path descriptor: {model_path_description}")
     main_logger.info(f"Vegetation zonal stats descriptor: {zonal_stats_description}")
-    main_logger.info(f"Start year: {cn.first_model_year_annual}; end year: {cn.last_model_year_annual}")
+    main_logger.info(f"Start year: {cn.LC_first_year}; end year: {cn.LC_last_year}")
     main_logger.info(f"Input date: {input_date}")
     main_logger.info(f"no_upload: {no_upload}")
     main_logger.info(f"Running sub-tile test area: {sub_tile_test}")

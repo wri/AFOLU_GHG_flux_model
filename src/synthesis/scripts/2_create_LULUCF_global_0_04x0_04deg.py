@@ -28,6 +28,7 @@ python -m src.utilities.create_cluster -n 10 -t 1 -m 4 -cn LULUCF_summation
 python -m src.synthesis.scripts.2_create_LULUCF_global_0_04x0_04deg -cn LULUCF_summation --input_date 20260614 -mt standard -mpd global --log_note "This is a global run for LULUCF v1.0.0: veg v1.0.5 + SOC v1.0.1 + org soil v1.0.1, 2016-2024."
 
 Based on corresponding vegetation script, but with Claude session 'LULUCF global geotif setup'
+#TODO Output combined organic soil emissions + mineral soil net change geotif at 0.04x0.04 deg resolution
 """
 
 import argparse
@@ -100,8 +101,8 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
     if first_years_to_process:
         years_to_process = first_years_to_process
     else:
-        years_to_process = cn.end_year_count
-    main_logger.info(f"Years to aggregate to 10x10 deg and compare chunk stats for: {years_to_process} out of {cn.end_year_count}")
+        years_to_process = cn.veg_end_year_count
+    main_logger.info(f"Years to aggregate to 10x10 deg and compare chunk stats for: {years_to_process} out of {cn.veg_end_year_count}")
 
     # Determines if large run parameters should be used
     is_large_run = False
@@ -130,7 +131,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
             futures.append(future)
 
     # Annual average submission
-    base_path_avg = base_path.replace("START_END", f"avg_{cn.year_range_str}")
+    base_path_avg = base_path.replace("START_END", f"avg_{cn.veg_year_range_str}")
     for var_name in vars_to_process:
 
         future = client.submit(uu.mosaic_tiles_to_global,

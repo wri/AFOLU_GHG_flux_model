@@ -45,22 +45,18 @@ Coiled_workspace = "wri-land-research"
 ### m^2 to hectares
 m2_to_ha = 1/10000
 
-### Model years
-first_model_year_annual = 2015  # First year of annual LC data
-last_model_year_annual = 2024   # Last year of annual LC data
+### Vegetation model years
+LC_first_year = 2015  # First year of annual LC/veg height data
+LC_last_year = 2024   # Last year of annual LC/veg height data
+veg_modeL_increment = 1  # Timestep for the vegetation model (years)
+LC_years = list(range(LC_first_year, LC_last_year, veg_modeL_increment))  # All years of the LC/veg height data
 
-years_annual = [2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
-interval_end_years_annual = years_annual[1:]
-end_year_count = len(interval_end_years_annual)
-year_range_str = f"{interval_end_years_annual[0]}_{last_model_year_annual}"
+veg_outputs_years = LC_years[1:]  # Output years for the vegetation model
+veg_end_year_count = len(veg_outputs_years)  # Number of years output from the veg moel
+veg_year_range_str = f"{veg_outputs_years[0]}_{LC_last_year}"
 
 possible_task_statuses = ["pending_", "loading_", "preprocessing_", "calculating_",
                           "zarr_population_", "uploading_", "error_"]
-
-# Model interval types
-intervals_five_years = "five_years"
-intervals_annual = "annual"
-intervals_hybrid = "hybrid"
 
 # Seconds until a file download timeouts (and potentially retries)
 download_timeout = 300
@@ -940,13 +936,12 @@ core_veg_outputs_to_zarr = [
     agc_gross_emis_pattern, bgc_gross_emis_pattern, deadwood_c_gross_emis_pattern, litter_c_gross_emis_pattern,
     ch4_gross_emis_pattern, n2o_gross_emis_pattern,
     agc_gross_removals_pattern, bgc_gross_removals_pattern, deadwood_c_gross_removals_pattern, litter_c_gross_removals_pattern,
-    land_state_pattern, composite_primary_forest, forest_age_output_pattern
+    land_state_pattern, composite_primary_forest, forest_age_output_pattern, agc_rf_pre_dist_pattern, agc_emission_factor
 ]
 
 # Also want to add the metadata for the summative outputs to the global zarr upfront for simplicity,
 # rather than having to add more empty layers to the zarr at the summative stage
-full_veg_outputs_to_zarr = core_veg_outputs_to_zarr
-full_veg_outputs_to_zarr.extend([veg_summative_output_patterns, agc_rf_pre_dist_pattern, agc_emission_factor])
+full_veg_outputs_to_zarr = core_veg_outputs_to_zarr + veg_summative_output_patterns
 
 # Summative outputs from core vegetation model
 veg_summative_output_dirs = [
@@ -1117,7 +1112,7 @@ LULUCF_output_dirs = [
 ]
 
 LULUCF_annual_zarr_name = "LULUCF_annual.zarr"
-LULUCF_avg_zarr_name = f"LULUCF_avg_{interval_end_years_annual[0]}_{interval_end_years_annual[-1]}.zarr"
+LULUCF_avg_zarr_name = f"LULUCF_avg_{veg_outputs_years[0]}_{veg_outputs_years[-1]}.zarr"
 
 
 #######
@@ -1209,7 +1204,7 @@ drivers_of_loss_test_chunk = [27, -9, 28, -8]  # 7 in top-left, 3 in top-right, 
 first_year_LC_composite_zarr_date = '20260611'
 first_year_LC_composite_zarr_dtype = 'uint8'
 first_year_LC_composite_pattern = 'first_year_LC_composite'
-first_year_LC_composite_geotif_path = f'{land_cover_annual_path}{first_model_year_annual}/'
+first_year_LC_composite_geotif_path = f'{land_cover_annual_path}{LC_first_year}/'
 first_year_LC_composite_zarr_path = f"{contextual_zarr_path}{first_year_LC_composite_pattern}/v2/{first_year_LC_composite_zarr_date}_fillValue_removed/{first_year_LC_composite_pattern}_{first_year_LC_composite_zarr_date}.zarr"
 first_year_LC_composite_test_chunk = [19, 44, 20, 45] # 145 in top-left, 244 in top right, 24 in bottom right, 24 in bottom left
 
@@ -2118,7 +2113,7 @@ emissions_colors_rgb = net_colors_rgb[5:]
 # Percentile at which map color saturates and the min and max values on legend (0.5 -> 0.5 and 99.5 percentiles)
 saturation_percentile = 0.5
 
-veg_pres_text = f"Vegetation fluxes: v{veg_model_version}, {interval_end_years_annual[0]}-{last_model_year_annual}"
+veg_pres_text = f"Vegetation fluxes: v{veg_model_version}, {veg_outputs_years[0]}-{LC_last_year}"
 organic_soil_pres_text = f"Organic soil: v{organic_soil_model_version}, 2021-2024"
 mineral_soil_pres_text = f"Mineral soil: v{SOC_model_version}, 2021-2022"
 cropland_pres_text = f"Cropland: vYYYYMMDD, ca. 2020"

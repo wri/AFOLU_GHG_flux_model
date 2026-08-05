@@ -29,7 +29,7 @@ from src.utilities.constants_and_names import intervals_annual
 bounds = [-80, 39, -79, 40]
 zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__ctrees_starting_AGC__test_box/mega_zarr/annual_intervals/4000_pixels/20260701/vegetation_zarr.zarr'
 var_name = 'carbon_density__AGC__MgC_ha'
-interval_end_years = cn.interval_end_years_annual
+interval_end_years = cn.veg_outputs_years
 
 # # For vegetation model outputs
 # # bounds = [23, -4, 24, -3]

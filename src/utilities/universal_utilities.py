@@ -579,14 +579,26 @@ def xy_to_tile_id(top_left_x, top_left_y):
 # Interval info for model run
 def get_interval_info(main_logger):
 
-    interval_length = [1] * cn.end_year_count
+    interval_length = [1] * cn.veg_end_year_count
     # interval_length = [1, 1, 1, 1, 1, 1, 1, 1, 1]  # Expected for 2015-2024
-    output_years = cn.interval_end_years_annual
+    output_years = cn.veg_outputs_years
 
     main_logger.info(f"Interval end years/Output years: {output_years}")
     main_logger.info(f"Interval duration: {interval_length} years")
 
     return interval_length, output_years
+
+
+# Reads a text file of chunk IDs to keep or skip.
+def read_chunk_ids_file(chunk_ids_file):
+    with open(chunk_ids_file, "r") as f:
+        chunk_ids = {
+            line.strip()
+            for line in f
+            if line.strip() and not line.strip().startswith("#")
+        }
+
+    return chunk_ids
 
 
 # Creates the list of chunks to process given an approach: a bounding box or a shapefile attribute table
@@ -940,7 +952,7 @@ def create_output_dir_name_list(dir_list, start_year, chunk_size_pixels,
         # Creates the full model period path (2015-ENDYEAR) and adds it to the list of paths.
         # Only used for select outputs.
         if include_full_period_totals:
-            full_model_period_dir = sample_output_dir.replace('START_END', f"{cn.first_model_year_annual}_{cn.last_model_year_annual}")
+            full_model_period_dir = sample_output_dir.replace('START_END', f"{cn.LC_first_year}_{cn.LC_last_year}")
             output_full_dirs.append(full_model_period_dir)
 
     return output_full_dirs
@@ -2435,7 +2447,7 @@ def mosaic_tiles_to_global(var_name, year_idx, first_tiles_to_process, base_path
     elif "SOC_gain" in var_name:
         year = cn.SOC_change_intervals[year_idx]
     else:  # Vegetation timeseries
-        year = cn.interval_end_years_annual[year_idx]
+        year = cn.veg_outputs_years[year_idx]
 
     # Establishes year/year range and units for dataset
     if "density" in var_name:  # Vegetation or SOC

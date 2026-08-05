@@ -54,11 +54,11 @@ def build_land_use_input_paths(tile_id):
     }
     paths["GLCLU"] = {
         f"{cn.land_cover_pattern}_{year}": f"{cn.land_cover_annual_path}{year}/{tile_id}.tif"
-        for year in cn.years_annual
+        for year in cn.LC_years
     }
     paths["GPW"] = {
         f"{cn.GPW_extent_processed_pattern}_{year}": f"{cn.GPW_extent_processed_dir}{year}/{tile_id}_{cn.GPW_extent_processed_pattern}_{year}.tif"
-        for year in cn.years_annual
+        for year in cn.LC_years
     }
     paths["GMW"] = {
         f"{cn.mangrove_extent_processed_pattern}_{year}": f"{cn.mangrove_extent_processed_dir}{year}/{tile_id}__{cn.mangrove_extent_processed_pattern}_{year}.tif"

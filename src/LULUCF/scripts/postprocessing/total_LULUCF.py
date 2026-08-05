@@ -325,8 +325,8 @@ def main(cluster_name, run_date, veg_input_date, organic_soil_input_date, minera
     # Creates the log for the main function and populates it with basic run information
     main_logger, main_log_local_path, n_workers = lu.populate_main_log_header(client, cluster, log_note, run_local, model_type, stage)
 
-    start_year = cn.first_model_year_annual
-    end_year = cn.last_model_year_annual
+    start_year = cn.LC_first_year
+    end_year = cn.LC_last_year
 
     start_time = uu.timestr()  # Starting time for stage
     main_logger.info(f"Stage {stage} started at: {start_time}")
@@ -341,7 +341,7 @@ def main(cluster_name, run_date, veg_input_date, organic_soil_input_date, minera
     # Calculates the interval type, difference between start and end years of intervals,
     # and the model output years for the model run
     interval_type_veg, interval_year_diff_list_veg, interval_length_list_veg, interval_end_years_list_veg = uu.get_interval_info(
-        cn.first_model_year_annual, cn.last_model_year_annual, main_logger)
+        cn.LC_first_year, cn.LC_last_year, main_logger)
 
     # Returns a dataframe of chunk_id and ISO for the GADM4.1 1x1 deg fishnet.
     # chunk_ids for making chunk list if shapefile is supplied in command line.
@@ -372,10 +372,10 @@ def main(cluster_name, run_date, veg_input_date, organic_soil_input_date, minera
     # just once on the scheduler, as is more efficient for scripts that use numba.
     # Creates a list of input directories used in summative output creation based on specifics of the model run
     veg_inputs_by_interval_dir_list = uu.create_output_dir_name_list(cn.veg_summative_for_LULUCF_output_dirs, "annual",
-                                                                           cn.first_model_year_annual,
-                                                                           chunk_size_pixels, cn.veg_model_version_underscore, model_type,
-                                                                           interval_end_years_list_veg,
-                                                                           interval_year_diff_list_veg, veg_input_date, False,
+                                                                     cn.LC_first_year,
+                                                                     chunk_size_pixels, cn.veg_model_version_underscore, model_type,
+                                                                     interval_end_years_list_veg,
+                                                                     interval_year_diff_list_veg, veg_input_date, False,
                                                                            "per_ha")
 
     # print("veg_inputs_by_interval_dir_list:", veg_inputs_by_interval_dir_list)
@@ -400,9 +400,9 @@ def main(cluster_name, run_date, veg_input_date, organic_soil_input_date, minera
 
     # Creates a list of output directories for LULUCF totals
     LULUCF_summative_outputs_by_interval_dir_list = uu.create_output_dir_name_list(cn.LULUCF_output_dirs, "annual",
-                                                                            cn.first_model_year_annual,
-                                                                            chunk_size_pixels, model_type, cn.veg_model_version_underscore,
-                                                                            interval_year_diff_list_veg, veg_input_date,False,
+                                                                                   cn.LC_first_year,
+                                                                                   chunk_size_pixels, model_type, cn.veg_model_version_underscore,
+                                                                                   interval_year_diff_list_veg, veg_input_date, False,
                                                                             "per_ha")
 
     # print("LULUCF_summative_outputs_by_interval_dir_list:", LULUCF_summative_outputs_by_interval_dir_list)
@@ -441,7 +441,7 @@ def main(cluster_name, run_date, veg_input_date, organic_soil_input_date, minera
 
         # Creates the global mega-zarr with metadata only
         zu.initialize_global_zarr(raw_mega_zarr_path, outputs_to_zarr, len(interval_year_diff_list_veg),
-                                  ((len(cn.interval_end_years_annual)), chunk_size_pixels, chunk_size_pixels), main_logger)
+                                  ((len(cn.veg_outputs_years)), chunk_size_pixels, chunk_size_pixels), main_logger)
 
         # Checks the zarr coordinates and extent
         fs = fsspec.filesystem("s3", anon=False)

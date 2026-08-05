@@ -65,7 +65,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
     main_logger.info(f"Stage {stage} started at: {start_time}")
     main_logger.info(f"Model version: {cn.veg_model_version}")
     main_logger.info(f"Model path descriptor: {model_path_description}")
-    main_logger.info(f"Start year: {cn.first_model_year_annual}; end year: {cn.last_model_year_annual}")
+    main_logger.info(f"Start year: {cn.LC_first_year}; end year: {cn.LC_last_year}")
     main_logger.info(f"Input date: {input_date}")
     main_logger.info(f"no_upload: {no_upload}")
 
@@ -84,8 +84,8 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload,
     if first_years_to_process:
         years_to_process = first_years_to_process
     else:
-        years_to_process = cn.end_year_count
-    main_logger.info(f"Years to create global maps for: {years_to_process} out of {cn.end_year_count}")
+        years_to_process = cn.veg_end_year_count
+    main_logger.info(f"Years to create global maps for: {years_to_process} out of {cn.veg_end_year_count}")
 
     # Determines if large run parameters should be used
     is_large_run = False

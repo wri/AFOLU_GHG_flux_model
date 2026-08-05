@@ -115,6 +115,8 @@ def initialize_global_zarr(store_url, dataset_keys, n_years, chunk_size, main_lo
             dtype = 'float32'
         elif "gain" in key:
             dtype = 'float32'
+        elif "factor" in key:
+            dtype = 'float32'
         elif cn.land_state_pattern in key:
             dtype = 'uint32'
         elif cn.composite_primary_forest in key:
@@ -414,7 +416,7 @@ def populate_ipcc_zarr(bounds, bounds_str, create_zarr, is_large_run, logger_wor
     lat_end, lon_end = latlon_to_global_zarr_indices(bounds[1], bounds[2], cn.resolution)
 
     # Annual land use and node code: indices 0-9 map to 2015-2024.
-    for i, year in enumerate(cn.years_annual):
+    for i, year in enumerate(cn.LC_years):
         class_key = f"{cn.IPCC_class_pattern}_{year}"
         node_key = f"{cn.IPCC_node_pattern}_{year}"
 
@@ -425,7 +427,7 @@ def populate_ipcc_zarr(bounds, bounds_str, create_zarr, is_large_run, logger_wor
             z[cn.IPCC_node_pattern][i, lat_start:lat_end, lon_start:lon_end] = out_dict[node_key]
 
     # LU change: indices 1-9 (based on end year) map to intervals, index 0 stays empty.
-    for i, (start_year, end_year) in enumerate(zip(cn.years_annual[:-1], cn.years_annual[1:])):
+    for i, (start_year, end_year) in enumerate(zip(cn.LC_years[:-1], cn.LC_years[1:])):
         change_key = f"{cn.IPCC_change_pattern}_{start_year}_{end_year}"
 
         if change_key in out_dict:
@@ -632,12 +634,12 @@ def ipcc_zarr_1x1_deg_stats(bounds, var, zarr_path):
     stats = []
 
     if var in {cn.IPCC_class_pattern, cn.IPCC_node_pattern}:
-        for i, year in enumerate(cn.years_annual):
+        for i, year in enumerate(cn.LC_years):
             key = f"{var}_{year}"
             arr = z[var][i, lat0:lat1, lon0:lon1]
             stats.append(uu.calculate_ipcc_stats(arr, key, bounds_str, tile_id, "zarr_stats"))
     elif var == cn.IPCC_change_pattern:
-        for i, (start_year, end_year) in enumerate(zip(cn.years_annual[:-1], cn.years_annual[1:])):
+        for i, (start_year, end_year) in enumerate(zip(cn.LC_years[:-1], cn.LC_years[1:])):
             key = f"{cn.IPCC_change_pattern}_{start_year}_{end_year}"
             arr = z[var][i+1, lat0:lat1, lon0:lon1]
             stats.append(uu.calculate_ipcc_stats(arr, key, bounds_str, tile_id, "zarr_stats"))
@@ -694,7 +696,7 @@ def compare_dataset_year_chunk_stats(all_merged_tables, chunk_stats_variable_zar
     subset_model_table = model_table[model_table['pattern'].str.contains(var_name, na=False)].copy()
 
     # For chunk stat comparisons of starting year data, the geotif chunk stats chunk_name has 'no year range'. Need to replace with the starting year.
-    subset_model_table['chunk_name'] = subset_model_table['chunk_name'].str.replace('_no year range', f'_{cn.first_model_year_annual}', regex=False)
+    subset_model_table['chunk_name'] = subset_model_table['chunk_name'].str.replace('_no year range', f'_{cn.LC_first_year}', regex=False)
     # print("var_name:", var_name)
     # print("subset_model_table", subset_model_table)
     # print("subset_model_table chunk_name", subset_model_table['chunk_name'].iloc[0])
@@ -1024,7 +1026,7 @@ def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_b
     # If creating outputs from the model start year, it just uses that year.
     # Renames variable to use units and year.
     if use_start_year == True:
-        year = cn.first_model_year_annual
+        year = cn.LC_first_year
         if append_start_year_to_var:
             var_with_unit = f"{var_per_ha}_{year}"
         else:
@@ -1039,7 +1041,7 @@ def create_10x10_deg_geotif_from_zarr(var, year_idx, tile_id, raw_path, output_b
         elif "SOC_gain" in var:
             year = cn.SOC_change_intervals[year_idx]
         else:  # Vegetation timeseries
-            year = cn.interval_end_years_annual[year_idx]
+            year = cn.veg_outputs_years[year_idx]
         var_with_unit = var_per_ha  # Doesn't add year to variable/unit name
 
     # Open Zarr group using fsspec mapper

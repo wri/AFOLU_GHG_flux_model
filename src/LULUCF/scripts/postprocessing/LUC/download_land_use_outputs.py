@@ -42,7 +42,7 @@ def download_if_needed(s3_uri, local_path, overwrite=False):
 def build_land_use_output_paths(tile_id, run_date, chunk_size_pixels=40000):
     paths = {}
 
-    for year in cn.years_annual:
+    for year in cn.LC_years:
         paths.setdefault("IPCC_class", {})[
             f"{cn.IPCC_class_pattern}_{year}"
         ] = (
@@ -63,7 +63,7 @@ def build_land_use_output_paths(tile_id, run_date, chunk_size_pixels=40000):
             + f"{tile_id}_{cn.IPCC_node_pattern}_{year}.tif"
         )
 
-    for start_year, end_year in zip(cn.years_annual[:-1], cn.years_annual[1:]):
+    for start_year, end_year in zip(cn.LC_years[:-1], cn.LC_years[1:]):
         year_range = f"{start_year}_{end_year}"
         paths.setdefault("IPCC_change", {})[
             f"{cn.IPCC_change_pattern}_{year_range}"
@@ -75,7 +75,7 @@ def build_land_use_output_paths(tile_id, run_date, chunk_size_pixels=40000):
             + f"{tile_id}_{cn.IPCC_change_pattern}_{year_range}.tif"
         )
 
-    summary_year_range = f"{cn.years_annual[0]}_{cn.years_annual[-1]}"
+    summary_year_range = f"{cn.LC_years[0]}_{cn.LC_years[-1]}"
     paths["IPCC_summary"] = {
         cn.IPCC_summary_pattern: (
             cn.IPCC_summary_dir

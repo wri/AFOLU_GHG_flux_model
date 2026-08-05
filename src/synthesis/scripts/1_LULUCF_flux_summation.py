@@ -160,7 +160,7 @@ def period_mean(arr_3d):
     """
     total = np.nansum(arr_3d, axis=0).astype(np.float32)  # NaN treated as 0 in sum
     all_nan = np.all(np.isnan(arr_3d), axis=0)  # True where no data in any year
-    return np.where(all_nan, np.nan, total / cn.end_year_count).astype(np.float32)
+    return np.where(all_nan, np.nan, total / cn.veg_end_year_count).astype(np.float32)
 
 
 # ---------------------------------------------------------------------------
@@ -234,9 +234,9 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
         tile_col1 = tile_col0 + chunk_len_pixels
 
         # --- Read veg (all 9 annual years at once): shape (9, 4000, 4000) ---
-        veg_emis_all     = veg_zarr[VEG_EMIS_VAR    ][0:cn.end_year_count, lat0:lat1, lon0:lon1].astype(np.float32)
-        veg_removals_all = veg_zarr[VEG_REMOVALS_VAR][0:cn.end_year_count, lat0:lat1, lon0:lon1].astype(np.float32)
-        veg_net_all      = veg_zarr[VEG_NET_VAR      ][0:cn.end_year_count, lat0:lat1, lon0:lon1].astype(np.float32)
+        veg_emis_all     = veg_zarr[VEG_EMIS_VAR    ][0:cn.veg_end_year_count, lat0:lat1, lon0:lon1].astype(np.float32)
+        veg_removals_all = veg_zarr[VEG_REMOVALS_VAR][0:cn.veg_end_year_count, lat0:lat1, lon0:lon1].astype(np.float32)
+        veg_net_all      = veg_zarr[VEG_NET_VAR      ][0:cn.veg_end_year_count, lat0:lat1, lon0:lon1].astype(np.float32)
 
         # --- Read SOC blocks (direct zarr index: 3 (used for all years for now)) ---
         soc_loss_b1 = soc_zarr[SOC_LOSS_VAR][SOC_BLOCK1_ZARR_IDX, lat0:lat1, lon0:lon1].astype(np.float32)
@@ -257,11 +257,11 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
         # --- Compute 9 annual LULUCF outputs ---
         ny = lat1 - lat0
         nx = lon1 - lon0
-        lulucf_emis     = np.full((cn.end_year_count, ny, nx), np.nan, dtype=np.float32)
-        lulucf_removals = np.full((cn.end_year_count, ny, nx), np.nan, dtype=np.float32)
-        lulucf_net      = np.full((cn.end_year_count, ny, nx), np.nan, dtype=np.float32)
+        lulucf_emis     = np.full((cn.veg_end_year_count, ny, nx), np.nan, dtype=np.float32)
+        lulucf_removals = np.full((cn.veg_end_year_count, ny, nx), np.nan, dtype=np.float32)
+        lulucf_net      = np.full((cn.veg_end_year_count, ny, nx), np.nan, dtype=np.float32)
 
-        for i, year in enumerate(cn.interval_end_years_annual):
+        for i, year in enumerate(cn.veg_outputs_years):
             # SOC: always use the 2015-2020 block for all years
             soc_loss = soc_loss_b1;  soc_gain = soc_gain_b1;  soc_net = soc_net_b1
             # Org soil: split which block to use at SPLIT_YEAR
@@ -287,13 +287,13 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
 
         # --- Populate timeseries zarr ---
         zarr_out_dict = {}
-        for i, year in enumerate(cn.interval_end_years_annual):
+        for i, year in enumerate(cn.veg_outputs_years):
             zarr_out_dict[f"{LULUCF_EMIS_VAR}_{year}"]     = lulucf_emis[i]
             zarr_out_dict[f"{LULUCF_REMOVALS_VAR}_{year}"] = lulucf_removals[i]
             zarr_out_dict[f"{LULUCF_NET_VAR}_{year}"]      = lulucf_net[i]
 
         lu.print_and_log(f"Writing select outputs to global timeseries zarr for {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
-        zu.populate_zarr(bounds, bounds_str, create_zarr, cn.interval_end_years_annual, False, logger_worker,
+        zu.populate_zarr(bounds, bounds_str, create_zarr, cn.veg_outputs_years, False, logger_worker,
                          lulucf_zarr_path, zarr_out_dict, LULUCF_OUTPUTS_TO_ZARR, stage, subtile_id)
 
         # --- Populate annual average zarr (year label 'avg', stored at index 0) ---
@@ -310,7 +310,7 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
         if not no_upload:
             lu.print_and_log(f"Saving 1x1 deg outputs in cluster for {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
             upload_dict = {}
-            for i, year in enumerate(cn.interval_end_years_annual):
+            for i, year in enumerate(cn.veg_outputs_years):
                 emis_dir = outputs_1x1_dir_by_year[(cn.gross_emis_all_C_pools_all_gases_LULUCF_pattern, year)]
                 rem_dir  = outputs_1x1_dir_by_year[(cn.gross_removals_all_C_pools_LULUCF_pattern,       year)]
                 net_dir  = outputs_1x1_dir_by_year[(cn.net_flux_all_C_pools_all_gases_LULUCF_pattern,   year)]
@@ -318,11 +318,11 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
                 upload_dict[f"{LULUCF_REMOVALS_VAR}_{year}"] = [lulucf_removals[i], 'float32', cn.flux_density_pixel_meaning, year, rem_dir[cn.full_bucket_prefix_length:]]
                 upload_dict[f"{LULUCF_NET_VAR}_{year}"]      = [lulucf_net[i],      'float32', cn.flux_density_pixel_meaning, year, net_dir[cn.full_bucket_prefix_length:]]
 
-            upload_dict[f"{LULUCF_EMIS_VAR}_avg_{cn.year_range_str}"]  = [lulucf_emis_avg, 'float32', cn.flux_density_pixel_meaning,
+            upload_dict[f"{LULUCF_EMIS_VAR}_avg_{cn.veg_year_range_str}"]  = [lulucf_emis_avg, 'float32', cn.flux_density_pixel_meaning,
                                                       'avg', outputs_1x1_avg_dirs[cn.gross_emis_all_C_pools_all_gases_LULUCF_pattern][cn.full_bucket_prefix_length:]]
-            upload_dict[f"{LULUCF_REMOVALS_VAR}_avg_{cn.year_range_str}"] = [lulucf_removals_avg, 'float32', cn.flux_density_pixel_meaning,
+            upload_dict[f"{LULUCF_REMOVALS_VAR}_avg_{cn.veg_year_range_str}"] = [lulucf_removals_avg, 'float32', cn.flux_density_pixel_meaning,
                                                          'avg', outputs_1x1_avg_dirs[cn.gross_removals_all_C_pools_LULUCF_pattern][cn.full_bucket_prefix_length:]]
-            upload_dict[f"{LULUCF_NET_VAR}_avg_{cn.year_range_str}"] = [lulucf_net_avg, 'float32', cn.flux_density_pixel_meaning,
+            upload_dict[f"{LULUCF_NET_VAR}_avg_{cn.veg_year_range_str}"] = [lulucf_net_avg, 'float32', cn.flux_density_pixel_meaning,
                                                     'avg', outputs_1x1_avg_dirs[cn.net_flux_all_C_pools_all_gases_LULUCF_pattern][cn.full_bucket_prefix_length:]]
 
             upload_tasks = uu.save_and_upload_small_raster_set(
@@ -336,7 +336,7 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
         pixel_area_uri   = f"{cn.pixel_area_dir}{cn.pixel_area_pattern}_{subtile_id}.tif"
         pixel_area_chunk = uu.get_tile_dataset_rio(pixel_area_uri, bounds, chunk_len_pixels, logger_worker, 'Float32')[0]
 
-        for i, year in enumerate(cn.interval_end_years_annual):
+        for i, year in enumerate(cn.veg_outputs_years):
             for key, arr in [
                 (f"{LULUCF_EMIS_VAR}_{year}",     lulucf_emis[i]),
                 (f"{LULUCF_REMOVALS_VAR}_{year}", lulucf_removals[i]),
@@ -346,9 +346,9 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
                 chunk_stats_combined.append(uu.calculate_stats(arr, key, bounds_str, subtile_id, 'output_layer', per_pixel))
 
         for key, arr in [
-            (f"{LULUCF_EMIS_VAR}_avg_{cn.year_range_str}",     lulucf_emis_avg),
-            (f"{LULUCF_REMOVALS_VAR}_avg_{cn.year_range_str}", lulucf_removals_avg),
-            (f"{LULUCF_NET_VAR}_avg_{cn.year_range_str}",      lulucf_net_avg),
+            (f"{LULUCF_EMIS_VAR}_avg_{cn.veg_year_range_str}", lulucf_emis_avg),
+            (f"{LULUCF_REMOVALS_VAR}_avg_{cn.veg_year_range_str}", lulucf_removals_avg),
+            (f"{LULUCF_NET_VAR}_avg_{cn.veg_year_range_str}", lulucf_net_avg),
         ]:
             per_pixel = arr * pixel_area_chunk * cn.m2_to_ha
             chunk_stats_combined.append(uu.calculate_stats(arr, key, bounds_str, subtile_id, 'output_layer', per_pixel))
@@ -377,7 +377,7 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
 
     #TODO Parallelize with max_workers=2 to speed 10x10 deg uploads (separate from change to create_10x10_deg_geotif_from_zarr, per Claude session 'LULUCF 30-m outputs script'
     for var in LULUCF_OUTPUTS_TO_ZARR:
-        for year_idx in range(cn.end_year_count):
+        for year_idx in range(cn.veg_end_year_count):
             zu.create_10x10_deg_geotif_from_zarr(
                 var, year_idx, tile_id, lulucf_zarr_path, output_base_10x10,
                 cn.LULUCF_model_version_underscore, model_type, model_path_description,
@@ -437,9 +437,9 @@ def calculate_LULUCF_fluxes(tile_id, is_large_run, stage, no_upload, create_zarr
             )
             run_date_str = outputs_1x1_avg_dirs[pattern].rstrip('/').split('/')[-1]
 
-            s3_ha  = f"{base}{pattern}/annual_intervals/avg_{cn.year_range_str}/{cn.flux_density_pixel_meaning}/{cn.full_raster_dims}_pixels/{run_date_str}/{tile_id}__{var_with_unit}_avg_{cn.year_range_str}.tif"
-            s3_px  = f"{base}{pattern}/annual_intervals/avg_{cn.year_range_str}/{cn.flux_per_pixel_pixel_meaning}/{cn.full_raster_dims}_pixels/{run_date_str}/{tile_id}__{var_with_unit.replace(cn.flux_density_pixel_meaning, cn.flux_per_pixel_pixel_meaning)}_avg_{cn.year_range_str}.tif"
-            s3_crs = f"{base}{pattern}/annual_intervals/avg_{cn.year_range_str}/{cn.flux_aggreg_pixel_meaning}/{cn.global_aggregation_factor}_pixels/{run_date_str}/{tile_id}__{var_with_unit.replace(cn.flux_density_pixel_meaning, cn.flux_aggreg_pixel_meaning)}_avg_{cn.year_range_str}.tif"
+            s3_ha  = f"{base}{pattern}/annual_intervals/avg_{cn.veg_year_range_str}/{cn.flux_density_pixel_meaning}/{cn.full_raster_dims}_pixels/{run_date_str}/{tile_id}__{var_with_unit}_avg_{cn.veg_year_range_str}.tif"
+            s3_px  = f"{base}{pattern}/annual_intervals/avg_{cn.veg_year_range_str}/{cn.flux_per_pixel_pixel_meaning}/{cn.full_raster_dims}_pixels/{run_date_str}/{tile_id}__{var_with_unit.replace(cn.flux_density_pixel_meaning, cn.flux_per_pixel_pixel_meaning)}_avg_{cn.veg_year_range_str}.tif"
+            s3_crs = f"{base}{pattern}/annual_intervals/avg_{cn.veg_year_range_str}/{cn.flux_aggreg_pixel_meaning}/{cn.global_aggregation_factor}_pixels/{run_date_str}/{tile_id}__{var_with_unit.replace(cn.flux_density_pixel_meaning, cn.flux_aggreg_pixel_meaning)}_avg_{cn.veg_year_range_str}.tif"
 
             uu.write_single_geotiff_to_s3(pattern, 'avg', tile_id, avg_arr,        np.nan, tile_transform,   s3_ha,  logger_worker)
             uu.write_single_geotiff_to_s3(pattern, 'avg', tile_id, data_per_pixel, np.nan, tile_transform,   s3_px,  logger_worker)
@@ -558,7 +558,7 @@ def main(cluster_name, model_type,
     # Keeps underscore, matching the 10x10 outputs
     def s3_dir_1x1(pattern, year_or_avg):
         if year_or_avg == 'avg':
-            yr_str = f"{year_or_avg}_{cn.interval_end_years_annual[0]}_{cn.interval_end_years_annual[-1]}"
+            yr_str = f"{year_or_avg}_{cn.veg_outputs_years[0]}_{cn.veg_outputs_years[-1]}"
         else:
             yr_str = str(year_or_avg)
         return f"{LULUCF_base_path}{pattern}/annual_intervals/{yr_str}/{cn.flux_density_pixel_meaning}/{cn.chunk_dims}_pixels/{run_date}/"
@@ -566,7 +566,7 @@ def main(cluster_name, model_type,
     outputs_1x1_dir_by_year = {
         (pattern, year): s3_dir_1x1(pattern, year)
         for pattern in LULUCF_OUTPUTS_TO_ZARR
-        for year in cn.interval_end_years_annual
+        for year in cn.veg_outputs_years
     }
     outputs_1x1_avg_dirs = {p: s3_dir_1x1(p, 'avg') for p in LULUCF_OUTPUTS_TO_ZARR}
 
@@ -603,8 +603,8 @@ def main(cluster_name, model_type,
 
         # Timeseries zarr: n_years=9, chunks=(9, 4000, 4000)
         zu.initialize_global_zarr(
-            LULUCF_annual_zarr_path, outputs_with_unit, cn.end_year_count,
-            (cn.end_year_count, cn.chunk_dims, cn.chunk_dims), main_logger)
+            LULUCF_annual_zarr_path, outputs_with_unit, cn.veg_end_year_count,
+            (cn.veg_end_year_count, cn.chunk_dims, cn.chunk_dims), main_logger)
 
         # Annual average zarr: n_years=1, chunks=(1, 4000, 4000)
         zu.initialize_global_zarr(
@@ -710,13 +710,13 @@ def main(cluster_name, model_type,
     # Counts output 1x1 and 10x10 deg geotifs
     if not no_upload and is_large_run:
         for pattern in LULUCF_OUTPUTS_TO_ZARR:
-            for year in list(cn.interval_end_years_annual) + ['avg']:
+            for year in list(cn.veg_outputs_years) + ['avg']:
                 folder_1x1 = outputs_1x1_dir_by_year.get((pattern, year)) or outputs_1x1_avg_dirs.get(pattern)
                 if folder_1x1:
                     _, count = uu.list_raster_full_paths_in_s3_folder_and_count(folder_1x1)
                     main_logger.info(f"  1x1 outputs in {folder_1x1}: {count}")
 
-                year_str = f"avg_{cn.year_range_str}" if year == 'avg' else str(year)
+                year_str = f"avg_{cn.veg_year_range_str}" if year == 'avg' else str(year)
                 for units, dims in [
                     (cn.flux_density_pixel_meaning,   cn.full_raster_dims),
                     (cn.flux_per_pixel_pixel_meaning, cn.full_raster_dims),

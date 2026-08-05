@@ -103,8 +103,8 @@ def main(cluster_name, input_date, model_type, no_log=False, chunk_shapefile_uri
     main_logger.info(f"Run date: {input_date}")
 
     interval_type, interval_year_diff_list, interval_length_list, interval_end_years = uu.get_interval_info(
-        cn.first_model_year_annual,
-        cn.last_model_year_annual,
+        cn.LC_first_year,
+        cn.LC_last_year,
         main_logger
     )
 

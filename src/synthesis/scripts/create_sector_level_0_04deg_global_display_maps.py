@@ -263,7 +263,7 @@ def map_AFOLU_totals(veg_net_all_gases_geotif_local,
     main_logger.info(f"Vegetation gross removals: {veg_gross_remv_all_gases_local}")
     main_logger.info(f"Inputs to add to vegetation: {data_to_add}")
 
-    veg_analysis_years = f"{cn.interval_end_years_annual[0]}_{cn.last_model_year_annual}"
+    veg_analysis_years = f"{cn.veg_outputs_years[0]}_{cn.LC_last_year}"
 
     # Version of the vegetation model being used
     veg_version = re.search(r'v\d+_\d+_\d+', veg_net_all_gases_geotif_local).group(0)

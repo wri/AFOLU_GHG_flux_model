@@ -67,7 +67,7 @@ def main(cluster_name, input_date, var_name_no_units, model_type, no_log=False, 
 
     # Calculates the interval type, difference between start and end years of intervals, and the model output years
     # for the model run
-    interval_type, interval_year_diff_list, interval_length_list, interval_end_years = uu.get_interval_info(cn.first_model_year_annual, cn.last_model_year_annual, main_logger)
+    interval_type, interval_year_diff_list, interval_length_list, interval_end_years = uu.get_interval_info(cn.LC_first_year, cn.LC_last_year, main_logger)
 
     # Returns a dataframe of chunk_id and ISO for the GADM4.1 1x1 deg fishnet.
     # chunk_ids for making chunk list if shapefile is supplied in command line.

@@ -64,9 +64,9 @@ def main(input_date, model_type, model_path_description=None,
     ]
 
     # Creates a list of output directories for all outputs and intervals based on specifics of the model run
-    inputs_by_interval_dir_list = uu.create_output_dir_name_list(basic_dirs_to_expand, "annual", cn.first_model_year_annual,"global",
+    inputs_by_interval_dir_list = uu.create_output_dir_name_list(basic_dirs_to_expand, "annual", cn.LC_first_year, "global",
                                                                  model_type, cn.veg_model_version_underscore, model_path_description,
-                                                                 cn.interval_end_years_annual,
+                                                                 cn.veg_outputs_years,
                                                                  [1, 1, 1, 1, 1, 1, 1, 1, 1], input_date,
                                                                  True, cn.flux_aggreg_pixel_meaning)
 

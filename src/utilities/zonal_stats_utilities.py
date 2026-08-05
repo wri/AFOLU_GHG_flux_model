@@ -254,7 +254,7 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
 
     # Replaces the year index with the actual reporting year (differs for vegetation and SOC)
     if flux_type == "vegetation":
-        df_with_areas['year'] = df_with_areas['year'] + cn.interval_end_years_annual[0]
+        df_with_areas['year'] = df_with_areas['year'] + cn.veg_outputs_years[0]
     elif flux_type == "SOC":
         # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69bcb169-b658-832e-b697-46d22c126cb6
         # Could also try using .map()-- may be faster (or slower) for large dfs

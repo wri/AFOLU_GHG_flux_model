@@ -86,7 +86,7 @@ if __name__ == "__main__":
 
     # Create tasks for all years
     all_tasks = []
-    for year in cn.years_annual:
+    for year in cn.LC_years:
     # for year in [2015]:   # To test one year
         all_tasks.extend(process_year(year))
 

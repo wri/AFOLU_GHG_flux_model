@@ -48,7 +48,7 @@ def main(cluster_name, layers_to_process, no_upload, log_note=None):
     start_time = time.time() # Starting time for stage
     main_logger.info(f"Stage {stage} started at: {uu.timestr()}")
     main_logger.info(f"Vegetation model version: {cn.veg_model_version}")
-    main_logger.info(f"Start year: {cn.first_model_year_annual}; end year: {cn.last_model_year_annual}")
+    main_logger.info(f"Start year: {cn.LC_first_year}; end year: {cn.LC_last_year}")
     main_logger.info(f"Run date: {date.today().strftime("%Y%m%d")}")
     main_logger.info(f"no_upload: {no_upload}")
 

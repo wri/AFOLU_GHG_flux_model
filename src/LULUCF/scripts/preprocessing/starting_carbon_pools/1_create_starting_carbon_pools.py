@@ -104,7 +104,7 @@ def create_starting_C_densities(in_dict_uint8, in_dict_uint16, in_dict_int16,
     # Counts how many times each pixel experiences tall vegetation loss during the model,
     # so that starting carbon density can be adjusted.
     # List of arrays of height in the chunk for each year
-    model_years = list(range(cn.first_model_year_annual, cn.last_model_year_annual + 1))
+    model_years = list(range(cn.LC_first_year, cn.LC_last_year + 1))
     vegetation_heights_block = [
         in_dict_uint8[f"{cn.vegetation_height_pattern}_{model_year}"]
         for model_year in model_years
@@ -283,15 +283,15 @@ def create_starting_C_densities(in_dict_uint8, in_dict_uint16, in_dict_int16,
             if (veg_height_cell >= cn.tree_threshold) or (mangrove_pixel == True):
 
                 # When tall veg pixels had TCL before model start, starting C densities are adjusted
-                if (TCL_cell > 0) and (TCL_cell < (cn.first_model_year_annual-2000)):
-                    years_of_regrowth = math.floor(((cn.first_model_year_annual-2000)-TCL_cell)/2)
+                if (TCL_cell > 0) and (TCL_cell < (cn.LC_first_year - 2000)):
+                    years_of_regrowth = math.floor(((cn.LC_first_year - 2000) - TCL_cell) / 2)
                     if mangrove_extent_cell:  # For mangroves
                         agc_LC_masked_out_cell = years_of_regrowth * mangrove_AGC_RF
                         r_s_ratio = mangrove_C_ratio_array[np.where(mangrove_C_ratio_array[:, 0] == continent_ecozone_cell)][0, 1]
                         deadwood_c_ratio = mangrove_C_ratio_array[np.where(mangrove_C_ratio_array[:, 0] == continent_ecozone_cell)][0, 2]
                         litter_c_ratio = mangrove_C_ratio_array[np.where(mangrove_C_ratio_array[:, 0] == continent_ecozone_cell)][0, 3]
                         LC_masked_state = 1
-                    elif (oil_palm_2000_extent_cell > 0) or ((oil_palm_first_year_cell > 0) and (oil_palm_first_year_cell < (cn.first_model_year_annual-2000))):   # For oil palm
+                    elif (oil_palm_2000_extent_cell > 0) or ((oil_palm_first_year_cell > 0) and (oil_palm_first_year_cell < (cn.LC_first_year - 2000))):   # For oil palm
                         agc_LC_masked_out_cell = years_of_regrowth * cn.oil_palm_agc_rf
                         LC_masked_state = 2
                     elif planted_forest_AGC_RF_cell > 0:   # For planted trees
@@ -736,7 +736,7 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
             f"{cn.natural_forest_growth_curve_dir}rate_0_5/{sample_tile_id}_{cn.natural_forest_growth_curve_pattern}__0_5_years__nibble_{cn.secondary_forest_curve_run_date}.tif"
 
         # Land cover and vegetation height rasters (annual intervals)
-        for LC_year in range(cn.first_model_year_annual, cn.last_model_year_annual + 1):
+        for LC_year in range(cn.LC_first_year, cn.LC_last_year + 1):
             download_dict[f"{cn.vegetation_height_pattern}_{LC_year}"] = f"{cn.vegetation_height_annual_path}{LC_year}/{sample_tile_id}.tif"
 
         if model_type == cn.alt_AGB:
