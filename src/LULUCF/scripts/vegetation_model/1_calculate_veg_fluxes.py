@@ -41,12 +41,10 @@ https://app.asana.com/1/25496124013636/task/1206230383901961/comment/12106415042
 
 #TODO change NoData in flux outputs to something besides 0 because 0 has a meaning for fluxes
 #TODO update 1km drivers to correct year. Currently using through 2023. (But this would also mean changing it for zonal stats, including organic soil and mineral soil zstats. So, need to think through that.)
-#TODO add AGC removal factor, AGC emission fraction, and forest age to zarr output (for use in zonal statistics)
 #TODO make all outputs have a unit where /PER_HA_OR_PIXEL/ currently is-- change it to /UNIT/ so that non-flux/density outputs have a unit, too
 #TODO Check for changes to zarr creation and usage (including 10x10 creation and zonal stats) from working on SOC
 #TODO potential change to 3112/3119
 #TODO potentially add branches for loss of primary forest (currently just have primary forest remaining primary forest)
-#TODO Add veg_ to the start of output patterns to distinguish them from SOC or organic soil
 #TODO Delete all references to 5-year intervals (including s3 paths)
 #TODO Change all runtimes to decimal hours from HH:MM:SS
 #TODO Change error/exception logic for input downloads to catcha and retry everything (rather than exception types individually), per Claude session 'Failed Coiled tasks diagnosis'
@@ -761,11 +759,6 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                 # Is height loss during the interval significant in absolute change (m)?
                 sig_height_loss_prev_curr_abs = (height_change_prev_curr >= cn.sig_height_loss_threshold_abs)
 
-                # Is height gain during the interval significant in absolute change (m)?
-                # Significant height gain should not occur using annual intervals.
-                # However, I'm not forcing sig_height_gain_prev_curr_abs = 0 when using annual intervals in order to try to catch strange cases.
-                sig_height_gain_prev_curr_abs = (height_change_prev_curr <= cn.sig_height_gain_threshold_abs)
-
                 # Whether tall vegetation was partially or fully disturbed in the current interval (not counting fire-only disturbance).
                 # Conditions are:
                 # 1. Partial dist: A significant (>=5 m) height reduction during the current interval
@@ -976,8 +969,6 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                         node = nu.accrete_node(node, 1)
                         if all_oil_palm:  # Full loss of oil palm (incl. SDPT) (311->3119/3112)  #TODO This could have a conversion to short veg option (with short veg post-loss removals)
                             node = nu.accrete_node(node, 1)
-                            agc_rf_in = cn.oil_palm_agc_rf  # 5-year intervals only
-                            bgc_rf_in = cn.oil_palm_bgc_rf  # 5-year intervals only
                             c_pools_EF_fire_CO2 = cn.biomass_emissions_only
                             c_pools_EF_fire_non_CO2 = cn.biomass_emissions_only
                             c_pools_EF_no_fire = cn.biomass_emissions_only
@@ -993,8 +984,6 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                 node = nu.accrete_node(node, 1)
                                 if planted_forest_tree_crop_cell == 2:  # Full loss of non-oil palm tree crops as cropland (31211->312119/312112)
                                     node = nu.accrete_node(node, 1)
-                                    agc_rf_in = planted_forest_AGC_RF_cell  # 5-year intervals only
-                                    bgc_rf_in = planted_forest_BGC_RF_cell  # 5-year intervals only
                                     c_pools_EF_fire_CO2 = cn.biomass_emissions_only
                                     c_pools_EF_fire_non_CO2 = cn.biomass_emissions_only
                                     c_pools_EF_no_fire = cn.biomass_emissions_only
@@ -1006,8 +995,6 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         Gef_ch4_forest, Gef_n2o_forest)
                                 else:  # Full loss of non-oil palm planted forest as cropland (31212->312129/312122)
                                     node = nu.accrete_node(node, 2)
-                                    agc_rf_in = planted_forest_AGC_RF_cell  # 5-year intervals only
-                                    bgc_rf_in = planted_forest_BGC_RF_cell  # 5-year intervals only
                                     c_pools_EF_fire_CO2 = cn.biomass_emissions_only
                                     c_pools_EF_fire_non_CO2 = cn.all_non_soil_pools
                                     c_pools_EF_no_fire = cn.all_non_soil_pools
@@ -1021,8 +1008,6 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                 node = nu.accrete_node(node, 2)
                                 if planted_forest_tree_crop_cell == 2:  # Full loss of non-oil palm tree crops as short vegetation (31221->312219/312212)
                                     node = nu.accrete_node(node, 1)
-                                    agc_rf_in = planted_forest_AGC_RF_cell  # 5-year intervals only
-                                    bgc_rf_in = planted_forest_BGC_RF_cell  # 5-year intervals only
                                     c_pools_EF_fire_CO2 = cn.biomass_emissions_only
                                     c_pools_EF_fire_non_CO2 = cn.biomass_emissions_only
                                     c_pools_EF_no_fire = cn.biomass_emissions_only
@@ -1034,8 +1019,6 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         Gef_ch4_forest, Gef_n2o_forest)
                                 else:  # Full loss of non-oil palm planted forest as short vegetation (31222->312229/312222)
                                     node = nu.accrete_node(node, 2)
-                                    agc_rf_in = planted_forest_AGC_RF_cell  # 5-year intervals only
-                                    bgc_rf_in = planted_forest_BGC_RF_cell  # 5-year intervals only
                                     c_pools_EF_fire_CO2 = cn.biomass_emissions_only
                                     c_pools_EF_fire_non_CO2 = cn.all_non_soil_pools
                                     c_pools_EF_no_fire = cn.biomass_emissions_only
@@ -1049,8 +1032,6 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                 node = nu.accrete_node(node, 3)
                                 if planted_forest_tree_crop_cell == 2:  # Full loss of non-oil palm tree crops to settlement (31231->312319/312312)
                                     node = nu.accrete_node(node, 1)
-                                    agc_rf_in = planted_forest_AGC_RF_cell  # 5-year intervals only
-                                    bgc_rf_in = planted_forest_BGC_RF_cell  # 5-year intervals only
                                     c_pools_EF_fire_CO2 = cn.biomass_emissions_only
                                     c_pools_EF_fire_non_CO2 = cn.biomass_emissions_only
                                     c_pools_EF_no_fire = cn.biomass_emissions_only
@@ -1062,8 +1043,6 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         Gef_ch4_forest, Gef_n2o_forest)
                                 else:  # Full loss of non-oil palm planted forest to settlement (31232->312329/312322)
                                     node = nu.accrete_node(node, 2)
-                                    agc_rf_in = planted_forest_AGC_RF_cell  # 5-year intervals only
-                                    bgc_rf_in = planted_forest_BGC_RF_cell  # 5-year intervals only
                                     c_pools_EF_fire_CO2 = cn.biomass_emissions_only
                                     c_pools_EF_fire_non_CO2 = cn.all_non_soil_pools
                                     c_pools_EF_no_fire = cn.all_non_soil_pools
@@ -1077,8 +1056,6 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                 node = nu.accrete_node(node, 4)
                                 if planted_forest_tree_crop_cell == 2:  # Full loss of non-oil palm tree crops to anything else (31241->312412) (no fire emissions allowed)
                                     node = nu.accrete_node(node, 1)
-                                    agc_rf_in = planted_forest_AGC_RF_cell  # 5-year intervals only
-                                    bgc_rf_in = planted_forest_BGC_RF_cell  # 5-year intervals only
                                     c_pools_EF_fire_CO2 = cn.biomass_emissions_only
                                     c_pools_EF_fire_non_CO2 = cn.biomass_emissions_only
                                     c_pools_EF_no_fire = cn.biomass_emissions_only
@@ -1091,8 +1068,6 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         Gef_ch4_forest, Gef_n2o_forest)
                                 else:  # Full loss of non-oil palm planted forest to anything else (31242->312422) (no fire emissions allowed)
                                     node = nu.accrete_node(node, 2)
-                                    agc_rf_in = planted_forest_AGC_RF_cell  # 5-year intervals only
-                                    bgc_rf_in = planted_forest_BGC_RF_cell  # 5-year intervals only
                                     c_pools_EF_fire_CO2 = cn.biomass_emissions_only
                                     c_pools_EF_fire_non_CO2 = cn.all_non_soil_pools
                                     c_pools_EF_no_fire = cn.biomass_emissions_only
@@ -1109,8 +1084,6 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                             node = nu.accrete_node(node, 1)
                             if LC_curr == cn.cropland:  # Natural forest converted to cropland (3211->32119/32112)
                                 node = nu.accrete_node(node, 1)
-                                agc_rf_in = natrl_forest_age_dependent_agc_rf  # 5-year intervals only
-                                bgc_rf_in = agc_rf_in * r_s_ratio_non_mang     # 5-year intervals only
                                 c_pools_EF_fire_CO2 = cn.all_non_soil_pools
                                 c_pools_EF_fire_non_CO2 = cn.all_non_soil_pools
                                 c_pools_EF_no_fire = cn.all_non_soil_pools
@@ -1124,8 +1097,6 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                 node = nu.accrete_node(node, 2)
                                 if drivers_cell in cn.drivers_non_soil_C: # Natural forest converted to short vegetation with disturbance that emits all non-soil C pools (32121->321219/321212)
                                     node = nu.accrete_node(node, 1)
-                                    agc_rf_in = natrl_forest_age_dependent_agc_rf  # 5-year intervals only
-                                    bgc_rf_in = agc_rf_in * r_s_ratio_non_mang     # 5-year intervals only
                                     c_pools_EF_fire_CO2 = cn.all_non_soil_pools
                                     c_pools_EF_fire_non_CO2 = cn.all_non_soil_pools
                                     c_pools_EF_no_fire = cn.all_non_soil_pools
@@ -1137,8 +1108,6 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         Gef_ch4_forest, Gef_n2o_forest)
                                 else:  # Natural forest converted to short vegetation with disturbance that emits biomass C pools only (32122->321229/321222)
                                     node = nu.accrete_node(node, 2)
-                                    agc_rf_in = natrl_forest_age_dependent_agc_rf  # 5-year intervals only
-                                    bgc_rf_in = agc_rf_in * r_s_ratio_non_mang     # 5-year intervals only
                                     c_pools_EF_fire_CO2 = cn.agc_emissions_only
                                     c_pools_EF_fire_non_CO2 = cn.all_but_bgc_emissions
                                     c_pools_EF_no_fire = cn.biomass_emissions_only
@@ -1150,8 +1119,6 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         Gef_ch4_forest, Gef_n2o_forest)
                             elif LC_curr == cn.builtup:  # Natural forest converted to settlement (3213->32139/32132)
                                 node = nu.accrete_node(node, 3)
-                                agc_rf_in = natrl_forest_age_dependent_agc_rf  # 5-year intervals only
-                                bgc_rf_in = agc_rf_in * r_s_ratio_non_mang     # 5-year intervals only
                                 c_pools_EF_fire_CO2 = cn.all_non_soil_pools
                                 c_pools_EF_fire_non_CO2 = cn.all_non_soil_pools
                                 c_pools_EF_no_fire = cn.all_non_soil_pools
@@ -1163,8 +1130,6 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                     Gef_ch4_forest, Gef_n2o_forest)
                             else:  # Natural forest converted to anything else (wetland/open water/ice, etc.) (3214->32142) (no fire emissions allowed)
                                 node = nu.accrete_node(node, 4)
-                                agc_rf_in = natrl_forest_age_dependent_agc_rf  # 5-year intervals only
-                                bgc_rf_in = agc_rf_in * r_s_ratio_non_mang     # 5-year intervals only
                                 c_pools_EF_fire_CO2 = cn.biomass_emissions_only  # Fire emissions are treated as non-fire emissions
                                 c_pools_EF_fire_non_CO2 = np.array([0, 0, 0, 0]).astype('float32') # This particular node can't have fire emissions-- no non-CO2 emissions
                                 c_pools_EF_no_fire = cn.biomass_emissions_only
@@ -1179,8 +1144,6 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                             node = nu.accrete_node(node, 2)
                             if LC_curr == cn.cropland:  # Full loss of trees outside forests converted to cropland (3221->32219/32212)
                                 node = nu.accrete_node(node, 1)
-                                agc_rf_in = cn.trees_outside_forests_agc_rf_max  # 5-year intervals only
-                                bgc_rf_in = agc_rf_in * r_s_ratio_non_mang  # 5-year intervals only
                                 c_pools_EF_fire_CO2 = cn.agc_emissions_only
                                 c_pools_EF_fire_non_CO2 = cn.agc_emissions_only
                                 c_pools_EF_no_fire = cn.biomass_emissions_only
@@ -1192,8 +1155,6 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                     Gef_ch4_forest, Gef_n2o_forest)
                             elif GLAD_short_veg_LC_curr:  # Full loss of trees outside forests converted to short vegetation (3222->32229/32222)
                                 node = nu.accrete_node(node, 2)
-                                agc_rf_in = cn.trees_outside_forests_agc_rf_max  # 5-year intervals only
-                                bgc_rf_in = agc_rf_in * r_s_ratio_non_mang       # 5-year intervals only
                                 c_pools_EF_fire_CO2 = cn.agc_emissions_only
                                 c_pools_EF_fire_non_CO2 = cn.agc_emissions_only
                                 c_pools_EF_no_fire = cn.biomass_emissions_only
@@ -1205,8 +1166,6 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                     Gef_ch4_forest, Gef_n2o_forest)
                             elif LC_curr == cn.builtup:  # Full loss of trees outside forests converted to settlement (3223->32239/32232)
                                 node = nu.accrete_node(node, 3)
-                                agc_rf_in = cn.trees_outside_forests_agc_rf_max  # 5-year intervals only
-                                bgc_rf_in = agc_rf_in * r_s_ratio_non_mang       # 5-year intervals only
                                 c_pools_EF_fire_CO2 = cn.agc_emissions_only
                                 c_pools_EF_fire_non_CO2 = cn.agc_emissions_only
                                 c_pools_EF_no_fire = cn.biomass_emissions_only
@@ -1218,8 +1177,6 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                     Gef_ch4_forest, Gef_n2o_forest)
                             else:  # Full loss of trees outside forests converted to anything else (3224->32242) (no fire emissions allowed)
                                 node = nu.accrete_node(node, 4)
-                                agc_rf_in = cn.trees_outside_forests_agc_rf_max  # 5-year intervals only
-                                bgc_rf_in = agc_rf_in * r_s_ratio_non_mang       # 5-year intervals only
                                 c_pools_EF_fire_CO2 = cn.agc_emissions_only
                                 c_pools_EF_fire_non_CO2 = cn.agc_emissions_only
                                 c_pools_EF_no_fire = cn.biomass_emissions_only
@@ -2102,7 +2059,7 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
             download_dict[f"{cn.natural_forest_growth_curve_pattern}__{growth_interval}_years"] = \
                 f"{cn.natural_forest_growth_curve_dir}rate_{growth_interval}/{sample_tile_id}_{cn.natural_forest_growth_curve_pattern}__{growth_interval}_years__nibble_{cn.secondary_forest_curve_run_date}.tif"
 
-    # Burned area rasters (every year)-- same code for annual, 5-year model, or hybrid.
+    # Burned area rasters (every year).
     # Each burned area year needs to be in its own folder.
     # Burned area from the start year of the first interval is never used, hence iteration starts with start_year+1.
     for year in range(start_year+1, end_year + 1):  # Annual burned area maps start in 2000

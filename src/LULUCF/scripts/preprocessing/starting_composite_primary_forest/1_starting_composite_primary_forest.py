@@ -79,6 +79,7 @@ def create_and_upload_starting_composite_primary_forest(bounds, download_dict_wi
     tile_id = uu.xy_to_tile_id(bounds[0], bounds[3])  # tile_id in YYN/S_XXXE/W
     chunk_length_pixels = uu.calc_chunk_length_pixels(bounds)  # Chunk length in pixels (as opposed to decimal degrees)
 
+
     ### Part 1: Downloads chunk.
     ### No checks about whether the chunk has data because the way the chunk_list is constructed,
     ### every chunk is relevant and should be processed, so they don't need to be checked.
@@ -258,7 +259,8 @@ def main(cluster_name,
     # Creates the log for the main function and populates it with basic run information
     main_logger, main_log_local_path, n_workers = lu.populate_main_log_header(client, cluster, log_note, run_local,'standard', stage)
 
-    year = 2015
+    # This dataset only ever covers the model start year
+    year = cn.LC_first_year
     run_date = cn.starting_composite_primary_forest_run_date
 
     start_time = uu.timestr()  # Starting time for stage
@@ -346,10 +348,11 @@ def main(cluster_name,
     if create_zarr:
 
         # Creates s3 paths for the raw mega-zarr
-        zarr_path = zu.create_zarr_path(cn.starting_composite_primary_forest_zarr_path, chunk_size_pixels, str(year),
-                                                  'standard', cn.veg_model_version_underscore, 'NA',
+        zarr_path = zu.create_zarr_path(cn.starting_composite_primary_forest_zarr_path, chunk_size_pixels,
+                                        'standard', cn.veg_model_version_underscore, 'NA',
                                         run_date, main_logger)
         outputs_to_zarr = [cn.starting_composite_primary_forest_pattern]
+
 
         # Creates the global mega-zarr with metadata only
         zu.initialize_global_zarr(zarr_path, outputs_to_zarr, 1,
