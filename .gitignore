@@ -1,0 +1,110 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+env/
+bin/
+build/
+develop-eggs/
+dist/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+
+# Translations
+*.mo
+
+# Mr Developer
+.mr.developer.cfg
+.project
+.pydevproject
+
+# Rope
+.ropeproject
+
+# Django stuff:
+*.log
+*.pot
+
+# Sphinx documentation
+docs/_build/
+
+
+# Config files
+utilities/*.ini
+
+# Google key JSON files
+spreadsheet.json
+
+#hot OSM token
+config/hot_export_token.txt
+
+#pycharm
+.idea/
+
+*.lock
+*.mxd
+*.adf
+*.dat
+*.nit
+*.dbf
+*.sbn
+*.shp
+*.cpg
+*.prj
+*.sbx
+*.shx
+*.db
+*.dir
+*.aux.xml
+*.shp.xml
+*.dbf.xml
+*.ini
+*.txt.zml
+*.tif
+*.tif.ovr
+*.csv
+*.exe
+
+.DS_Store
+*checkpoint.ipynb
+
+*-checkpoint*
+
+*chunk_statistics*
+
+*parquet*
+
+debug.py
+
+tmp/
+model_output/
+
+*model_log*txt
+
+*KEEP*
+
+/src/LULUCF/scripts/zonal_statistics/old_zonal_stats_notebooks/dist_alerts_zonal_stat(1)__from_Solomon_Negusse_via_Slack_20250523a.ipynb

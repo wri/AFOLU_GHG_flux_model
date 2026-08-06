@@ -1,0 +1,62 @@
+This document describes the steps for creating starting forest age geotifs for the LULUCF model.
+Inputs:
+1. GAMI v2.1 global age zarr for 2010
+2. Forest age pre-disturbance global zarr
+3. Vegetation height in 5-year intervals for 2000, 2005, and 2010
+Outputs:
+1. 1x1 deg geotif sets of age in 2010 and 2015 (not gap filled, from 1_create_starting_forest_age_2010_2015.py)
+2. 1x1 deg geotif sets of gap-filled age in 2010 and 2015 (from 2_gap_fill_starting_forest_age_2010_2015.py)
+3. A global geotif of an approximation of the age of forest pre-disturbance (from 3_map_age_pre_disturbance.py)
+4. 1x1 deg geotif sets of gap-filled age in 2000 (from 4_create_starting_forest_age_2000.py)
+5. 10x10 deg geotif sets of gap-filled age in 2000, 2010, adn 2015 (from 5_aggregate_forest_age.py)
+
+There are several steps for creating starting forest age geotifs, identified by the order of the scripts in this folder.
+
+--- 1_create_starting_forest_age_2010_2015.py:
+Creates 1x1 deg forest age geotifs for 2010 and 2015 at the same time.
+2010 is the year of GAMI v2.1 (Simon Besnard et al.
+https://dataservices.gfz-potsdam.de/panmetaworks/showshort.php?id=8f5974e7-3ece-11ef-967a-4ffbfe06208e).
+It converts the 2010 zarr to 1x1 deg geotifs.
+2015 is one of the possible start dates for the LULUCF model (first year of annual data).
+Reading the zarr and converting it to geotifs is long and slow. It takes about 20 hours to run!
+Age in 2015 is calculated from age in 2010 and output during the processing; 2015 is not run separately.
+
+--- 2_gap_fill_starting_forest_age_2010_2015.py:
+Creates 1x1 deg gap-filled forest age geotifs for 2010 and 2015 separately.
+That is, 2010 and 2015 need to each be run on their own. (I never took the time to be able to run them together.)
+Gap filling means that any pixels that don't have age in 2010/2015 get ages assigned to them based on the nearest
+2010/2015 ages.
+This way, every pixel in the LULUCF model has an age in 2015 associated with it.
+Remember, this step needs to be run twice if you want to re-create gap-filled 1x1 deg age geotifs for 2010 and 2015.
+
+--- 3_map_age_pre_disturbance.py:
+Creates a global 1x1 deg resolution geotif that approximates the average age of forest pre-disturbance in 1x1 deg cells.
+This comes from an accepted paper by Simon Besnard at Nature Ecology & Evolution.
+Simon provided this as a zarr, which I converted to a global geotif at the original resolution.
+I never convert it to 10x10 deg tiles; there's no need to since the one place it's used in processing (step 4)
+can handle the global geotif at 1x1 deg resolution just fine.
+This global geotif is only used to fill in forest age in 2000 in certain pixels, as described below.
+
+--- 4_create_starting_forest_age_2000.py:
+Creates 1x1 deg gap-filled forest age geotifs for 2000.
+The gap filling happens because it uses the gap-filled 1x1 deg age in 2010 geotifs from step 2;
+there is no separate gap filling step for age in 2000.
+To calculate age in 2000, a few rules are applied (using numpy array operations).
+Along with age in 2000 geotifs, geotifs of the relevant rule for each pixel are created.
+The age_2000 source flags are:
+1 = Not tall vegetation in 2000 -> age assigned 0.
+2 = Not tall vegetation in 2005 or 2010 (i.e. disturbance) -> assign Besnard age at disturbance map.
+3 = Age <= 10 years in 2010 -> assign Besnard age at disturbance map.
+4 = Forest between 2000 and 2010 and age >10 in 2010 -> age_2000 = age_2010 - 10
+
+--- 5_aggregate_forest_age.py
+Creates 10x10 deg forest age geotifs for 2000, 2010, and/or 2015 from the 1x1 deg gap-filled geotifs.
+This can be run on any set of the years 2000, 2010, and 2015 using the command line;
+it doesn't need to be run separately for each of them, unlike 2_gap_fill_starting_forest_age_2010_2015.py.
+It uses the output of 4_create_starting_forest_age_2000.py for 2000 and the outputs of
+2_gap_fill_starting_forest_age_2010_2015.py for 2010 and 2015.
+
+To create forest age in 2015 from the beginning, run steps 1, 2, and 5.
+TO create forest age in 2000 from the beginning, run steps 1, 2, 3, 4, and 5.
+
+That is the end of the starting forest age preprocessing.

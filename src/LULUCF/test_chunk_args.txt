@@ -1,0 +1,44 @@
+# Arguments for bounding box processing
+-bb W S E N -cs deg
+
+# Scaling tests based on bounding boxes
+-bb 10 25 25 50 -cs 1               # 15x15 deg (50N_010E), 225 chunks
+-bb 10 40 20 50 -cs 1               # 10x10 deg (50N_010E), 100 chunks
+-bb 110 -10 120 0 -cs 1             # 10x10 deg (00N_110E), 100 chunks
+-bb 10 40 20 50 -cs 1               # 10x10 deg (50N_010E), 100 chunks
+-bb 10 41 19 50 -cs 1               # 9x9 deg (50N_010E), 81 chunks
+-bb 10 43 17 50 -cs 1               # 7x7 deg (50N_010E), 49 chunks
+-bb 10 44 16 50 -cs 1               # 6x6 deg (50N_010E), 36 chunks
+-bb 110 -10 115 -5 -cs 1            # 5x5 deg (00N_110E), 25 chunks
+-bb 110 -10 114 -6 -cs 1            # 4x4 deg (00N_110E), 16 chunks
+-bb 10 48 12 50 -cs 1               # 2x2 deg (50N_010E), 4 chunks
+-bb 10 48 12 50 -cs 1               # 2x2 deg (50N_010E), 4 chunks
+-bb 10 49 11 50 -cs 0.5             # 1x1 deg (50N_010E), 4 chunks
+-bb 10 49 11 50 -cs 1               # 1x1 deg (50N_010E), 1 chunk
+
+
+# Range of edge cases for testing
+-bb 10 49.75 10.25 50 -cs 0.25           # 0.25x0.25 deg (50N_010E), 1 chunk (should be a normal tile)
+-bb 10 49 11 50 -cs 1                    # 1x1 deg (50N_010E), 1 chunk (should be a normal tile)
+-bb 105 10 106 11 -cs 1                  # 1x1 deg (20N_100E), 1 chunk (has burned and drained organic soil)
+-bb 10 49.5 10.5 50 -cs 0.5              # 0.5x0.5 deg (50N_010E), 1 chunk (should be a normal tile)
+-bb 20 -70 20.25 -69.75 -cs 0.25         # 0.25x0.25 deg (30N_070W), 1 chunk (tile does not exist)
+-bb 20 69.75 20.25 70 -cs 0.25           # 0.25x0.25 deg (30N_060E), 1 chunk (tile exists for GLCLU but not all other inputs, e.g., fire)
+-bb 0 79.75 0.25 80 -cs 0.25             # 0.25x0.25 deg (80N_000E), 1 chunk (some inputs exist for 80N_000E exist and others don't)
+-bb 10.75 41.75 11 42 -cs 0.25           # 0.25x0.25 deg (50N_010E), 1 chunk (entirely GLCLU code=255 for ocean, so no actual data-- nothing should be be output)
+-bb -10 21.75 -9.75 22 -cs 0.25          # 0.25x0.25 deg (30N_010W), 1 chunk (has data but entirely desert (fully GLCLU code=0))
+-bb 114.5 -4 115 -3.5 -cs 0.5            # 0.5x0.5 deg (00N_110E), 1 chunk (has mangroves without WHRC AGB 2000)
+-bb 11 46 11.5 46.5 -cs 0.5              # 0.5x0.5 deg (50N_010E), 1 chunk (has planted forests and tree crops)
+-bb 158 6 159 7 -cs 1                    # 1x1 deg (10N_150E), 1 chunk (no WHRC AGB, only mangroves)
+-bb -161 22 -160 23 -cs 1                # 1x1 deg (30N_170W), 1 chunk (no R:S tile)
+-bb -42.0 64.0 -41.0 65.0 -cs 1          # 1x1 deg (70N_050W), 1 chunk (no continent-ecozone, should default to cont_eco=2020)
+-bb 29 -7 30 -6 -cs 1                    # 1x1 deg (00N_020E), 1 chunk (majority continent-ecozone is 1022, but that should be ignored and it should use 1018 instead)
+-bb 10 49.75 10.25 50 -cs 0.25           # 0.25x0.25 deg (50N_010E), 1 chunk (has data, no fire)
+-bb 15 41.75 15.25 42 -cs 0.25           # 0.25x0.25 deg (50N_010E), 1 chunk (has data with fire)
+-bb 24 -8 24.25 -7.75 -cs 0.25           # 0.25x0.25 deg (00N_020E), 1 chunk (has repeated fires in single pixel in tall veg)
+-bb 23.75 -6.75 24 -6.5 -cs 0.25         # 0.25x0.25 deg (00N_020E), 1 chunk (has repeated fires in single pixel in cropland)
+-bb 115.75 -3.75 116 -3.5 -cs 0.25       # 0.25x0.25 deg (00N_110E), 1 chunk (has forest converted to cropland, has burned forest-- both 2015-2016)
+-bb 115 -4 116 -3 -cs 1                  # 1x1 deg (00N_110E), 1 chunk (has oil palm 2000 extent and Descals planting year outside SDPTv2 extent; has primary forest). Has all kinds of starting C density situations/codes.
+-bb 112.5 -1 112.75 -0.75 -cs 0.25       # 0.25x0.25 deg (00N_110E), 1 chunk (has IFL2016, humid tropical primary forest, and forest >=100 years in 2015 in all combos-- good for testing primary forest)
+-bb 23 -4 24 -3 -cs 1                    # 1x1 d1f (00N_020E), 1 chunk (has IFL2016, humid tropical primary forest, forest >=100 years in 2015 and fire-- good for testing primary forest)
+-bb 10 42 11 43 -cs 0.5                  # 1x1 deg (50N_010E), 4 chunks (some GLCLU code=254 for ocean and some land, so data should be output)

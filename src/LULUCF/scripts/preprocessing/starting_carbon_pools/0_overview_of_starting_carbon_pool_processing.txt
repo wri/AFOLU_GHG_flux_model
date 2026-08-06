@@ -1,0 +1,60 @@
+This document describes the steps for creating starting forest carbon densities for the LULUCF model.
+Inputs:
+1. WHRC/Woodwell AGB 2000 geotifs (for 2000 C pools only)
+2. ESA CCI 2015 geotifs (Hansenized) (for 2015 C pools only)
+3. "Smoothed" mangrove AGB 2000 (for 2000 C pools only) (smoothed = GMW timeseries with potentially erroneous years adjusted)
+4. GLAD GLCLU land cover composite geotifs for 2000 and 2015
+5. GLAD GLCLU vegetation height geotifs for 2000 and 2015
+6. Global Mangrove Watch v3 mangrove extent for 1996 (representing 2000) and 2015
+7. Other contextual geotifs for assigning carbon pool ratios: elevation, precipitation, climate domain, climate zone, root-shoot ratio, continent-ecozone combo
+8. Excel spreadsheet with lookup tables for carbon pool ratios
+
+Outputs:
+1a. 1x1 deg geotif sets of aboveground carbon density, belowground carbon density, deadwood carbon density, litter carbon density, and
+the sum of those 4 densities for all pixels with values from the original source (5 outputs from from 1_create_starting_carbon_pools.py)
+1b. 1x1 deg geotif sets of aboveground carbon density, belowground carbon density, deadwood carbon density, litter carbon density, and
+the sum of those 4 densities masked by vegetation height and/or land cover for that year ("landcover-masked")
+(e.g., tall vegetation gets mapped value, cropland gets IPCC default, short veg gets IPCC default) (5 outputs from 1_create_starting_carbon_pools.py)
+2. 1x1 deg geotif sets of per-pixel versions of outputs 1a) and 1b) (10 outputs from 2_per_pixel_starting_carbon_pools.py)
+3. 10x10 deg geotif sets of per-hectare versions of outputs 1a) and 1b) (10 outputs from 3_aggregate_starting_carbon_pools.py)
+
+NOT CURRENTLY OUTPUT:
+10x10 deg geotif sets of per-pixel versions of outputs 1a and 1b.
+I should probably output those but that would double the aggregation from 10 tile sets to 20, which is a lot!
+
+There are several steps for creating starting forest carbon density geotifs, identified by the order of the scripts in this folder.
+
+--- 1_create_starting_carbon_pools.py:
+Creates 1x1 deg geotif sets of aboveground carbon density, belowground carbon density, deadwood carbon density, litter carbon density, and
+the sum of those 4 densities for all pixels with values from the original source (5 outputs)
+AND
+1x1 deg geotif sets of aboveground carbon density, belowground carbon density, deadwood carbon density, litter carbon density, and
+the sum of those 4 densities masked by vegetation height and/or land cover for that year ("landcover-masked")
+(5 more outputs)
+It applies various rules at the pixel level (using numba) to calculate starting carbon densities for every pixel
+for which the respective input aboveground carbon/biomass map has a value.
+Belowground carbon, deadwood carbon, and litter carbon are all derived from aboveground carbon using various ratios.
+It also applies "smoothed" mangrove extent, GLCLU land cover composite, and vegetation height layers for the respective years
+(2000 and 2015) to create "landcover masked" versions
+(i.e.., mangrove gets mapped value, tall vegetation gets mapped value, cropland gets IPCC default, short veg gets IPCC default).
+The landcover-masked outputs are the carbon densities that are actually used in the LULUCF model
+because they reflect the starting conditions of the model for possible start years of 2000 and 2015.
+The landcover-masked outputs use "smoothed" mangrove extents because those are the mangrove extents used in the model,
+as opposed to the raw mangrove extents.
+It needs to be run separately for 2000 and 2015; there is currently no option to run both of them.
+
+--- 2_per_pixel_starting_carbon_pools.py:
+Creates 1x1 deg geotif sets of per-pixel versions of outputs from 1_create_starting_carbon_pools.py.
+Per-pixel values are calculated using the exact geodesic area of pixels, like usual.
+It needs to be run separately for 2000 and 2015; there is currently no option to run both of them.
+
+--- 3_aggregate_starting_carbon_pools.py:
+Creates 10x10 deg geotif sets of per-hectare versions of outputs from 1_create_starting_carbon_pools.py.
+It needs to be run separately for 2000 and 2015; there is currently no option to run both of them.
+The landcover-masked versions of the 10x10 deg outputs are inputs for the LULUCF model (starting carbon pools for 2000 or 2015).
+This step does not currently aggregate the 1x1 deg per-pixel outputs but I would like to add that eventually.
+The per-pixel versions of the 10x10 deg outputs would be used for zonal statistics.
+
+That is the end of the starting forest density preprocessing.
+
+
