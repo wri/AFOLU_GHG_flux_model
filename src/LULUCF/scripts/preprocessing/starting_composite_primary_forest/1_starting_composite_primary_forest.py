@@ -114,7 +114,7 @@ def create_and_upload_starting_composite_primary_forest(bounds, download_dict_wi
 
     # Calculates stats for the input layers
     for key, array in layers.items():
-        chunk_stats.append(uu.calculate_stats(array, key, bounds_str, tile_id, 'input_layer'))
+        chunk_stats.append(uu.calculate_stats(array, key, bounds_str, tile_id, 'input_layer', None,0))
 
 
     ### Part 3: Creates starting composite primary forest

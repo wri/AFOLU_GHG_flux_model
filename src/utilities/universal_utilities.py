@@ -1533,7 +1533,7 @@ def calculate_stats(array_per_ha, name, bounds_str, tile_id, in_out, array_per_p
 
     # Sums the per pixel totals if relevant
     if in_out == 'output_layer' and array_per_pixel is not None:
-        sum_value = np.nansum(array_per_pixel)  # Need nansum because SOC timeseries uses NaN
+        sum_value = float(np.nansum(array_per_pixel))  # Need nansum because SOC timeseries uses NaN
     else:
         sum_value = 'N/A- input layer or no per-pixel array supplied'
 

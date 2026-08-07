@@ -14,10 +14,6 @@ Coiled shapefile test:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 8 -cn starting_carbon_pools
 python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools --create_zarr -mt standard -mpd test_feature --year 2015 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -f 1
 
-Full run 2000 (using 200 workers seems to overload requests to s3):
-python -m src.utilities.create_cluster -n 100 -t 1 -m 8 -cn starting_carbon_pools
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools --create_zarr -mt standard -mpd global --year 2000 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive global run for carbon pool 2000 creation using ESA CCI AGB v6, raw and adjusted versions."
-
 Full run 2015 (using 200 workers seems to overload requests to s3):
 python -m src.utilities.create_cluster -n 100 -t 1 -m 8 -cn starting_carbon_pools
 python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools --create_zarr -mt standard -mpd global --year 2015 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive global run for carbon pool 2015 creation using ESA CCI AGB v6, raw and adjusted versions."
@@ -444,10 +440,7 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
 
     # Calculates stats for the input layers
     for key, array in layers.items():
-        chunk_stats.append(uu.calculate_stats(array, key, bounds_str, tile_id, 'input_layer'))
-
-    # Persists this chunk's stats to S3 immediately, so a killed/interrupted run doesn't lose already-finished work
-    uu.write_chunk_stats_to_s3(chunk_stats, bounds_str, cn.short_bucket_prefix, chunk_stats_prefix)
+        chunk_stats.append(uu.calculate_stats(array, key, bounds_str, tile_id, 'input_layer', None, 0))
 
 
     ### Part 3: Creates a separate dictionary for each chunk datatype so that they can be passed to Numba as separate arguments.
@@ -533,6 +526,9 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
 
         chunk_stats.append(uu.calculate_stats(array_per_ha, key, bounds_str, tile_id, 'output_layer', output_per_pixel))
     # print(chunk_stats)
+
+    # Persists this chunk's stats to S3 immediately, so a killed/interrupted run doesn't lose already-finished work
+    uu.write_chunk_stats_to_s3(chunk_stats, bounds_str, cn.short_bucket_prefix, chunk_stats_prefix)
 
 
     ### Part 7: Saves numpy arrays as rasters and uploads to s3
@@ -800,7 +796,7 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
     if create_zarr:
 
         # Creates s3 paths for the raw zarr
-        zarr_path = zu.create_zarr_path(starting_C_zarr_root, chunk_size_pixels, str(year),
+        zarr_path = zu.create_zarr_path(starting_C_zarr_root, chunk_size_pixels,
                                              model_type, cn.veg_model_version_underscore, model_path_description,
                                              run_date, main_logger)
 
