@@ -23,7 +23,6 @@ from dask.distributed import print
 from dask.distributed import Client, LocalCluster
 from dask import delayed
 import dask.array as da
-from datetime import datetime
 from io import BytesIO
 import xarray as xr
 from numba import jit
@@ -37,6 +36,8 @@ import rasterio.errors
 from urllib.parse import urlparse
 from botocore.exceptions import ClientError
 import botocore
+import json
+from datetime import datetime
 
 # Project imports
 from src.utilities import constants_and_names as cn
@@ -2305,107 +2306,77 @@ def get_pixel_area_store():
     return PIXEL_AREA_STORE
 
 
-# Creates an empty txt file for each chunk in s3.
-# Uses concurrent.futures to parallelize the txt creation. Otherwise, it's very slow.
-# Based on https://chatgpt.com/share/e/67bf0fd9-7cb0-800a-8666-2becd97d45a7
-# Uses ThreadPoolExecutor and `as_completed()` to avoid blocking.
-def create_s3_task_files(stage, chunk_list):
+# Builds the S3 prefix that groups this run's per-chunk JSONs: descriptor/run_datetime
+# Per Claude session 'Vegetation model chunk stats checkpointing'
+def get_chunk_stats_prefix(descriptor, run_datetime):
+    return f"{cn.s3_chunk_stats_path}per_chunk_json/{descriptor}/{run_datetime}/"
 
-    s3 = boto3.client("s3")
+# Lists chunk IDs that already have a stats JSON written under this run's prefix
+# Per Claude session 'Vegetation model chunk stats checkpointing'
+def list_completed_chunk_ids(bucket, prefix):
 
-    # Uploads a single task file to S3.
-    def upload_task_file(chunk):
-
-        chunk_id_str = boundstr(chunk)  # Converts chunk ID to string
-        tile_id = xy_to_tile_id(chunk[0], chunk[3])
-        key = f"{cn.progress_tracking_path}pending_{tile_id}_{chunk_id_str}_{stage}.txt"
-
-        try:
-            s3.put_object(Bucket=cn.short_bucket_prefix, Key=key, Body="")
-            return f"Created: {key}"
-        except Exception as e:
-            return f"Error creating task file {key}: {e}"
-
-    # Uses ThreadPoolExecutor for parallel uploads
-    max_workers = min(100, len(chunk_list))  # Limits workers to 100 or chunk count
-
-    start_time = time.time()
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_chunk = {executor.submit(upload_task_file, chunk): chunk for chunk in chunk_list}
-
-        for future in concurrent.futures.as_completed(future_to_chunk):
-            result = future.result()
-            # print(result)  # Print each upload result in real-time
-
-    elapsed_time = time.time() - start_time
-    print(f"Created task tracking files in {cn.progress_tracking_path} in {elapsed_time:.2f} seconds")
+    s3_client = boto3.client("s3")
+    paginator = s3_client.get_paginator("list_objects_v2")
+    pattern = re.compile(r"^chunk_(.+)\.json$")
+    completed = set()
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            if obj["Size"] == 0:  # Ignores objects that have no size (no data in them)-- they aren't valid and should be repeated
+                continue
+            filename = obj["Key"].rsplit("/", 1)[-1]  # just "chunk_-63_-24_-62_-23.json"
+            m = pattern.match(filename)
+            if m:
+                completed.add(m.group(1))
+    return completed
 
 
-# Renames the tracking file from 'pending' to 'in_progress' when a task starts
-def rename_s3_task_file(stage, chunk_id, new_status, is_final, logger_worker):
-
-    s3 = boto3.client("s3")
-    chunk_id_str = boundstr(chunk_id)  # Converts chunk ID to string
-    tile_id = xy_to_tile_id(chunk_id[0], chunk_id[3])
-
-    # Iterates through the task status prefixes to find the status of the specific chunk .
-    # Order of statuses matters: first one found is renamed.
-    for prefix in cn.possible_task_statuses:
-        old_key = f"{cn.progress_tracking_path}{prefix}{tile_id}_{chunk_id_str}_{stage}.txt"
-        new_key = f"{cn.progress_tracking_path}{new_status}{tile_id}_{chunk_id_str}_{stage}.txt"
-
-        # Retries renaming of task files in case there's a burst of renaming like at the start of the cluster
-        # Per Claude session 'Quick task completion analysis'
-        for attempt in range(5):
-            try:
-                s3.copy_object(Bucket=cn.short_bucket_prefix, CopySource={'Bucket': cn.short_bucket_prefix, 'Key': old_key}, Key=new_key)
-                s3.delete_object(Bucket=cn.short_bucket_prefix, Key=old_key)
-                return
-            except ClientError as e:
-                code = e.response["Error"]["Code"]
-                if code == "NoSuchKey":
-                    break  # File not at this prefix; try next prefix
-                elif code in ("SlowDown", "503", "RequestLimitExceeded"):
-                    sleep_time = min(30, 1.0 * (2 ** attempt)) + random.uniform(0.0, 1.0)
-                    time.sleep(sleep_time)
-                    continue  # Retry same prefix
-                else:
-                    print(f"Error renaming task file {old_key}: {e}")
-                    return
-            except Exception as e:
-                print(f"Error renaming task file {old_key}: {e}")
-                return
-
-    lu.print_and_log(f"No existing task file found for chunk {chunk_id}. Skipping rename.", is_final, logger_worker)
+# Writes one chunk's stats (list of dicts, one per input/output layer) to its own S3 JSON
+# Per Claude session 'Vegetation model chunk stats checkpointing'
+def write_chunk_stats_to_s3(chunk_stats, chunk_id, bucket, prefix):
+    s3_client = boto3.client("s3")
+    key = f"{prefix}chunk_{chunk_id}.json"
+    s3_client.put_object(Bucket=bucket, Key=key, Body=json.dumps(chunk_stats).encode("utf-8"))
 
 
-# Deletes the tracking txt file from S3 when a task is completed
-def delete_s3_task_file(stage, chunk_id, is_final, logger_worker):
+# Reads every chunk's JSON back from this run's prefix and flattens into one list,
+# so the final aggregate reflects every chunk ever completed under this run_datetime,
+# not just the chunks that ran in this particular invocation
+# Per Claude session 'Vegetation model chunk stats checkpointing'
+def load_all_chunk_stats_from_s3(bucket, prefix):
+    s3_client = boto3.client("s3")
+    paginator = s3_client.get_paginator("list_objects_v2")
+    all_stats = []
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            if obj["Size"] == 0:
+                continue
+            response = s3_client.get_object(Bucket=bucket, Key=obj["Key"])
+            all_stats.extend(json.loads(response["Body"].read()))
+    return all_stats
 
-    s3 = boto3.client("s3")
-    chunk_id_str = boundstr(chunk_id)  # Converts chunk ID to string
-    tile_id = xy_to_tile_id(chunk_id[0], chunk_id[3])
 
-    # Iterates through the task status prefixes to find the status of the specific chunk
-    for prefix in cn.possible_task_statuses:
-        key = f"{cn.progress_tracking_path}{prefix}{tile_id}_{chunk_id_str}_{stage}.txt"
+# Determines whether this is a new run or a resumption of a run,
+# and, if the latter, how many chunks are completed and how many remain.
+# Per Claude session 'Vegetation model chunk stats checkpointing'
+def determine_if_new_run(chunk_list, resume_run_datetime, stage, main_logger):
+    # Resolves which run this is (new vs. resumed) and where its chunk-stat JSONs live/go
+    if resume_run_datetime:
+        run_datetime = resume_run_datetime
+        main_logger.info(f"Resuming run: {run_datetime}")
+    else:
+        run_datetime = datetime.now().strftime('%Y%m%d_%H%M%S')
+        main_logger.info(f"Starting new run: {run_datetime}")
 
-        try:
-            s3.delete_object(Bucket=cn.short_bucket_prefix, Key=key)
-            # print(f"Deleted: {key}")
-            deleted = True  # Marks that at least one file was deleted
-        except s3.exceptions.ClientError as e:
-            if e.response["Error"]["Code"] == "NoSuchKey":
-                continue  # Moves to the next possible file if a file with that status doesn't exist
-            else:
-                # print(f"Error deleting task file {key}: {e}")
-                return  # Exit if there's a real error
+    chunk_stats_prefix = get_chunk_stats_prefix(stage, run_datetime)
+    main_logger.info(f"Chunk stats S3 prefix: s3://{cn.short_bucket_prefix}/{chunk_stats_prefix}")
 
-    # Logs if no files were deleted
-    if not deleted:
+    completed_chunk_ids = list_completed_chunk_ids(cn.short_bucket_prefix, chunk_stats_prefix)
+    remaining_chunk_list = [c for c in chunk_list if boundstr(c) not in completed_chunk_ids]
 
-        lu.print_and_log(f"No task file found for chunk {chunk_id}. Nothing to delete.", is_final, logger_worker)
+    main_logger.info(f"Already completed under this run_datetime ({run_datetime}): {len(completed_chunk_ids)}")
+    main_logger.info(f"Remaining to process in {run_datetime}: {len(remaining_chunk_list)}")
+
+    return chunk_stats_prefix, remaining_chunk_list
 
 
 def gdal_vrt_progress(pct, message, data):

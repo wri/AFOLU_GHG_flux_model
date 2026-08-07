@@ -203,8 +203,6 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload,
     logger_worker = lu.setup_logging_worker()
     chunk_start_time = time.time()
 
-    uu.rename_s3_task_file(stage, bounds, 'preprocessing_', is_large_run, logger_worker)
-
     bounds_str = uu.boundstr(bounds)
     tile_id = uu.xy_to_tile_id(bounds[0], bounds[3])
     chunk_length_pixels_30m  = uu.calc_chunk_length_pixels(bounds)
@@ -660,7 +658,6 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
     # for i, chunk_batch in enumerate(chunk_batches[start_batch:], start=start_batch):
     for i, chunk_batch in enumerate(chunk_batches):
         main_logger.info(f"Processing batch {i+1}/{len(chunk_batches)} ({len(chunk_batch)} chunks): {uu.timestr()}")
-        uu.create_s3_task_files(stage, chunk_batch)
 
         futures = []
         for chunk in chunk_batch:

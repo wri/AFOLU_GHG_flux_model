@@ -1392,7 +1392,6 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
     process = psutil.Process(os.getpid())
     logger_worker = lu.setup_logging_worker()
     chunk_start_time = time.time()
-    uu.rename_s3_task_file(stage, bounds, "preprocessing_", is_large_run, logger_worker)
 
     bounds_str = uu.boundstr(bounds)  # [8, -1, 9, 0] to 8_-1_9_0
     tile_id = uu.xy_to_tile_id(bounds[0], bounds[3])  # YYN/S_XXXE/W
@@ -1477,8 +1476,6 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
 
 
     ### Part 6: Saves numpy arrays as rasters and uploads to s3
-
-    uu.rename_s3_task_file(stage, bounds, "uploading_", is_large_run, logger_worker)
 
     # Only saves arrays to geotifs and uploads them to s3 if enabled
     if no_upload == False:
@@ -1768,7 +1765,6 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
     for i, chunk_batch in enumerate(chunk_batches):
         main_logger.info(f"Processing batch {i + 1}/{len(chunk_batches)} ({len(chunk_batch)} chunks): {uu.timestr()}")
         main_logger.info("Creating batch task txts in s3...")
-        uu.create_s3_task_files(stage, chunk_batch)
 
         if run_local:
             batch_results = [calculate_and_upload_IPCC_land_use(chunk, download_dict_with_data_types, True, no_upload, output_dir_list_1x1, stage, no_stats, create_zarr, raw_mega_zarr_path)

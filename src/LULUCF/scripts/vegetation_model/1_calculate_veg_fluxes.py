@@ -1657,8 +1657,6 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
 
     lu.print_and_log(f"Starting chunk {uu.boundstr(bounds)}: {uu.timestr()}", is_large_run, logger_worker)
 
-    uu.rename_s3_task_file(stage, bounds, "preprocessing_", is_large_run, logger_worker)
-
     bounds_str = uu.boundstr(bounds)  # String form of chunk bounds, from e.g., [8, -1, 9, 0] to 8_-1_9_0
     tile_id = uu.xy_to_tile_id(bounds[0], bounds[3])  # tile_id in YYN/S_XXXE/W
     chunk_length_pixels = uu.calc_chunk_length_pixels(bounds)  # Chunk length in pixels (as opposed to decimal degrees)
@@ -1849,8 +1847,6 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
 
     ### Part 7: Saves numpy arrays as rasters and uploads to s3
 
-    uu.rename_s3_task_file(stage, bounds, "uploading_", is_large_run, logger_worker)
-
     # Only saves arrays to geotifs and uploads them to s3 if enabled
     if no_upload == False:
 
@@ -1943,14 +1939,6 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
     # Model stage being run
     stage = 'vegetation_fluxes'
 
-    # Runs chunks in batches of specified size.
-    # Each batch slows down processing because chunks inevitably lag and that happens more the more batches there are.
-    if model_type == cn.alt_RF:
-        batch_size = 4000  # 1 batch for the full Xu et al. regrowth extent (3973 chunks)
-    else:
-        batch_size = 3800  # 5 batches to cover all chunks
-    # batch_size = 8  # large-scale testing
-
     start_year = cn.LC_first_year
     end_year = cn.LC_last_year
 
@@ -1974,7 +1962,6 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
     main_logger.info(f"Model version: {cn.veg_model_version}")
     main_logger.info(f"Model path descriptor: {model_path_description}")
     main_logger.info(f"Run date: {run_date}")
-    main_logger.info(f"Batch size: {batch_size} chunks")
     main_logger.info(f"no_upload: {no_upload}")
     main_logger.info(f"Tolerance for comparison between model and zarr chunk stat metrics: {cn.zarr_difference_tolerance}")
 
@@ -2227,60 +2214,51 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
     main_logger.info(f"Creating tasks and starting processing: {uu.timestr()}")
     main_logger.info("Workers' logs to be appended after main function log"+ "\n")
 
-    chunk_batches = [chunk_list[i:i + batch_size] for i in range(0, len(chunk_list), batch_size)]
-    main_logger.info(f"There are {len(chunk_batches)} batches to process: {uu.timestr()}")
-
     # Accumulates all output messages and statistics across batches
     # From https://chatgpt.com/share/e/5599b6b0-1aaa-4d54-98d3-c720a436dd9a
     all_results = []
     all_stats = []
     success_count = 0  # Count of successful chunks
 
-    # Iterates through the batches
-    for i, chunk_batch in enumerate(chunk_batches):
-    # for i, chunk_batch in enumerate(chunk_batches[3:], start=3):  # To resume at a specific batch
-        main_logger.info(f"Processing batch {i + 1}/{len(chunk_batches)} ({len(chunk_batch)} chunks): {uu.timestr()}")
-        main_logger.info("Creating batch task txts in s3...")
-        uu.create_s3_task_files(stage, chunk_batch)
 
-        # This approach handles large task lists (graphs) better than [dask.delayed(calculate_and_upload_vegetation_fluxes ... )]
-        # safe_vegetation_task is supposed to report task/worker crashes.
-        # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6949a74e-1388-832d-8f8e-5e9bf084ecb8
-        # That chat has a table that explains what different combinations of traceback & memory presence/absence mean for the failure.
-        futures = []
-        for chunk in chunk_batch:
-            future = client.submit(
-                        calculate_and_upload_vegetation_fluxes,
-                        chunk, primary_forest_RF_array, partial_disturbance_EF_array, mangrove_C_ratio_array,
-                        download_dict_with_data_types, start_year, end_year, interval_length_list,
-                        output_years, is_large_run, no_upload, create_zarr,
-                        output_dir_list, stage, model_type, zarr_path, outputs_to_zarr,
-                        retries=1, key=f"vegflux-{chunk}")  # Designed to prevent infinite retries and rerunning completed tasks (happens in global runs)
-            futures.append(future)
+    # This approach handles large task lists (graphs) better than [dask.delayed(calculate_and_upload_vegetation_fluxes ... )]
+    # safe_vegetation_task is supposed to report task/worker crashes.
+    # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6949a74e-1388-832d-8f8e-5e9bf084ecb8
+    # That chat has a table that explains what different combinations of traceback & memory presence/absence mean for the failure.
+    futures = []
+    for chunk in chunk_list:
+        future = client.submit(
+                    calculate_and_upload_vegetation_fluxes,
+                    chunk, primary_forest_RF_array, partial_disturbance_EF_array, mangrove_C_ratio_array,
+                    download_dict_with_data_types, start_year, end_year, interval_length_list,
+                    output_years, is_large_run, no_upload, create_zarr,
+                    output_dir_list, stage, model_type, zarr_path, outputs_to_zarr,
+                    retries=1, key=f"vegflux-{chunk}")  # Designed to prevent infinite retries and rerunning completed tasks (happens in global runs)
+        futures.append(future)
 
-        batch_results = client.gather(futures)
+    results = client.gather(futures)
 
-        for result in batch_results:
-            if isinstance(result, dict) and result.get("status") == "failed":
-                main_logger.error(
-                    "Task failed\n"
-                    f"Chunk: {result.get('chunk', 'unknown')}\n"
-                    f"Error: {result['error']}\n"
-                    f"Memory at failure (GB): {result['memory_at_failure']}\n"
-                    f"Traceback:\n{result['traceback']}"
-                )
+    for result in results:
+        if isinstance(result, dict) and result.get("status") == "failed":
+            main_logger.error(
+                "Task failed\n"
+                f"Chunk: {result.get('chunk', 'unknown')}\n"
+                f"Error: {result['error']}\n"
+                f"Memory at failure (GB): {result['memory_at_failure']}\n"
+                f"Traceback:\n{result['traceback']}"
+            )
 
-        all_results.extend(batch_results)
+        all_results.extend(results)
 
-        success_count, batch_stats = uu.count_successful_chunks(chunk_batch, is_large_run, main_logger, batch_results)
-        all_stats.extend(batch_stats)
+        success_count, chunk_stats = uu.count_successful_chunks(chunk_batch, is_large_run, main_logger, results)
+        all_stats.extend(chunk_stats)
 
         # Saves stats from batch in Excel locally in case the run fails, but only if there are multiple batches.
         # That way there are some basic chunk stats (not sorted or anything) to fall back on.
         if len(chunk_batches) > 1:
 
             main_logger.info(f"Writing batch stats locally: {uu.timestr()}")
-            df_batch_stats = pd.DataFrame(batch_stats)
+            df_batch_stats = pd.DataFrame(chunk_stats)
 
             timestamp = uu.timestr()
 
@@ -2315,7 +2293,7 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
                     )
 
         del futures
-        del batch_results
+        del results
         client.run(gc.collect)
 
         uu.stage_duration(start_time, uu.timestr(), f"{stage}, batch {i}", main_logger)

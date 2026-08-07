@@ -116,7 +116,6 @@ def calculate_forest_age(bounds, is_large_run, no_upload, output_dir_list, stage
     cache_dir = os.path.join(base_cache_dir, f"{tile_id}_{tile_uuid}")
 
     try:
-        uu.rename_s3_task_file(stage, bounds, "preprocessing_", is_large_run, logger_worker)
         lu.print_and_log(f"Processing chunk {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
 
         try:
@@ -141,8 +140,6 @@ def calculate_forest_age(bounds, is_large_run, no_upload, output_dir_list, stage
         # the (expanded) bounding box. The output raster is still the exact right size.
         buffer = cn.resolution * 2
 
-        uu.rename_s3_task_file(stage, bounds, "loading_", is_large_run, logger_worker)
-
         # Loads only selected chunk. Loads into memory so that subsequent steps are "eager", not "lazy"
         lu.print_and_log(f"Loading data into memory {bounds_str}: {uu.timestr()}", False, logger_worker)  # Prints even during full run
         da_chunk = forest_age.sel(
@@ -153,8 +150,6 @@ def calculate_forest_age(bounds, is_large_run, no_upload, output_dir_list, stage
 
         # Deletes cache as soon as the data are loaded into memory
         shutil.rmtree(cache_dir, ignore_errors=True)
-
-        uu.rename_s3_task_file(stage, bounds, "calculating_", is_large_run, logger_worker)
 
         lu.print_and_log(f"Cleaning {bounds_str}: {uu.timestr()}", False, logger_worker) # Prints even during full run
         # da_cleaned = da_chunk.where(da_chunk != -9999, 0)
@@ -224,16 +219,12 @@ def calculate_forest_age(bounds, is_large_run, no_upload, output_dir_list, stage
         os.remove(file_2010)
         os.remove(file_2015)
 
-        # Removes task tracking file from S3 once task is successful
-        uu.delete_s3_task_file(stage, bounds, is_large_run, logger_worker)
-
     except Exception as e:
 
         error_trace = traceback.format_exc()
         return_message = f"Error creating 2010/2015 age maps for chunk {bounds}: {e}---{error_trace}: {uu.timestr()}"
 
         lu.print_and_log(return_message, False, logger_worker)
-        uu.rename_s3_task_file(stage, bounds, "error_", is_large_run, logger_worker)
 
         shutil.rmtree(cache_dir, ignore_errors=True)
 

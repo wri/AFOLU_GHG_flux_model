@@ -75,8 +75,6 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
 
     chunk_start_time = time.time()
 
-    uu.rename_s3_task_file(stage, bounds, "preprocessing_", is_large_run, logger_worker)
-
     bounds_str = uu.boundstr(bounds)  # String form of chunk bounds, from e.g., [8, -1, 9, 0] to 8_-1_9_0
     tile_id = uu.xy_to_tile_id(bounds[0], bounds[3])  # tile_id in YYN/S_XXXE/W
     chunk_length_pixels = uu.calc_chunk_length_pixels(bounds)  # Chunk length in pixels (as opposed to decimal degrees)
@@ -362,9 +360,6 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
 
     return_message = f"Success for {bounds_str}: {uu.timestr()}"
 
-    # Removes task tracking file from S3 once task is successful
-    uu.delete_s3_task_file(stage, bounds, is_large_run, logger_worker)
-
     # To track peak memory usage
     # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6949a74e-1388-832d-8f8e-5e9bf084ecb8
     peak_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
@@ -548,7 +543,6 @@ def main(cluster_name, model_type,
     for i, chunk_batch in enumerate(chunk_batches):
         main_logger.info(f"Processing batch {i + 1}/{len(chunk_batches)} ({len(chunk_batch)} chunks): {uu.timestr()}")
         main_logger.info("Creating batch task txts in s3...")
-        uu.create_s3_task_files(stage, chunk_batch)
 
         # This approach handles large task lists (graphs) better than [dask.delayed(calculate_and_upload_LULUCF_fluxes ... )]
         futures = []

@@ -201,7 +201,6 @@ def preprocess_and_upload_1x1_deg_smoothed_mangrove_data(bounds, download_dict_w
     # Stores the min, mean, and max chunks for inputs and outputs for the chunk
     chunk_stats = []
     logger_worker = lu.setup_logging_worker()
-    uu.rename_s3_task_file(stage, bounds, "preprocessing_", is_final, logger_worker)
 
     bounds_str = uu.boundstr(bounds)  # String form of chunk bounds
     tile_id = uu.xy_to_tile_id(bounds[0], bounds[3])  # tile_id in YYN/S_XXXE/W
@@ -323,7 +322,6 @@ def preprocess_and_upload_1x1_deg_smoothed_mangrove_data(bounds, download_dict_w
         ### Part 5: Creates smoothed mangrove extent rasters
 
         lu.print_and_log(f"Creating smoothed mangrove data in {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker) # Prints during full runs
-        uu.rename_s3_task_file(stage, bounds, "calculating_", is_final, logger_worker)
 
         # Create smoothed mangrove data
         out_dict_uint8 = smooth_mangrove_data(typed_dict_uint8)
@@ -402,10 +400,6 @@ def preprocess_and_upload_1x1_deg_smoothed_mangrove_data(bounds, download_dict_w
         gc.collect()
 
         return_message = f"Success creating smoothed mangrove extent raster for {bounds_str}: {uu.timestr()}"
-
-        # Removes task tracking file from S3 once task is successful
-        uu.delete_s3_task_file(stage, bounds, is_final, logger_worker)
-
         return return_message, chunk_stats  # Return both the success message and the statistics
 
 

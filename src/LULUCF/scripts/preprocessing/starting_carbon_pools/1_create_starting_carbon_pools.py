@@ -397,9 +397,6 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
     logger_worker = lu.setup_logging_worker()
 
     chunk_start_time = time.time()
-
-    uu.rename_s3_task_file(stage, bounds, "preprocessing_", is_large_run, logger_worker)
-
     bounds_str = uu.boundstr(bounds)  # String form of chunk bounds
     tile_id = uu.xy_to_tile_id(bounds[0], bounds[3])  # tile_id in YYN/S_XXXE/W
     chunk_length_pixels = uu.calc_chunk_length_pixels(bounds)  # Chunk length in pixels (as opposed to decimal degrees)
@@ -537,8 +534,6 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
 
 
     ### Part 7: Saves numpy arrays as rasters and uploads to s3
-
-    uu.rename_s3_task_file(stage, bounds, "uploading_", is_large_run, logger_worker)
 
     # Only saves arrays to geotifs and uploads them to s3 if enabled
     if not no_upload:
@@ -777,10 +772,6 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
     mangrove_C_ratio_array = uu.convert_lookup_table_to_array(cn.RF_C_ratio_spreadsheet_full_path, cn.mangrove_rate_ratio_tab,
                                                               ['gainEcoCon', 'AGB_gain_tons_ha_yr',
                                                                'BGC_AGC', 'deadwood_AGC', 'litter_AGC'])
-
-    # Makes a txt for each task in the list. These are deleted as tasks are completed.
-    main_logger.info("Creating task txts in s3...")
-    uu.create_s3_task_files(stage, chunk_list)
 
 
     ### Step 2: Create empty (metadata-only), global mega-zarr in s3.

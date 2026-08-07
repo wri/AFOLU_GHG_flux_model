@@ -37,10 +37,6 @@ import numpy as np
 import fsspec
 import xarray as xr
 import resource
-import json
-import re
-import boto3
-from datetime import datetime
 
 from concurrent.futures import ThreadPoolExecutor
 from dask.distributed import print
@@ -51,71 +47,6 @@ from src.utilities import log_utilities as lu
 from src.utilities import universal_utilities as uu
 from src.utilities import zarr_utilities as zu
 from src.utilities import resize_cluster
-
-# Builds the S3 prefix that groups this run's per-chunk JSONs: descriptor/run_datetime
-def get_chunk_stats_prefix(descriptor, run_datetime):
-    return f"{cn.s3_chunk_stats_path}per_chunk_json/{descriptor}/{run_datetime}/"
-
-# Lists chunk IDs that already have a stats JSON written under this run's prefix
-def list_completed_chunk_ids(bucket, prefix):
-
-    s3_client = boto3.client("s3")
-    paginator = s3_client.get_paginator("list_objects_v2")
-    pattern = re.compile(r"^chunk_(.+)\.json$")
-    completed = set()
-    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-        for obj in page.get("Contents", []):
-            if obj["Size"] == 0:  # Ignores objects that have no size (no data in them)-- they aren't valid and should be repeated
-                continue
-            filename = obj["Key"].rsplit("/", 1)[-1]  # just "chunk_-63_-24_-62_-23.json"
-            m = pattern.match(filename)
-            if m:
-                completed.add(m.group(1))
-    return completed
-
-# Writes one chunk's stats (list of dicts, one per input/output layer) to its own S3 JSON
-def write_chunk_stats_to_s3(chunk_stats, chunk_id, bucket, prefix):
-    s3_client = boto3.client("s3")
-    key = f"{prefix}chunk_{chunk_id}.json"
-    s3_client.put_object(Bucket=bucket, Key=key, Body=json.dumps(chunk_stats).encode("utf-8"))
-
-# Reads every chunk's JSON back from this run's prefix and flattens into one list,
-# so the final aggregate reflects every chunk ever completed under this run_datetime,
-# not just the chunks that ran in this particular invocation
-def load_all_chunk_stats_from_s3(bucket, prefix):
-    s3_client = boto3.client("s3")
-    paginator = s3_client.get_paginator("list_objects_v2")
-    all_stats = []
-    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-        for obj in page.get("Contents", []):
-            if obj["Size"] == 0:
-                continue
-            response = s3_client.get_object(Bucket=bucket, Key=obj["Key"])
-            all_stats.extend(json.loads(response["Body"].read()))
-    return all_stats
-
-
-# Determines whether this is a new run or a resumption of a run,
-# and, if the latter, how many chunks are completed and how many remain
-def determine_if_new_run(chunk_list, resume_run_datetime, stage, main_logger):
-    # Resolves which run this is (new vs. resumed) and where its chunk-stat JSONs live/go
-    if resume_run_datetime:
-        run_datetime = resume_run_datetime
-        main_logger.info(f"Resuming run: {run_datetime}")
-    else:
-        run_datetime = datetime.now().strftime('%Y%m%d_%H%M%S')
-        main_logger.info(f"Starting new run: {run_datetime}")
-
-    chunk_stats_prefix = get_chunk_stats_prefix(stage, run_datetime)
-    main_logger.info(f"Chunk stats S3 prefix: s3://{cn.short_bucket_prefix}/{chunk_stats_prefix}")
-
-    completed_chunk_ids = list_completed_chunk_ids(cn.short_bucket_prefix, chunk_stats_prefix)
-    remaining_chunk_list = [c for c in chunk_list if uu.boundstr(c) not in completed_chunk_ids]
-
-    main_logger.info(f"Already completed under this run_datetime ({run_datetime}): {len(completed_chunk_ids)}")
-    main_logger.info(f"Remaining to process in {run_datetime}: {len(remaining_chunk_list)}")
-
-    return chunk_stats_prefix, remaining_chunk_list
 
 
 # All steps for creating starting composite primary forest: download chunks, calculate, upload to s3
@@ -132,8 +63,6 @@ def create_and_upload_starting_composite_primary_forest(bounds, download_dict_wi
     logger_worker = lu.setup_logging_worker()
 
     chunk_start_time = time.time()
-
-    uu.rename_s3_task_file(stage, bounds, "preprocessing_", is_large_run, logger_worker)
 
     bounds_str = uu.boundstr(bounds)  # String form of chunk bounds
     tile_id = uu.xy_to_tile_id(bounds[0], bounds[3])  # tile_id in YYN/S_XXXE/W
@@ -191,7 +120,6 @@ def create_and_upload_starting_composite_primary_forest(bounds, download_dict_wi
     ### Part 3: Creates starting composite primary forest
 
     lu.print_and_log(f"Creating starting composite primary forest for {year} in {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker) # Prints during full runs
-    uu.rename_s3_task_file(stage, bounds, "calculating_", is_large_run, logger_worker)
     calc_start = time.time()
 
     # Filters tcl_block to only where tcl occurred before 2015 (ignoring 0s)
@@ -229,12 +157,10 @@ def create_and_upload_starting_composite_primary_forest(bounds, download_dict_wi
         chunk_stats.append(uu.calculate_stats(array_per_ha, key, bounds_str, tile_id, 'output_layer', None))
 
     # Persists this chunk's stats to S3 immediately, so a killed/interrupted run doesn't lose already-finished work
-    write_chunk_stats_to_s3(chunk_stats, bounds_str, cn.short_bucket_prefix, chunk_stats_prefix)
+    uu.write_chunk_stats_to_s3(chunk_stats, bounds_str, cn.short_bucket_prefix, chunk_stats_prefix)
 
 
     ### Part 6: Saves numpy arrays as rasters and uploads to s3
-
-    uu.rename_s3_task_file(stage, bounds, "uploading_", is_large_run, logger_worker)
 
     # Only saves arrays to geotifs and uploads them to s3 if enabled
     if not no_upload:
@@ -290,9 +216,6 @@ def create_and_upload_starting_composite_primary_forest(bounds, download_dict_wi
     lu.print_and_log(f"Total chunk processing for {bounds_str} in {round(chunk_end_time - chunk_start_time)} seconds: {uu.timestr()}", False, logger_worker)
 
     return_message = f"Success creating starting composite primary forest for {bounds_str}: {uu.timestr()}"
-
-    # Removes task tracking file from S3 once task is successful
-    uu.delete_s3_task_file(stage, bounds, is_large_run, logger_worker)
 
     # To track peak memory usage
     # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6949a74e-1388-832d-8f8e-5e9bf084ecb8
@@ -358,7 +281,9 @@ def main(cluster_name,
         create_zarr = True
     main_logger.info(f"Create and populate global mega-zarr: {create_zarr}")
 
-    chunk_stats_prefix, remaining_chunk_list = determine_if_new_run(chunk_list, resume_run_datetime, stage, main_logger)
+    # Determines if this is a new run or the continuation of a previous run that is being completed
+    # Code for chunk stats as chunks are completed comes from Claude session 'Vegetation model chunk stats checkpointing'
+    chunk_stats_prefix, remaining_chunk_list = uu.determine_if_new_run(chunk_list, resume_run_datetime, stage, main_logger)
 
     # This is just a placeholder tile_id that is used to obtain the datatype of each input tile set.
     # It is overwritten when chunks are assigned and analyzed.
@@ -462,7 +387,7 @@ def main(cluster_name,
     ### Step 4: Consolidate chunk stats and export
 
     if not no_stats:
-        all_stats = load_all_chunk_stats_from_s3(cn.short_bucket_prefix, chunk_stats_prefix)
+        all_stats = uu.load_all_chunk_stats_from_s3(cn.short_bucket_prefix, chunk_stats_prefix)
         main_logger.info(f"Loaded stats for {len(all_stats)} chunk-layer records (inputs + outputs) from S3 across all completed chunks")
         model_chunk_stats_path = uu.compile_1x1_chunk_stats(all_stats, chunk_shapefile_uri, stage, no_upload, main_logger)
 

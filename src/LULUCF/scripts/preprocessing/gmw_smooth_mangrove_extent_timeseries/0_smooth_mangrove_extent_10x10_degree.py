@@ -214,7 +214,6 @@ def process_smoothed_mangrove_data(bounds, download_dict_with_data_types, area_d
     # Stores the min, mean, and max chunks for inputs and outputs for the chunk
     chunk_stats = []
     logger_worker = lu.setup_logging_worker()
-    uu.rename_s3_task_file(stage, bounds, "preprocessing_", is_final, logger_worker)
 
     bounds_str = uu.boundstr(bounds)  # String form of chunk bounds
     tile_id = uu.xy_to_tile_id(bounds[0], bounds[3])  # tile_id in YYN/S_XXXE/W
@@ -391,7 +390,6 @@ def process_smoothed_mangrove_data(bounds, download_dict_with_data_types, area_d
     #todo: print out how many tasks left
 
     # Removes task tracking file from S3 once task is successful
-    uu.delete_s3_task_file(stage, bounds, is_final, logger_worker)
     #todo: should this be added inside main for 10 x 10 degree tile completion?
 
     return return_message, chunk_stats

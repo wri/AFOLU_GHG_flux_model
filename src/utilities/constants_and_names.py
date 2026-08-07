@@ -55,8 +55,6 @@ veg_outputs_years = LC_years[1:]  # Output years for the vegetation model
 veg_end_year_count = len(veg_outputs_years)  # Number of years output from the veg moel
 veg_year_range_str = f"{veg_outputs_years[0]}_{LC_last_year}"
 
-possible_task_statuses = ["pending_", "loading_", "preprocessing_", "calculating_",
-                          "zarr_population_", "uploading_", "error_"]
 
 # Seconds until a file download timeouts (and potentially retries)
 download_timeout = 300
@@ -577,8 +575,8 @@ forest_age_output_pattern = "forest_age_at_end_of_interval"
 # Starting composite primary forest (2015)
 starting_composite_primary_forest_run_date = '20260806'
 starting_composite_primary_forest_pattern = "starting_composite_primary_forest"
-starting_composite_primary_forest_dir = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/{starting_composite_primary_forest_pattern}/2015/presence/{chunk_dims}_pixels/{starting_composite_primary_forest_run_date}/"
-starting_composite_primary_forest_zarr_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/{starting_composite_primary_forest_pattern}/2015/presence/zarr/{chunk_dims}_pixels/{starting_composite_primary_forest_run_date}/{starting_composite_primary_forest_pattern}.zarr"
+starting_composite_primary_forest_dir = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/{starting_composite_primary_forest_pattern}/{LC_first_year}/presence/{chunk_dims}_pixels/{starting_composite_primary_forest_run_date}/"
+starting_composite_primary_forest_zarr_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/{starting_composite_primary_forest_pattern}/{LC_first_year}/presence/zarr/{chunk_dims}_pixels/{starting_composite_primary_forest_run_date}/{starting_composite_primary_forest_pattern}.zarr"
 
 # GEE script that the global rasters are from is https://code.earthengine.google.com/805896f7a511c13eb873c4804a683abc (each file takes about 15 minutes to export to Google Drive).
 # NOTE: GEE export function splits the exported global raster into two pieces. I merged the two pieces into a single file in ArcPro,

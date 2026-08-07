@@ -61,9 +61,6 @@ def gap_fill_starting_forest_age(bounds, input_dir, input_pattern, output_patter
     process = psutil.Process(os.getpid())
 
     try:
-
-        uu.rename_s3_task_file(stage, bounds, "preprocessing_", is_large_run, logger_worker)
-
         bounds_str = uu.boundstr(bounds)
         tile_id = uu.xy_to_tile_id(bounds[0], bounds[3])
         chunk_length_pixels = uu.calc_chunk_length_pixels(bounds)
@@ -121,8 +118,6 @@ def gap_fill_starting_forest_age(bounds, input_dir, input_pattern, output_patter
         ### NOTE: does not calculate chunk stats for input chunks because the individual focal chunks are never
         ### isolated as inputs; they are merged with adjacent chunks. Thus, there is never really a chance
         ### to calculate input chunk stats, and it's not worth revising the workflow to include that.
-
-        uu.rename_s3_task_file(stage, bounds, "calculating_", is_large_run, logger_worker)
 
         # Merges the focal and adjacent chunks into a mosaic
         mosaic_data, mosaic_transform = rasterio.merge.merge(src_datasets, bounds=buffered_bounds)
@@ -185,7 +180,6 @@ def gap_fill_starting_forest_age(bounds, input_dir, input_pattern, output_patter
         ### Part 3: Saves and uploads the output raster
 
         lu.print_and_log(f" Saving and uploading {bounds_str}: {uu.timestr()}", is_large_run, logger_worker)
-        uu.rename_s3_task_file(stage, bounds, "uploading_", is_large_run, logger_worker)
 
         if is_large_run:
             file_name = f"{tile_id}__{bounds_str}__{output_pattern}.tif"
@@ -224,7 +218,6 @@ def gap_fill_starting_forest_age(bounds, input_dir, input_pattern, output_patter
         return_message = f"Error processing chunk {bounds}: {e}: {uu.timestr()}"
 
         lu.print_and_log(return_message, False, logger_worker)
-        uu.rename_s3_task_file(stage, bounds, "error_", is_large_run, logger_worker)
 
     return return_message, chunk_stats
 
@@ -295,10 +288,6 @@ def main(cluster_name, year, run_local=False, no_stats=False, no_log=False, no_u
     # Creates list of tasks to run (1 task = 1 chunk)
     main_logger.info(f"Creating tasks and starting processing: {uu.timestr()}")
     main_logger.info("Workers' logs to be appended after main function log"+ "\n")
-
-    # Makes a txt for each task in the list. These are deleted as tasks are completed.
-    main_logger.info("Creating task txts in s3...")
-    uu.create_s3_task_files(stage, chunk_list)
 
     delayed_results_1x1_deg = [dask.delayed(gap_fill_starting_forest_age)
                        (chunk, input_dir, input_pattern, output_pattern, is_large_run, no_upload, output_dir_list, stage)

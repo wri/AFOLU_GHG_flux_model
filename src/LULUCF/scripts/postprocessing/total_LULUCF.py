@@ -83,9 +83,6 @@ def create_LULUCF_outputs(bounds, interval_type, interval_year_diff_list,
     logger_worker = lu.setup_logging_worker()
 
     chunk_start_time = time.time()
-
-    uu.rename_s3_task_file(stage, bounds, "preprocessing_", is_large_run, logger_worker)
-
     bounds_str = uu.boundstr(bounds)  # String form of chunk bounds, from e.g., [8, -1, 9, 0] to 8_-1_9_0
     tile_id = uu.xy_to_tile_id(bounds[0], bounds[3])  # tile_id in YYN/S_XXXE/W
     chunk_length_pixels = uu.calc_chunk_length_pixels(bounds)  # Chunk length in pixels (as opposed to decimal degrees)
@@ -240,8 +237,6 @@ def create_LULUCF_outputs(bounds, interval_type, interval_year_diff_list,
 
 
     ### Part 4: Saves numpy arrays as rasters and uploads to s3
-
-    uu.rename_s3_task_file(stage, bounds, "uploading_", is_large_run, logger_worker)
 
     # Only saves arrays to geotifs and uploads them to s3 if enabled
     if not no_upload:
@@ -413,7 +408,6 @@ def main(cluster_name, run_date, veg_input_date, organic_soil_input_date, minera
 
     # Makes a txt for each task in the list. These are deleted as tasks are completed.
     main_logger.info("Creating task txts in s3...")
-    uu.create_s3_task_files(stage, chunk_list)
 
     # Establishes the location in s3 of the soil and LULUCF flux mega-zarrs
     if create_zarr:

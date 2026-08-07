@@ -61,9 +61,6 @@ def create_starting_forest_age_2000(bounds, download_dict_with_data_types, year,
     logger_worker = lu.setup_logging_worker()
 
     chunk_start_time = time.time()
-
-    uu.rename_s3_task_file(stage, bounds, "preprocessing_", is_large_run, logger_worker)
-
     bounds_str = uu.boundstr(bounds)
     tile_id = uu.xy_to_tile_id(bounds[0], bounds[3])
     chunk_length_pixels = uu.calc_chunk_length_pixels(bounds)
@@ -220,7 +217,6 @@ def create_starting_forest_age_2000(bounds, download_dict_with_data_types, year,
         profile = src.profile.copy()
 
     lu.print_and_log(f" Saving and uploading {bounds_str}: {uu.timestr()}", is_large_run, logger_worker)
-    uu.rename_s3_task_file(stage, bounds, "uploading_", is_large_run, logger_worker)
 
     if is_large_run:
         age_2000_name = f"{tile_id}__{bounds_str}__{cn.forest_age_2000_gap_filled_pattern}.tif"
@@ -271,9 +267,6 @@ def create_starting_forest_age_2000(bounds, download_dict_with_data_types, year,
     if not run_local:
         os.remove(age_2000_tmp_path)
         os.remove(age_2000_source_flag_tmp_path)
-
-    # Removes task tracking file from S3 once task is successful
-    uu.delete_s3_task_file(stage, bounds, is_large_run, logger_worker)
 
     return return_message, chunk_stats
 

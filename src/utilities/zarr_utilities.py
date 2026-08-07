@@ -322,7 +322,6 @@ def populate_zarr(bounds, bounds_str, create_zarr, interval_end_years, is_large_
 
     lu.print_and_log(f"Writing select outputs to global zarr for {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
 
-    uu.rename_s3_task_file(stage, bounds, "zarr_population_", is_large_run, logger_worker)
     zarr_start = time.time()
 
     # Opens pre-created global mega-zarr
@@ -408,7 +407,6 @@ def populate_ipcc_zarr(bounds, bounds_str, create_zarr, is_large_run, logger_wor
         return
 
     lu.print_and_log(f"Writing IPCC outputs to global zarr for {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
-    uu.rename_s3_task_file(stage, bounds, "zarr_population_", is_large_run, logger_worker)
 
     fs = fsspec.filesystem("s3", anon=False)
     mapper = fs.get_mapper(mega_zarr_path)
