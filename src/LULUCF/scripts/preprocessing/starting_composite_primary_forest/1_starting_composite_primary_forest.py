@@ -279,7 +279,7 @@ def main(cluster_name,
     # Whenever the run is large-scale (final), force zarr creation
     if is_large_run:
         create_zarr = True
-    main_logger.info(f"Create and populate global mega-zarr: {create_zarr}")
+    main_logger.info(f"Create and populate global zarr: {create_zarr}")
 
     # Determines if this is a new run or the continuation of a previous run that is being completed
     # Code for chunk stats as chunks are completed comes from Claude session 'Vegetation model chunk stats checkpointing'
@@ -334,20 +334,20 @@ def main(cluster_name,
         main_logger.info(f"  {item}")
 
 
-    ### Step 2: Create empty (metadata-only), global mega-zarr in s3.
+    ### Step 2: Create empty (metadata-only), global zarr in s3.
     ### Zarr approach from https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/68f984c6-9aa0-8327-a910-5ad9a8d170fc
 
-    # Only creates the global mega-zarr if needed (large runs or otherwise specified)
+    # Only creates the global zarr if needed (large runs or otherwise specified)
     if create_zarr:
 
-        # Creates s3 paths for the raw mega-zarr
+        # Creates s3 paths for the raw zarr
         zarr_path = zu.create_zarr_path(cn.starting_composite_primary_forest_zarr_path, chunk_size_pixels,
                                         'standard', cn.veg_model_version_underscore, 'NA',
                                         run_date, main_logger)
         outputs_to_zarr = [cn.starting_composite_primary_forest_pattern]
 
 
-        # Creates the global mega-zarr with metadata only
+        # Creates the global zarr with metadata only
         zu.initialize_global_zarr(zarr_path, outputs_to_zarr, 1,
                                   ((cn.veg_end_year_count), chunk_size_pixels, chunk_size_pixels), main_logger)
 
@@ -355,10 +355,10 @@ def main(cluster_name,
         fs = fsspec.filesystem("s3", anon=False)
         mapper = fs.get_mapper(zarr_path)
         ds = xr.open_zarr(mapper, consolidated=False)
-        main_logger.info(f"mega-zarr coords: {ds.coords}")
+        main_logger.info(f"zarr coords: {ds.coords}")
         main_logger.info(f"y range: {ds.y.values.min()}, {ds.y.values.max()}")
         main_logger.info(f"x range: {ds.x.values.min()}, {ds.x.values.max()}")
-        main_logger.info(f"mega-zarr chunk size (years, y, x): {ds.chunksizes}")
+        main_logger.info(f"zarr chunk size (years, y, x): {ds.chunksizes}")
 
     else:
         zarr_path = None
@@ -532,7 +532,7 @@ if __name__ == "__main__":
     parser.add_argument('--no_stats', action='store_true', help='Do not create the chunk stats spreadsheet')
     parser.add_argument('--no_log', action='store_true', help='Do not create the combined log')
     parser.add_argument('--no_upload', action='store_true', help='Do not save and upload outputs to s3')
-    parser.add_argument('--create_zarr', action='store_true', help='Create and populate global mega-zarr with model outputs')
+    parser.add_argument('--create_zarr', action='store_true', help='Create and populate global zarr with model outputs')
 
     args = parser.parse_args()
 

@@ -263,9 +263,6 @@ def preprocess_and_upload_1x1_deg_smoothed_mangrove_data(bounds, download_dict_w
 
         return_message = f"No mangrove extent in chunk {bounds_str} in {tile_id}. Skipped chunk smoothing step: {uu.timestr()}"
 
-        # Removes task tracking file from S3 once task is finished
-        uu.delete_s3_task_file(stage, bounds, is_final, logger_worker)
-
         return return_message, chunk_stats  # Return both the success message and the statistics
 
     # Proceed with the rest of the script if there is mangrove extent in any of the years
@@ -361,8 +358,6 @@ def preprocess_and_upload_1x1_deg_smoothed_mangrove_data(bounds, download_dict_w
 
 
         ### Part 9: Saves numpy arrays as rasters and uploads to s3
-
-        uu.rename_s3_task_file(stage, bounds, "uploading_", is_final, logger_worker)
 
         # Only saves arrays to geotifs and uploads them to s3 if enabled
         if not no_upload:
@@ -470,10 +465,6 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
     area_dict_with_data_types = uu.add_file_type_to_dict(first_area_tiles)
     #print(f"download_dict_with_data_types: {download_dict_with_data_types}")
     #print(f"area_dict_with_data_types: {area_dict_with_data_types}")
-
-    # Makes a txt for each task in the list. These are deleted as tasks are completed.
-    main_logger.info("Creating task txts in s3...")
-    uu.create_s3_task_files(stage, chunk_list)
 
 
     ### Step 2: Create 1x1 degree outputs

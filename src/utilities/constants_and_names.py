@@ -439,7 +439,7 @@ litter_c_2000_LC_masked_pattern = f"{litter_c_LC_masked_dens_pattern}_2000"
 non_soil_c_2000_LC_masked_dir = f"{full_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/year_2000_derived_carbon_pools/{non_soil_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2000_creation_date}/"
 non_soil_c_2000_LC_masked_pattern = f"{non_soil_c_LC_masked_dens_pattern}_2000"
 
-starting_C_densities_2000_path_mega_zarr = f"{full_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/year_2000_derived_carbon_pools/mega_zarr/CHUNK_SIZE_pixels/RUN_DATE/starting_C_densities_zarr.zarr"
+starting_C_densities_2000_path_zarr = f"{full_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/year_2000_derived_carbon_pools/mega_zarr/CHUNK_SIZE_pixels/RUN_DATE/starting_C_densities_zarr.zarr"
 
 
 ## 2015
@@ -476,7 +476,7 @@ litter_c_2015_LC_masked_pattern = f"{litter_c_LC_masked_dens_pattern}_2015"
 non_soil_c_2015_LC_masked_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{non_soil_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 non_soil_c_2015_LC_masked_pattern = f"{non_soil_c_LC_masked_dens_pattern}_2015"
 
-starting_C_densities_2015_path_mega_zarr = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/mega_zarr/CHUNK_SIZE_pixels/RUN_DATE/starting_C_densities_zarr.zarr"
+starting_C_densities_2015_path_zarr = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/mega_zarr/CHUNK_SIZE_pixels/RUN_DATE/starting_C_densities_zarr.zarr"
 
 # Code that describes the source for the starting carbon densities in the landcover-masked outputs
 starting_C_pools_LC_masked_source_flag_pattern = "carbon_density_source_flag_landcover_masked"
@@ -496,7 +496,7 @@ deadwood_c_2015_ctrees_LC_masked_dir = f"{full_bucket_prefix}/climate/Ctrees_bio
 litter_c_2015_ctrees_LC_masked_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{litter_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
 non_soil_c_2015_ctrees_LC_masked_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{non_soil_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{ctrees_run_date}/"
 
-starting_C_densities_2015_ctrees_path_mega_zarr = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/mega_zarr/CHUNK_SIZE_pixels/RUN_DATE/starting_C_densities_zarr.zarr"
+starting_C_densities_2015_ctrees_path_zarr = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/mega_zarr/CHUNK_SIZE_pixels/RUN_DATE/starting_C_densities_zarr.zarr"
 
 starting_C_pools_ctrees_LC_masked_state_dir = f"{full_bucket_prefix}/climate/Ctrees_biomass/2015/year_2015_derived_carbon_pools/{starting_C_pools_LC_masked_source_flag_pattern}/CHUNK_SIZE_pixels/{ctrees_run_date}/"
 
@@ -881,7 +881,7 @@ zarr_difference_tolerance = 0.05
 model_version_type_description_placeholder = 'version_MODEL_VERSION__TYPE__DESCRIPTION'
 
 veg_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/{model_version_type_description_placeholder}/"
-veg_outputs_path_mega_zarr = f"{veg_outputs_path}mega_zarr/CHUNK_SIZE_pixels/RUN_DATE/vegetation_zarr.zarr"
+veg_outputs_path_zarr = f"{veg_outputs_path}zarr/CHUNK_SIZE_pixels/RUN_DATE/vegetation_zarr.zarr"
 
 # List of output directories from vegetation model with placeholders for parts of the directory
 veg_core_output_dirs = [

@@ -1644,7 +1644,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
 def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, partial_disturbance_EF_array, mangrove_C_ratio_array,
                                            download_dict_with_data_types, start_year, end_year, interval_length_list,
                                            output_years, is_large_run, no_upload, create_zarr,
-                                           output_folders, stage, model_type, zarr_path=None, outputs_to_zarr=None):
+                                           output_folders, stage, chunk_stats_prefix, model_type, zarr_path=None, outputs_to_zarr=None):
 
     # Stores the min, mean, and max chunks for inputs and outputs for the chunk
     chunk_stats = []
@@ -1760,7 +1760,6 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
     ### Part 4: Calculates vegetation fluxes and densities
 
     lu.print_and_log(f"Calculating vegetation fluxes and carbon densities in {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker)
-    uu.rename_s3_task_file(stage, bounds, "calculating_", is_large_run, logger_worker)
     calc_start = time.time()
 
     out_dict_uint8, out_dict_uint16, out_dict_uint32, out_dict_float32 = vegetation_fluxes(typed_dict_uint8,
@@ -1840,6 +1839,9 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
 
         chunk_stats.append(uu.calculate_stats(array_per_ha, key, bounds_str, tile_id, 'output_layer', output_per_pixel))
 
+    # Persists this chunk's stats to S3 immediately, so a killed/interrupted run doesn't lose already-finished work
+    uu.write_chunk_stats_to_s3(chunk_stats, bounds_str, cn.short_bucket_prefix, chunk_stats_prefix)
+
     del pixel_area_chunk
 
     lu.print_and_log(f"Populated chunk stats for outputs in {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
@@ -1915,9 +1917,6 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
 
     return_message = f"Success for {bounds_str}: {uu.timestr()}"
 
-    # Removes task tracking file from S3 once task is successful
-    uu.delete_s3_task_file(stage, bounds, is_large_run, logger_worker)
-
     # To track peak memory usage
     # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6949a74e-1388-832d-8f8e-5e9bf084ecb8
     peak_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
@@ -1929,7 +1928,7 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
 
 def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False, no_upload=False, create_zarr=False,
          chunk_shapefile_uri=False, bounding_box=None, chunk_size_deg=None, first_chunks=None, chunk_ids_file=None,
-         run_date=None, model_path_description=None, log_note=None):
+         run_date=None, model_path_description=None, log_note=None, resume_run_datetime=None):
 
     ### Step 1: Preparation
 
@@ -2001,6 +2000,10 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
     if is_large_run:
         create_zarr = True
     main_logger.info(f"Create and populate global zarr: {create_zarr}")
+
+    # Determines if this is a new run or the continuation of a previous run that is being completed
+    # Code for chunk stats as chunks are completed comes from Claude session 'Vegetation model chunk stats checkpointing'
+    chunk_stats_prefix, remaining_chunk_list = uu.determine_if_new_run(chunk_list, resume_run_datetime, stage, main_logger)
 
     # This is just a placeholder tile_id that is used to obtain the datatype of each input tile set.
     # It is overwritten when chunks are assigned and analyzed.
@@ -2167,9 +2170,9 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
     if create_zarr:
 
         # Creates s3 paths for the raw zarr
-        zarr_path = zu.create_zarr_path(cn.veg_outputs_path_mega_zarr, chunk_size_pixels,
-                                             model_type, cn.veg_model_version_underscore, model_path_description,
-                                             run_date, main_logger)
+        zarr_path = zu.create_zarr_path(cn.veg_outputs_path_zarr, chunk_size_pixels,
+                                        model_type, cn.veg_model_version_underscore, model_path_description,
+                                        run_date, main_logger)
 
         # These variables are added to the zarr.
         # Adds the unit to the zarr variable names (uses re.sub to apply to end of string only so that these don't overwrite each other).
@@ -2232,7 +2235,7 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
                     chunk, primary_forest_RF_array, partial_disturbance_EF_array, mangrove_C_ratio_array,
                     download_dict_with_data_types, start_year, end_year, interval_length_list,
                     output_years, is_large_run, no_upload, create_zarr,
-                    output_dir_list, stage, model_type, zarr_path, outputs_to_zarr,
+                    output_dir_list, stage, chunk_stats_prefix, model_type, zarr_path, outputs_to_zarr,
                     retries=1, key=f"vegflux-{chunk}")  # Designed to prevent infinite retries and rerunning completed tasks (happens in global runs)
         futures.append(future)
 
@@ -2315,8 +2318,9 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
     # and min and max values across all chunks for all inputs and outputs
     # only if not suppressed by the --no_stats flag and at least one chunk was successful (wasn't skipped).
     if (not no_stats) and (success_count > 0):
+        all_stats = uu.load_all_chunk_stats_from_s3(cn.short_bucket_prefix, chunk_stats_prefix)
+        main_logger.info(f"Loaded stats for {len(all_stats)} chunk-layer records (inputs + outputs) from S3 across all completed chunks")
         model_chunk_stats_path = uu.compile_1x1_chunk_stats(all_stats, chunk_shapefile_uri, stage, no_upload, main_logger)
-        uu.stage_duration(start_time, uu.timestr(), f"{stage} with tile stats", main_logger)
 
 
     ### Step 6: Compare model output chunk stats to zarr chunk stats for each variable (only if chunk stats and zarr created)
@@ -2465,6 +2469,7 @@ if __name__ == "__main__":
     parser.add_argument('-mt', '--model_type', default='standard', help='Type of model run (e.g., standard).')
     parser.add_argument('-mpd', '--model_path_description', help='Description of model run (e.g., global, test, X_area).')
     parser.add_argument('-ln', '--log_note', help='Note to include in the log.')
+    parser.add_argument('-rr', '--resume_run_datetime', help='run_datetime of a prior run to resume (skips already-completed chunks)')
 
     parser.add_argument('--run_local', action='store_true', help='Run locally without Dask/Coiled')
     parser.add_argument('--no_stats', action='store_true', help='Do not create the chunk stats spreadsheet')
@@ -2485,6 +2490,7 @@ if __name__ == "__main__":
     model_type = args.model_type
     model_path_description = args.model_path_description
     log_note = args.log_note
+    resume_run_datetime = args.resume_run_datetime
 
     run_local = args.run_local
     no_stats = args.no_stats
@@ -2497,4 +2503,5 @@ if __name__ == "__main__":
     main(cluster_name, model_type, run_local, no_stats, no_log, no_upload, create_zarr, chunk_shapefile_uri,
          bounding_box=bounding_box, chunk_size_deg=chunk_size_deg, first_chunks=first_chunks,
          chunk_ids_file=chunk_ids_file, run_date=run_date, model_path_description=model_path_description,
-         log_note=log_note)
+         log_note=log_note,
+         resume_run_datetime=resume_run_datetime)

@@ -278,7 +278,7 @@ def main(cluster_name, model_type, model_path_description, bounding_box=None,
     main_logger.info(f"Total batches: {total_batches}")
 
     zarr_path = zu.create_zarr_path(
-        cn.starting_C_densities_2015_ctrees_path_mega_zarr,
+        cn.starting_C_densities_2015_ctrees_path_zarr,
         chunk_size_pixels,
         str(YEAR),
         model_type,

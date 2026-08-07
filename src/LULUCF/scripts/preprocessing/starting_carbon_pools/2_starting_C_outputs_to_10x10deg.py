@@ -89,7 +89,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
 
     if model_type == cn.alt_AGB:
         biomass_source = "Ctrees"
-        zarr_root = cn.starting_C_densities_2015_ctrees_path_mega_zarr
+        zarr_root = cn.starting_C_densities_2015_ctrees_path_zarr
         output_base = f"{cn.full_bucket_prefix}/climate/Ctrees_biomass/{year}/year_2015_derived_carbon_pools/PATTERN/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{cn.ctrees_run_date}/"
         output_dir_list = [cn.agc_2015_ctrees_raw_dir, cn.bgc_2015_ctrees_raw_dir, cn.deadwood_c_2015_ctrees_raw_dir,
                            cn.litter_c_2015_ctrees_raw_dir, cn.non_soil_c_2015_ctrees_raw_dir, cn.agc_2015_ctrees_LC_masked_dir,
@@ -97,7 +97,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
                            cn.non_soil_c_2015_ctrees_LC_masked_dir, cn.starting_C_pools_ctrees_LC_masked_state_dir]
     else:
         biomass_source = "ESA_CCI"
-        zarr_root = cn.starting_C_densities_2015_path_mega_zarr
+        zarr_root = cn.starting_C_densities_2015_path_zarr
         output_base = f"{cn.full_bucket_prefix}/climate/ESA_CCI_biomass/{cn.esa_AGB_v}/{year}/year_2015_derived_carbon_pools/PATTERN/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{cn.carbon_2015_creation_date}/"
         output_dir_list = [cn.agc_2015_raw_dir, cn.bgc_2015_raw_dir, cn.deadwood_c_2015_raw_dir, cn.litter_c_2015_raw_dir,
                            cn.non_soil_c_2015_raw_dir, cn.agc_2015_LC_masked_dir, cn.bgc_2015_LC_masked_dir, cn.deadwood_c_2015_LC_masked_dir,

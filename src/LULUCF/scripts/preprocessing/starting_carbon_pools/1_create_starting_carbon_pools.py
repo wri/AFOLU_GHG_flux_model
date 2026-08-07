@@ -35,7 +35,7 @@ aws s3 ls s3://gfw2-data/climate/ESA_CCI_biomass/v5_01/2015/year_2015_derived_ca
 gdalbuildvrt -input_file_list litter_C_2015_file_list.txt deadwood_C2015_mosaic.vrt
 
 TODO Correct starting BGC, deadwood C and litter C for oil palm. Those are currently using natural forest ratios but should use oil palm specifically (Mokany et al for BGC, 0 for deadwood and litter). Make sure veg flux calcs are consistent with this.
-TODO: Step 5, writing outputs to pre-existing global mega-zarr, didnt work for Ctrees. The zarr is initialized with names like carbon_density__AGC__raw__MgC_ha_2015 but populate_zarr() expects core patterns like carbon_density__AGC__raw__MgC because it calls add_units_year_to_pattern() internally before looking up zarr arrays.
+TODO: Step 5, writing outputs to pre-existing global zarr, didnt work for Ctrees. The zarr is initialized with names like carbon_density__AGC__raw__MgC_ha_2015 but populate_zarr() expects core patterns like carbon_density__AGC__raw__MgC because it calls add_units_year_to_pattern() internally before looking up zarr arrays.
 """
 
 import argparse
@@ -386,8 +386,8 @@ def create_starting_C_densities(in_dict_uint8, in_dict_uint16, in_dict_int16,
 
 # All steps for creating starting non-soil carbon pools in a chunk: download chunks, calculate carbon densities, upload to s3
 def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, download_dict_with_data_types, year,
-                                           is_large_run, no_upload, create_zarr, output_folders, stage, model_type,
-                                           mega_zarr_path=None, outputs_to_zarr=None, agb_2015_pattern=None):
+                                           is_large_run, no_upload, create_zarr, output_folders, stage, chunk_stats_prefix, model_type,
+                                           zarr_path=None, outputs_to_zarr=None, agb_2015_pattern=None):
 
     # Stores the min, mean, and max chunks for inputs and outputs for the chunk
     chunk_stats = []
@@ -446,6 +446,9 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
     for key, array in layers.items():
         chunk_stats.append(uu.calculate_stats(array, key, bounds_str, tile_id, 'input_layer'))
 
+    # Persists this chunk's stats to S3 immediately, so a killed/interrupted run doesn't lose already-finished work
+    uu.write_chunk_stats_to_s3(chunk_stats, bounds_str, cn.short_bucket_prefix, chunk_stats_prefix)
+
 
     ### Part 3: Creates a separate dictionary for each chunk datatype so that they can be passed to Numba as separate arguments.
     ### Numba functions can accept (and return) dictionaries of arrays as long as each dictionary only has arrays of one data type (e.g., uint8, float32).
@@ -466,7 +469,6 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
     ### Part 4: Creates starting carbon pool densities
 
     lu.print_and_log(f"Creating starting C densities for {year} in {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker) # Prints during full runs
-    uu.rename_s3_task_file(stage, bounds, "calculating_", is_large_run, logger_worker)
     numba_start = time.time()
 
     # Create AGC, BGC, deadwood C and litter C densities in selected starting year
@@ -501,9 +503,9 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
     # print("out_dict:", out_dicts)
 
 
-    ### Part 5: Writes outputs to pre-existing global mega-zarr (only if activated)
+    ### Part 5: Writes outputs to pre-existing global zarr (only if activated)
 
-    zu.populate_zarr(bounds, bounds_str, create_zarr, [1], is_large_run, logger_worker, mega_zarr_path,
+    zu.populate_zarr(bounds, bounds_str, create_zarr, [1], is_large_run, logger_worker, zarr_path,
                   out_dict_all_dtypes, outputs_to_zarr, stage, tile_id)
 
 
@@ -590,9 +592,6 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
 
     return_message = f"Success creating initial carbon pools for {bounds_str}: {uu.timestr()}"
 
-    # Removes task tracking file from S3 once task is successful
-    uu.delete_s3_task_file(stage, bounds, is_large_run, logger_worker)
-
     # To track peak memory usage
     # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6949a74e-1388-832d-8f8e-5e9bf084ecb8
     peak_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
@@ -604,7 +603,7 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
 
 def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log=False, no_upload= False, create_zarr=False,
          chunk_shapefile_uri=False, bounding_box=None, chunk_size=None, first_chunks=None,
-         model_path_description=None, log_note=None):
+         model_path_description=None, log_note=None, resume_run_datetime=None):
 
     ### Step 1: Preparation
 
@@ -685,7 +684,11 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
     # Whenever the run is large-scale (final), force zarr creation
     if is_large_run:
         create_zarr = True
-    main_logger.info(f"Create and populate global mega-zarr: {create_zarr}")
+    main_logger.info(f"Create and populate global zarr: {create_zarr}")
+
+    # Determines if this is a new run or the continuation of a previous run that is being completed
+    # Code for chunk stats as chunks are completed comes from Claude session 'Vegetation model chunk stats checkpointing'
+    chunk_stats_prefix, remaining_chunk_list = uu.determine_if_new_run(chunk_list, resume_run_datetime, stage, main_logger)
 
     # This is just a placeholder tile_id that is used to obtain the datatype of each tile set.
     # It is overwritten when chunks are assigned and analyzed.
@@ -774,10 +777,10 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
                                                                'BGC_AGC', 'deadwood_AGC', 'litter_AGC'])
 
 
-    ### Step 2: Create empty (metadata-only), global mega-zarr in s3.
+    ### Step 2: Create empty (metadata-only), global zarr in s3.
     ### Zarr approach from https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/68f984c6-9aa0-8327-a910-5ad9a8d170fc
 
-    # These variables are added to the mega-zarr
+    # These variables are added to the zarr
     outputs_to_zarr = [cn.agc_raw_dens_pattern, cn.bgc_raw_dens_pattern,
                        cn.deadwood_c_raw_dens_pattern, cn.litter_c_raw_dens_pattern, cn.non_soil_c_raw_dens_pattern,
                        cn.agc_LC_masked_dens_pattern, cn.bgc_LC_masked_dens_pattern,
@@ -787,35 +790,35 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
     outputs_to_zarr_with_unit_year = [pattern.replace("MgC", f"MgC{cn.C_density_pixel_meaning}") for pattern in outputs_to_zarr]
     outputs_to_zarr_with_unit_year = [pattern + f"_{year}" for pattern in outputs_to_zarr_with_unit_year]
 
-    # Only creates the global mega-zarr if needed (large runs or otherwise specified)
+    # Only creates the global zarr if needed (large runs or otherwise specified)
     starting_C_zarr_root = (
-        cn.starting_C_densities_2015_ctrees_path_mega_zarr
+        cn.starting_C_densities_2015_ctrees_path_zarr
         if model_type == cn.alt_AGB
-        else cn.starting_C_densities_2015_path_mega_zarr
+        else cn.starting_C_densities_2015_path_zarr
     )
 
     if create_zarr:
 
-        # Creates s3 paths for the raw mega-zarr
-        mega_zarr_path = zu.create_zarr_path(starting_C_zarr_root, chunk_size_pixels, str(year),
+        # Creates s3 paths for the raw zarr
+        zarr_path = zu.create_zarr_path(starting_C_zarr_root, chunk_size_pixels, str(year),
                                              model_type, cn.veg_model_version_underscore, model_path_description,
                                              run_date, main_logger)
 
-        # Creates the global mega-zarr with metadata only
-        zu.initialize_global_zarr(mega_zarr_path, outputs_to_zarr_with_unit_year, 1,
+        # Creates the global zarr with metadata only
+        zu.initialize_global_zarr(zarr_path, outputs_to_zarr_with_unit_year, 1,
                                   (1, chunk_size_pixels, chunk_size_pixels), main_logger)
 
         # Checks the zarr coordinates and extent
         fs = fsspec.filesystem("s3", anon=False)
-        mapper = fs.get_mapper(mega_zarr_path)
+        mapper = fs.get_mapper(zarr_path)
         ds = xr.open_zarr(mapper, consolidated=False)
-        main_logger.info(f"mega-zarr coords: {ds.coords}")
+        main_logger.info(f"zarr coords: {ds.coords}")
         main_logger.info(f"y range: {ds.y.values.min()}, {ds.y.values.max()}")
         main_logger.info(f"x range: {ds.x.values.min()}, {ds.x.values.max()}")
-        main_logger.info(f"mega-zarr chunk size (years, y, x): {ds.chunksizes}")
+        main_logger.info(f"zarr chunk size (years, y, x): {ds.chunksizes}")
 
     else:
-        mega_zarr_path = None
+        zarr_path = None
         outputs_to_zarr_with_unit_year = False
 
 
@@ -829,8 +832,8 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
 
     delayed_results_1x1deg = [dask.delayed(create_and_upload_starting_C_densities)
                               (chunk, mangrove_C_ratio_array, download_dict_with_data_types, year,
-                               is_large_run, no_upload, create_zarr, output_dir_list, stage,
-                               model_type, mega_zarr_path, outputs_to_zarr_for_population,
+                               is_large_run, no_upload, create_zarr, output_dir_list, stage, chunk_stats_prefix,
+                               model_type, zarr_path, outputs_to_zarr_for_population,
                                agb_2015_pattern)
                               for chunk in chunk_list]
 
@@ -845,8 +848,9 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
     ### Step 4: Consolidate chunk stats and export
 
     if not no_stats:
+        all_stats = uu.load_all_chunk_stats_from_s3(cn.short_bucket_prefix, chunk_stats_prefix)
+        main_logger.info(f"Loaded stats for {len(all_stats)} chunk-layer records (inputs + outputs) from S3 across all completed chunks")
         model_chunk_stats_path = uu.compile_1x1_chunk_stats(all_stats, chunk_shapefile_uri, stage, no_upload, main_logger)
-        uu.stage_duration(start_time, uu.timestr(), f"{stage} with chunk stats", main_logger)
 
 
 
@@ -893,7 +897,7 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
     #             client=client,
     #             chunk_list=chunk_list,
     #             var=var_name_with_pattern_year,
-    #             zarr_path=mega_zarr_path,
+    #             zarr_path=zarr_path,
     #             interval_end_years=[year]
     #         )
     #         print("chunk_stats_variable_year_zarr:", chunk_stats_variable_year_zarr)
@@ -985,12 +989,13 @@ if __name__ == "__main__":
     parser.add_argument('-mt', '--model_type', default='standard', help='Type of model run (e.g., standard). Not currently using.')
     parser.add_argument('-mpd', '--model_path_description', help='Description of model run (e.g., global, test, X_area). Not currently using.')
     parser.add_argument('-ln', '--log_note', help='Note to include in the log.')
+    parser.add_argument('-rr', '--resume_run_datetime', help='run_datetime of a prior run to resume (skips already-completed chunks)')
 
     parser.add_argument('--run_local', action='store_true', help='Run locally without Dask/Coiled')
     parser.add_argument('--no_stats', action='store_true', help='Do not create the chunk stats spreadsheet')
     parser.add_argument('--no_log', action='store_true', help='Do not create the combined log')
     parser.add_argument('--no_upload', action='store_true', help='Do not save and upload outputs to s3')
-    parser.add_argument('--create_zarr', action='store_true', help='Create and populate global mega-zarr with model outputs')
+    parser.add_argument('--create_zarr', action='store_true', help='Create and populate global zarr with model outputs')
 
     args = parser.parse_args()
 
@@ -1003,6 +1008,7 @@ if __name__ == "__main__":
     model_type = args.model_type
     model_path_description = args.model_path_description
     log_note = args.log_note
+    resume_run_datetime = args.resume_run_datetime
 
     run_local = args.run_local
     no_stats = args.no_stats
@@ -1012,5 +1018,6 @@ if __name__ == "__main__":
 
     main(cluster_name, year, model_type, run_local, no_stats, no_log, no_upload, create_zarr, chunk_shapefile_uri,
          bounding_box=bounding_box, chunk_size=chunk_size,
-         first_chunks=first_chunks,  model_path_description=model_path_description, log_note=log_note)
+         first_chunks=first_chunks,  model_path_description=model_path_description, log_note=log_note,
+         resume_run_datetime=resume_run_datetime)
 

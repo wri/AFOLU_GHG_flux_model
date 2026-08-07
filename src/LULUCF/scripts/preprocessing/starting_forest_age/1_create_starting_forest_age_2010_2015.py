@@ -52,6 +52,10 @@ With about 40 workers, it ran all the way through.
 I don't know what memory per worker is best to use. It doesn't seem to use more than about 3 GB/worker,
 so maybe 8GB/worker is enough next time.
 There's definitely more performance testing I could do with this, but it's not worth it because I run it very infrequently.
+Also, I haven't run this with the code that saves chunk stats to s3 as chunks are processed.
+I am leaving the batch running in this despite having the progressive chunk stats saving because I wrote a note in an early
+run about batching helping clear the zarr cache. If I run this again, I could try it without batching first.
+Batching isn't needed for saving progress anymore now that I have implemented progressive chunk stats.
 
 Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/67dcb99b-edb8-800a-abd8-f718de76043c
 https://chatgpt.com/share/e/67e1b7f6-c0d4-800a-a945-3133de9bf3a0
@@ -95,7 +99,7 @@ def try_open_zarr(url, cache_path, consolidated=True):
     return xr.open_zarr(store, consolidated=consolidated)
 
 
-def calculate_forest_age(bounds, is_large_run, no_upload, output_dir_list, stage):
+def calculate_forest_age(bounds, is_large_run, no_upload, output_dir_list, stage, chunk_stats_prefix):
 
     # Stores the min, mean, and max chunks for inputs and outputs for the chunk
     chunk_stats = []
@@ -199,7 +203,8 @@ def calculate_forest_age(bounds, is_large_run, no_upload, output_dir_list, stage
         chunk_stats.append(uu.calculate_stats(arr_2010, cn.forest_age_2010_pattern, bounds_str, tile_id, 'output_layer'))
         chunk_stats.append(uu.calculate_stats(arr_2015, cn.forest_age_2015_pattern, bounds_str, tile_id, 'output_layer'))
 
-        uu.rename_s3_task_file(stage, bounds, "uploading_", is_large_run, logger_worker)
+        # Persists this chunk's stats to S3 immediately, so a killed/interrupted run doesn't lose already-finished work
+        uu.write_chunk_stats_to_s3(chunk_stats, bounds_str, cn.short_bucket_prefix, chunk_stats_prefix)
 
         if not no_upload:
 
@@ -237,7 +242,7 @@ def calculate_forest_age(bounds, is_large_run, no_upload, output_dir_list, stage
 
 
 def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=False,
-         chunk_shapefile_uri=False, bounding_box=None, chunk_size=None, first_chunks=None, log_note=None):
+         chunk_shapefile_uri=False, bounding_box=None, chunk_size=None, first_chunks=None, log_note=None, resume_run_datetime=None):
 
     ### Step 1: Preparation
 
@@ -273,8 +278,6 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
     # chunk_list = chunk_list[11400:]
     # chunk_list = chunk_list[18000:]
 
-
-
     main_logger.info(f"Chunks to process: {len(chunk_list)}")
 
     # Determines if the output file names for final versions of outputs should be used
@@ -282,6 +285,10 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
     if len(chunk_list) > 20:
         is_large_run = True
         main_logger.info("Running as final model.")
+
+    # Determines if this is a new run or the continuation of a previous run that is being completed
+    # Code for chunk stats as chunks are completed comes from Claude session 'Vegetation model chunk stats checkpointing'
+    chunk_stats_prefix, remaining_chunk_list = uu.determine_if_new_run(chunk_list, resume_run_datetime, stage, main_logger)
 
     # Creates list of output directories specific to the run
     output_dir_list = [cn.forest_age_2010_dir, cn.forest_age_2015_dir]
@@ -306,14 +313,12 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
     # Iterates through the batches
     for i, chunk_batch in enumerate(chunk_batches):
         main_logger.info(f"Processing batch {i + 1}/{len(chunk_batches)} ({len(chunk_batch)} chunks): {uu.timestr()}")
-        main_logger.info("Creating task txts in s3...")
-        uu.create_s3_task_files(stage, chunk_batch)
 
         # Clear cache at the start of each batch, just in case something is left over from the
         # previous batch
         shutil.rmtree(os.path.expanduser("~/zarr_cache"), ignore_errors=True)
 
-        futures = [client.submit(calculate_forest_age, chunk, is_large_run, no_upload, output_dir_list, stage)
+        futures = [client.submit(calculate_forest_age, chunk, is_large_run, no_upload, output_dir_list, stage,  chunk_stats_prefix)
                    for chunk in chunk_batch]
 
         try:
@@ -341,11 +346,10 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
         shutil.rmtree(os.path.expanduser("~/zarr_cache"), ignore_errors=True)
         uu.stage_duration(start_time, uu.timestr(), f"{stage}_batch_{i}", main_logger)
 
-        # Prepares 1x1 deg chunk stats spreadsheet: min, mean, max, and sum for all input and output chunks,
-        # and min and max values across all chunks for all inputs and outputs
-        # only if not suppressed by the --no_stats flag and at least one chunk was successfully (wasn't skipped).
+        # Consolidate chunk stats and export
         if not no_stats:
-            chunk_stats_path = uu.compile_1x1_chunk_stats(all_1x1_stats, chunk_shapefile_uri, stage, no_upload, main_logger)
+            all_stats = uu.load_all_chunk_stats_from_s3(cn.short_bucket_prefix, chunk_stats_prefix)
+            main_logger.info(f"Loaded stats for {len(all_stats)} chunk-layer records (inputs + outputs) from S3 across all completed chunks")
 
         uu.stage_duration(start_time, uu.timestr(), f"{stage} with tile stats", main_logger)
 
@@ -373,6 +377,7 @@ if __name__ == "__main__":
     parser.add_argument('-cshp', '--chunk_shapefile_uri', help='s3 location for shapefile of 1x1 deg chunk footprints')
     parser.add_argument('-f', '--first_chunks', type=int, help='Number of chunks to process from shapefile')
     parser.add_argument('-ln', '--log_note', help='Note to include in the log.')
+    parser.add_argument('-rr', '--resume_run_datetime', help='run_datetime of a prior run to resume (skips already-completed chunks)')
 
     parser.add_argument('--run_local', action='store_true', help='Run locally without Dask/Coiled')
     parser.add_argument('--no_stats', action='store_true', help='Do not create the chunk stats spreadsheet')
@@ -387,6 +392,7 @@ if __name__ == "__main__":
     chunk_shapefile_uri = args.chunk_shapefile_uri
     first_chunks = args.first_chunks
     log_note = args.log_note
+    resume_run_datetime = args.resume_run_datetime
 
     run_local = args.run_local
     no_stats = args.no_stats
@@ -395,4 +401,5 @@ if __name__ == "__main__":
 
     main(cluster_name, run_local, no_stats, no_log, no_upload, chunk_shapefile_uri,
          bounding_box=bounding_box, chunk_size=chunk_size,
-         first_chunks=first_chunks, log_note=log_note)
+         first_chunks=first_chunks, log_note=log_note,
+         resume_run_datetime=resume_run_datetime)

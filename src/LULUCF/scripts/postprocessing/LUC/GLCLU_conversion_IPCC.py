@@ -1437,7 +1437,6 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
 
     ### Part 3: IPCC land use assignment
     lu.print_and_log(f"Assigning IPCC land use in {bounds_str} in {tile_id}: {uu.timestr()}",False, logger_worker)
-    uu.rename_s3_task_file(stage, bounds, "calculating_", is_large_run, logger_worker)
     ipcc_start = time.time()
 
     out_dict = IPCC_land_use(layers)
@@ -1535,9 +1534,6 @@ def calculate_and_upload_IPCC_land_use(bounds, download_dict_with_data_types, is
     chunk_end_time = time.time()
     lu.print_and_log(f"{bounds_str} took {round(chunk_end_time - chunk_start_time)} seconds: {uu.timestr()}", False, logger_worker)
     return_message = f"Success for {bounds_str}: {uu.timestr()}"
-
-    # Removes task tracking file from S3 once task is successful
-    uu.delete_s3_task_file(stage, bounds, is_large_run, logger_worker)
 
     out_dict.clear()
     del out_dict

@@ -116,8 +116,8 @@ def main(cluster_name, veg_input_date, lu_input_date, model_type = "standard", v
     source_zarr_chunk_size = cn.chunk_dims  # 4000x4000
 
     # The zarr paths that are being used
-    veg_zarr_path = zu.create_zarr_path(cn.veg_outputs_path_mega_zarr, source_zarr_chunk_size, "annual", model_type,
-                                         veg_model_version, veg_model_path_description, veg_input_date, main_logger)
+    veg_zarr_path = zu.create_zarr_path(cn.veg_outputs_path_zarr, source_zarr_chunk_size, "annual", model_type,
+                                        veg_model_version, veg_model_path_description, veg_input_date, main_logger)
     main_logger.info(f"Zonal stats from zarr ({source_zarr_chunk_size} pixel chunks): {veg_zarr_path}")
 
     lu_zarr_path = zu.create_zarr_path(cn.IPCC_outputs_path_mega_zarr, source_zarr_chunk_size, "annual", model_type,

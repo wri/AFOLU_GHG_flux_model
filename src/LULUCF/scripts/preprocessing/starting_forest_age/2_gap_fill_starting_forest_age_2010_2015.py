@@ -210,9 +210,6 @@ def gap_fill_starting_forest_age(bounds, input_dir, input_pattern, output_patter
         if not run_local:
             os.remove(output_tmp_path)
 
-        # Removes task tracking file from S3 once task is successful
-        uu.delete_s3_task_file(stage, bounds, is_large_run, logger_worker)
-
     except Exception as e:
 
         return_message = f"Error processing chunk {bounds}: {e}: {uu.timestr()}"

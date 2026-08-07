@@ -323,7 +323,6 @@ def process_smoothed_mangrove_data(bounds, download_dict_with_data_types, area_d
 
     if max_value_all_years == np.uint8(1):
         lu.print_and_log(f"Creating smoothed mangrove data in {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker) # Prints during full runs
-        uu.rename_s3_task_file(stage, bounds, "calculating_", is_final, logger_worker)
 
         # Create smoothed mangrove data
         out_dict_uint8 = smooth_mangrove_data(typed_dict_uint8)
@@ -462,10 +461,6 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
     area_dict_with_data_types = uu.add_file_type_to_dict(first_area_tiles)
     #print(f"download_dict_with_data_types: {download_dict_with_data_types}")
     #print(f"area_dict_with_data_types: {area_dict_with_data_types}")
-
-    # Makes a txt for each task in the list. These are deleted as tasks are completed.
-    main_logger.info("Creating task txts in s3...")
-    uu.create_s3_task_files(stage, chunk_list)
 
 
     ### Step 2: Create 1x1 degree outputs and merges into 10x10 degree output tiles

@@ -499,8 +499,6 @@ def compute_soc_uncertainty(bounds, is_large_run, stage, no_upload,
     chunk_end_time = time.time()
     lu.print_and_log(f"  Total chunk processing for {bounds_str} in {round(chunk_end_time - chunk_start_time)} seconds: {uu.timestr()}",False, logger_worker)
 
-    uu.delete_s3_task_file(stage, bounds, is_large_run, logger_worker)
-
     return_message = f"Success for {bounds_str}: {uu.timestr()}"
     return (return_message,
             sum_U_minus_squared, sum_U_plus_squared,

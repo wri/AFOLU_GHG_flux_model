@@ -167,7 +167,6 @@ def create_LULUCF_outputs(bounds, interval_type, interval_year_diff_list,
     ### Part 2: Creates summative outputs
 
     lu.print_and_log(f"Summing LULUCF outputs in {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker)
-    uu.rename_s3_task_file(stage, bounds, "calculating_", is_large_run, logger_worker)
 
     # Everything in out_dict also needs to be in cn.LULUCF_summative_output_dirs
     # because that has the list of basic output directories which are customized for this run
@@ -293,9 +292,6 @@ def create_LULUCF_outputs(bounds, interval_type, interval_year_diff_list,
                      logger_worker)
 
     return_message = f"Success for {bounds_str}: {uu.timestr()}"
-
-    # Removes task tracking file from S3 once task is successful
-    uu.delete_s3_task_file(stage, bounds, is_large_run, logger_worker)
 
     return return_message, chunk_stats  # Return both the success message and the statistics
 

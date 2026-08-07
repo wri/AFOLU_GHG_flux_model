@@ -529,7 +529,7 @@ def main(cluster_name, model_type,
     # Step 2: Build source zarr paths
     # -----------------------------------------------------------------------
     veg_zarr_path = zu.create_zarr_path(
-        cn.veg_outputs_path_mega_zarr, cn.chunk_dims, 'annual',
+        cn.veg_outputs_path_zarr, cn.chunk_dims, 'annual',
         model_type, cn.veg_model_version_underscore, veg_model_path_description,
         veg_date, main_logger)
 

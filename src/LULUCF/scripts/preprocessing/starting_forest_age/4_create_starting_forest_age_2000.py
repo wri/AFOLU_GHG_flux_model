@@ -357,10 +357,6 @@ def main(cluster_name, run_local=False, no_stats=False, no_log=False, no_upload=
     main_logger.info(f"Creating tasks and starting processing: {uu.timestr()}")
     main_logger.info("Workers' logs to be appended after main function log"+ "\n")
 
-    # Makes a txt for each task in the list. These are deleted as tasks are completed.
-    main_logger.info("Creating task txts in s3...")
-    uu.create_s3_task_files(stage, chunk_list)
-
     delayed_results_1x1_deg = [dask.delayed(create_starting_forest_age_2000)
                        (chunk, download_dict_with_data_types, year, chunk_size_pixels, is_large_run, no_upload, output_dir_list, stage)
                        for chunk in chunk_list]

@@ -370,9 +370,6 @@ def create_soil_C_density_and_change(bounds, is_large_run, stage, no_upload, cre
 
     return_message = f"Success for {bounds_str}: {uu.timestr()}"
 
-    # Removes task tracking file from S3 once task is successful
-    uu.delete_s3_task_file(stage, bounds, is_large_run, logger_worker)
-
     # To track peak memory usage
     # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6949a74e-1388-832d-8f8e-5e9bf084ecb8
     peak_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
