@@ -1525,8 +1525,11 @@ def count_successful_chunks(chunk_list, is_final, main_logger, results):
 # Also joins ISO from GADM to each entry.
 # Stats calculations adapted from https://chatgpt.com/share/e/5599b6b0-1aaa-4d54-98d3-c720a436dd9a
 # Joining iso adapted from https://chatgpt.com/share/e/6744de08-6b64-800a-b8c4-6a20833f7e3a
-# def calculate_stats(array_per_ha, name, bounds_str, tile_id, in_out, fishnet_iso_df, array_per_pixel=None):
-def calculate_stats(array_per_ha, name, bounds_str, tile_id, in_out, array_per_pixel=None):
+# NoData count from Claude session 'NoData handling for chunk stats and fluxes'
+# The approach for counting pixels is that float layers are using np.NaN for NoData (default argument),
+# but int layers need NoData specified in the calling function (e.g., 255).
+# If a NoData value is supplied, it is used below; otherwise (hopefully only for floats), NaN is used for NoData.
+def calculate_stats(array_per_ha, name, bounds_str, tile_id, in_out, array_per_pixel=None, nodata_val=np.nan):
 
     # Sums the per pixel totals if relevant
     if in_out == 'output_layer' and array_per_pixel is not None:
@@ -1564,8 +1567,11 @@ def calculate_stats(array_per_ha, name, bounds_str, tile_id, in_out, array_per_p
             min_val = float(np.nanmin(array_per_ha))
             mean_val = float(np.nanmean(array_per_ha))
             max_val = float(np.nanmax(array_per_ha))
-            # count_val = np.count_nonzero(~np.isnan(array_per_ha) & (array_per_ha != 0))  # Counts non-0 and non-NaN only
-            count_val = int(np.count_nonzero(~np.isnan(array_per_ha)))  # Counts non-NaN only
+
+            # Counts non-NoData pixels. NaN is always excluded (relevant for float layers).
+            # For integer-dtype layers, NaN doesn't exist, so np.isnan alone silently counts every
+            # pixel as valid -- nodata_val must be passed in explicitly for those layers to count correctly.
+            count_val = count_pixels(array_per_ha, nodata_val)
 
         return {
             'chunk_id': bounds_str,
@@ -2262,10 +2268,7 @@ def write_single_geotiff_to_s3(var, year, tile_id, data, no_data_val, transform,
         "BIGTIFF": "YES",  # For geotifs >4 GB
     }
 
-    # Counts non-zero and non-NaN pixels for comparison with 1x1 deg geotifs
-    # valid_pixel_count = int(np.count_nonzero(~np.isnan(data) & (data != 0)))
-    valid_pixel_count = int(np.count_nonzero(~np.isnan(data)))
-    # print("pixel count:", valid_pixel_count)
+    valid_pixel_count = count_pixels(data, no_data_val)
 
     # Writes to temporary file on disk
     with tempfile.NamedTemporaryFile(suffix=".tif", delete=True) as tmpfile:
@@ -2291,6 +2294,23 @@ def write_single_geotiff_to_s3(var, year, tile_id, data, no_data_val, transform,
     upload_end_time = time.time()
     lu.print_and_log(f"  Upload completed for {var} for year {year} for {tile_id} to {s3_path} in {round(upload_end_time-upload_start_time)} seconds: {timestr()}", False, logger_worker)
 
+    return valid_pixel_count
+
+# Counts pixels in specified array (1x1 deg or 10x10 deg)
+# Used for calculate_stats for chunk stats and in 10x10 tile pixel counting
+# NaN is always excluded; no_data_val is also excluded when
+# it's a real, non-NaN sentinel (e.g. 0 for this uint8 mask), so integer layers count correctly.
+# Per Claude session 'NoData handling for chunk stats and fluxes'
+def count_pixels(data, no_data_val):
+
+    # Masks float layers to non-NoData; no further masking needed later. Doesn't actually mask int layers; that comes below
+    not_nan_mask = ~np.isnan(data) if np.issubdtype(data.dtype, np.floating) else np.ones(data.shape, dtype=bool)
+
+    # Masks layer if function provided with NoData value (e.g., 255), which should be the case for int layers
+    if no_data_val is not None and not (isinstance(no_data_val, float) and np.isnan(no_data_val)):
+        valid_pixel_count = int(np.count_nonzero(not_nan_mask & (data != no_data_val)))  # Counts pixels for layers with NoData value supplied.
+    else:  # Counts all the pixels in the non-NoData mask. This should only be used on float layers.
+        valid_pixel_count = int(np.count_nonzero(not_nan_mask))
     return valid_pixel_count
 
 

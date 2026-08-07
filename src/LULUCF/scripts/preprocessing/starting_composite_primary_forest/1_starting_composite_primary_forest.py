@@ -154,7 +154,8 @@ def create_and_upload_starting_composite_primary_forest(bounds, download_dict_wi
     # Calculates stats for the output layers from create_starting_C_densities as a dictionary with chunk attributes
     for key, array_per_ha in out_dict_all_dtypes.items():
 
-        chunk_stats.append(uu.calculate_stats(array_per_ha, key, bounds_str, tile_id, 'output_layer', None))
+        # Ignores 0 when counting pixels; in this case, only counts primary forest (1)
+        chunk_stats.append(uu.calculate_stats(array_per_ha, key, bounds_str, tile_id, 'output_layer', None, 0))
 
     # Persists this chunk's stats to S3 immediately, so a killed/interrupted run doesn't lose already-finished work
     uu.write_chunk_stats_to_s3(chunk_stats, bounds_str, cn.short_bucket_prefix, chunk_stats_prefix)
@@ -432,7 +433,8 @@ def main(cluster_name,
                 chunk_list=chunk_list,
                 var=var_name_with_pattern_year,
                 zarr_path=zarr_path,
-                output_years=[year]
+                output_years=[year],
+                nodata_val=0  # Ignores 0 when counting pixels; in this case, only counts primary forest (1)
             )
 
 

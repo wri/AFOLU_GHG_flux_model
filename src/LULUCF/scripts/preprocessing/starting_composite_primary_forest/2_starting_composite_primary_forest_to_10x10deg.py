@@ -40,6 +40,7 @@ import argparse
 import pandas as pd
 import os
 from dask.distributed import print
+from distributed import KilledWorker
 
 # Project imports
 from src.utilities import constants_and_names as cn
@@ -168,7 +169,7 @@ def main(cluster_name, run_local, no_log, no_upload, model_chunk_stats_table_nam
 
         future = client.submit(zu.create_10x10_deg_geotif_from_zarr,
                                var_name, 0, tile_id, zarr_path, output_base,
-                               cn.veg_model_version_underscore, model_type, model_path_description, no_upload, True, 0)
+                               cn.veg_model_version_underscore, model_type, model_path_description, no_upload, use_start_year=True, no_data_val=0)
         futures.append(future)
 
     main_logger.info(f"There are {len(futures)} tiles to aggregate")
@@ -176,7 +177,16 @@ def main(cluster_name, run_local, no_log, no_upload, model_chunk_stats_table_nam
     # Results is a list of tuples, where each tuple is the per-ha and per-pixel chunk stats, each of which is a dictionary
     # for this variable-tile. per-pixel count_value is always None here because this variable is a uint8 mask,
     # not a float32 numeric output (see create_10x10_deg_geotif_from_zarr).
-    results = client.gather(futures)
+    try:
+        results = client.gather(futures)
+    except KilledWorker as e:
+        main_logger.error(
+            f"FAILED: A task was killed after repeated worker deaths — almost certainly out of memory. "
+            f"Check the peak memory logs above for the affected tile. "
+            f"Consider re-running with larger worker memory. "
+            f"Dask error: {e}"
+        )
+        raise
 
     uu.stage_duration(start_time, uu.timestr(), stage, main_logger)
 
@@ -212,7 +222,8 @@ def main(cluster_name, run_local, no_log, no_upload, model_chunk_stats_table_nam
 
     # Converts the pixel counts for the 10x10s into a dataframe
     counts_per_ha_10x10_df = pd.DataFrame(counts_per_ha_10x10_stats_list)
-    print(counts_per_ha_10x10_df['layer_name'])
+    # Drops _2015 from tile_name in the 10x10 output; the 1x1 chunk stats doesn't include _2015 in the tile name
+    counts_per_ha_10x10_df['tile_name'] = counts_per_ha_10x10_df['tile_name'].str.replace(f'_{year}', '', regex=False)
 
     # Merges the pixel counts for the 10x10 tiles against the pixel counts for the 1x1s
     merged_10x10_counts_per_ha_df = model_10x10_counts_df.merge(counts_per_ha_10x10_df, on='tile_name', how='left')

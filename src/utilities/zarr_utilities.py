@@ -540,7 +540,7 @@ def remove_FillValue(zarr_path):
 
 # Calculates regular chunk stats in 1x1 deg chunk of dataset-year slice of zarr.
 # Chunk stats are calculated using the same function as used on numpy array outputs from models.
-def zarr_1x1_deg_stats(bounds, var_name, zarr_path, interval_end_years):
+def zarr_1x1_deg_stats(bounds, var_name, zarr_path, interval_end_years, nodata_val=np.nan):
 
     bounds_str = uu.boundstr(bounds)  # String form of chunk bounds, from e.g., [8, -1, 9, 0] to 8_-1_9_0
     tile_id = uu.xy_to_tile_id(bounds[0], bounds[3])  # tile_id in YYN/S_XXXE/W
@@ -579,6 +579,13 @@ def zarr_1x1_deg_stats(bounds, var_name, zarr_path, interval_end_years):
     # print(f"Getting array for {bounds_str}")
     zarr_chunk_array = zarr_group[pattern_with_units][:, lat0:lat1, lon0:lon1]
 
+    # Float zarrs always use NaN as NoData in this codebase (matches the fill_value the zarr
+    # was created with -- see initialize_global_zarr). Overriding here means callers don't need
+    # to know or track that themselves for float layers.
+    # Integer zarrs have no universal "NaN" equivalent, so they keep whatever nodata_val the caller passed in.
+    if np.issubdtype(zarr_chunk_array.dtype, np.floating):
+        nodata_val = np.nan
+
     for year_idx, year in enumerate(interval_end_years):
 
         zarr_chunk_array_year = zarr_chunk_array[year_idx]
@@ -589,7 +596,7 @@ def zarr_1x1_deg_stats(bounds, var_name, zarr_path, interval_end_years):
         # print("pattern_with_units_years:", pattern_with_units_years)
 
         # print(f"Calculating stats for {bounds_str}")
-        zarr_stats_raw_year = uu.calculate_stats(zarr_chunk_array_year, pattern_with_units_years, bounds_str, tile_id, 'zarr_stats')
+        zarr_stats_raw_year = uu.calculate_stats(zarr_chunk_array_year, pattern_with_units_years, bounds_str, tile_id, 'zarr_stats', None, nodata_val)
         # print(zarr_stats_raw_year)
 
         zarr_stats_raw_all_years.append(zarr_stats_raw_year)
@@ -604,14 +611,14 @@ def zarr_1x1_deg_stats(bounds, var_name, zarr_path, interval_end_years):
 
 
 # Parallelizes stats calculation in 1x1 deg chunks in zarr for a given dataset-year
-def run_parallel_stats(client, chunk_list, var, zarr_path, output_years):
+def run_parallel_stats(client, chunk_list, var, zarr_path, output_years, nodata_val=np.nan):
 
     futures = []
 
     # Iterates through all chunks in the list for a given dataset-year
     for chunk in chunk_list:
         future = client.submit(zarr_1x1_deg_stats,
-                               chunk, var, zarr_path, output_years, retries=2)
+                               chunk, var, zarr_path, output_years, nodata_val, retries=2)
         futures.append(future)
 
     # List of dictionaries, where each dictionary is stats for a single chunk
