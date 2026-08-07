@@ -898,7 +898,7 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
     #             chunk_list=chunk_list,
     #             var=var_name_with_pattern_year,
     #             zarr_path=zarr_path,
-    #             interval_end_years=[year]
+    #             output_years=[year]
     #         )
     #         print("chunk_stats_variable_year_zarr:", chunk_stats_variable_year_zarr)
     #

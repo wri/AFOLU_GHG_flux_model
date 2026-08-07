@@ -543,8 +543,8 @@ def main(cluster_name, run_date, veg_input_date, organic_soil_input_date, minera
     #                 client=client,
     #                 chunk_list=chunk_list,
     #                 var=var_name,
-    #                 year_idx=year_idx,
     #                 zarr_path=raw_mega_zarr_path,
+    #                 output_years=year_idx,
     #             )
     #             year_end_time = time.time()
     #             main_logger.info(

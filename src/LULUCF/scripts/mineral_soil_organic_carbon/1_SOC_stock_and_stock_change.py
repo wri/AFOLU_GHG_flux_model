@@ -665,7 +665,7 @@ def main(cluster_name, model_type,
                 chunk_list=chunk_list,
                 var=test_var_name,
                 zarr_path=zarr_path,
-                interval_end_years=cn.SOC_density_intervals
+                output_years=cn.SOC_density_intervals
             )
 
             # After all zarr chunk stats is done for the dataset-year combination,

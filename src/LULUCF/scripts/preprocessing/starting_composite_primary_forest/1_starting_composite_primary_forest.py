@@ -393,9 +393,6 @@ def main(cluster_name,
 
 
     ### Step 5: Compare model output chunk stats to zarr chunk stats for each variable (only if chunk stats and zarr created)
-    ### Not running zarr chunk stats comparison. I was having trouble getting it to work because of problems with
-    ### variable names and years, and I don't think it's worth fiddling with more.
-    ### Leaving the code in here just in case I do want to revisit it, but for now I'm not worried about zarr population.
 
     # Prepares chunk stats spreadsheet: min, mean, max, and sum for all input and output chunks,
     # and min and max values across all chunks for all inputs and outputs
@@ -435,7 +432,7 @@ def main(cluster_name,
                 chunk_list=chunk_list,
                 var=var_name_with_pattern_year,
                 zarr_path=zarr_path,
-                interval_end_years=[year]
+                output_years=[year]
             )
 
 
