@@ -121,6 +121,8 @@ def initialize_global_zarr(store_url, dataset_keys, n_years, chunk_size, main_lo
             dtype = 'uint32'
         elif cn.composite_primary_forest in key:
             dtype = 'uint8'
+        elif cn.starting_composite_primary_forest_pattern in key:
+            dtype = 'uint8'
         elif cn.forest_age_output_pattern in key:
             dtype = 'uint16'
         else:

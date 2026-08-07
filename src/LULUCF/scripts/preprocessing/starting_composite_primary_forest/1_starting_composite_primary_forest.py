@@ -1,15 +1,5 @@
 """
 Maps composite primary forest in 2015 (model start).
-Uses the same code to create 2015 composite primary forest as 1_calculate_veg_fluxes.py does.
-This is currently used only as a contextual layer for zonal stats (via zarr), not as an input to the vegetation model.
-The vegetation model generates a 2015 composite primary forest map at the top of the numba function and
-then iterates on that.
-The vegetation model creates geotifs of composite primary forest in 2015 but doesn't put them in the vegetation mega-zarr
-because that would be an extra year of data for one variable in the zarr, which throws off the time dimension.
-This script is essentially just to make a composite primary forest zarr for 2015 to use for zonal stats and anything
-else a zarr is needed for.
-
-In future vegetation model runs, this could be used as an input to the vegetation model.
 
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
@@ -17,24 +7,24 @@ Local test (Dask part does not work because of client.submit()):
 python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -bb 10 49.75 10.25 50 -cs 0.25 --run_local --no_upload
 
 Coiled small tests:
-python -m src.utilities.create_cluster -n 1 -t 1 -m 4 -cn vegetation_preprocessing
-python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -cn vegetation_preprocessing -bb 116.25 -2.25 116.5 -2 -cs 0.25
+python -m src.utilities.create_cluster -n 1 -t 1 -m 4 -cn starting_composite_primary_forest
+python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -cn starting_composite_primary_forest -bb 116.25 -2.25 116.5 -2 -cs 0.25
 
 Coiled small tests:
-python -m src.utilities.create_cluster -n 1 -t 1 -m 4 -cn vegetation_preprocessing
-python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -cn vegetation_preprocessing -bb -64 -22 -63 -21 -cs 1 --create_zarr
+python -m src.utilities.create_cluster -n 1 -t 1 -m 4 -cn starting_composite_primary_forest
+python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -cn starting_composite_primary_forest -bb -64 -22 -63 -21 -cs 1 --create_zarr
 
 Coiled Cerrado test (174 features):
-python -m src.utilities.create_cluster -n 20 -t 1 -m 4 -cn vegetation_preprocessing
-python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -cn vegetation_preprocessing -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp --create_zarr
+python -m src.utilities.create_cluster -n 20 -t 1 -m 4 -cn starting_composite_primary_forest
+python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -cn starting_composite_primary_forest -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp --create_zarr
 
 Coiled large shapefile test (1884 features):
-python -m src.utilities.create_cluster -n 100 -t 1 -m 4 -cn vegetation_preprocessing
-python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -cn vegetation_preprocessing -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp --create_zarr
+python -m src.utilities.create_cluster -n 100 -t 1 -m 4 -cn starting_composite_primary_forest
+python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -cn starting_composite_primary_forest -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp --create_zarr
 
 Full run:
-python -m src.utilities.create_cluster -n 200 -t 1 -m 4 -cn vegetation_preprocessing
-python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -cn vegetation_preprocessing -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Creating starting composite primary forest for 2015 for model v1.0.5 (2016-2024)."
+python -m src.utilities.create_cluster -n 200 -t 1 -m 4 -cn starting_composite_primary_forest
+python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -cn starting_composite_primary_forest -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Creating starting composite primary forest for 2015 for model v1.0.5 (2016-2024)."
 """
 
 import argparse
@@ -47,6 +37,10 @@ import numpy as np
 import fsspec
 import xarray as xr
 import resource
+import json
+import re
+import boto3
+from datetime import datetime
 
 from concurrent.futures import ThreadPoolExecutor
 from dask.distributed import print
@@ -58,11 +52,77 @@ from src.utilities import universal_utilities as uu
 from src.utilities import zarr_utilities as zu
 from src.utilities import resize_cluster
 
+# Builds the S3 prefix that groups this run's per-chunk JSONs: descriptor/run_datetime
+def get_chunk_stats_prefix(descriptor, run_datetime):
+    return f"{cn.s3_chunk_stats_path}per_chunk_json/{descriptor}/{run_datetime}/"
+
+# Lists chunk IDs that already have a stats JSON written under this run's prefix
+def list_completed_chunk_ids(bucket, prefix):
+
+    s3_client = boto3.client("s3")
+    paginator = s3_client.get_paginator("list_objects_v2")
+    pattern = re.compile(r"^chunk_(.+)\.json$")
+    completed = set()
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            if obj["Size"] == 0:  # Ignores objects that have no size (no data in them)-- they aren't valid and should be repeated
+                continue
+            filename = obj["Key"].rsplit("/", 1)[-1]  # just "chunk_-63_-24_-62_-23.json"
+            m = pattern.match(filename)
+            if m:
+                completed.add(m.group(1))
+    return completed
+
+# Writes one chunk's stats (list of dicts, one per input/output layer) to its own S3 JSON
+def write_chunk_stats_to_s3(chunk_stats, chunk_id, bucket, prefix):
+    s3_client = boto3.client("s3")
+    key = f"{prefix}chunk_{chunk_id}.json"
+    s3_client.put_object(Bucket=bucket, Key=key, Body=json.dumps(chunk_stats).encode("utf-8"))
+
+# Reads every chunk's JSON back from this run's prefix and flattens into one list,
+# so the final aggregate reflects every chunk ever completed under this run_datetime,
+# not just the chunks that ran in this particular invocation
+def load_all_chunk_stats_from_s3(bucket, prefix):
+    s3_client = boto3.client("s3")
+    paginator = s3_client.get_paginator("list_objects_v2")
+    all_stats = []
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            if obj["Size"] == 0:
+                continue
+            response = s3_client.get_object(Bucket=bucket, Key=obj["Key"])
+            all_stats.extend(json.loads(response["Body"].read()))
+    return all_stats
+
+
+# Determines whether this is a new run or a resumption of a run,
+# and, if the latter, how many chunks are completed and how many remain
+def determine_if_new_run(chunk_list, resume_run_datetime, stage, main_logger):
+    # Resolves which run this is (new vs. resumed) and where its chunk-stat JSONs live/go
+    if resume_run_datetime:
+        run_datetime = resume_run_datetime
+        main_logger.info(f"Resuming run: {run_datetime}")
+    else:
+        run_datetime = datetime.now().strftime('%Y%m%d_%H%M%S')
+        main_logger.info(f"Starting new run: {run_datetime}")
+
+    chunk_stats_prefix = get_chunk_stats_prefix(stage, run_datetime)
+    main_logger.info(f"Chunk stats S3 prefix: s3://{cn.short_bucket_prefix}/{chunk_stats_prefix}")
+
+    completed_chunk_ids = list_completed_chunk_ids(cn.short_bucket_prefix, chunk_stats_prefix)
+    remaining_chunk_list = [c for c in chunk_list if uu.boundstr(c) not in completed_chunk_ids]
+
+    main_logger.info(f"Already completed under this run_datetime ({run_datetime}): {len(completed_chunk_ids)}")
+    main_logger.info(f"Remaining to process in {run_datetime}: {len(remaining_chunk_list)}")
+
+    return chunk_stats_prefix, remaining_chunk_list
+
 
 # All steps for creating starting composite primary forest: download chunks, calculate, upload to s3
 def create_and_upload_starting_composite_primary_forest(bounds, download_dict_with_data_types, year,
                                                         is_large_run, no_upload, create_zarr,
-                                                        output_folders, stage, zarr_path=None, outputs_to_zarr=None):
+                                                        output_folders, stage, chunk_stats_prefix,
+                                                        zarr_path=None, outputs_to_zarr=None):
 
     # Stores the min, mean, and max chunks for inputs and outputs for the chunk
     chunk_stats = []
@@ -168,6 +228,9 @@ def create_and_upload_starting_composite_primary_forest(bounds, download_dict_wi
 
         chunk_stats.append(uu.calculate_stats(array_per_ha, key, bounds_str, tile_id, 'output_layer', None))
 
+    # Persists this chunk's stats to S3 immediately, so a killed/interrupted run doesn't lose already-finished work
+    write_chunk_stats_to_s3(chunk_stats, bounds_str, cn.short_bucket_prefix, chunk_stats_prefix)
+
 
     ### Part 6: Saves numpy arrays as rasters and uploads to s3
 
@@ -242,7 +305,8 @@ def create_and_upload_starting_composite_primary_forest(bounds, download_dict_wi
 
 def main(cluster_name,
          run_local=False, no_stats=False, no_log=False, no_upload=False, create_zarr=False,
-         chunk_shapefile_uri=False, bounding_box=None, chunk_size_deg=None, first_chunks=None, log_note=None):
+         chunk_shapefile_uri=False, bounding_box=None, chunk_size_deg=None, first_chunks=None,
+         log_note=None, resume_run_datetime=None):
 
     ### Step 1: Preparation
 
@@ -277,10 +341,12 @@ def main(cluster_name,
     fishnet_iso_df = uu.fishnet_with_GADM_iso(chunk_shapefile_uri)
 
     # Creates the list of chunks to process, depending on the approach: shapefile attribute table or a bounding box
-    chunk_list, chunk_size_pixels = uu.create_chunk_list(bounding_box, chunk_shapefile_uri, chunk_size_deg, first_chunks, fishnet_iso_df, main_logger)
+    chunk_list, chunk_size_pixels = uu.create_chunk_list(bounding_box, chunk_shapefile_uri, chunk_size_deg,
+                                                         first_chunks, fishnet_iso_df, main_logger)
     main_logger.info(f"Chunks to process: {len(chunk_list)}")
 
-    # Determines if the output file names for final versions of outputs should be used
+    # Determines if the output file names for final versions of outputs should be used.
+    # large_run is not affected by the remaining chunks to run; it is based on the size of the full chunk list.
     is_large_run = False
     # is_large_run = True  # large-scale testing
     if len(chunk_list) > 20:
@@ -291,6 +357,8 @@ def main(cluster_name,
     if is_large_run:
         create_zarr = True
     main_logger.info(f"Create and populate global mega-zarr: {create_zarr}")
+
+    chunk_stats_prefix, remaining_chunk_list = determine_if_new_run(chunk_list, resume_run_datetime, stage, main_logger)
 
     # This is just a placeholder tile_id that is used to obtain the datatype of each input tile set.
     # It is overwritten when chunks are assigned and analyzed.
@@ -380,14 +448,13 @@ def main(cluster_name,
 
     delayed_results_1x1deg = [dask.delayed(create_and_upload_starting_composite_primary_forest)
                        (chunk, download_dict_with_data_types, year,
-                        is_large_run, no_upload, create_zarr, output_dir_list, stage,
+                        is_large_run, no_upload, create_zarr, output_dir_list, stage, chunk_stats_prefix,
                         zarr_path, outputs_to_zarr)
-                       for chunk in chunk_list]
+                       for chunk in remaining_chunk_list]
 
-    # Runs analysis and gathers results
     results_1x1deg = dask.compute(*delayed_results_1x1deg)
 
-    success_count, all_stats = uu.count_successful_chunks(chunk_list, is_large_run, main_logger, results_1x1deg)
+    success_count, all_stats_this_run = uu.count_successful_chunks(remaining_chunk_list, is_large_run, main_logger, results_1x1deg)
 
     uu.stage_duration(start_time, uu.timestr(), stage, main_logger)
 
@@ -395,8 +462,9 @@ def main(cluster_name,
     ### Step 4: Consolidate chunk stats and export
 
     if not no_stats:
+        all_stats = load_all_chunk_stats_from_s3(cn.short_bucket_prefix, chunk_stats_prefix)
+        main_logger.info(f"Loaded stats for {len(all_stats)} chunk-layer records (inputs + outputs) from S3 across all completed chunks")
         model_chunk_stats_path = uu.compile_1x1_chunk_stats(all_stats, chunk_shapefile_uri, stage, no_upload, main_logger)
-        uu.stage_duration(start_time, uu.timestr(), f"{stage} with chunk stats", main_logger)
 
 
     ### Step 5: Compare model output chunk stats to zarr chunk stats for each variable (only if chunk stats and zarr created)
@@ -444,6 +512,8 @@ def main(cluster_name,
                 zarr_path=zarr_path,
                 interval_end_years=[year]
             )
+
+
             # print("chunk_stats_variable_year_zarr:", chunk_stats_variable_year_zarr)
 
             # After all zarr chunk stats is done for the dataset-year combination,
@@ -523,7 +593,6 @@ def main(cluster_name,
 
 
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Calculate vegetation fluxes.")
     parser.add_argument('-cn', '--cluster_name', help='Coiled cluster name')
@@ -532,6 +601,7 @@ if __name__ == "__main__":
     parser.add_argument('-cshp', '--chunk_shapefile_uri', help='s3 location for shapefile of 1x1 deg chunk footprints')
     parser.add_argument('-f', '--first_chunks', type=int, help='Number of chunks to process from shapefile')
     parser.add_argument('-ln', '--log_note', help='Note to include in the log.')
+    parser.add_argument('-rr', '--resume_run_datetime', help='run_datetime of a prior run to resume (skips already-completed chunks)')
 
     parser.add_argument('--run_local', action='store_true', help='Run locally without Dask/Coiled')
     parser.add_argument('--no_stats', action='store_true', help='Do not create the chunk stats spreadsheet')
@@ -547,6 +617,7 @@ if __name__ == "__main__":
     chunk_shapefile_uri = args.chunk_shapefile_uri
     first_chunks = args.first_chunks
     log_note = args.log_note
+    resume_run_datetime = args.resume_run_datetime
 
     run_local = args.run_local
     no_stats = args.no_stats
@@ -556,4 +627,5 @@ if __name__ == "__main__":
 
     # Create the cluster with command line arguments
     main(cluster_name, run_local, no_stats, no_log, no_upload, create_zarr, chunk_shapefile_uri,
-         bounding_box=bounding_box, chunk_size_deg=chunk_size_deg, first_chunks=first_chunks, log_note=log_note)
+         bounding_box=bounding_box, chunk_size_deg=chunk_size_deg, first_chunks=first_chunks, log_note=log_note,
+         resume_run_datetime=resume_run_datetime)

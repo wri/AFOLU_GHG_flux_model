@@ -578,7 +578,7 @@ forest_age_output_pattern = "forest_age_at_end_of_interval"
 starting_composite_primary_forest_run_date = '20260806'
 starting_composite_primary_forest_pattern = "starting_composite_primary_forest"
 starting_composite_primary_forest_dir = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/{starting_composite_primary_forest_pattern}/2015/presence/{chunk_dims}_pixels/{starting_composite_primary_forest_run_date}/"
-starting_composite_primary_forest_zarr_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/{starting_composite_primary_forest_pattern}/2015/zarr/{chunk_dims}_pixels/{starting_composite_primary_forest_run_date}/{starting_composite_primary_forest_pattern}.zarr"
+starting_composite_primary_forest_zarr_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/{starting_composite_primary_forest_pattern}/2015/presence/zarr/{chunk_dims}_pixels/{starting_composite_primary_forest_run_date}/{starting_composite_primary_forest_pattern}.zarr"
 
 # GEE script that the global rasters are from is https://code.earthengine.google.com/805896f7a511c13eb873c4804a683abc (each file takes about 15 minutes to export to Google Drive).
 # NOTE: GEE export function splits the exported global raster into two pieces. I merged the two pieces into a single file in ArcPro,
