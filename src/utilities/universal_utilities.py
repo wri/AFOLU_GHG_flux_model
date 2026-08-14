@@ -1842,7 +1842,7 @@ def compile_1x1_chunk_stats(all_1x1_stats, chunk_shapefile_uri, stage, no_upload
         out_spreadsheet = f'{stage}_1x1_chunk_statistics_{timestr()}.xlsx'
         local_spreadsheet = f"{cn.local_chunk_stats_path}{out_spreadsheet}"
 
-        main_logger.info(f"Writing tile stats to spreadsheet: {timestr()}")
+        main_logger.info(f"Writing tile stats to spreadsheet at {local_spreadsheet}: {timestr()}")
         try:
             with pd.ExcelWriter(local_spreadsheet) as writer:
 

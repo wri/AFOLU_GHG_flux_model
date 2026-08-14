@@ -30,6 +30,11 @@ To create a vrt of the 10x10 deg outputs, do:
 aws s3 ls s3://gfw2-data/climate/ESA_CCI_biomass/v5_01/2015/year_2015_derived_carbon_pools/litter_C_density_MgC_ha/40000_pixels/ --recursive | grep .tif$ | awk '{print "/vsis3/gfw2-data/"$4}' > litter_C_2015_file_list.txt
 gdalbuildvrt -input_file_list litter_C_2015_file_list.txt deadwood_C2015_mosaic.vrt
 
+NoData is np.nan, but that's only used for GLAD ocean and NoData codes.
+All other GLAD classes (including inland water and built-up) get density of 0 if no carbon detected.
+This should help differentiate areas that couldn't possibly have carbon (ocean) from areas that could
+conceivably have carbon (any land and inland water).
+
 TODO Correct starting BGC, deadwood C and litter C for oil palm. Those are currently using natural forest ratios but should use oil palm specifically (Mokany et al for BGC, 0 for deadwood and litter). Make sure veg flux calcs are consistent with this.
 TODO: Step 5, writing outputs to pre-existing global zarr, didnt work for Ctrees. The zarr is initialized with names like carbon_density__AGC__raw__MgC_ha_2015 but populate_zarr() expects core patterns like carbon_density__AGC__raw__MgC because it calls add_units_year_to_pattern() internally before looking up zarr arrays.
 """
@@ -334,12 +339,18 @@ def create_starting_C_densities(in_dict_uint8, in_dict_uint16, in_dict_int16,
                 deadwood_c_LC_masked_out_cell = 0
                 litter_c_LC_masked_out_cell = 0
                 LC_masked_state = 9
-            else:  # Anything else
+            elif LC_composite_cell not in [cn.GLAD_NoData, cn.GLAD_ocean]:  # Anything that's not GLAD NoData code or ocean, which should be the rest of land, plus inland water
                 agc_LC_masked_out_cell = 0
                 bgc_LC_masked_out_cell = 0
                 deadwood_c_LC_masked_out_cell = 0
                 litter_c_LC_masked_out_cell = 0
                 LC_masked_state = 10
+            else:  # GLAD NoData code
+                agc_LC_masked_out_cell = np.nan
+                bgc_LC_masked_out_cell = np.nan
+                deadwood_c_LC_masked_out_cell = np.nan
+                litter_c_LC_masked_out_cell = np.nan
+                LC_masked_state = 11
 
             # Assigns cell outputs to blocks
             agc_raw_out_block[row, col] = agc_raw_out_cell
@@ -524,7 +535,7 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
         # Converts per hectare values to per pixel values for the output numpy array
         output_per_pixel = array_per_ha * pixel_area_chunk * cn.m2_to_ha
 
-        chunk_stats.append(uu.calculate_stats(array_per_ha, key, bounds_str, tile_id, 'output_layer', output_per_pixel))
+        chunk_stats.append(uu.calculate_stats(array_per_ha, key, bounds_str, tile_id, 'output_layer', output_per_pixel, 0))
     # print(chunk_stats)
 
     # Persists this chunk's stats to S3 immediately, so a killed/interrupted run doesn't lose already-finished work
@@ -536,8 +547,15 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
     # Only saves arrays to geotifs and uploads them to s3 if enabled
     if not no_upload:
 
-        out_no_data_val = 0  # NoData value for output raster (optional)
         upload_start_time = time.time()
+
+        # Splits outputs by dtype for upload. The float density layers now use NaN as their real NoData
+        # sentinel (0 is legitimate "land, no carbon" data -- see the LC_masked_state 10 vs. 11 branches),
+        # while the uint8 LC_masked_state layer has no NoData concept of its own: every pixel gets a real
+        # 1-11 code, and state 11 already flags true GLAD NoData in-band, so it needs no NoData tag at all.
+        # Per Claude session 'NoData handling for chunk stats and fluxes'
+        float_outputs = {}
+        uint8_outputs = {}
 
         # Adds metadata used for uploading outputs to s3 to the dictionary
         for key, value in out_dict_all_dtypes.items():
@@ -563,11 +581,19 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
             s3_path_without_bucket = f"{matched_output_s3_folder[cn.full_bucket_prefix_length:]}"
 
             # Dictionary with metadata for each array
-            out_dict_all_dtypes[key] = [value, data_type, out_pattern, year_range, s3_path_without_bucket]
+            metadata = [value, data_type, out_pattern, year_range, s3_path_without_bucket]
 
-        # Converts output numpy arrays to local rasters and puts them in a list of files to upload in parallel
+            if cn.starting_C_pools_LC_masked_source_flag_pattern in key:
+                uint8_outputs[key] = metadata
+            else:
+                float_outputs[key] = metadata
+
+        # Converts output numpy arrays to local rasters and puts them in a list of files to upload in parallel.
+        # Different NoData values for float vs. int
         upload_tasks = uu.save_and_upload_small_raster_set(bounds, chunk_length_pixels, tile_id, bounds_str,
-                                                           out_dict_all_dtypes, is_large_run, logger_worker, out_no_data_val)
+                                                           float_outputs, is_large_run, logger_worker, np.nan)
+        upload_tasks += uu.save_and_upload_small_raster_set(bounds, chunk_length_pixels, tile_id, bounds_str,
+                                                            uint8_outputs, is_large_run, logger_worker, None)
 
         # Only prints if not a final run
         lu.print_and_log(f"Upload tasks created for {bounds_str} in {tile_id}. Uploading now: {uu.timestr()}", is_large_run, logger_worker)
@@ -672,7 +698,7 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
 
     # Determines if the output file names for final versions of outputs should be used
     is_large_run = False
-    #is_large_run = True  # For simulating a large run
+    # is_large_run = True  # For simulating a large run
     if len(chunk_list) > 20:
         is_large_run = True
         main_logger.info("Running as final model.")

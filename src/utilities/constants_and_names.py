@@ -205,6 +205,8 @@ water_max_code = 208
 
 cropland = 244
 builtup = 250
+GLAD_ocean = 254
+GLAD_NoData = 255
 
 
 ### Miscellaneous
@@ -476,7 +478,7 @@ litter_c_2015_LC_masked_pattern = f"{litter_c_LC_masked_dens_pattern}_2015"
 non_soil_c_2015_LC_masked_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{non_soil_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 non_soil_c_2015_LC_masked_pattern = f"{non_soil_c_LC_masked_dens_pattern}_2015"
 
-starting_C_densities_2015_path_zarr = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/mega_zarr/CHUNK_SIZE_pixels/RUN_DATE/starting_C_densities_zarr.zarr"
+starting_C_densities_2015_path_zarr = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/zarr/CHUNK_SIZE_pixels/RUN_DATE/starting_C_densities_zarr.zarr"
 
 # Code that describes the source for the starting carbon densities in the landcover-masked outputs
 starting_C_pools_LC_masked_source_flag_pattern = "carbon_density_source_flag_landcover_masked"

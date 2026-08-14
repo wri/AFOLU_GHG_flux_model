@@ -27,8 +27,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from tqdm import tqdm
 
-parquet_path = 'C:/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/LULUCF_v1_0_0__veg_v1_0_5__minsoil_v1_0_1__orgsoil_v1_0_1/LULUCF__v1_0_0__LULUCF_summative_vars__wide__20260617.parquet'
-tbl         = 'lulucf100_wide__veg105__soc101__orgsoil101__20260617'
+parquet_path = 'C:/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/LULUCF_v1_0_0__veg_v1_0_5__minsoil_v1_0_1__orgsoil_v1_0_1/LULUCF__v1_0_0__for_figures__wide__20260802_wdpa_fixed__from_Erin_Glen_via_Slack_20260803.parquet'
+tbl         = 'lulucf100_wide__veg105__soc101__orgsoil101__20260810'
 batch_size  = 500_000
 # batch_size  = 50_000  # For testing
 db_params   = dict(dbname='AFOLU_GHG_flux_model', host='localhost', port=5432)  # No username or password needed on my computer
