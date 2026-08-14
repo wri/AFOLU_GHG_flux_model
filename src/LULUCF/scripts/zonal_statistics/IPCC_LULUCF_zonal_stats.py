@@ -177,8 +177,8 @@ def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, model_t
     source_zarr_chunk_size = cn.chunk_dims  # 4000x4000
 
     # Vegetation zarr
-    veg_zarr_path = zu.create_zarr_path(cn.veg_outputs_path_zarr, source_zarr_chunk_size, "annual", model_type,
-                                        veg_model_version, veg_model_path_description, veg_input_date, main_logger)
+    veg_zarr_path = zu.create_zarr_path(cn.veg_outputs_path_zarr, source_zarr_chunk_size, veg_model_path_description,
+                                        veg_input_date, model_type, "annual", veg_model_version)
 
     main_logger.info(f"Vegetation zarr path: {veg_zarr_path}")
 
@@ -196,8 +196,8 @@ def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, model_t
 
     main_logger.info(f"Zonal stats from zarr ({source_zarr_chunk_size} pixel chunks): {lulucf_zarr_path}")
 
-    lu_zarr_path = zu.create_zarr_path(cn.IPCC_outputs_path_mega_zarr, source_zarr_chunk_size, "annual", model_type,
-                                       lu_model_version, lu_model_path_description, lu_input_date, main_logger)
+    lu_zarr_path = zu.create_zarr_path(cn.IPCC_outputs_path_mega_zarr, source_zarr_chunk_size,
+                                       lu_model_path_description, lu_input_date, model_type, "annual", lu_model_version)
 
     # Creates dataframe of state_node codes and meanings
     state_node_df = zsu.create_state_node_df(cn.state_node_lookup_table_local, cn.state_node_lookup_table_s3, cn.sheet)

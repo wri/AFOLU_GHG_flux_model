@@ -491,9 +491,8 @@ def main(cluster_name, model_type,
     if create_zarr:
 
         # Creates s3 paths for the raw mega-zarr
-        zarr_path = zu.create_zarr_path(cn.SOC_path_zarr, chunk_size_pixels, 'N/A',
-                                        model_type, cn.SOC_model_version_underscore, model_path_description,
-                                        run_date, main_logger)
+        zarr_path = zu.create_zarr_path(cn.SOC_path_zarr, chunk_size_pixels, model_path_description, run_date,
+                                        cn.SOC_model_version_underscore, model_type, 'N/A')
 
         # These variables are added to the mega-zarr
         # Adds the unit to the zarr variable names (uses re.sub to apply to end of string only so that these don't overwrite each other).

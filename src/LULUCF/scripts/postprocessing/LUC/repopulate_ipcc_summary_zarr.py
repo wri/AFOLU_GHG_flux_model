@@ -142,16 +142,8 @@ def main(cluster_name, input_date, model_type, no_log=False, chunk_shapefile_uri
             f"chunks using bounding box {bounding_box}"
         )
 
-    zarr_path = zu.create_zarr_path(
-        cn.IPCC_outputs_path_mega_zarr,
-        cn.chunk_dims,
-        interval_type,
-        model_type,
-        cn.IPCC_LU_version_underscore,
-        model_path_description,
-        input_date,
-        main_logger
-    )
+    zarr_path = zu.create_zarr_path(cn.IPCC_outputs_path_mega_zarr, cn.chunk_dims, model_path_description, input_date,
+                                    model_type, interval_type, cn.IPCC_LU_version_underscore)
 
     summary_dir = (
         cn.IPCC_summary_dir

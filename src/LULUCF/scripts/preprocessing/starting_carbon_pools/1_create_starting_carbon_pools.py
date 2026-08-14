@@ -821,10 +821,8 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
 
     if create_zarr:
 
-        # Creates s3 paths for the raw zarr
-        zarr_path = zu.create_zarr_path(starting_C_zarr_root, chunk_size_pixels,
-                                             model_type, cn.veg_model_version_underscore, model_path_description,
-                                             run_date, main_logger)
+        # Creates s3 paths for the raw zarr. No model version, type, or path description.
+        zarr_path = zu.create_zarr_path(starting_C_zarr_root, chunk_size_pixels, run_date, main_logger)
 
         # Creates the global zarr with metadata only
         zu.initialize_global_zarr(zarr_path, outputs_to_zarr_with_unit_year, 1,

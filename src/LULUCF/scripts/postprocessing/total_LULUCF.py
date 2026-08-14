@@ -425,8 +425,8 @@ def main(cluster_name, run_date, veg_input_date, organic_soil_input_date, minera
         # main_logger.info(f"x range: {ds.x.values.min()}, {ds.x.values.max()}")
         # main_logger.info(f"mega-zarr chunk size (years, y, x): {ds.chunksizes}")
 
-        raw_mega_zarr_path = zu.create_zarr_path(cn.LULUCF_outputs_path_mega_zarr, chunk_size_pixels, interval_type_veg,
-                                                 model_type, model_version, run_date, main_logger)
+        raw_mega_zarr_path = zu.create_zarr_path(cn.LULUCF_outputs_path_mega_zarr, chunk_size_pixels, run_date,
+                                                 main_logger, model_version, model_type)
         outputs_to_zarr = cn.LULUCF_output_patterns  # [0:2] # For testing
 
         # Creates the global mega-zarr with metadata only

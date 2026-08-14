@@ -163,9 +163,8 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     source_zarr_chunk_size = cn.chunk_dims  #4000x4000
 
     # The SOC zarr path that's being used
-    SOC_zarr_path = zu.create_zarr_path(cn.SOC_path_zarr, source_zarr_chunk_size, 'N/A',
-                                        model_type, cn.SOC_model_version_underscore, model_path_description,
-                                        input_date, main_logger)
+    SOC_zarr_path = zu.create_zarr_path(cn.SOC_path_zarr, source_zarr_chunk_size, model_path_description, input_date,
+                                        cn.SOC_model_version_underscore, model_type, 'N/A')
     main_logger.info(f"Zonal stats from zarr ({source_zarr_chunk_size} pixel chunks): {SOC_zarr_path}")
 
     # Creates dataframe of state_node codes and meanings

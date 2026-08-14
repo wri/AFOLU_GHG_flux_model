@@ -528,15 +528,11 @@ def main(cluster_name, model_type,
     # -----------------------------------------------------------------------
     # Step 2: Build source zarr paths
     # -----------------------------------------------------------------------
-    veg_zarr_path = zu.create_zarr_path(
-        cn.veg_outputs_path_zarr, cn.chunk_dims, 'annual',
-        model_type, cn.veg_model_version_underscore, veg_model_path_description,
-        veg_date, main_logger)
+    veg_zarr_path = zu.create_zarr_path(cn.veg_outputs_path_zarr, cn.chunk_dims, veg_date, main_logger,
+                                        cn.veg_model_version_underscore, model_type, veg_model_path_description)
 
-    soc_zarr_path = zu.create_zarr_path(
-        cn.SOC_path_zarr, cn.chunk_dims, 'N/A',
-        model_type, cn.SOC_model_version_underscore, soc_model_path_description,
-        soc_date, main_logger)
+    soc_zarr_path = zu.create_zarr_path(cn.SOC_path_zarr, cn.chunk_dims, soc_date, main_logger,
+                                         cn.SOC_model_version_underscore, model_type, soc_model_path_description)
 
     for label, path in [("veg", veg_zarr_path), ("SOC", soc_zarr_path), ("org soil", cn.organic_soil_zarr_path)]:
         exists = fs.exists(path)

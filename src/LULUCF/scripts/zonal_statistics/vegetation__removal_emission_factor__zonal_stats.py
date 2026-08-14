@@ -143,9 +143,8 @@ def main(cluster_name, input_date, model_type, no_upload, zonal_stats_descriptio
     source_zarr_chunk_size = cn.chunk_dims  #4000x4000
 
     # The zarr path that's being used
-    zarr_path = zu.create_zarr_path(cn.veg_outputs_path_zarr, source_zarr_chunk_size, 'annual',
-                                    model_type, cn.veg_model_version_underscore, model_path_description,
-                                    input_date, main_logger)
+    zarr_path = zu.create_zarr_path(cn.veg_outputs_path_zarr, source_zarr_chunk_size, model_path_description,
+                                    input_date, model_type, 'annual', cn.veg_model_version_underscore)
     main_logger.info(f"Zonal stats from zarr ({source_zarr_chunk_size} pixel chunks): {zarr_path}")
 
     # Creates dataframe of state_node codes and meanings

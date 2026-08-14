@@ -148,9 +148,8 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     source_zarr_chunk_size = cn.chunk_dims  #4000x4000
 
     # The zarr path that's being used
-    zarr_path = zu.create_zarr_path(cn.veg_outputs_path_zarr, source_zarr_chunk_size, 'annual',
-                                    model_type, cn.veg_model_version_underscore, model_path_description,
-                                    input_date, main_logger)
+    zarr_path = zu.create_zarr_path(cn.veg_outputs_path_zarr, source_zarr_chunk_size, input_date, main_logger,
+                                    cn.veg_model_version_underscore, model_type, model_path_description,)
     main_logger.info(f"Aggregating from zarr ({source_zarr_chunk_size} pixel chunks): {zarr_path}")
 
     output_base = f"{cn.veg_outputs_path}PATTERN/annual_intervals/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{input_date}/"

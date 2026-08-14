@@ -23,9 +23,8 @@ from src.utilities import log_utilities as lu
 from src.utilities import universal_utilities as uu
 
 # Creates the s3 paths for the raw and rechunked mega-zarrs
-def create_zarr_path(zarr_basic_path, chunk_size_pixels,
-                     model_type, model_version, model_path_description,
-                     run_date, main_logger):
+def create_zarr_path(zarr_basic_path, chunk_size_pixels, run_date, main_logger,
+                     model_version=None, model_type=None, model_path_description=None):
 
     # Sets the output zarr location based on the model run
     mega_zarr_path = zarr_basic_path.replace(cn.model_version_type_description_placeholder, f"version_{model_version}__{model_type}__{model_path_description}")

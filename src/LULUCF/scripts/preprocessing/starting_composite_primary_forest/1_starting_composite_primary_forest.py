@@ -341,10 +341,8 @@ def main(cluster_name,
     # Only creates the global zarr if needed (large runs or otherwise specified)
     if create_zarr:
 
-        # Creates s3 paths for the raw zarr
-        zarr_path = zu.create_zarr_path(cn.starting_composite_primary_forest_zarr_path, chunk_size_pixels,
-                                        'standard', cn.veg_model_version_underscore, 'NA',
-                                        run_date, main_logger)
+        # Creates s3 paths for the raw zarr. No model version, type, or path description.
+        zarr_path = zu.create_zarr_path(cn.starting_composite_primary_forest_zarr_path, chunk_size_pixels, run_date, main_logger)
         outputs_to_zarr = [cn.starting_composite_primary_forest_pattern]
 
 

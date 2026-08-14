@@ -81,9 +81,8 @@ def main(cluster_name, input_date, var_name_no_units, model_type, no_log=False, 
     chunk_list, chunk_size_pixels = uu.create_chunk_list(bounding_box, chunk_shapefile_uri, chunk_size_deg, first_chunks, fishnet_iso_df, main_logger)
 
     # The zarr path that's being used
-    zarr_path = zu.create_zarr_path(cn.veg_outputs_path_zarr, cn.chunk_dims, 'annual',
-                                    model_type, cn.veg_model_version_underscore, model_path_description,
-                                    input_date, main_logger)
+    zarr_path = zu.create_zarr_path(cn.veg_outputs_path_zarr, cn.chunk_dims, model_path_description, input_date, main_logger,
+                                    cn.veg_model_version_underscore, model_type)
 
     # Dataset name to add to zarr with unit.
     # Currently, non-flux/density outputs don't have a PER_HA_OR_PIXEL part of output path, so they need different input paths

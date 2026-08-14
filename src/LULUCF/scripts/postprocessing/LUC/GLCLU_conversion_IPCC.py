@@ -1732,8 +1732,8 @@ def main(cluster_name, run_date, run_local=False, no_stats=False, no_log=False, 
     outputs_to_zarr = [cn.IPCC_class_pattern, cn.IPCC_node_pattern, cn.IPCC_change_pattern, cn.IPCC_summary_pattern]
     raw_mega_zarr_path = None
     if create_zarr:
-        raw_mega_zarr_path = zu.create_zarr_path(cn.IPCC_outputs_path_mega_zarr, cn.chunk_dims, interval_type, model_type,
-                        cn.IPCC_LU_version.replace(".", "_"), "global", run_date, main_logger)
+        raw_mega_zarr_path = zu.create_zarr_path(cn.IPCC_outputs_path_mega_zarr, cn.chunk_dims, "global", run_date,
+                                                 model_type, interval_type, cn.IPCC_LU_version.replace(".", "_"))
 
         zu.initialize_ipcc_global_zarr(raw_mega_zarr_path, (1, cn.chunk_dims, cn.chunk_dims), main_logger, fill_value=0)
 
