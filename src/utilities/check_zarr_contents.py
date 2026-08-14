@@ -21,15 +21,14 @@ from src.utilities import log_utilities as lu
 from src.utilities import numba_utilities as nu
 from src.utilities import universal_utilities as uu
 from src.utilities import zarr_utilities as zu
-from src.utilities.constants_and_names import intervals_annual
 
 ### Settings-- modify these
 
-# For Ctrees sensitivity analysis
-bounds = [-80, 39, -79, 40]
-zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__ctrees_starting_AGC__test_box/mega_zarr/annual_intervals/4000_pixels/20260701/vegetation_zarr.zarr'
-var_name = 'carbon_density__AGC__MgC_ha'
-interval_end_years = cn.veg_outputs_years
+# # For Ctrees sensitivity analysis
+# bounds = [-80, 39, -79, 40]
+# zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__ctrees_starting_AGC__test_box/mega_zarr/annual_intervals/4000_pixels/20260701/vegetation_zarr.zarr'
+# var_name = 'carbon_density__AGC__MgC_ha'
+# interval_end_years = cn.veg_outputs_years
 
 # # For vegetation model outputs
 # # bounds = [23, -4, 24, -3]
@@ -51,11 +50,11 @@ interval_end_years = cn.veg_outputs_years
 # var_name = 'SOC_change__full_extent__0-30cm_MgC_ha_yr'
 # interval_end_years = cn.SOC_change_intervals
 
-# # For starting carbon density
-# bounds = [114, -4, 115, -3]
-# zarr_path = 's3://gfw2-data/climate/ESA_CCI_biomass/v5_01/2015/year_2015_derived_carbon_pools/mega_zarr/4000_pixels/20260121/starting_C_densities_zarr.zarr'
-# var_name = 'carbon_density__BGC__landcover_masked__MgC'
-# interval_end_years = [2015]
+# For starting carbon density (has year dimension with 1 value, so need to use the year version below)
+bounds = [111, -3, 112, -2]
+zarr_path = 's3://gfw2-data/climate/ESA_CCI_biomass/v6_0/2015/year_2015_derived_carbon_pools/zarr/4000_pixels/20260807/starting_C_densities_zarr.zarr'
+var_name = 'carbon_density__AGC__landcover_masked__MgC_ha_2015'
+interval_end_years = [2015]
 
 # # For starting composite primary forest
 # bounds = [9, -1, 10, 0]
@@ -72,18 +71,23 @@ interval_end_years = cn.veg_outputs_years
 # # For flox contextual layers
 # bounds = [119, -6, 120, -5]  # For continent-ecozone: mix of 0, 4018 and 4020, with 4020 in upper right (00N_110E)
 # zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/contextual_layer_global_zarr/FAO_ecozone_continents/20260206_fillValue_removed/FAO_ecozone_continents_20260206.zarr'  # does not work
+# var_name = 'band_data'
 
 # bounds = [13, 48, 14, 49]  # For GADM: Three countries meet in Europe (50N_010E)
 # zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/contextual_layer_global_zarr/GADM4_1_adm0_global/20251209_fillValue_removed/global_GADM41_adm0_20251209.zarr'  # works
+# var_name = 'band_data'
 
 # bounds = [119, -3, 120, -2]  # For IFL/primary forest: Extensive primary forest, should have primary forest in lower-left and upper-right corners (00N_110E)
 # zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/contextual_layer_global_zarr/IFL2000_tropical_primary_forest_2001/20251209_fillValue_removed/ifl_primary_forest_merged_20251209.zarr' # works
+# var_name = 'band_data'
 
 # bounds = [13, 48, 14, 49]  # For pixel area (50N_010E)
 # zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/contextual_layer_global_zarr/pixel_area/20251209_fillValue_removed/global_pixel_area_20251209.zarr'  # works
+# var_name = 'band_data'
 
 # bounds = [-58, -16, -57, -15]  # For Brazil biomes: Three biomes meet (10S_060W)
 # zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/contextual_layer_global_zarr/BRA_biomes/20251229_fillValue_removed/BRA_biomes_20251229.zarr'  # works
+# var_name = 'band_data'
 
 ###################################################
 
@@ -141,8 +145,8 @@ for year_idx, year in enumerate(interval_end_years):
     print("\n")
 
 
-###################################################
-
+# ###################################################
+#
 # ### For zarrs with no year dimension (no time component; may not be global, so spatial indexes are different)
 # ### From https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6986043f-c8b0-832c-837f-7329873aa948
 #
@@ -157,9 +161,6 @@ for year_idx, year in enumerate(interval_end_years):
 #         i0 = bisect_left(coords, min_val)
 #         i1 = bisect_right(coords, max_val)
 #         return i0, i1
-#
-# # zarrs without time dimension have the variable name band_data
-# var_name = 'band_data'
 #
 # # print(f"Getting array for {bounds_str}")
 # zarr_mapper_band_data = fs.get_mapper(f"{zarr_path}/{var_name}")

@@ -311,9 +311,10 @@ def initialize_ipcc_global_zarr(store_url, chunk_size, main_logger, fill_value=0
 
 # Populates pre-existing global mega-zarr with select output numpy arrays (out_dict_all_dtypes)
 # Accelerated by writing all years at once
-# per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/694612e9-0d2c-832f-8b6d-e7cb247ff781
+# Originally per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/694612e9-0d2c-832f-8b6d-e7cb247ff781
+# and modified in Claude session 'NoData handling for chunk stats and fluxes'
 def populate_zarr(bounds, bounds_str, create_zarr, interval_end_years, is_large_run, logger_worker, mega_zarr_path,
-                  out_dict_all_dtypes, outputs_to_zarr, stage, tile_id):
+                  out_dict_all_dtypes, outputs_to_zarr, stage, tile_id, year_in_array_name=False):
 
     if not create_zarr:
         lu.print_and_log(f"Not writing outputs for {bounds_str} in {tile_id} to global zarr: {uu.timestr()}", False, logger_worker)
@@ -328,72 +329,93 @@ def populate_zarr(bounds, bounds_str, create_zarr, interval_end_years, is_large_
     mapper = fs.get_mapper(mega_zarr_path)
     z = zarr.open(mapper, mode="r+")
 
-    # lu.print_and_log(f"Available datasets in global mega-zarr: {list(z.array_keys())}: {uu.timestr()}", is_large_run, logger_worker)
-    # print("outputs_to_zarr:", outputs_to_zarr)
-
-    # Creates list of zarr datasets with unit (but not year)
-    outputs_to_zarr_with_pattern = []
-    for output_to_zarr in outputs_to_zarr:
-        pattern_with_units, pattern_with_units_years = add_units_year_to_pattern(output_to_zarr, 0)
-        outputs_to_zarr_with_pattern.append(pattern_with_units)
-
-    # Pre-opens Zarr arrays once rather than repeatedly for each dataset during the for loop
-    zarr_arrays = {
-        var: z[var]
-        for var in outputs_to_zarr_with_pattern
-        if var in z
-    }
-    # print("zarr_arrays:", zarr_arrays)
-
     # Computes spatial indices once
     lat_start, lon_start = latlon_to_global_zarr_indices(bounds[3], bounds[0], cn.resolution)  # north, west
     lat_end, lon_end = latlon_to_global_zarr_indices(bounds[1], bounds[2], cn.resolution)  # south, east
 
-    n_years = len(interval_end_years)
     ny = lat_end - lat_start
     nx = lon_end - lon_start
 
-    # Writes each variable as a full time block
-    for output_to_zarr_pattern_unit, zarr_array in zarr_arrays.items():
+    # For zarrs where each year is its own separately-named array with a single time slot (starting
+    # carbon pools -- the year is baked into the array name itself), there's no shared multi-year array
+    # per variable to pre-resolve like the branch below does. Each (variable, year) pair names its own
+    # array and has to be resolved and written individually.
+    if year_in_array_name:
 
-        dtype = zarr_array.dtype
+        for output_to_zarr in outputs_to_zarr:
+            for year in interval_end_years:
 
-        block = np.empty((n_years, ny, nx), dtype=dtype)
+                _, pattern_with_units_years = add_units_year_to_pattern(output_to_zarr, year)
 
-        has_any_data = False
-        # print("output_to_zarr_pattern_unit:", output_to_zarr_pattern_unit)
+                if pattern_with_units_years not in z:
+                    lu.print_and_log(f"Skipping {pattern_with_units_years}: not found in zarr", False, logger_worker)
+                    continue
 
-        for i, year in enumerate(interval_end_years):
-            pattern_with_units_years = f"{output_to_zarr_pattern_unit}_{year}"
-            # print("pattern_with_units_years:", pattern_with_units_years)
+                zarr_array = z[pattern_with_units_years]
 
-            # Used for output dictionary with years, e.g., vegetation model outputs.
-            if pattern_with_units_years in out_dict_all_dtypes:
-                block[i, :, :] = out_dict_all_dtypes[pattern_with_units_years]
-                has_any_data = True
-            # In case the output dictionary doesn't have unit/years. Used for starting carbon pools.
-            elif output_to_zarr_pattern_unit in out_dict_all_dtypes:
-                block[i, :, :] = out_dict_all_dtypes[output_to_zarr_pattern_unit]
-                has_any_data = True
+                if pattern_with_units_years in out_dict_all_dtypes:
+                    block = out_dict_all_dtypes[pattern_with_units_years].astype(zarr_array.dtype)[np.newaxis, :, :]
+                    zarr_array[0:1, lat_start:lat_end, lon_start:lon_end] = block
+                else:
+                    lu.print_and_log(f"Skipping {pattern_with_units_years}: no data found for this year", False, logger_worker)
+
+    # Zarrs where the year isn't in the array name
+    else:
+
+        # Creates list of zarr datasets with unit (but not year)
+        outputs_to_zarr_with_pattern = []
+        for output_to_zarr in outputs_to_zarr:
+            pattern_with_units, pattern_with_units_years = add_units_year_to_pattern(output_to_zarr, 0)
+            outputs_to_zarr_with_pattern.append(pattern_with_units)
+
+        # Pre-opens Zarr arrays once rather than repeatedly for each dataset during the for loop
+        zarr_arrays = {
+            var: z[var]
+            for var in outputs_to_zarr_with_pattern
+            if var in z
+        }
+
+        n_years = len(interval_end_years)
+
+        # Writes each variable as a full time block
+        for output_to_zarr_pattern_unit, zarr_array in zarr_arrays.items():
+
+            dtype = zarr_array.dtype
+
+            block = np.empty((n_years, ny, nx), dtype=dtype)
+
+            has_any_data = False
+
+            for i, year in enumerate(interval_end_years):
+                pattern_with_units_years = f"{output_to_zarr_pattern_unit}_{year}"
+
+                # Used for output dictionary with years, e.g., vegetation model outputs.
+                if pattern_with_units_years in out_dict_all_dtypes:
+                    block[i, :, :] = out_dict_all_dtypes[pattern_with_units_years]
+                    has_any_data = True
+                # In case the output dictionary doesn't have unit/years. Used for starting composite primary forest.
+                elif output_to_zarr_pattern_unit in out_dict_all_dtypes:
+                    block[i, :, :] = out_dict_all_dtypes[output_to_zarr_pattern_unit]
+                    has_any_data = True
+                else:
+                    # Fills with Zarr fill_value if missing
+                    fill = zarr_array.fill_value
+                    if fill is None:
+                        fill = np.nan
+                    block[i, :, :] = fill
+
+            # Only writes if at least one year exists for this variable
+            if has_any_data:
+                zarr_array[
+                0:n_years,
+                lat_start:lat_end,
+                lon_start:lon_end
+                ] = block
             else:
-                # Fills with Zarr fill_value if missing
-                fill = zarr_array.fill_value
-                if fill is None:
-                    fill = np.nan
-                block[i, :, :] = fill
+                lu.print_and_log(f"Skipping {output_to_zarr_pattern_unit}: no data found for any year", False, logger_worker)
 
-        # Only writes if at least one year exists for this variable
-        if has_any_data:
-            zarr_array[
-            0:n_years,
-            lat_start:lat_end,
-            lon_start:lon_end
-            ] = block
-        else:
-            lu.print_and_log(f"Skipping {output_to_zarr_pattern_unit}: no data found for any year", False, logger_worker)
-
-        del block
-        gc.collect()
+            del block
+            gc.collect()
 
     zarr_end = time.time()
     lu.print_and_log(f"Wrote outputs to global zarr for {bounds_str} in {tile_id} in {round(zarr_end - zarr_start)} seconds: {uu.timestr()}",False, logger_worker)

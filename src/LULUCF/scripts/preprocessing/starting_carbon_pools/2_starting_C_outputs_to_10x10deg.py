@@ -15,27 +15,27 @@ creation.
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Local test (Dask part does not work because of client.submit()):
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -bb 23 -4 24 -3 --run_local --no_upload -mt standard -mpd global -fv 1 -ft 1 --input_date YYYYMMDD
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -bb 23 -4 24 -3 --run_local --no_upload  -fv 1 -ft 1 --input_date YYYYMMDD
 
 Coiled small tests (needs 32 GB because of per-ha and per-pixel outputs):
 python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn starting_carbon_pools
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools -bb 23 -4 24 -3 -fv 2 -ft 2 -mt standard -mpd global -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260129_14_36_42__KEEP.xlsx  --input_date YYYYMMDD
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools -bb 23 -4 24 -3 -fv 2 -ft 2 -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260129_14_36_42__KEEP.xlsx  --input_date YYYYMMDD
 
 Coiled small tests:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn starting_carbon_pools_10x10__Ctrees
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools_10x10__Ctrees -bb -80 30 -70 40 -mpd global --input_date 20260629 -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260630_00_52_24.xlsx
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools_10x10__Ctrees -bb -80 30 -70 40 --input_date 20260629 -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260630_00_52_24.xlsx
 
 Coiled Cerrado test (174 features):
 python -m src.utilities.create_cluster -n 20 -t 1 -m 32 -cn starting_carbon_pools
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools -mt standard -mpd global -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260129_14_36_42__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp --input_date YYYYMMDD
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260129_14_36_42__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp --input_date YYYYMMDD
 
 Coiled large shapefile test (1884 features):
 python -m src.utilities.create_cluster -n 100 -t 1 -m 32 -cn starting_carbon_pools
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools -mt standard -mpd global -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260129_14_36_42__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp --input_date YYYYMMDD
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260129_14_36_42__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp --input_date YYYYMMDD
 
 Full run:
 python -m src.utilities.create_cluster -n 200 -t 1 -m 32 -cn starting_carbon_pools
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools -mt standard -mpd global -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260129_14_36_42__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --input_date YYYYMMDD --log_note "Global 10x10 deg creation for starting carbon pools using ESA CCI AGB v6, with starting carbon pool adjustments."
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260129_14_36_42__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --input_date YYYYMMDD --log_note "Global 10x10 deg creation for starting carbon pools using ESA CCI AGB v6, with starting carbon pool adjustments."
 
 For sensitivity anlysis:
 Coiled small tests:
@@ -210,7 +210,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
 
             future = client.submit(zu.create_10x10_deg_geotif_from_zarr,
                                    var_name, 0, tile_id, mega_zarr_path, output_base, biomass_source,
-                                   model_type, model_path_description, no_upload, True, 0, append_start_year_to_var)
+                                   model_type, model_path_description, no_upload, True, 0, True)
             futures.append(future)
 
     main_logger.info(f"There are {len(futures)} tiles to aggregate ({len(tile_ids_to_process)} tiles x {len(vars_to_process)} variables)")

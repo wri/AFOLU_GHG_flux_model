@@ -8,15 +8,15 @@ Needs 8GB Coiled workers with 1 thread for 1x1 deg chunks; 4GB workers are too s
 
 Coiled small test:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 8 -cn starting_carbon_pools
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools -bb 23 -4 24 -3 -cs 1  --create_zarr -mt standard -mpd test_23_-4_24_-3 --year 2015
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools -bb 23 -4 24 -3 -cs 1  --create_zarr --year 2015
 
 Coiled shapefile test:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 8 -cn starting_carbon_pools
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools --create_zarr -mt standard -mpd test_feature --year 2015 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -f 1
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools --create_zarr --year 2015 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -f 1
 
 Full run 2015 (using 200 workers seems to overload requests to s3):
 python -m src.utilities.create_cluster -n 100 -t 1 -m 8 -cn starting_carbon_pools
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools --create_zarr -mt standard -mpd global --year 2015 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive global run for carbon pool 2015 creation using ESA CCI AGB v6, raw and adjusted versions."
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools --create_zarr --year 2015 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive global run for carbon pool 2015 creation using ESA CCI AGB v6, raw and adjusted versions."
 
 Test run 2015 for sensitivity analysis:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 8 -cn starting_carbon_pools__Ctrees
@@ -509,8 +509,8 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
 
     ### Part 5: Writes outputs to pre-existing global zarr (only if activated)
 
-    zu.populate_zarr(bounds, bounds_str, create_zarr, [1], is_large_run, logger_worker, zarr_path,
-                  out_dict_all_dtypes, outputs_to_zarr, stage, tile_id)
+    zu.populate_zarr(bounds, bounds_str, create_zarr, [year], is_large_run, logger_worker, zarr_path,
+                  out_dict_all_dtypes, outputs_to_zarr, stage, tile_id, year_in_array_name=True)
 
 
     ### Part 6: Calculates per ha min, per ha mean, per ha max, and per pixel sum for each output chunk.
@@ -697,8 +697,8 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
     main_logger.info(f"Chunks to process: {len(chunk_list)}")
 
     # Determines if the output file names for final versions of outputs should be used
-    is_large_run = False
-    # is_large_run = True  # For simulating a large run
+    # is_large_run = False
+    is_large_run = True  # For simulating a large run
     if len(chunk_list) > 20:
         is_large_run = True
         main_logger.info("Running as final model.")
@@ -873,7 +873,6 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
         model_chunk_stats_path = uu.compile_1x1_chunk_stats(all_stats, chunk_shapefile_uri, stage, no_upload, main_logger)
 
 
-
     # ### Step 5: Compare model output chunk stats to zarr chunk stats for each variable (only if chunk stats and zarr created)
     # ### 2016-02-10: This may work now, based on changes I made for starting_composite_primary_forest. Need to test again.
     # ### OLD NOTE: Not running zarr chunk stats comparison. I was having trouble getting it to work because of problems with
@@ -916,7 +915,7 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
     #         chunk_stats_variable_year_zarr = zu.run_parallel_stats(
     #             client=client,
     #             chunk_list=chunk_list,
-    #             var=var_name_with_pattern_year,
+    #             var=var_name,
     #             zarr_path=zarr_path,
     #             output_years=[year]
     #         )
