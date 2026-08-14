@@ -52,8 +52,8 @@ from src.utilities import zarr_utilities as zu
 
 # For starting carbon density (has year dimension with 1 value, so need to use the year version below)
 bounds = [111, -3, 112, -2]
-zarr_path = 's3://gfw2-data/climate/ESA_CCI_biomass/v6_0/2015/year_2015_derived_carbon_pools/zarr/4000_pixels/20260807/starting_C_densities_zarr.zarr'
-var_name = 'carbon_density__AGC__landcover_masked__MgC_ha_2015'
+zarr_path = 's3://gfw2-data/climate/ESA_CCI_biomass/v6_0/2015/year_2015_derived_carbon_pools/version_1_0_6__standard__test_box/zarr/4000_pixels/20260807/starting_C_densities_zarr.zarr'
+var_name = 'carbon_density__AGC__raw__MgC_ha_2015'
 interval_end_years = [2015]
 
 # # For starting composite primary forest

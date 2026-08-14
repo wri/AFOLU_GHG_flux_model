@@ -406,47 +406,8 @@ deadwood_c_modeled_dens_pattern = "carbon_density__deadwood_C__MgC"
 litter_c_modeled_dens_pattern = "carbon_density__litter_C__MgC"
 non_soil_c_modeled_dens_pattern = "carbon_density__non_soil__MgC"
 
-### Carbon pools in starting year (2000/2015)
+### Carbon pools in starting year (2015)
 
-## 2000
-carbon_2000_creation_date = '20250930'
-
-# Raw carbon density, not masked by landcover composite
-agc_2000_raw_dir = f"{full_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/year_2000_derived_carbon_pools/{agc_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2000_creation_date}/"
-agc_2000_raw_pattern = f"{agc_raw_dens_pattern}_2000"
-
-bgc_2000_raw_dir = f"{full_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/year_2000_derived_carbon_pools/{bgc_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2000_creation_date}/"
-bgc_2000_raw_pattern = f"{bgc_raw_dens_pattern}_2000"
-
-deadwood_c_2000_raw_dir = f"{full_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/year_2000_derived_carbon_pools/{deadwood_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2000_creation_date}/"
-deadwood_c_2000_raw_pattern = f"{deadwood_c_raw_dens_pattern}_2000"
-
-litter_c_2000_raw_dir = f"{full_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/year_2000_derived_carbon_pools/{litter_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2000_creation_date}/"
-litter_c_2000_raw_pattern = f"{litter_c_raw_dens_pattern}_2000"
-
-non_soil_c_2000_raw_dir = f"{full_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/year_2000_derived_carbon_pools/{non_soil_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2000_creation_date}/"
-non_soil_c_2000_raw_pattern = f"{non_soil_c_raw_dens_pattern}_2000"
-
-# Carbon density, masked by landcover composite
-agc_2000_LC_masked_dir = f"{full_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/year_2000_derived_carbon_pools/{agc_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2000_creation_date}/"
-agc_2000_LC_masked_pattern = f"{agc_LC_masked_dens_pattern}_2000"
-
-bgc_2000_LC_masked_dir = f"{full_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/year_2000_derived_carbon_pools/{bgc_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2000_creation_date}/"
-bgc_2000_LC_masked_pattern = f"{bgc_LC_masked_dens_pattern}_2000"
-
-deadwood_c_2000_LC_masked_dir = f"{full_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/year_2000_derived_carbon_pools/{deadwood_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2000_creation_date}/"
-deadwood_c_2000_LC_masked_pattern = f"{deadwood_c_LC_masked_dens_pattern}_2000"
-
-litter_c_2000_LC_masked_dir = f"{full_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/year_2000_derived_carbon_pools/{litter_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2000_creation_date}/"
-litter_c_2000_LC_masked_pattern = f"{litter_c_LC_masked_dens_pattern}_2000"
-
-non_soil_c_2000_LC_masked_dir = f"{full_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/year_2000_derived_carbon_pools/{non_soil_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2000_creation_date}/"
-non_soil_c_2000_LC_masked_pattern = f"{non_soil_c_LC_masked_dens_pattern}_2000"
-
-starting_C_densities_2000_path_zarr = f"{full_bucket_prefix}/climate/WHRC_biomass/WHRC_V4/year_2000_derived_carbon_pools/mega_zarr/CHUNK_SIZE_pixels/RUN_DATE/starting_C_densities_zarr.zarr"
-
-
-## 2015
 carbon_2015_creation_date = '20260807'
 
 carbon_2015_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{model_version_type_description_placeholder}/"

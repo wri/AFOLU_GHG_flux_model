@@ -535,7 +535,7 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
         # Converts per hectare values to per pixel values for the output numpy array
         output_per_pixel = array_per_ha * pixel_area_chunk * cn.m2_to_ha
 
-        chunk_stats.append(uu.calculate_stats(array_per_ha, key, bounds_str, tile_id, 'output_layer', output_per_pixel, 0))
+        chunk_stats.append(uu.calculate_stats(array_per_ha, key, bounds_str, tile_id, 'output_layer', output_per_pixel, np.nan))
     # print(chunk_stats)
 
     # Persists this chunk's stats to S3 immediately, so a killed/interrupted run doesn't lose already-finished work
@@ -632,13 +632,6 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
     # Model stage being run
     stage = f'starting_carbon_pools_{year}_1x1_deg'
 
-    # Determines if argument for year is valid
-    if year in [2000, 2015]:
-        print("Year selection valid")
-    else:
-        print("Year selection not valid")
-        sys.exit()
-
     # Connects to Coiled cluster if not running locally and the named cluster exists
     cluster, client, run_local = uu.connect_to_Coiled_cluster(cluster_name, run_local)
 
@@ -652,13 +645,7 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
     if model_type == cn.alt_AGB and year != 2015:
         raise ValueError("sensitivity analysis is only valid for year 2015.")
 
-    if year == 2000:
-        biomass_source = "WHRC"
-        run_date = cn.carbon_2000_creation_date
-        agb_2015_pattern = None
-        agb_2015_dir_processed = None
-
-    elif year == 2015 and model_type == cn.alt_AGB:
+    if year == 2015 and model_type == cn.alt_AGB:
         biomass_source = "Ctrees"
         run_date = cn.ctrees_run_date
         agb_2015_pattern = cn.ctrees_agb_2015_pattern
@@ -730,49 +717,33 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
     }
 
     # Dictionary of data to download
-    if year == 2000:
-        download_dict[cn.agb_2000_pattern] = f"{cn.agb_2000_dir}{sample_tile_id}_{cn.agb_2000_pattern}.tif"
-        download_dict[cn.mangrove_agb_2000_pattern] = f"{cn.mangrove_agb_2000_dir}{sample_tile_id}_{cn.mangrove_agb_2000_pattern}.tif"
-        download_dict[cn.land_cover_pattern] = f"{cn.land_cover_5_year_path}2000/{sample_tile_id}.tif"
-        download_dict[f"{cn.vegetation_height_pattern}_start_year"] = f"{cn.vegetation_height_5_year_path}2000/{sample_tile_id}_{cn.vegetation_height_5_year_pattern}_2000.tif"
-        download_dict[cn.mangrove_extent_processed_pattern] = f"{cn.mangrove_extent_processed_dir}1996/{sample_tile_id}__{cn.mangrove_extent_processed_pattern}_1996.tif"
+    # No mangrove-specific AGB for 2015-- uses ESA CCI everywhere
+    download_dict[agb_2015_pattern] = f"{agb_2015_dir_processed}{sample_tile_id}_{agb_2015_pattern}.tif"
+    download_dict[cn.land_cover_pattern] = f"{cn.land_cover_annual_path}2015/{sample_tile_id}.tif"
+    download_dict[f"{cn.vegetation_height_pattern}_start_year"] = f"{cn.vegetation_height_annual_path}2015/{sample_tile_id}.tif"
+    download_dict[cn.mangrove_extent_processed_pattern] = f"{cn.mangrove_extent_processed_dir}2015/{sample_tile_id}__{cn.mangrove_extent_processed_pattern}_2015.tif"
 
-        output_dir_list = [cn.agc_2000_raw_dir, cn.bgc_2000_raw_dir, cn.deadwood_c_2000_raw_dir, cn.litter_c_2000_raw_dir, cn.non_soil_c_2000_raw_dir,
-                           cn.agc_2000_LC_masked_dir, cn.bgc_2000_LC_masked_dir, cn.deadwood_c_2000_LC_masked_dir, cn.litter_c_2000_LC_masked_dir, cn.non_soil_c_2000_LC_masked_dir]
+    # These inputs are exclusively used to adjust C pools in 2015 for TCL that occurred 2001-2014.
+    # NOTE: Uses just the 0-5 year Robinson regrowth rate, regardless of how many years of regrowth there are. This just keeps things simpler than using the different age rates.
+    download_dict[cn.TCL_pattern] = f"{cn.TCL_dir}{cn.TCL_pattern}_{sample_tile_id}.tif"
+    download_dict[cn.planted_forest_AGC_removal_factor_pattern] = f"{cn.planted_forest_AGC_removal_factor_dir}{sample_tile_id}_{cn.planted_forest_AGC_removal_factor_pattern}.tif"
+    download_dict[cn.oil_palm_2000_extent_pattern] = f"{cn.oil_palm_2000_extent_dir}{sample_tile_id}_{cn.oil_palm_2000_extent_pattern}.tif"
+    download_dict[cn.oil_palm_first_year_pattern] = f"{cn.oil_palm_first_year_dir}{cn.oil_palm_first_year_pattern}_{sample_tile_id}.tif"   # Pattern is before tile_id for this input
+    download_dict[f"{cn.natural_forest_growth_curve_pattern}"] = \
+        f"{cn.natural_forest_growth_curve_dir}rate_0_5/{sample_tile_id}_{cn.natural_forest_growth_curve_pattern}__0_5_years__nibble_{cn.secondary_forest_curve_run_date}.tif"
 
-    elif year == 2015:   # No mangrove-specific AGB for 2015-- uses ESA CCI everywhere
-        download_dict[agb_2015_pattern] = f"{agb_2015_dir_processed}{sample_tile_id}_{agb_2015_pattern}.tif"
-        download_dict[cn.land_cover_pattern] = f"{cn.land_cover_annual_path}2015/{sample_tile_id}.tif"
-        download_dict[f"{cn.vegetation_height_pattern}_start_year"] = f"{cn.vegetation_height_annual_path}2015/{sample_tile_id}.tif"
-        download_dict[cn.mangrove_extent_processed_pattern] = f"{cn.mangrove_extent_processed_dir}2015/{sample_tile_id}__{cn.mangrove_extent_processed_pattern}_2015.tif"
+    # Land cover and vegetation height rasters (annual intervals)
+    for LC_year in range(cn.LC_first_year, cn.LC_last_year + 1):
+        download_dict[f"{cn.vegetation_height_pattern}_{LC_year}"] = f"{cn.vegetation_height_annual_path}{LC_year}/{sample_tile_id}.tif"
 
-        # These inputs are exclusively used to adjust C pools in 2015 for TCL that occurred 2001-2014.
-        # NOTE: Uses just the 0-5 year Robinson regrowth rate, regardless of how many years of regrowth there are. This just keeps things simpler than using the different age rates.
-        download_dict[cn.TCL_pattern] = f"{cn.TCL_dir}{cn.TCL_pattern}_{sample_tile_id}.tif"
-        download_dict[cn.planted_forest_AGC_removal_factor_pattern] = f"{cn.planted_forest_AGC_removal_factor_dir}{sample_tile_id}_{cn.planted_forest_AGC_removal_factor_pattern}.tif"
-        download_dict[cn.oil_palm_2000_extent_pattern] = f"{cn.oil_palm_2000_extent_dir}{sample_tile_id}_{cn.oil_palm_2000_extent_pattern}.tif"
-        download_dict[cn.oil_palm_first_year_pattern] = f"{cn.oil_palm_first_year_dir}{cn.oil_palm_first_year_pattern}_{sample_tile_id}.tif"   # Pattern is before tile_id for this input
-        download_dict[f"{cn.natural_forest_growth_curve_pattern}"] = \
-            f"{cn.natural_forest_growth_curve_dir}rate_0_5/{sample_tile_id}_{cn.natural_forest_growth_curve_pattern}__0_5_years__nibble_{cn.secondary_forest_curve_run_date}.tif"
-
-        # Land cover and vegetation height rasters (annual intervals)
-        for LC_year in range(cn.LC_first_year, cn.LC_last_year + 1):
-            download_dict[f"{cn.vegetation_height_pattern}_{LC_year}"] = f"{cn.vegetation_height_annual_path}{LC_year}/{sample_tile_id}.tif"
-
-        if model_type == cn.alt_AGB:
-            output_dir_list = [cn.agc_2015_ctrees_raw_dir, cn.bgc_2015_ctrees_raw_dir, cn.deadwood_c_2015_ctrees_raw_dir, cn.litter_c_2015_ctrees_raw_dir, cn.non_soil_c_2015_ctrees_raw_dir,
-                               cn.agc_2015_ctrees_LC_masked_dir, cn.bgc_2015_ctrees_LC_masked_dir, cn.deadwood_c_2015_ctrees_LC_masked_dir, cn.litter_c_2015_ctrees_LC_masked_dir,
-                               cn.non_soil_c_2015_ctrees_LC_masked_dir, cn.starting_C_pools_ctrees_LC_masked_state_dir]
-        else:
-            output_dir_list = [cn.agc_2015_raw_dir, cn.bgc_2015_raw_dir, cn.deadwood_c_2015_raw_dir, cn.litter_c_2015_raw_dir, cn.non_soil_c_2015_raw_dir,
-                               cn.agc_2015_LC_masked_dir, cn.bgc_2015_LC_masked_dir, cn.deadwood_c_2015_LC_masked_dir, cn.litter_c_2015_LC_masked_dir,
-                               cn.non_soil_c_2015_LC_masked_dir, cn.starting_C_pools_LC_masked_state_dir]
-
+    if model_type == cn.alt_AGB:
+        output_dir_list = [cn.agc_2015_ctrees_raw_dir, cn.bgc_2015_ctrees_raw_dir, cn.deadwood_c_2015_ctrees_raw_dir, cn.litter_c_2015_ctrees_raw_dir, cn.non_soil_c_2015_ctrees_raw_dir,
+                           cn.agc_2015_ctrees_LC_masked_dir, cn.bgc_2015_ctrees_LC_masked_dir, cn.deadwood_c_2015_ctrees_LC_masked_dir, cn.litter_c_2015_ctrees_LC_masked_dir,
+                           cn.non_soil_c_2015_ctrees_LC_masked_dir, cn.starting_C_pools_ctrees_LC_masked_state_dir]
     else:
-        print(f"Year input {year} not valid. Terminating.")
-        sys.exit()
-    # print(download_dict)
-
+        output_dir_list = [cn.agc_2015_raw_dir, cn.bgc_2015_raw_dir, cn.deadwood_c_2015_raw_dir, cn.litter_c_2015_raw_dir, cn.non_soil_c_2015_raw_dir,
+                           cn.agc_2015_LC_masked_dir, cn.bgc_2015_LC_masked_dir, cn.deadwood_c_2015_LC_masked_dir, cn.litter_c_2015_LC_masked_dir,
+                           cn.non_soil_c_2015_LC_masked_dir, cn.starting_C_pools_LC_masked_state_dir]
 
     # Creates list of output directories specific to the run
     output_dir_list = [path.replace("CHUNK_SIZE", str(chunk_size_pixels)) for path in output_dir_list]
@@ -822,7 +793,8 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
 
     if create_zarr:
 
-        # Creates s3 paths for the raw zarr. No model version, type, or path description.
+        # Creates s3 paths for the raw zarr.
+        # Uses vegetation model version so that the starting C pool run can be associated with the vegetation model easily.
         zarr_path = zu.create_zarr_path(starting_C_zarr_root, chunk_size_pixels, run_date, main_logger,
                                         cn.veg_model_version_underscore, model_type, model_path_description)
 
@@ -875,80 +847,80 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
         model_chunk_stats_path = uu.compile_1x1_chunk_stats(all_stats, chunk_shapefile_uri, stage, no_upload, main_logger)
 
 
-    # ### Step 5: Compare model output chunk stats to zarr chunk stats for each variable (only if chunk stats and zarr created)
-    # ### 2016-02-10: This may work now, based on changes I made for starting_composite_primary_forest. Need to test again.
-    # ### OLD NOTE: Not running zarr chunk stats comparison. I was having trouble getting it to work because of problems with
-    # ### variable names and years, and I don't think it's worth fiddling with more.
-    # ### Leaving the code in here just in case I do want to revisit it, but for now I'm not worried about zarr population.
-    #
-    # # Prepares chunk stats spreadsheet: min, mean, max, and sum for all input and output chunks,
-    # # and min and max values across all chunks for all inputs and outputs
-    # # only if not suppressed by the --no_stats flag and at least one chunk was successful (wasn't skipped).
-    # if (not no_stats) and create_zarr:
-    #
-    #     main_logger.info(f"Starting zarr chunk stats comparison: {uu.timestr()}")
-    #
-    #     # Text added to output chunk stats table name(s) (Excel or Parquet)
-    #     comparison_insert = "_original_zarr_comparison"
-    #
-    #     # The name of the chunk stats table from the model
-    #     model_chunk_stats_table_name = os.path.basename(model_chunk_stats_path)
-    #     # print(model_chunk_stats_table_name)
-    #
-    #     tables_to_compare_dict, zarr_comparison_stats_name, zarr_comparison_stats_path = zu.get_table_names_for_zarr_stats_comparison(
-    #         comparison_insert, main_logger, model_chunk_stats_path)
-    #
-    #     # List of dataframes with original and zarr chunk stats and their difference for each dataset-year combination
-    #     all_merged_tables = []
-    #
-    #     # Number of chunks with differences between original and zarr exceeding tolerance
-    #     chunks_count_exceeding_total = 0
-    #
-    #     # Number of chunks that have model chunk stats but not corresponding zarr chunk stats
-    #     chunks_without_zarr_stats_total = 0
-    #
-    #     # Iterates through select variables/datasets for chunk stats comparison. Can modify as needed.
-    #     for var_name_with_pattern_year, var_name in zip(outputs_to_zarr_with_unit_year, outputs_to_zarr):
-    #
-    #         main_logger.info(f"Starting {var_name_with_pattern_year}: {uu.timestr()}")
-    #         var_start_time = time.time()
-    #
-    #         # Runs chunk stats for a dataset (all years) in the zarr in parallel
-    #         chunk_stats_variable_year_zarr = zu.run_parallel_stats(
-    #             client=client,
-    #             chunk_list=chunk_list,
-    #             var=var_name,
-    #             zarr_path=zarr_path,
-    #             output_years=[year]
-    #         )
-    #         print("chunk_stats_variable_year_zarr:", chunk_stats_variable_year_zarr)
-    #
-    #         # After all zarr chunk stats is done for the dataset-year combination,
-    #         # the chunk stats from the zarr are compared to the chunk stats from the model.
-    #         # This is done with Pandas dataframes and is not parallelized because it's just table manipulation
-    #         # for each dataset-year combination.
-    #         # The model output vs. zarr comparison is done after each dataset-year combination
-    #         # to get more real-time feedback on how the datasets compare (rather than waiting until after
-    #         # all zarr chunk stats have been calculated to do the metric comparisons).
-    #         chunks_count_exceeding, chunks_without_zarr_stats = zu.compare_dataset_year_chunk_stats(all_merged_tables,
-    #                                                                                 chunk_stats_variable_year_zarr,
-    #                                                                                 main_logger,
-    #                                                                                 tables_to_compare_dict,
-    #                                                                                 var_name,
-    #                                                                                 zarr_comparison_stats_path)
-    #
-    #         # Total number of chunks that have differences in metrics between the model and zarr
-    #         # that exceed the tolerance
-    #         chunks_count_exceeding_total += chunks_count_exceeding
-    #         chunks_without_zarr_stats_total += chunks_without_zarr_stats
-    #
-    #         var_end_time = time.time()
-    #         main_logger.info(f"  Processed {var_name_with_pattern_year} in {round(var_end_time - var_start_time)} seconds: {uu.timestr()}")
-    #
-    #     # Counts up chunks that had differences exceeding the tolerance and uploads chunk stats comparisons.
-    #     zu.upload_zarr_chunk_stat_comparisons(chunks_count_exceeding_total, chunks_without_zarr_stats_total,
-    #                                           main_logger, model_chunk_stats_table_name,
-    #                                           stage, start_time, zarr_comparison_stats_name, zarr_comparison_stats_path)
+    ### Step 5: Compare model output chunk stats to zarr chunk stats for each variable (only if chunk stats and zarr created)
+    ### 2016-02-10: This may work now, based on changes I made for starting_composite_primary_forest. Need to test again.
+    ### OLD NOTE: Not running zarr chunk stats comparison. I was having trouble getting it to work because of problems with
+    ### variable names and years, and I don't think it's worth fiddling with more.
+    ### Leaving the code in here just in case I do want to revisit it, but for now I'm not worried about zarr population.
+
+    # Prepares chunk stats spreadsheet: min, mean, max, and sum for all input and output chunks,
+    # and min and max values across all chunks for all inputs and outputs
+    # only if not suppressed by the --no_stats flag and at least one chunk was successful (wasn't skipped).
+    if (not no_stats) and create_zarr:
+
+        main_logger.info(f"Starting zarr chunk stats comparison: {uu.timestr()}")
+
+        # Text added to output chunk stats table name(s) (Excel or Parquet)
+        comparison_insert = "_original_zarr_comparison"
+
+        # The name of the chunk stats table from the model
+        model_chunk_stats_table_name = os.path.basename(model_chunk_stats_path)
+        # print(model_chunk_stats_table_name)
+
+        tables_to_compare_dict, zarr_comparison_stats_name, zarr_comparison_stats_path = zu.get_table_names_for_zarr_stats_comparison(
+            comparison_insert, main_logger, model_chunk_stats_path)
+
+        # List of dataframes with original and zarr chunk stats and their difference for each dataset-year combination
+        all_merged_tables = []
+
+        # Number of chunks with differences between original and zarr exceeding tolerance
+        chunks_count_exceeding_total = 0
+
+        # Number of chunks that have model chunk stats but not corresponding zarr chunk stats
+        chunks_without_zarr_stats_total = 0
+
+        # Iterates through select variables/datasets for chunk stats comparison. Can modify as needed.
+        for var_name_with_pattern_year, var_name in zip(outputs_to_zarr_with_unit_year, outputs_to_zarr):
+
+            main_logger.info(f"Starting {var_name_with_pattern_year}: {uu.timestr()}")
+            var_start_time = time.time()
+
+            # Runs chunk stats for a dataset (all years) in the zarr in parallel
+            chunk_stats_variable_year_zarr = zu.run_parallel_stats(
+                client=client,
+                chunk_list=chunk_list,
+                var=var_name,
+                zarr_path=zarr_path,
+                output_years=[year]
+            )
+            print("chunk_stats_variable_year_zarr:", chunk_stats_variable_year_zarr)
+
+            # After all zarr chunk stats is done for the dataset-year combination,
+            # the chunk stats from the zarr are compared to the chunk stats from the model.
+            # This is done with Pandas dataframes and is not parallelized because it's just table manipulation
+            # for each dataset-year combination.
+            # The model output vs. zarr comparison is done after each dataset-year combination
+            # to get more real-time feedback on how the datasets compare (rather than waiting until after
+            # all zarr chunk stats have been calculated to do the metric comparisons).
+            chunks_count_exceeding, chunks_without_zarr_stats = zu.compare_dataset_year_chunk_stats(all_merged_tables,
+                                                                                    chunk_stats_variable_year_zarr,
+                                                                                    main_logger,
+                                                                                    tables_to_compare_dict,
+                                                                                    var_name,
+                                                                                    zarr_comparison_stats_path)
+
+            # Total number of chunks that have differences in metrics between the model and zarr
+            # that exceed the tolerance
+            chunks_count_exceeding_total += chunks_count_exceeding
+            chunks_without_zarr_stats_total += chunks_without_zarr_stats
+
+            var_end_time = time.time()
+            main_logger.info(f"  Processed {var_name_with_pattern_year} in {round(var_end_time - var_start_time)} seconds: {uu.timestr()}")
+
+        # Counts up chunks that had differences exceeding the tolerance and uploads chunk stats comparisons.
+        zu.upload_zarr_chunk_stat_comparisons(chunks_count_exceeding_total, chunks_without_zarr_stats_total,
+                                              main_logger, model_chunk_stats_table_name,
+                                              stage, start_time, zarr_comparison_stats_name, zarr_comparison_stats_path)
 
 
     ### Step 6: Gather worker logs

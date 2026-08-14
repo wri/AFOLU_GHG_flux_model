@@ -15,11 +15,11 @@ creation.
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Local test (Dask part does not work because of client.submit()):
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -bb 23 -4 24 -3 --run_local --no_upload  -fv 1 -ft 1 --input_date YYYYMMDD
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -bb 23 -4 24 -3 --run_local --no_upload -mt standard -mpd test_box -fv 1 -ft 1 --input_date YYYYMMDD
 
 Coiled small tests (needs 32 GB because of per-ha and per-pixel outputs):
 python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn starting_carbon_pools
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools -bb 23 -4 24 -3 -fv 2 -ft 2 -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260129_14_36_42__KEEP.xlsx  --input_date YYYYMMDD
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools -mt standard -mpd test_box -bb 23 -4 24 -3 -fv 2 -ft 2 -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260129_14_36_42__KEEP.xlsx  --input_date YYYYMMDD
 
 Coiled small tests:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn starting_carbon_pools_10x10__Ctrees
@@ -27,15 +27,15 @@ python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_ou
 
 Coiled Cerrado test (174 features):
 python -m src.utilities.create_cluster -n 20 -t 1 -m 32 -cn starting_carbon_pools
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260129_14_36_42__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp --input_date YYYYMMDD
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools -mt standard -mpd test_box -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260129_14_36_42__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp --input_date YYYYMMDD
 
 Coiled large shapefile test (1884 features):
 python -m src.utilities.create_cluster -n 100 -t 1 -m 32 -cn starting_carbon_pools
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260129_14_36_42__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp --input_date YYYYMMDD
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools -mt standard -mpd test_box -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260129_14_36_42__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp --input_date YYYYMMDD
 
 Full run:
 python -m src.utilities.create_cluster -n 200 -t 1 -m 32 -cn starting_carbon_pools
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260129_14_36_42__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --input_date YYYYMMDD --log_note "Global 10x10 deg creation for starting carbon pools using ESA CCI AGB v6, with starting carbon pool adjustments."
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools -mt standard -mpd global -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260129_14_36_42__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --input_date YYYYMMDD --log_note "Global 10x10 deg creation for starting carbon pools using ESA CCI AGB v6, with starting carbon pool adjustments."
 
 For sensitivity anlysis:
 Coiled small tests:
@@ -99,7 +99,8 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     else:
         biomass_source = "ESA_CCI"
         zarr_root = cn.starting_C_densities_2015_path_zarr
-        output_base = f"{cn.full_bucket_prefix}/climate/ESA_CCI_biomass/{cn.esa_AGB_v}/{year}/year_2015_derived_carbon_pools/PATTERN/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{cn.carbon_2015_creation_date}/"
+        output_base = f"{cn.carbon_2015_dir}PATTERN/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{cn.carbon_2015_creation_date}/"
+        output_base = output_base.replace(cn.model_version_type_description_placeholder,f"version_{cn.veg_model_version_underscore}__{model_type}__{model_path_description}")
         output_dir_list = [cn.agc_2015_raw_dir, cn.bgc_2015_raw_dir, cn.deadwood_c_2015_raw_dir, cn.litter_c_2015_raw_dir,
                            cn.non_soil_c_2015_raw_dir, cn.agc_2015_LC_masked_dir, cn.bgc_2015_LC_masked_dir, cn.deadwood_c_2015_LC_masked_dir,
                            cn.litter_c_2015_LC_masked_dir, cn.non_soil_c_2015_LC_masked_dir, cn.starting_C_pools_LC_masked_state_dir]
@@ -160,8 +161,10 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     # lat-long chunk size for source zarr
     source_zarr_chunk_size = cn.chunk_dims  #4000x4000
 
-    # The zarr path that's being used. No model version, type, or path description.
-    mega_zarr_path = zu.create_zarr_path(zarr_root, chunk_size_pixels, input_date, main_logger)
+    # The zarr path that's being used.
+    # Uses vegetation model version so that the starting C pool run can be associated with the vegetation model easily.
+    mega_zarr_path = zu.create_zarr_path(zarr_root, chunk_size_pixels, input_date, main_logger,
+                                         cn.veg_model_version_underscore, model_type, model_path_description)
     main_logger.info(f"Aggregating from zarr ({source_zarr_chunk_size} pixel chunks): {mega_zarr_path}")
     main_logger.info(f"Core output path for aggregation: {output_base}")
 
@@ -325,6 +328,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     # Counts per-hectare outputs
     output_dir_list_per_ha = [path.replace("CHUNK_SIZE", str(cn.full_raster_dims)) for path in output_dir_list]
     output_dir_list_per_ha = [path.replace("PER_HA_OR_PIXEL", cn.C_density_pixel_meaning) for path in output_dir_list_per_ha]
+    output_dir_list_per_ha = [path.replace(cn.model_version_type_description_placeholder, f"version_{cn.veg_model_version_underscore}__{model_type}__{model_path_description}") for path in output_dir_list_per_ha]
 
     output_dir_list_per_ha.sort()  # Alphabetically order the outputs (modifies output_dir_list_per_ha)
     if is_large_run:
@@ -343,6 +347,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     # Counts per-pixel outputs
     output_dir_list_per_pixel = [path.replace("CHUNK_SIZE", str(cn.full_raster_dims)) for path in output_dir_list]
     output_dir_list_per_pixel = [path.replace("PER_HA_OR_PIXEL", cn.C_per_pixel_pixel_meaning) for path in output_dir_list_per_pixel]
+    output_dir_list_per_pixel = [path.replace(cn.model_version_type_description_placeholder, f"version_{cn.veg_model_version_underscore}__{model_type}__{model_path_description}") for path in output_dir_list_per_pixel]
     output_dir_list_per_pixel.sort()
     if is_large_run:
         main_logger.info(f"output_dir_list_per_pixel for {stage}:")
@@ -359,6 +364,7 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
     # Counts 0.04x0.04 deg outputs
     output_dir_list_aggreg = [path.replace("CHUNK_SIZE", str(cn.global_aggregation_factor)) for path in output_dir_list]
     output_dir_list_aggreg = [path.replace("PER_HA_OR_PIXEL", cn.C_density_aggreg_pixel_meaning) for path in output_dir_list_aggreg]
+    output_dir_list_aggreg = [path.replace(cn.model_version_type_description_placeholder, f"version_{cn.veg_model_version_underscore}__{model_type}__{model_path_description}") for path in output_dir_list_aggreg]
     output_dir_list_aggreg.sort()
     if is_large_run:
         main_logger.info(f"output_dir_list_aggreg for {stage}:")
