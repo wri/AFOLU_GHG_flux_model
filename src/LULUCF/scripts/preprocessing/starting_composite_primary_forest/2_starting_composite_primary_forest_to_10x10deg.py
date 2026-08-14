@@ -221,8 +221,6 @@ def main(cluster_name, model_type, run_local, no_log, no_upload, model_chunk_sta
 
     # Converts the pixel counts for the 10x10s into a dataframe
     counts_per_ha_10x10_df = pd.DataFrame(counts_per_ha_10x10_stats_list)
-    # Drops _2015 from tile_name in the 10x10 output; the 1x1 chunk stats doesn't include _2015 in the tile name
-    counts_per_ha_10x10_df['tile_name'] = counts_per_ha_10x10_df['tile_name'].str.replace(f'_{year}', '', regex=False)
 
     # Merges the pixel counts for the 10x10 tiles against the pixel counts for the 1x1s
     merged_10x10_counts_per_ha_df = model_10x10_counts_df.merge(counts_per_ha_10x10_df, on='tile_name', how='left')
