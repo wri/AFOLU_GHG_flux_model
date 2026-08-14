@@ -2,29 +2,29 @@
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model/
 
 Local:
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -bb 116 -3 116.25 -2.75 -cs 0.25 --run_local --no_stats --no_upload --year 2015
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -bb 116 -3 116.25 -2.75 -cs 0.25 --run_local --no_stats --no_upload 
 
 Needs 8GB Coiled workers with 1 thread for 1x1 deg chunks; 4GB workers are too small.
 
 Coiled small test:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 8 -cn starting_carbon_pools
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools -bb 23 -4 24 -3 -cs 1 -mt standard -mpd test_box  --create_zarr --year 2015
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools -bb 23 -4 24 -3 -cs 1 -mt standard -mpd test_box  --create_zarr 
 
 Coiled shapefile test:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 8 -cn starting_carbon_pools
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools --create_zarr --year 2015 -mt standard -mpd test_area -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -f 1
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools --create_zarr -mt standard -mpd test_area -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -f 1
 
 Full run 2015 (using 200 workers seems to overload requests to s3):
 python -m src.utilities.create_cluster -n 100 -t 1 -m 8 -cn starting_carbon_pools
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools --create_zarr --year 2015 -mt standard -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive global run for carbon pool 2015 creation using ESA CCI AGB v6, raw and adjusted versions."
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools --create_zarr -mt standard -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive global run for carbon pool 2015 creation using ESA CCI AGB v6, raw and adjusted versions."
 
 Test run 2015 for sensitivity analysis:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 8 -cn starting_carbon_pools__Ctrees
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools__Ctrees -mt ctrees_starting_AGC -bb -80 30 -70 40 -cs 1 --create_zarr -mpd test_box --year 2015
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools__Ctrees -mt ctrees_starting_AGC -bb -80 30 -70 40 -cs 1 --create_zarr -mpd test_box 
 
 Full run 2015 for sensitivity analysis:
 python -m src.utilities.create_cluster -n 100 -t 1 -m 8 -cn starting_carbon_pools__Ctrees
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools__Ctrees -mt ctrees_starting_AGC --create_zarr -mpd global --year 2015 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive global run for carbon pool 2015 creation using Ctrees."
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools__Ctrees -mt ctrees_starting_AGC --create_zarr -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive global run for carbon pool 2015 creation using Ctrees."
 
 To create a vrt of the 10x10 deg outputs, do:
 aws s3 ls s3://gfw2-data/climate/ESA_CCI_biomass/v5_01/2015/year_2015_derived_carbon_pools/litter_C_density_MgC_ha/40000_pixels/ --recursive | grep .tif$ | awk '{print "/vsis3/gfw2-data/"$4}' > litter_C_2015_file_list.txt
@@ -623,13 +623,14 @@ def create_and_upload_starting_C_densities(bounds, mangrove_C_ratio_array, downl
     return return_message, chunk_stats  # Return both the success message and the statistics
 
 
-def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log=False, no_upload= False, create_zarr=False,
+def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False, no_upload= False, create_zarr=False,
          chunk_shapefile_uri=False, bounding_box=None, chunk_size=None, first_chunks=None,
          model_path_description=None, log_note=None, resume_run_datetime=None):
 
     ### Step 1: Preparation
 
     # Model stage being run
+    year = cn.LC_first_year
     stage = f'starting_carbon_pools_{year}_1x1_deg'
 
     # Connects to Coiled cluster if not running locally and the named cluster exists
@@ -642,24 +643,17 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
     # Creates the log for the main function and populates it with basic run information
     main_logger, main_log_local_path, n_workers = lu.populate_main_log_header(client, cluster, log_note, run_local, model_type, stage)
 
-    if model_type == cn.alt_AGB and year != 2015:
-        raise ValueError("sensitivity analysis is only valid for year 2015.")
-
-    if year == 2015 and model_type == cn.alt_AGB:
+    if model_type == cn.alt_AGB:
         biomass_source = "Ctrees"
         run_date = cn.ctrees_run_date
         agb_2015_pattern = cn.ctrees_agb_2015_pattern
         agb_2015_dir_processed = cn.ctrees_agb_2015_dir_processed
 
-    elif year == 2015:
+    else:
         biomass_source = "ESA_CCI"
         run_date = cn.carbon_2015_creation_date
         agb_2015_pattern = cn.agb_2015_pattern
         agb_2015_dir_processed = cn.agb_2015_dir_processed
-
-    else:
-        print("Year selection not valid")
-        sys.exit()
 
     # Starting time for stage
     start_time = uu.timestr()
@@ -890,7 +884,7 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
                 output_years=[year],
                 year_in_array_name=True
             )
-            print("chunk_stats_variable_year_zarr:", chunk_stats_variable_year_zarr)
+            # print("chunk_stats_variable_year_zarr:", chunk_stats_variable_year_zarr)
 
             # After all zarr chunk stats is done for the dataset-year combination,
             # the chunk stats from the zarr are compared to the chunk stats from the model.
@@ -975,7 +969,6 @@ if __name__ == "__main__":
     parser.add_argument('-cs', '--chunk_size', type=float, help='Chunk size (degrees)')
     parser.add_argument('-cshp', '--chunk_shapefile_uri', help='s3 location for shapefile of 1x1 deg chunk footprints')
     parser.add_argument('-f', '--first_chunks', type=int, help='Number of chunks to process from shapefile')
-    parser.add_argument('--year', type=int, required=True, help='Year for carbon pools: must be 2000 or 2015')
     parser.add_argument('-mt', '--model_type', default='standard', help='Type of model run (e.g., standard). Not currently using.')
     parser.add_argument('-mpd', '--model_path_description', help='Description of model run (e.g., global, test, X_area). Not currently using.')
     parser.add_argument('-ln', '--log_note', help='Note to include in the log.')
@@ -994,7 +987,6 @@ if __name__ == "__main__":
     chunk_size = args.chunk_size
     chunk_shapefile_uri = args.chunk_shapefile_uri
     first_chunks = args.first_chunks
-    year = args.year
     model_type = args.model_type
     model_path_description = args.model_path_description
     log_note = args.log_note
@@ -1006,7 +998,7 @@ if __name__ == "__main__":
     no_upload = args.no_upload
     create_zarr = args.create_zarr
 
-    main(cluster_name, year, model_type, run_local, no_stats, no_log, no_upload, create_zarr, chunk_shapefile_uri,
+    main(cluster_name, model_type, run_local, no_stats, no_log, no_upload, create_zarr, chunk_shapefile_uri,
          bounding_box=bounding_box, chunk_size=chunk_size,
          first_chunks=first_chunks,  model_path_description=model_path_description, log_note=log_note,
          resume_run_datetime=resume_run_datetime)

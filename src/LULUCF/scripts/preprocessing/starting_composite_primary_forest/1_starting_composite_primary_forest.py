@@ -4,27 +4,27 @@ Maps composite primary forest in 2015 (model start).
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Local test (Dask part does not work because of client.submit()):
-python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -bb 10 49.75 10.25 50 -cs 0.25 --run_local --no_upload
+python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -bb 10 49.75 10.25 50 -cs 0.25 --run_local --no_upload -mt standard -mpd test_box
 
 Coiled small tests:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 4 -cn starting_composite_primary_forest
-python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -cn starting_composite_primary_forest -bb 116.25 -2.25 116.5 -2 -cs 0.25
+python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -cn starting_composite_primary_forest -mt standard -mpd test_box  -bb 116.25 -2.25 116.5 -2 -cs 0.25
 
 Coiled small tests:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 4 -cn starting_composite_primary_forest
-python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -cn starting_composite_primary_forest -bb -64 -22 -63 -21 -cs 1 --create_zarr
+python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -cn starting_composite_primary_forest -bb -64 -22 -63 -21 -cs 1 -mt standard -mpd test_box  --create_zarr
 
 Coiled Cerrado test (174 features):
 python -m src.utilities.create_cluster -n 20 -t 1 -m 4 -cn starting_composite_primary_forest
-python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -cn starting_composite_primary_forest -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp --create_zarr
+python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -cn starting_composite_primary_forest -mt standard -mpd Cerrado -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp --create_zarr
 
 Coiled large shapefile test (1884 features):
 python -m src.utilities.create_cluster -n 100 -t 1 -m 4 -cn starting_composite_primary_forest
-python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -cn starting_composite_primary_forest -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp --create_zarr
+python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -cn starting_composite_primary_forest -mt standard -mpd 1884_features  -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp --create_zarr
 
 Full run:
 python -m src.utilities.create_cluster -n 200 -t 1 -m 4 -cn starting_composite_primary_forest
-python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -cn starting_composite_primary_forest -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Creating starting composite primary forest for 2015 for model v1.0.5 (2016-2024)."
+python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.1_starting_composite_primary_forest -cn starting_composite_primary_forest -mt standard -mpd global  -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Creating starting composite primary forest for 2015 for model v1.0.5 (2016-2024)."
 """
 
 import argparse
@@ -141,11 +141,11 @@ def create_and_upload_starting_composite_primary_forest(bounds, download_dict_wi
     ### Part 4: Writes outputs to pre-existing global mega-zarr (only if activated)
 
     out_dict_all_dtypes = {
-        cn.starting_composite_primary_forest_pattern : composite_primary
+        f"{cn.starting_composite_primary_forest_pattern}_{year}": composite_primary
     }
 
-    zu.populate_zarr(bounds, bounds_str, create_zarr, [1], is_large_run, logger_worker, zarr_path,
-                     out_dict_all_dtypes, outputs_to_zarr, stage, tile_id)
+    zu.populate_zarr(bounds, bounds_str, create_zarr, [year], is_large_run, logger_worker, zarr_path,
+                     out_dict_all_dtypes, outputs_to_zarr, stage, tile_id, year_in_array_name=True)
 
 
     ### Part 5: Calculates min, mean, max, and count for each output chunk.
@@ -227,10 +227,10 @@ def create_and_upload_starting_composite_primary_forest(bounds, download_dict_wi
     return return_message, chunk_stats  # Return both the success message and the statistics
 
 
-def main(cluster_name,
+def main(cluster_name, model_type,
          run_local=False, no_stats=False, no_log=False, no_upload=False, create_zarr=False,
          chunk_shapefile_uri=False, bounding_box=None, chunk_size_deg=None, first_chunks=None,
-         log_note=None, resume_run_datetime=None):
+         model_path_description=None, log_note=None, resume_run_datetime=None):
 
     ### Step 1: Preparation
 
@@ -255,6 +255,7 @@ def main(cluster_name,
     main_logger.info(f"Stage {stage} started at: {start_time}")
     main_logger.info(f"Vegetation model version: {cn.veg_model_version}")
     main_logger.info(f"Run date: {run_date}")
+    main_logger.info(f"Model path descriptor: {model_path_description}")
     main_logger.info(f"Year: {year}")
     main_logger.info(f"no_upload: {no_upload}")
     main_logger.info(f"Tolerance for comparison between model and zarr chunk stat metrics: {cn.zarr_difference_tolerance}")
@@ -326,10 +327,10 @@ def main(cluster_name,
         for key, value in download_dict_with_data_types.items():
             main_logger.info(f"  {key}: {value}")
 
-
     # Creates a list of output directories (core and intermediates) for all outputs and intervals based on specifics of the model run
     output_dir_list = [cn.starting_composite_primary_forest_dir]
     output_dir_list = [path.replace('CHUNK_SIZE', str(chunk_size_pixels)) for path in output_dir_list]
+    output_dir_list = [path.replace(cn.model_version_type_description_placeholder, f"version_{cn.veg_model_version_underscore}__{model_type}__{model_path_description}") for path in output_dir_list]
     main_logger.info(f"output_dir_list for {stage}:")
     for item in output_dir_list:
         main_logger.info(f"  {item}")
@@ -341,14 +342,16 @@ def main(cluster_name,
     # Only creates the global zarr if needed (large runs or otherwise specified)
     if create_zarr:
 
-        # Creates s3 paths for the raw zarr. No model version, type, or path description.
-        zarr_path = zu.create_zarr_path(cn.starting_composite_primary_forest_zarr_path, chunk_size_pixels, run_date, main_logger)
+        # Creates s3 paths for the raw zarr.
+        # Uses vegetation model version so that the starting C pool run can be associated with the vegetation model easily.
+        zarr_path = zu.create_zarr_path(cn.starting_composite_primary_forest_zarr_path, chunk_size_pixels, run_date, main_logger,
+                                        cn.veg_model_version_underscore, model_type, model_path_description)
         outputs_to_zarr = [cn.starting_composite_primary_forest_pattern]
-
+        outputs_to_zarr_with_year = [f"{cn.starting_composite_primary_forest_pattern}_{year}"]
 
         # Creates the global zarr with metadata only
-        zu.initialize_global_zarr(zarr_path, outputs_to_zarr, 1,
-                                  ((cn.veg_end_year_count), chunk_size_pixels, chunk_size_pixels), main_logger)
+        zu.initialize_global_zarr(zarr_path, outputs_to_zarr_with_year, 1,
+                                  (1, chunk_size_pixels, chunk_size_pixels), main_logger)
 
         # Checks the zarr coordinates and extent
         fs = fsspec.filesystem("s3", anon=False)
@@ -432,7 +435,8 @@ def main(cluster_name,
                 var=var_name_with_pattern_year,
                 zarr_path=zarr_path,
                 output_years=[year],
-                nodata_val=0  # Ignores 0 when counting pixels; in this case, only counts primary forest (1)
+                nodata_val=0,  # Ignores 0 when counting pixels; in this case, only counts primary forest (1)
+                year_in_array_name = True
             )
 
 
@@ -522,6 +526,8 @@ if __name__ == "__main__":
     parser.add_argument('-cs', '--chunk_size_deg', type=float, help='Chunk size (degrees)')
     parser.add_argument('-cshp', '--chunk_shapefile_uri', help='s3 location for shapefile of 1x1 deg chunk footprints')
     parser.add_argument('-f', '--first_chunks', type=int, help='Number of chunks to process from shapefile')
+    parser.add_argument('-mt', '--model_type', default='standard', help='Type of model run (e.g., standard). Not currently using.')
+    parser.add_argument('-mpd', '--model_path_description', help='Description of model run (e.g., global, test, X_area). Not currently using.')
     parser.add_argument('-ln', '--log_note', help='Note to include in the log.')
     parser.add_argument('-rr', '--resume_run_datetime', help='run_datetime of a prior run to resume (skips already-completed chunks)')
 
@@ -538,6 +544,8 @@ if __name__ == "__main__":
     chunk_size_deg = args.chunk_size_deg
     chunk_shapefile_uri = args.chunk_shapefile_uri
     first_chunks = args.first_chunks
+    model_type = args.model_type
+    model_path_description = args.model_path_description
     log_note = args.log_note
     resume_run_datetime = args.resume_run_datetime
 
@@ -548,6 +556,7 @@ if __name__ == "__main__":
     create_zarr = args.create_zarr
 
     # Create the cluster with command line arguments
-    main(cluster_name, run_local, no_stats, no_log, no_upload, create_zarr, chunk_shapefile_uri,
-         bounding_box=bounding_box, chunk_size_deg=chunk_size_deg, first_chunks=first_chunks, log_note=log_note,
+    main(cluster_name, model_type, run_local, no_stats, no_log, no_upload, create_zarr, chunk_shapefile_uri,
+         bounding_box=bounding_box, chunk_size_deg=chunk_size_deg, first_chunks=first_chunks,
+         model_path_description=model_path_description, log_note=log_note,
          resume_run_datetime=resume_run_datetime)

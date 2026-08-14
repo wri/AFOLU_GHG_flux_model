@@ -18,19 +18,19 @@ when it builds the zarr. Hardcoding the same values here guarantees this script 
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Local test (Dask part does not work because of client.submit()):
-python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.2_starting_composite_primary_forest_to_10x10deg -bb 23 -4 24 -3 --run_local --no_upload -mcstn starting_composite_primary_forest_1x1_chunk_statistics_20260210_17_37_50__KEEP.xlsx -ft 1
+python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.2_starting_composite_primary_forest_to_10x10deg -bb 23 -4 24 -3 -mt standard -mpd test_box --run_local --no_upload -mcstn starting_composite_primary_forest_1x1_chunk_statistics_20260210_17_37_50__KEEP.xlsx -ft 1
 
 Coiled small test:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 32 -cn starting_composite_primary_forest
-python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.2_starting_composite_primary_forest_to_10x10deg -cn starting_composite_primary_forest -bb 23 -4 24 -3 -mcstn starting_composite_primary_forest_1x1_chunk_statistics_20260210_17_37_50__KEEP.xlsx
+python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.2_starting_composite_primary_forest_to_10x10deg -cn starting_composite_primary_forest -bb 23 -4 24 -3 -mt standard -mpd test_box -mcstn starting_composite_primary_forest_1x1_chunk_statistics_20260210_17_37_50__KEEP.xlsx
 
 Coiled Cerrado test (174 features):
 python -m src.utilities.create_cluster -n 20 -t 1 -m 32 -cn starting_composite_primary_forest
-python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.2_starting_composite_primary_forest_to_10x10deg -cn starting_composite_primary_forest -mcstn starting_composite_primary_forest_1x1_chunk_statistics_20260210_17_37_50__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp
+python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.2_starting_composite_primary_forest_to_10x10deg -cn starting_composite_primary_forest -mt standard -mpd Cerrado -mcstn starting_composite_primary_forest_1x1_chunk_statistics_20260210_17_37_50__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__Cerrado_center_in.shp
 
 Full run:
 python -m src.utilities.create_cluster -n 200 -t 1 -m 32 -cn starting_composite_primary_forest
-python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.2_starting_composite_primary_forest_to_10x10deg -cn starting_composite_primary_forest -mcstn starting_composite_primary_forest_1x1_chunk_statistics_20260210_17_37_50__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Global 10x10 deg creation for starting composite primary forest (2015)."
+python -m src.LULUCF.scripts.preprocessing.starting_composite_primary_forest.2_starting_composite_primary_forest_to_10x10deg -cn starting_composite_primary_forest -mt standard -mpd global -mcstn starting_composite_primary_forest_1x1_chunk_statistics_20260210_17_37_50__KEEP.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Global 10x10 deg creation for starting composite primary forest (2015)."
 
 Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/690a21cd-2ea0-8333-9c7f-7091f8016fb3
 and then Claude session 'Starting composite primary forest 10x10 geotifs'
@@ -50,8 +50,9 @@ from src.utilities import zarr_utilities as zu
 from src.utilities import resize_cluster
 
 
-def main(cluster_name, run_local, no_log, no_upload, model_chunk_stats_table_name, chunk_shapefile_uri=False, bounding_box=None,
-         first_tiles_to_process=None, log_note=None):
+def main(cluster_name, model_type, run_local, no_log, no_upload, model_chunk_stats_table_name,
+         chunk_shapefile_uri=False, bounding_box=None,
+         first_tiles_to_process=None, model_path_description=None, log_note=None):
 
 
     ### Step 1: Preparation
@@ -66,10 +67,6 @@ def main(cluster_name, run_local, no_log, no_upload, model_chunk_stats_table_nam
     if not chunk_shapefile_uri:
         chunk_shapefile_uri = cn.fishnet_1x1deg_uri
 
-    # These match what 1_starting_composite_primary_forest.py hardcodes when it builds the zarr,
-    # so the zarr path built below resolves to the same zarr that script wrote.
-    model_type = 'standard'
-    model_path_description = 'NA'
     run_date = cn.starting_composite_primary_forest_run_date
 
     # Creates the log for the main function and populates it with basic run information
@@ -119,8 +116,10 @@ def main(cluster_name, run_local, no_log, no_upload, model_chunk_stats_table_nam
     # lat-long chunk size for source zarr
     source_zarr_chunk_size = cn.chunk_dims  #4000x4000
 
-    # The zarr path that's being used. No model version, type, or path description.
-    zarr_path = zu.create_zarr_path(cn.starting_composite_primary_forest_zarr_path, source_zarr_chunk_size, run_date, main_logger)
+    # The zarr path that's being used.
+    # Uses vegetation model version so that the starting C pool run can be associated with the vegetation model easily.
+    zarr_path = zu.create_zarr_path(cn.starting_composite_primary_forest_zarr_path, source_zarr_chunk_size, run_date, main_logger,
+                                    cn.veg_model_version_underscore, model_type, model_path_description)
     main_logger.info(f"Aggregating from zarr ({source_zarr_chunk_size} pixel chunks): {zarr_path}")
 
     # Output directory
@@ -167,7 +166,9 @@ def main(cluster_name, run_local, no_log, no_upload, model_chunk_stats_table_nam
 
         future = client.submit(zu.create_10x10_deg_geotif_from_zarr,
                                var_name, 0, tile_id, zarr_path, output_base,
-                               cn.veg_model_version_underscore, model_type, model_path_description, no_upload, use_start_year=True, no_data_val=0)
+                               cn.veg_model_version_underscore, model_type, model_path_description, no_upload,
+                               True, 0, True)
+
         futures.append(future)
 
     main_logger.info(f"There are {len(futures)} tiles to aggregate")
@@ -274,6 +275,8 @@ if __name__ == "__main__":
     parser.add_argument('-cshp', '--chunk_shapefile_uri', help='s3 location for shapefile of 1x1 deg chunk footprints')
     parser.add_argument('-ft', '--first_tiles_to_process', type=int, help='Number of tiles to process (for testing)')
     parser.add_argument('-mcstn', '--model_chunk_stats_table_name', required=True, help='s3 path for model chunk stats table that will be compared with zarr chunk stats')
+    parser.add_argument('-mt', '--model_type', default='standard', help='Type of model run (e.g., standard)')
+    parser.add_argument('-mpd', '--model_path_description', help='Description of model run (e.g., global, test, X_area)')
     parser.add_argument('-ln', '--log_note', help='Note to include in the log.')
 
     parser.add_argument('--run_local', action='store_true', help='Run locally without Dask/Coiled')
@@ -287,6 +290,8 @@ if __name__ == "__main__":
     chunk_shapefile_uri = args.chunk_shapefile_uri
     first_tiles_to_process = args.first_tiles_to_process
     model_chunk_stats_table_name = args.model_chunk_stats_table_name
+    model_type = args.model_type
+    model_path_description = args.model_path_description
     log_note = args.log_note
 
     run_local = args.run_local
@@ -294,5 +299,5 @@ if __name__ == "__main__":
     no_upload = args.no_upload
 
     # Create the cluster with command line arguments
-    main(cluster_name, run_local, no_log, no_upload, model_chunk_stats_table_name, chunk_shapefile_uri, bounding_box=bounding_box,
-         first_tiles_to_process=first_tiles_to_process, log_note=log_note)
+    main(cluster_name, model_type, run_local, no_log, no_upload, model_chunk_stats_table_name, chunk_shapefile_uri, bounding_box=bounding_box,
+         first_tiles_to_process=first_tiles_to_process, model_path_description=model_path_description, log_note=log_note)

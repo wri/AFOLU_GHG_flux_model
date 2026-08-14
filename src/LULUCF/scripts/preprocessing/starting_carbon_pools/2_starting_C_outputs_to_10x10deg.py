@@ -50,6 +50,11 @@ python -m src.utilities.create_cluster -n 200 -t 1 -m 32 -cn starting_carbon_poo
 python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.2_starting_C_outputs_to_10x10deg -cn starting_carbon_pools_10x10__Ctrees -mt ctrees_starting_AGC -mpd global -mcstn starting_carbon_pools_2015_1x1_deg_1x1_chunk_statistics_20260630_00_52_24.xlsx -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp --log_note "Global 10x10 deg creation for starting carbon pools using C-Trees AGB."
 
 Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/690a21cd-2ea0-8333-9c7f-7091f8016fb3
+
+NOTE 2026-08-14: The pixel counts for 1x1s vs. 10x10s don't match for the raw versions but do match for the landcover-masked versions.
+I don't know why that is exactly but it has to do with NoData handling (more pixels included in zarr).
+Given that I'm not using the raw versions for anything and the output raw geotifs still
+look right, I'm not going to try to fix this for now.
 """
 
 import argparse
@@ -403,8 +408,8 @@ if __name__ == "__main__":
     parser.add_argument('-ft', '--first_tiles_to_process', type=int, help='Number of tiles to process (for testing)')
     parser.add_argument('-fy', '--first_years_to_process', type=int, help='Number of years to process from raw mega-zarr (for testing)')
     parser.add_argument('-mcstn', '--model_chunk_stats_table_name', required=True, help='s3 path for model chunk stats table that will be compared with zarr chunk stats')
-    parser.add_argument('-mt', '--model_type', default='standard', help='Type of model run (e.g., standard). Not currently using.')
-    parser.add_argument('-mpd', '--model_path_description', help='Description of model run (e.g., global, test, X_area). Not currently using.')
+    parser.add_argument('-mt', '--model_type', default='standard', help='Type of model run (e.g., standard)')
+    parser.add_argument('-mpd', '--model_path_description', help='Description of model run (e.g., global, test, X_area)')
     parser.add_argument('-ln', '--log_note', help='Note to include in the log.')
 
     parser.add_argument('--run_local', action='store_true', help='Run locally without Dask/Coiled')

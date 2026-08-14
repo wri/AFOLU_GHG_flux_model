@@ -59,7 +59,7 @@ interval_end_years = [2015]
 # # For starting composite primary forest
 # bounds = [9, -1, 10, 0]
 # zarr_path = 's3://gfw2-data/climate/AFOLU_flux_model/LULUCF/starting_composite_primary_forest/2015/zarr/4000_pixels/20260210/starting_composite_primary_forest.zarr'
-# var_name = 'starting_composite_primary_forest'
+# var_name = 'starting_composite_primary_forest_2015'
 # interval_end_years = [2015]
 
 # # For AGC RF (added to vegetation zarr later)
