@@ -28,6 +28,8 @@ SOC_model_version_underscore = SOC_model_version.replace(".", "_")
 
 LULUCF_full_version_underscore = (f"LULUCF_version_{LULUCF_model_version_underscore}_MODEL_TYPE__MODEL_PATH_DESCRIPTION__veg_v{veg_model_version_underscore}__org_soil_v{organic_soil_model_version_underscore}__min_soil_v{SOC_model_version_underscore}")
 
+model_version_type_description_placeholder = 'version_MODEL_VERSION__TYPE__DESCRIPTION'
+
 
 ### s3 buckets
 s3 = boto3.resource('s3')
@@ -447,42 +449,44 @@ starting_C_densities_2000_path_zarr = f"{full_bucket_prefix}/climate/WHRC_biomas
 ## 2015
 carbon_2015_creation_date = '20260807'
 
-agc_2015_raw_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{agc_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+carbon_2015_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{model_version_type_description_placeholder}/"
+
+agc_2015_raw_dir = f"{carbon_2015_dir}{agc_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 agc_2015_raw_pattern = f"{agc_raw_dens_pattern}_2015"
 
-bgc_2015_raw_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{bgc_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+bgc_2015_raw_dir = f"{carbon_2015_dir}{bgc_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 bgc_2015_raw_pattern = f"{bgc_raw_dens_pattern}_2015"
 
-deadwood_c_2015_raw_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{deadwood_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+deadwood_c_2015_raw_dir = f"{carbon_2015_dir}{deadwood_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 deadwood_c_2015_raw_pattern = f"{deadwood_c_raw_dens_pattern}_2015"
 
-litter_c_2015_raw_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{litter_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+litter_c_2015_raw_dir = f"{carbon_2015_dir}{litter_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 litter_c_2015_raw_pattern = f"{litter_c_raw_dens_pattern}_2015"
 
-non_soil_c_2015_raw_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{non_soil_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+non_soil_c_2015_raw_dir = f"{carbon_2015_dir}{non_soil_c_raw_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 non_soil_c_2015_raw_pattern = f"{non_soil_c_raw_dens_pattern}_2015"
 
 # Carbon density, masked by landcover composite
-agc_2015_LC_masked_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{agc_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+agc_2015_LC_masked_dir = f"{carbon_2015_dir}{agc_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 agc_2015_LC_masked_pattern = f"{agc_LC_masked_dens_pattern}_2015"
 
-bgc_2015_LC_masked_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{bgc_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+bgc_2015_LC_masked_dir = f"{carbon_2015_dir}{bgc_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 bgc_2015_LC_masked_pattern = f"{bgc_LC_masked_dens_pattern}_2015"
 
-deadwood_c_2015_LC_masked_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{deadwood_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+deadwood_c_2015_LC_masked_dir = f"{carbon_2015_dir}{deadwood_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 deadwood_c_2015_LC_masked_pattern = f"{deadwood_c_LC_masked_dens_pattern}_2015"
 
-litter_c_2015_LC_masked_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{litter_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+litter_c_2015_LC_masked_dir = f"{carbon_2015_dir}{litter_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 litter_c_2015_LC_masked_pattern = f"{litter_c_LC_masked_dens_pattern}_2015"
 
-non_soil_c_2015_LC_masked_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{non_soil_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+non_soil_c_2015_LC_masked_dir = f"{carbon_2015_dir}{non_soil_c_LC_masked_dens_pattern}/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
 non_soil_c_2015_LC_masked_pattern = f"{non_soil_c_LC_masked_dens_pattern}_2015"
-
-starting_C_densities_2015_path_zarr = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/zarr/CHUNK_SIZE_pixels/RUN_DATE/starting_C_densities_zarr.zarr"
 
 # Code that describes the source for the starting carbon densities in the landcover-masked outputs
 starting_C_pools_LC_masked_source_flag_pattern = "carbon_density_source_flag_landcover_masked"
-starting_C_pools_LC_masked_state_dir = f"{full_bucket_prefix}/climate/ESA_CCI_biomass/{esa_AGB_v}/2015/year_2015_derived_carbon_pools/{starting_C_pools_LC_masked_source_flag_pattern}/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+starting_C_pools_LC_masked_state_dir = f"{carbon_2015_dir}{starting_C_pools_LC_masked_source_flag_pattern}/CHUNK_SIZE_pixels/{carbon_2015_creation_date}/"
+
+starting_C_densities_2015_path_zarr = f"{carbon_2015_dir}zarr/CHUNK_SIZE_pixels/RUN_DATE/starting_C_densities_zarr.zarr"
 
 
 ### 2015 sensitivity analysis
@@ -879,8 +883,6 @@ composite_primary_forest = "veg_composite_primary_forest"
 # Tolerance for difference between model and zarr chunk stat metrics.
 # There's often some rounding/float error between them, so a small difference (~10^-8) is expected.
 zarr_difference_tolerance = 0.05
-
-model_version_type_description_placeholder = 'version_MODEL_VERSION__TYPE__DESCRIPTION'
 
 veg_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/{model_version_type_description_placeholder}/"
 veg_outputs_path_zarr = f"{veg_outputs_path}zarr/CHUNK_SIZE_pixels/RUN_DATE/vegetation_zarr.zarr"

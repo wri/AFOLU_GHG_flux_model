@@ -909,6 +909,11 @@ def add_units_year_to_pattern(core_pattern, year):
     if "emission_factor" in core_pattern:
         pattern_with_units = f"{core_pattern}"
         pattern_with_units_years = f"{core_pattern}_{year}"
+    elif cn.starting_C_pools_LC_masked_source_flag_pattern in core_pattern:
+        # Must come before the "density" check below -- this pattern contains "density" as a substring
+        # even though it's a classification code, not a density value, and takes no units suffix.
+        pattern_with_units = f"{core_pattern}"
+        pattern_with_units_years = f"{core_pattern}_{year}"
     elif "density" in core_pattern:
         pattern_with_units = f"{core_pattern}_ha"
         pattern_with_units_years = f"{core_pattern}_ha_{year}"

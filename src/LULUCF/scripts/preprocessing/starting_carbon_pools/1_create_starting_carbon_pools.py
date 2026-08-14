@@ -8,15 +8,15 @@ Needs 8GB Coiled workers with 1 thread for 1x1 deg chunks; 4GB workers are too s
 
 Coiled small test:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 8 -cn starting_carbon_pools
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools -bb 23 -4 24 -3 -cs 1  --create_zarr --year 2015
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools -bb 23 -4 24 -3 -cs 1 -mt standard -mpd test_box  --create_zarr --year 2015
 
 Coiled shapefile test:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 8 -cn starting_carbon_pools
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools --create_zarr --year 2015 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -f 1
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools --create_zarr --year 2015 -mt standard -mpd test_area -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -f 1
 
 Full run 2015 (using 200 workers seems to overload requests to s3):
 python -m src.utilities.create_cluster -n 100 -t 1 -m 8 -cn starting_carbon_pools
-python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools --create_zarr --year 2015 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive global run for carbon pool 2015 creation using ESA CCI AGB v6, raw and adjusted versions."
+python -m src.LULUCF.scripts.preprocessing.starting_carbon_pools.1_create_starting_carbon_pools -cn starting_carbon_pools --create_zarr --year 2015 -mt standard -mpd global -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp -ln "This is intended to be the definitive global run for carbon pool 2015 creation using ESA CCI AGB v6, raw and adjusted versions."
 
 Test run 2015 for sensitivity analysis:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 8 -cn starting_carbon_pools__Ctrees
@@ -777,6 +777,7 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
     # Creates list of output directories specific to the run
     output_dir_list = [path.replace("CHUNK_SIZE", str(chunk_size_pixels)) for path in output_dir_list]
     output_dir_list = [path.replace("PER_HA_OR_PIXEL", cn.C_density_pixel_meaning) for path in output_dir_list]
+    output_dir_list = [path.replace(cn.model_version_type_description_placeholder, f"version_{cn.veg_model_version_underscore}__{model_type}__{model_path_description}") for path in output_dir_list]
     # print(output_dir_list)
 
     # Returns the first tile in each input so that the datatype can be determined.
@@ -822,7 +823,8 @@ def main(cluster_name, year, model_type, run_local=False, no_stats=False, no_log
     if create_zarr:
 
         # Creates s3 paths for the raw zarr. No model version, type, or path description.
-        zarr_path = zu.create_zarr_path(starting_C_zarr_root, chunk_size_pixels, run_date, main_logger)
+        zarr_path = zu.create_zarr_path(starting_C_zarr_root, chunk_size_pixels, run_date, main_logger,
+                                        cn.veg_model_version_underscore, model_type, model_path_description)
 
         # Creates the global zarr with metadata only
         zu.initialize_global_zarr(zarr_path, outputs_to_zarr_with_unit_year, 1,

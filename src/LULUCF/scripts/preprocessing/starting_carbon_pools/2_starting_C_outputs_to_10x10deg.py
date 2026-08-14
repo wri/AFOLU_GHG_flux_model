@@ -54,6 +54,7 @@ Based on https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/690a21cd-2ea0-8333
 
 import argparse
 import pandas as pd
+import numpy as np
 import os
 from dask.distributed import print
 
@@ -135,7 +136,8 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
 
     # Outputs to turn into 10x10 tile
     # These variables are added to the mega-zarr
-    full_list_of_vars = [cn.agc_raw_dens_pattern, cn.bgc_raw_dens_pattern,
+    full_list_of_vars = [
+                       cn.agc_raw_dens_pattern, cn.bgc_raw_dens_pattern,
                        cn.deadwood_c_raw_dens_pattern, cn.litter_c_raw_dens_pattern, cn.non_soil_c_raw_dens_pattern,
                        cn.agc_LC_masked_dens_pattern, cn.bgc_LC_masked_dens_pattern,
                        cn.deadwood_c_LC_masked_dens_pattern, cn.litter_c_LC_masked_dens_pattern, cn.non_soil_c_LC_masked_dens_pattern,
@@ -204,13 +206,17 @@ def main(cluster_name, input_date, model_type, run_local, no_log, no_upload, mod
 
     for var_name in vars_to_process:
 
-        for tile_id in tile_ids_to_process:
+        # Float density layers (raw and landcover-masked) can legitimately be 0 -- NaN is the real NoData
+        # sentinel for those. The uint8 LC_masked_state flag layer has no NoData concept at all (every pixel
+        # gets a real 1-11 code), so it gets no NoData tag.
+        # Per Claude session 'NoData handling for chunk stats and fluxes'
+        no_data_val = None if cn.starting_C_pools_LC_masked_source_flag_pattern in var_name else np.nan
 
-            append_start_year_to_var = model_type == cn.alt_AGB #TODO: Not needed after fixing populate_zarr (see Step 5 TODO in 1_create_starting_carbon_pools.py)
+        for tile_id in tile_ids_to_process:
 
             future = client.submit(zu.create_10x10_deg_geotif_from_zarr,
                                    var_name, 0, tile_id, mega_zarr_path, output_base, biomass_source,
-                                   model_type, model_path_description, no_upload, True, 0, True)
+                                   model_type, model_path_description, no_upload, True, no_data_val, True)
             futures.append(future)
 
     main_logger.info(f"There are {len(futures)} tiles to aggregate ({len(tile_ids_to_process)} tiles x {len(vars_to_process)} variables)")
