@@ -42,14 +42,11 @@ https://app.asana.com/1/25496124013636/task/1206230383901961/comment/12106415042
 #TODO change NoData in flux outputs to something besides 0 because 0 has a meaning for fluxes
 #TODO update 1km drivers to correct year. Currently using through 2023. (But this would also mean changing it for zonal stats, including organic soil and mineral soil zstats. So, need to think through that.)
 #TODO make all outputs have a unit where /PER_HA_OR_PIXEL/ currently is-- change it to /UNIT/ so that non-flux/density outputs have a unit, too
-#TODO Check for changes to zarr creation and usage (including 10x10 creation and zonal stats) from working on SOC
 #TODO potential change to 3112/3119
 #TODO potentially add branches for loss of primary forest (currently just have primary forest remaining primary forest)
-#TODO Delete all references to 5-year intervals (including s3 paths)
 #TODO Change all runtimes to decimal hours from HH:MM:SS
-#TODO Change error/exception logic for input downloads to catcha and retry everything (rather than exception types individually), per Claude session 'Failed Coiled tasks diagnosis'
+#TODO Change error/exception logic for input downloads to catch and retry everything (rather than exception types individually), per Claude session 'Failed Coiled tasks diagnosis'
 #TODO Figure out why log is only including some tasks (including performance stats at the end) and how to make it include all tasks
-#TODO Stop using status txts and instead just have chunk stats uploaded to s3 so they can be reused if run fails part way through; won't need to run tasks in batches anymore
 """
 
 import argparse
@@ -99,7 +96,7 @@ os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "TRUE"
 
 # Function to calculate vegetation fluxes and carbon densities
 # Operates pixel by pixel, so uses numba (Python compiled to C++).
-@jit(nopython=True)
+# @jit(nopython=True)
 def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int32, in_dict_float32,
                       primary_forest_RF_array, partial_disturbance_EF_array, mangrove_C_ratio_array, model_start_year,
                       end_year, interval_length_list, interval_end_years,
@@ -230,23 +227,11 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
     ## Test/intermediate outputs blocks
 
     # Determines the composite primary forest extent based on the model starting year
-    #TODO Should this be using the pre-created starting_composite_primary_forest layer?
-    primary_2001_block = in_dict_uint8[cn.primary_2001_pattern]
-    ifl_2016_block = in_dict_uint8[cn.ifl_2016_pattern]
-    tcl_block = in_dict_uint8[cn.tree_cover_loss_pattern]
-
-    # Filters tcl_block to only where tcl occurred before 2015 (ignoring 0s)
-    pre_2015_tcl_mask_block = ((tcl_block > 0) & (tcl_block < 15)).astype(np.uint8)
-
-    # Masks out any primary forest where TCL occurred before 2015
-    primary_2015_block = (primary_2001_block * (1 - pre_2015_tcl_mask_block)).astype(np.uint8)
-
-    # Merges together IFL 2016 and primary 2015 so that if either is 1, it will be in the merged block
-    # composite_primary_block = np.maximum(ifl_2016_block, primary_2015_block).astype(np.uint8)
-    composite_primary_block = np.where((ifl_2016_block > 0) | (primary_2015_block > 0) | (forest_age_start_year_block >=cn.primary_age_threshold), 1, 0).astype(np.uint8)
+    #TODO Haven't checked this at all yet
+    composite_primary_forest_block = in_dict_uint8[cn.starting_composite_primary_forest_pattern]
 
     # Saves the starting year composite primary forest to the output dictionary
-    out_dict_uint8[f"{cn.composite_primary_forest}_{model_start_year}"] = composite_primary_block.copy()
+    out_dict_uint8[f"{cn.composite_primary_forest}_{model_start_year}"] = composite_primary_forest_block.copy()
 
     # Stores the burned area blocks for the entire model duration (added to progressively during each interval)
     burned_area_blocks_all_intervals_so_far = []
@@ -293,7 +278,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
     # Iterates through model intervals
     for i, interval_end_year in enumerate(interval_end_years):
 
-        # print(f"Now at interval ending in {interval_end_year}:")
+        print(f"Now at interval ending in {interval_end_year}: {uu.timestr()}")
 
         # Length of the interval and difference between the start and end years (years)
         interval_length = interval_length_list[i]
@@ -433,7 +418,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                 oil_palm_2000_extent_cell = oil_palm_2000_extent_block[row, col]
                 oil_palm_first_year_cell = oil_palm_first_year_block[row, col]
 
-                composite_primary_cell = composite_primary_block[row, col]
+                composite_primary_forest_cell = composite_primary_forest_block[row, col]
                 drivers_cell = drivers_block[row, col]
                 continent_ecozone_cell = continent_ecozone_block[row, col]
                 climate_zone_cell = climate_zone_block[row, col]
@@ -542,17 +527,17 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                     natrl_forest_age_dependent_agc_rf = primary_forest_AGC_RF
 
                 # Updates whether the cell is primary forest
-                if (forest_age_start_of_interval >= cn.primary_age_threshold) or (composite_primary_cell == 1):
-                    composite_primary_cell = 1
+                if (forest_age_start_of_interval >= cn.primary_age_threshold) or (composite_primary_forest_cell == 1):
+                    composite_primary_forest_cell = 1
                 else:
-                    composite_primary_cell = 0
+                    composite_primary_forest_cell = 0
 
                 # Gef for fire emissions for different gases for forests specifically (grams respective gas/kg dry matter)
                 Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest = nu.calc_Gef_forest(climate_domain_cell, model_type)
 
                 # Cf for fire emissions for all gases for forests specifically (unitless).
                 # Based on driver of loss, not the interval-end land cover.
-                Cf_forest = nu.calc_Cf_forest(climate_domain_cell, drivers_cell, composite_primary_cell, model_type)
+                Cf_forest = nu.calc_Cf_forest(climate_domain_cell, drivers_cell, composite_primary_forest_cell, model_type)
 
                 # Sets all mangrove states to false and only initializes mangrove states if is_ever_mang is True below
                 before_mang = mang_gain = mang_loss = mang_remaining_mang = non_mang_remaining_non_mang = after_mang = False
@@ -964,7 +949,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                 ### Tree loss
                 elif tree_loss:  # Trees converted to non-trees (3)
                     node = nu.accrete_node(node, 3)
-                    composite_primary_cell = 0   # Sets composite primary forest value to 0 for this entire branch because loss has occurred
+                    composite_primary_forest_cell = 0   # Sets composite primary forest value to 0 for this entire branch because loss has occurred
                     if all_planted_trees:  # Full loss of planted trees (31)
                         node = nu.accrete_node(node, 1)
                         if all_oil_palm:  # Full loss of oil palm (incl. SDPT) (311->3119/3112)  #TODO This could have a conversion to short veg option (with short veg post-loss removals)
@@ -1204,12 +1189,12 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                             node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                             c_pools_EF_no_fire, interval_end_year, c_dens_in, rf_post_dist, Cf_forest, Gef_ch4_forest,
                             Gef_n2o_forest)
-                        composite_primary_cell = 0  # Sets composite primary forest value to 0 for this entire branch because loss has occurred
+                        composite_primary_forest_cell = 0  # Sets composite primary forest value to 0 for this entire branch because loss has occurred
                     else:  # Trees remaining trees- no conversion to oil palm (42)
                         node = nu.accrete_node(node, 2)
                         if part_or_full_dist_in_curr_interval:  # Trees partially disturbed in the current interval (421)
                             node = nu.accrete_node(node, 1)
-                            composite_primary_cell = 0  # Sets composite primary forest value to 0 for this entire branch because disturbance has occurred
+                            composite_primary_forest_cell = 0  # Sets composite primary forest value to 0 for this entire branch because disturbance has occurred
                             if all_planted_trees:   # Planted trees partially disturbed in the current interval (4211)
                                 node = nu.accrete_node(node, 1)
                                 if all_oil_palm: # Oil palm partially disturbed in the current interval (42111->421119/421112)
@@ -1305,7 +1290,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                             litter_c_ratio=litter_c_ratio_non_mang)
                                     else:  # Natural forest undisturbed since model start (422212)
                                         node = nu.accrete_node(node, 2)
-                                        if composite_primary_cell == 1:  # Primary forest undisturbed since model start (4222121->42221219/42221212)
+                                        if composite_primary_forest_cell == 1:  # Primary forest undisturbed since model start (4222121->42221219/42221212)
                                             node = nu.accrete_node(node, 1)
                                             RF_AGC_final = primary_forest_AGC_RF
                                             RF_BGC_final = RF_AGC_final * r_s_ratio_non_mang
@@ -1529,7 +1514,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                 part_or_full_dist_in_curr_interval_block[row, col] = part_or_full_dist_in_curr_interval
                 times_burned_in_interval_block[row, col] = times_burned_in_interval
                 agc_ef_out_block[row, col] = agc_ef_out_cell
-                composite_primary_block[row, col] = composite_primary_cell
+                composite_primary_forest_block[row, col] = composite_primary_forest_cell
 
         # os.quit()   # For testing the first interval
 
@@ -1635,7 +1620,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
         out_dict_uint8[f"{cn.part_or_full_dist_in_curr_interval}_{interval_end_year}"] = part_or_full_dist_in_curr_interval_block.copy()
         out_dict_uint8[f"{cn.times_burned_in_interval}_{interval_end_year}"] = times_burned_in_interval_block.copy()
         out_dict_float32[f"{cn.agc_emission_factor}_{interval_end_year}"] = agc_ef_out_block.copy()
-        out_dict_uint8[f"{cn.composite_primary_forest}_{interval_end_year}"] = composite_primary_block.copy()
+        out_dict_uint8[f"{cn.composite_primary_forest}_{interval_end_year}"] = composite_primary_forest_block.copy()
 
     return out_dict_uint8, out_dict_uint16, out_dict_uint32, out_dict_float32
 
@@ -1683,7 +1668,7 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
     updated_download_dict = uu.replace_tile_id_in_dict(download_dict_with_data_types, tile_id)
 
     # Adds the uri for the global COGS of Global Pasture Watch median vegetation height for each year to the download dictionary
-    for year in list(range(cn.LC_first_year, cn.LC_last_year)):
+    for year in cn.LC_years:
         MVH_uri_year = cn.GPW_MVH_uri.replace('YYYY', str(year))
         updated_download_dict[f"{cn.GPW_MVH_pattern}_{year}"] = [MVH_uri_year, 'Int16']
 
@@ -1723,6 +1708,9 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
     # print(layers[cn.planted_forest_AGC_BGC_removal_factor_pattern].max())
     # print(layers[cn.forest_age_start_year_pattern].dtype)
     # print(layers[cn.climate_zone_pattern].dtype)
+    # print("agc_LC_masked_dens_pattern:", layers[cn.agc_LC_masked_dens_pattern])
+    # print("starting_composite_primary_forest_pattern:", layers[cn.starting_composite_primary_forest_pattern])
+    # print("starting_composite_primary_forest_pattern.max():", layers[cn.starting_composite_primary_forest_pattern].max())
     # print(layers['GPW_height_2015'].dtype)
     # print("layers['GPW_height_2015']:", layers['GPW_height_2015'])
 
@@ -1992,8 +1980,10 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
     # Determines if the output file names for final versions of outputs should be used
     is_large_run = False
     # is_large_run = True  # large-scale testing
+    retries = 0  # No retries of tasks if testing
     if len(chunk_list) > 20:
         is_large_run = True
+        retries = 1  # 1 retry of tasks if running large scale
         main_logger.info(f"Running as large-scale run model: {is_large_run}")
 
     # Whenever the run is large-scale (final), force zarr creation
@@ -2033,7 +2023,9 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
         cn.continent_ecozone_pattern: f"{cn.continent_ecozone_dir}{sample_tile_id}_{cn.continent_ecozone_pattern}.tif",
         cn.pixel_area_pattern: f"{cn.pixel_area_dir}{cn.pixel_area_pattern}_{sample_tile_id}.tif",
 
-        cn.forest_age_start_year_pattern: f"{cn.forest_age_2015_gap_filled_dir}{sample_tile_id}__{cn.forest_age_2015_gap_filled_pattern}.tif"
+        cn.forest_age_start_year_pattern: f"{cn.forest_age_2015_gap_filled_dir}{sample_tile_id}__{cn.forest_age_2015_gap_filled_pattern}.tif",
+
+        cn.starting_composite_primary_forest_pattern: f"{cn.starting_composite_primary_forest_dir}{sample_tile_id}__{cn.starting_composite_primary_forest_pattern}.tif"
     }
 
     # Young natural forest rasters (several age intervals).
@@ -2051,8 +2043,7 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
 
     # Burned area rasters (every year).
     # Each burned area year needs to be in its own folder.
-    # Burned area from the start year of the first interval is never used, hence iteration starts with start_year+1.
-    for year in range(start_year+1, end_year + 1):  # Annual burned area maps start in 2000
+    for year in cn.LC_years:
         download_dict[f"{cn.burned_area_final_pattern}_{year}"] = f"{cn.full_bucket_prefix}/{cn.burned_area_final_dir}{year}/{sample_tile_id}_{cn.burned_area_final_pattern}_{year}.tif"
 
     # Starting carbon pools
@@ -2075,14 +2066,8 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
         download_dict[
             cn.litter_c_LC_masked_dens_pattern] = f"{cn.litter_c_2015_LC_masked_dir}{sample_tile_id}__{cn.litter_c_2015_LC_masked_pattern}.tif"
 
-    # Source for assigning composite primary forests
-    #TODO Shouldn't this be unnecessary because the numba code is using the starting composite primary forest. Need to investigate.
-    download_dict[f"{cn.primary_2001_pattern}"] = f"{cn.primary_2001_dir}{sample_tile_id}.tif"
-    download_dict[f"{cn.ifl_2016_pattern}"] = f"{cn.ifl_2016_dir}{sample_tile_id}.tif"
-    download_dict[f"{cn.tree_cover_loss_pattern}"] = f"{cn.tree_cover_loss_dir}{cn.tree_cover_loss_pattern}_{sample_tile_id}.tif"
-
     # Land cover and vegetation height timeseries
-    for year in range(cn.LC_first_year, cn.LC_last_year + 1):
+    for year in cn.LC_years:
         download_dict[f"{cn.land_cover_pattern}_{year}"] = f"{cn.land_cover_annual_path}{year}/{sample_tile_id}.tif"
         download_dict[f"{cn.vegetation_height_pattern}_{year}"] = f"{cn.vegetation_height_annual_path}{year}/{sample_tile_id}.tif"
 
@@ -2100,9 +2085,16 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
         for key, value in download_dict.items()
     }
 
+    # Currently only applies to starting_composite_primary_forest and starting_carbon_pools, which have model_version_type_description_placeholder in their names
+    download_dict = {
+        key: value.replace(cn.model_version_type_description_placeholder, f"version_{cn.veg_model_version_underscore}__{model_type}__{model_path_description}")
+        for key, value in download_dict.items()
+    }
+
     main_logger.info("Download dictionary:")
     for key, item in download_dict.items():
         main_logger.info(f"{key}: {item}")
+
 
     # Returns the first tile in each input so that the datatype can be determined.
     # This is done up front, once per tile set, rather than on each chunk, since
@@ -2219,8 +2211,6 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
     # Accumulates all output messages and statistics across batches
     # From https://chatgpt.com/share/e/5599b6b0-1aaa-4d54-98d3-c720a436dd9a
     all_results = []
-    all_stats = []
-    success_count = 0  # Count of successful chunks
 
 
     # This approach handles large task lists (graphs) better than [dask.delayed(calculate_and_upload_vegetation_fluxes ... )]
@@ -2235,7 +2225,7 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
                     download_dict_with_data_types, start_year, end_year, interval_length_list,
                     output_years, is_large_run, no_upload, create_zarr,
                     output_dir_list, stage, chunk_stats_prefix, model_type, zarr_path, outputs_to_zarr,
-                    retries=1, key=f"vegflux-{chunk}")  # Designed to prevent infinite retries and rerunning completed tasks (happens in global runs)
+                    retries=retries, key=f"vegflux-{chunk}")  # To prevent infinite retries and rerunning completed tasks (happens in global runs)
         futures.append(future)
 
     results = client.gather(futures)
@@ -2250,55 +2240,15 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
                 f"Traceback:\n{result['traceback']}"
             )
 
-        all_results.extend(results)
+    all_results.extend(results)
 
-        success_count, chunk_stats = uu.count_successful_chunks(chunk_batch, is_large_run, main_logger, results)
-        all_stats.extend(chunk_stats)
+    success_count, all_stats = uu.count_successful_chunks(chunk_list, is_large_run, main_logger, results)
 
-        # Saves stats from batch in Excel locally in case the run fails, but only if there are multiple batches.
-        # That way there are some basic chunk stats (not sorted or anything) to fall back on.
-        if len(chunk_batches) > 1:
+    del futures
+    del results
+    client.run(gc.collect)
 
-            main_logger.info(f"Writing batch stats locally: {uu.timestr()}")
-            df_batch_stats = pd.DataFrame(chunk_stats)
-
-            timestamp = uu.timestr()
-
-            # Writes batch output to parquet file if output is large
-            if len(df_batch_stats) > 900_000:
-            # if len(df_batch_stats) > 7: # large-scale testing
-                out_file = f"TEMP_BATCH_{stage}__batch_{i}_{timestamp}.parquet"
-                local_path = f"{cn.local_chunk_stats_path}{out_file}"
-
-                # Coerce output to string so there aren't mismatched types
-                # https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/694c44d0-19e8-8330-8098-a7ec93366e44
-                for col in ['min_value', 'max_value', 'mean_value', 'sum_value', 'count_value']:
-                    if col in df_batch_stats.columns:
-                        df_batch_stats[col] = df_batch_stats[col].astype(str)
-
-                df_batch_stats.to_parquet(
-                    local_path,
-                    engine="pyarrow",
-                    index=False
-                )
-
-            # Otherwise, writes output to spreadsheet
-            else:
-                out_file = f"TEMP_BATCH_{stage}__batch_{i}_{timestamp}.xlsx"
-                local_path = f"{cn.local_chunk_stats_path}{out_file}"
-
-                with pd.ExcelWriter(local_path) as writer:
-                    df_batch_stats.to_excel(
-                        writer,
-                        sheet_name=f"stats__batch_{i}",
-                        index=False
-                    )
-
-        del futures
-        del results
-        client.run(gc.collect)
-
-        uu.stage_duration(start_time, uu.timestr(), f"{stage}, batch {i}", main_logger)
+    uu.stage_duration(start_time, uu.timestr(), stage, main_logger)
 
 
     ### Step 4: Gather worker logs (preliminary, just in case later step goes awry)

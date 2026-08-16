@@ -51,7 +51,7 @@ m2_to_ha = 1/10000
 LC_first_year = 2015  # First year of annual LC/veg height data
 LC_last_year = 2024   # Last year of annual LC/veg height data
 veg_modeL_increment = 1  # Timestep for the vegetation model (years)
-LC_years = list(range(LC_first_year, LC_last_year, veg_modeL_increment))  # All years of the LC/veg height data
+LC_years = list(range(LC_first_year, LC_last_year+1, veg_modeL_increment))  # All years of the LC/veg height data. +1 to include the final year in the list.
 
 veg_outputs_years = LC_years[1:]  # Output years for the vegetation model
 veg_end_year_count = len(veg_outputs_years)  # Number of years output from the veg moel
@@ -542,8 +542,8 @@ forest_age_output_pattern = "forest_age_at_end_of_interval"
 # Starting composite primary forest (2015)
 starting_composite_primary_forest_run_date = '20260814'
 starting_composite_primary_forest_pattern = "starting_composite_primary_forest"
-starting_composite_primary_forest_dir = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/{starting_composite_primary_forest_pattern}/{model_version_type_description_placeholder}/{LC_first_year}/presence/{chunk_dims}_pixels/{starting_composite_primary_forest_run_date}/"
-starting_composite_primary_forest_zarr_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/{starting_composite_primary_forest_pattern}/{model_version_type_description_placeholder}/{LC_first_year}/presence/zarr/{chunk_dims}_pixels/{starting_composite_primary_forest_run_date}/{starting_composite_primary_forest_pattern}.zarr"
+starting_composite_primary_forest_dir = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/{starting_composite_primary_forest_pattern}/{model_version_type_description_placeholder}/{LC_first_year}/presence/CHUNK_SIZE_pixels/{starting_composite_primary_forest_run_date}/"
+starting_composite_primary_forest_zarr_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/{starting_composite_primary_forest_pattern}/{model_version_type_description_placeholder}/{LC_first_year}/presence/zarr/CHUNK_SIZE_pixels/{starting_composite_primary_forest_run_date}/{starting_composite_primary_forest_pattern}.zarr"
 
 # GEE script that the global rasters are from is https://code.earthengine.google.com/805896f7a511c13eb873c4804a683abc (each file takes about 15 minutes to export to Google Drive).
 # NOTE: GEE export function splits the exported global raster into two pieces. I merged the two pieces into a single file in ArcPro,
