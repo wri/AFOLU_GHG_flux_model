@@ -65,6 +65,7 @@ import resource
 import traceback
 import re
 
+from builtins import print as debug_print
 from concurrent.futures import ThreadPoolExecutor
 from dask.distributed import print
 from numba import jit
@@ -96,7 +97,7 @@ os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "TRUE"
 
 # Function to calculate vegetation fluxes and carbon densities
 # Operates pixel by pixel, so uses numba (Python compiled to C++).
-# @jit(nopython=True)
+@jit(nopython=True)
 def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int32, in_dict_float32,
                       primary_forest_RF_array, partial_disturbance_EF_array, mangrove_C_ratio_array, model_start_year,
                       end_year, interval_length_list, interval_end_years,
@@ -278,7 +279,8 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
     # Iterates through model intervals
     for i, interval_end_year in enumerate(interval_end_years):
 
-        print(f"Now at interval ending in {interval_end_year}: {uu.timestr()}")
+        # print(f"Now at interval ending in {interval_end_year}: {uu.timestr()}")  # Use without numba
+        debug_print(f"Now at interval ending in {interval_end_year}")  # Use with numba. It can't call uu.timestr()
 
         # Length of the interval and difference between the start and end years (years)
         interval_length = interval_length_list[i]
@@ -1767,6 +1769,8 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
     lu.print_and_log(f"Done calculating vegetation fluxes and carbon densities in {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
     lu.print_and_log(f"Memory usage after numba calculations completed for {bounds_str}: {process.memory_info().rss / 1024 ** 2:.2f} MB", False, logger_worker)
     lu.print_and_log(f"Calculated {bounds_str} in {tile_id} in {round(calc_end-calc_start)} seconds: {uu.timestr()}", False, logger_worker)
+
+    sys.quit()
 
     # print("out_dict_uint8:", out_dict_uint8)
     # print("out_dict_uint32:", out_dict_uint32)
