@@ -31,7 +31,7 @@ def create_zarr_path(zarr_basic_path, chunk_size_pixels, run_date, main_logger,
     mega_zarr_path = mega_zarr_path.replace("RUN_DATE", run_date)
     mega_zarr_path = mega_zarr_path.replace("CHUNK_SIZE", str(chunk_size_pixels))
 
-    main_logger.info(f"Zarr path to use: {mega_zarr_path}")
+    main_logger.info(f"\n Zarr path to use: {mega_zarr_path}")
 
     return mega_zarr_path
 

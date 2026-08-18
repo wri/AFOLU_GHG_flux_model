@@ -1770,8 +1770,6 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
     lu.print_and_log(f"Memory usage after numba calculations completed for {bounds_str}: {process.memory_info().rss / 1024 ** 2:.2f} MB", False, logger_worker)
     lu.print_and_log(f"Calculated {bounds_str} in {tile_id} in {round(calc_end-calc_start)} seconds: {uu.timestr()}", False, logger_worker)
 
-    sys.quit()
-
     # print("out_dict_uint8:", out_dict_uint8)
     # print("out_dict_uint32:", out_dict_uint32)
     # print("out_dict_float32:", out_dict_float32)
@@ -2045,11 +2043,6 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
             download_dict[f"{cn.natural_forest_growth_curve_pattern}__{growth_interval}_years"] = \
                 f"{cn.natural_forest_growth_curve_dir}rate_{growth_interval}/{sample_tile_id}_{cn.natural_forest_growth_curve_pattern}__{growth_interval}_years__nibble_{cn.secondary_forest_curve_run_date}.tif"
 
-    # Burned area rasters (every year).
-    # Each burned area year needs to be in its own folder.
-    for year in cn.LC_years:
-        download_dict[f"{cn.burned_area_final_pattern}_{year}"] = f"{cn.full_bucket_prefix}/{cn.burned_area_final_dir}{year}/{sample_tile_id}_{cn.burned_area_final_pattern}_{year}.tif"
-
     # Starting carbon pools
     if model_type == cn.alt_AGB:
         download_dict[cn.agc_LC_masked_dens_pattern] = (
@@ -2070,10 +2063,12 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
         download_dict[
             cn.litter_c_LC_masked_dens_pattern] = f"{cn.litter_c_2015_LC_masked_dir}{sample_tile_id}__{cn.litter_c_2015_LC_masked_pattern}.tif"
 
-    # Land cover and vegetation height timeseries
+    # Land cover, vegetation height, and burned area timeseries.
+    # Each burned area year needs to be in its own folder.
     for year in cn.LC_years:
         download_dict[f"{cn.land_cover_pattern}_{year}"] = f"{cn.land_cover_annual_path}{year}/{sample_tile_id}.tif"
         download_dict[f"{cn.vegetation_height_pattern}_{year}"] = f"{cn.vegetation_height_annual_path}{year}/{sample_tile_id}.tif"
+        download_dict[f"{cn.burned_area_final_pattern}_{year}"] = f"{cn.full_bucket_prefix}/{cn.burned_area_final_dir}{year}/{sample_tile_id}_{cn.burned_area_final_pattern}_{year}.tif"
 
     # GMW mangrove extent timeseries depend on start year (not end year since GMW data ends in 2020)
     for year in cn.mangrove_extent_years:
@@ -2095,7 +2090,7 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
         for key, value in download_dict.items()
     }
 
-    main_logger.info("Download dictionary:")
+    main_logger.info("\n Download dictionary:")
     for key, item in download_dict.items():
         main_logger.info(f"{key}: {item}")
 
@@ -2103,7 +2098,7 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
     # Returns the first tile in each input so that the datatype can be determined.
     # This is done up front, once per tile set, rather than on each chunk, since
     # all tiles have the same datatype for each input-- it only needs to be done once at the very beginning of the stage.
-    main_logger.info(f"Getting tile_id of first tile in each tile set: {uu.timestr()}")
+    main_logger.info(f"\n Getting tile_id of first tile in each tile set: {uu.timestr()}")
     first_tiles = uu.first_file_name_in_s3_folder(download_dict)
 
     # Creates a download dictionary with the datatype of each input in the values.

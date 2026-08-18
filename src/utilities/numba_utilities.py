@@ -636,7 +636,7 @@ def calc_Cf_forest(climate_domain_cell, drivers_cell, ifl_primary_cell, model_ty
                 Cf_forest = (0.36-0.13)  # Row "All primary tropical forest"
             else:  # Tropical/subtropical, not primary forest
                 Cf_forest = (0.55-0.06)  # Row "All secondary tropical forest"
-        elif climate_domain_cell == 2:  # Temperate
+        elif climate_domain_cell == 3:  # Temperate
             if drivers_cell in driver_group_1:  # Temperate, driver group 1
                 Cf_forest = (0.51-0.12)  # Row "Felled and burned (land-clearing fire)" temperate forest (- st dev from "Post logging slash burn")
             elif drivers_cell in driver_group_2:  # Temperate, driver group 2
@@ -645,7 +645,7 @@ def calc_Cf_forest(climate_domain_cell, drivers_cell, ifl_primary_cell, model_ty
                 Cf_forest = (0.45-0.16)  # Row "all other temperate forest"
             else:  # Temperate, no driver assigned
                 Cf_forest = (0.45-0.16)
-        elif climate_domain_cell == 3:  # Boreal
+        elif climate_domain_cell == 2:  # Boreal
             if drivers_cell in driver_group_1:  # Boreal, driver group 1
                 Cf_forest = (0.59-0.17)  # Row "Land clearing fire" boreal forest (- st dev from "All boreal forest")
             elif drivers_cell in driver_group_2:  # Boreal, driver group 2
@@ -663,13 +663,14 @@ def calc_Cf_forest(climate_domain_cell, drivers_cell, ifl_primary_cell, model_ty
                 Cf_forest = (0.34-0.17)  # Row "All boreal forest"
             else:  # Outside ecozone bounds, no driver assigned
                 Cf_forest = (0.34-0.17)  # Row "All boreal forest"
+
     elif model_type == cn.high_EF:  # value+stdev for same row unless otherwise noted
         if climate_domain_cell == 1:  # Tropical/subtropical
             if ifl_primary_cell:  # Tropical/subtropical, primary forest
                 Cf_forest = (0.36+0.13)  # Row "All primary tropical forest"
             else:  # Tropical/subtropical, not primary forest
                 Cf_forest = (0.55+0.06)  # Row "All secondary tropical forest"
-        elif climate_domain_cell == 2:   # Temperate
+        elif climate_domain_cell == 3:   # Temperate
             if drivers_cell in driver_group_1:  # Temperate, driver group 1
                 Cf_forest = (0.51+0.12)     # Row "Felled and burned (land-clearing fire)" temperate forest (+ st dev from "Post logging slash burn")
             elif drivers_cell in driver_group_2:  # Temperate, driver group 2
@@ -678,7 +679,7 @@ def calc_Cf_forest(climate_domain_cell, drivers_cell, ifl_primary_cell, model_ty
                 Cf_forest = (0.45+0.16)     # Row "all other temperate forest"
             else:  # Temperate, no driver assigned
                 Cf_forest = (0.45+0.16)
-        elif climate_domain_cell == 3:  # Boreal
+        elif climate_domain_cell == 2:  # Boreal
             if drivers_cell in driver_group_1:  # Boreal, driver group 1
                 Cf_forest = (0.59+0.17)     # Row "Land clearing fire" boreal forest (+ st dev from "All boreal forest")
             elif drivers_cell in driver_group_2:  # Boreal, driver group 2
@@ -696,13 +697,14 @@ def calc_Cf_forest(climate_domain_cell, drivers_cell, ifl_primary_cell, model_ty
                 Cf_forest = (0.34+0.17)     # Row "All boreal forest"
             else:  # Outside ecozone bounds, no driver assigned
                 Cf_forest = (0.34+0.17)     # Row "All boreal forest"
+
     else:    # standard model and any that doesn't change the emission factors
         if climate_domain_cell == 1:  # Tropical/subtropical
             if ifl_primary_cell:  # Tropical/subtropical, primary forest
                 Cf_forest = 0.36  # Row "All primary tropical forest"
             else:  # Tropical/subtropical, not primary forest
                 Cf_forest = 0.55  # Row "All secondary tropical forest"
-        elif climate_domain_cell == 2:   # Temperate
+        elif climate_domain_cell == 3:   # Temperate
             if drivers_cell in driver_group_1:  # Temperate, driver group 1
                 Cf_forest = 0.51     # Row "Felled and burned (land-clearing fire)" temperate forest
             elif drivers_cell in driver_group_2:  # Temperate, driver group 2
@@ -711,7 +713,7 @@ def calc_Cf_forest(climate_domain_cell, drivers_cell, ifl_primary_cell, model_ty
                 Cf_forest = 0.45     # Row "all other temperate forest"
             else:  # Temperate, no driver assigned
                 Cf_forest = 0.45
-        elif climate_domain_cell == 3:  # Boreal
+        elif climate_domain_cell == 2:  # Boreal
             if drivers_cell in driver_group_1:  # Boreal, driver group 1
                 Cf_forest = 0.59     # Row "Land clearing fire" boreal forest
             elif drivers_cell in driver_group_2:  # Boreal, driver group 2
@@ -743,7 +745,7 @@ def calc_Gef_forest(climate_domain_cell, model_type):
             Gef_CO2_forest = (1580.0-90)   # Row "tropical forest"
             Gef_CH4_forest = (6.8-2.0)      # Row "tropical forest"
             Gef_N2O_forest = (0.2-0.04)      # Row "tropical forest". st dev is my best professional judgement
-        elif climate_domain_cell == 2 or climate_domain_cell == 3:   # Temperate/boreal
+        elif climate_domain_cell == 2 or climate_domain_cell == 3:   # Boreal/temperate
             Gef_CO2_forest = (1569.0-131)   # Row "extra-tropical forest"
             Gef_CH4_forest = (4.7-1.9)      # Row "extra-tropical forest"
             Gef_N2O_forest = (0.26-0.07)     # Row "extra-tropical forest"
@@ -751,12 +753,13 @@ def calc_Gef_forest(climate_domain_cell, model_type):
             Gef_CO2_forest = (1569.0-131)   # Row "extra-tropical forest"
             Gef_CH4_forest = (4.7-1.9)      # Row "extra-tropical forest"
             Gef_N2O_forest = (0.26-0.07)     # Row "extra-tropical forest"
+
     elif model_type == cn.high_EF:  # value+stdev for same row unless otherwise noted
         if climate_domain_cell == 1:  # Tropical/subtropical
             Gef_CO2_forest = (1580.0+90)   # Row "tropical forest"
             Gef_CH4_forest = (6.8+2.0)      # Row "tropical forest"
             Gef_N2O_forest = (0.2+0.04)      # Row "tropical forest". st dev is my best professional judgement
-        elif climate_domain_cell == 2 or climate_domain_cell == 3:   # Temperate/boreal
+        elif climate_domain_cell == 2 or climate_domain_cell == 3:   # Boreal/temperate
             Gef_CO2_forest = (1569.0+131)   # Row "extra-tropical forest"
             Gef_CH4_forest = (4.7+1.9)      # Row "extra-tropical forest"
             Gef_N2O_forest = (0.26+0.07)     # Row "extra-tropical forest"
@@ -769,7 +772,7 @@ def calc_Gef_forest(climate_domain_cell, model_type):
             Gef_CO2_forest = 1580.0   # Row "tropical forest"
             Gef_CH4_forest = 6.8      # Row "tropical forest"
             Gef_N2O_forest = 0.2      # Row "tropical forest"
-        elif climate_domain_cell == 2 or climate_domain_cell == 3:   # Temperate/boreal
+        elif climate_domain_cell == 2 or climate_domain_cell == 3:   # Boreal/temperate
             Gef_CO2_forest = 1569.0   # Row "extra-tropical forest"
             Gef_CH4_forest = 4.7      # Row "extra-tropical forest"
             Gef_N2O_forest = 0.26     # Row "extra-tropical forest"
