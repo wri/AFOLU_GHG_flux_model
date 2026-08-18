@@ -4,8 +4,8 @@ From https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/67f3f252-8624-800a-a4d
 
 Usage (run from /mnt/c/GIS/git/AFOLU_GHG_flux_model):
 
-    python src/utilities/download_outputs_local.py <subfolder> [filename_filter]
-    python src/utilities/download_outputs_local.py v32_COD_exploration 23_-4_24_-3
+    python -m src.utilities.download_outputs_local <subfolder> [filename_filter]
+    python -m src.utilities.download_outputs_local v32_COD_exploration 23_-4_24_-3
 
 Arguments:
 1. <subfolder>: Local subfolder to save outputs to (inside /mnt/c/GIS/AFOLU_flux_model/test_data/output/v0_4_1/)
@@ -17,13 +17,14 @@ import os
 import sys
 from botocore.exceptions import ClientError
 
-import constants_and_names as cn
+from src.utilities import constants_and_names as cn
 
 
 # Constants
 BUCKET = "gfw2-data"
-BASE_DEST = f"/mnt/c/GIS/AFOLU_flux_model/test_data/output/v{cn.veg_model_version_underscore}__standard__global/"
-BASE_DEST = f"/mnt/c/GIS/AFOLU_flux_model/test_data/output/v1_0_5/"
+PREFIX = f"climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_{cn.veg_model_version_underscore}__standard__test_box/"
+BASE_DEST = f"/mnt/c/GIS/AFOLU_flux_model/test_data/output/v{cn.veg_model_version_underscore}/"
+# BASE_DEST = f"/mnt/c/GIS/AFOLU_flux_model/test_data/output/v1_0_5/"
 
 # Speeds up accessing the input geotifs from s3 when they are in a folder with lots of files.
 # The more files in an s3 folder, the longer it takes to access them without this environment variable.

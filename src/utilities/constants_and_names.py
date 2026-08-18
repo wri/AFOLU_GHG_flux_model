@@ -142,6 +142,7 @@ Cf_forest_undisturbed_low = (0.15-0.08)  # For sensitivity analysis: value-st de
 Cf_forest_undisturbed_high = (0.15+0.08)  # For sensitivity analysis: value+st dev
 
 other_landcover_node = 7
+no_data_node = 8
 
 
 ### Crop residue and grassland burning constants
@@ -537,7 +538,6 @@ global_age_at_disturbance_file = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF
 
 # Forest age pattern for use in the LULUCF model
 forest_age_start_year_pattern = "forest_age_gap_filled_start_year"
-forest_age_output_pattern = "forest_age_at_end_of_interval"
 
 # Starting composite primary forest (2015)
 starting_composite_primary_forest_run_date = '20260814'
@@ -796,6 +796,13 @@ IPCC_summary_dir = f"{IPCC_outputs_path}/{IPCC_summary_path}/2015_2024/CHUNK_SIZ
 
 IPCC_outputs_path_mega_zarr = f"{IPCC_outputs_path}/mega_zarr/CHUNK_SIZE_pixels/RUN_DATE/land_use_zarr.zarr"
 
+# Tolerance for difference between model and zarr chunk stat metrics.
+# There's often some rounding/float error between them, so a small difference (~10^-8) is expected.
+zarr_difference_tolerance = 0.05
+
+veg_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/{model_version_type_description_placeholder}/"
+veg_outputs_path_zarr = f"{veg_outputs_path}zarr/CHUNK_SIZE_pixels/RUN_DATE/vegetation_zarr.zarr"
+
 land_state_pattern = "veg_land_state_node"
 land_state_node_fire_value = 9  # State nodes that end in this value had fire
 
@@ -830,23 +837,35 @@ net_flux_all_C_pools_CO2_only_pattern = "veg_net_flux__all_C_pools__CO2_only__Mg
 net_flux_all_C_pools_all_gases_pattern = "veg_net_flux__all_C_pools__all_gases__MgCO2e"
 
 # Intermediate outputs
+forest_age_output_pattern = "forest_age_at_end_of_interval"
+forest_age_output_dir = f"{veg_outputs_path}{forest_age_output_pattern}/YEAR/years/CHUNK_SIZE_pixels/RUN_DATE/"
+
 gain_year_count_pattern = "veg_gain_year_count_during_interval"
+gain_year_count_dir = f"{veg_outputs_path}{gain_year_count_pattern}/START_END/years/CHUNK_SIZE_pixels/RUN_DATE/"
+
 most_recent_year_not_tall_veg = "veg_most_recent_year_not_tall_veg"
-year_of_forest_loss = "veg_year_of_forest_loss"
+most_recent_year_not_tall_veg_dir = f"{veg_outputs_path}{most_recent_year_not_tall_veg}/RUNSTART_END/year/CHUNK_SIZE_pixels/RUN_DATE/"  # Years represent from model start to current interval end
+
 max_height_since_last_time_not_tall_veg = "veg_max_height_since_last_time_not_tall_veg"
+max_height_since_last_time_not_tall_veg_dir = f"{veg_outputs_path}{max_height_since_last_time_not_tall_veg}/START_END/meters/CHUNK_SIZE_pixels/RUN_DATE/"
+
 first_time_sig_loss_from_max_height = "veg_first_time_sig_loss_from_max_height"
+first_time_sig_loss_from_max_height_dir = f"{veg_outputs_path}{first_time_sig_loss_from_max_height}/START_END/category/CHUNK_SIZE_pixels/RUN_DATE/"
+
 part_or_full_dist_in_earlier_intervals = "veg_partial_or_full_dist_in_earlier_intervals"
+part_or_full_dist_in_earlier_intervals_dir = f"{veg_outputs_path}{part_or_full_dist_in_earlier_intervals}/START_END/presence/CHUNK_SIZE_pixels/RUN_DATE/"
+
 part_or_full_dist_in_curr_interval = "veg_partial_or_full_dist_in_current_interval"
-times_burned_in_interval = "veg_times_burned_in_current_interval"
+part_or_full_dist_in_curr_interval_dir = f"{veg_outputs_path}{part_or_full_dist_in_curr_interval}/START_END/presence/CHUNK_SIZE_pixels/RUN_DATE/"
+
+burned_in_interval = "veg_burned_in_current_interval"
+burned_in_interval_dir = f"{veg_outputs_path}{burned_in_interval}/START_END/presence/CHUNK_SIZE_pixels/RUN_DATE/"
+
 agc_emission_factor = "veg_AGC_emission_factor_CO2_only__fraction"
+agc_emission_factor_dir = f"{veg_outputs_path}{agc_emission_factor}/START_END/fraction/CHUNK_SIZE_pixels/RUN_DATE/"
+
 composite_primary_forest = "veg_composite_primary_forest"
-
-# Tolerance for difference between model and zarr chunk stat metrics.
-# There's often some rounding/float error between them, so a small difference (~10^-8) is expected.
-zarr_difference_tolerance = 0.05
-
-veg_outputs_path = f"{full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/{model_version_type_description_placeholder}/"
-veg_outputs_path_zarr = f"{veg_outputs_path}zarr/CHUNK_SIZE_pixels/RUN_DATE/vegetation_zarr.zarr"
+composite_primary_forest_dir = f"{veg_outputs_path}{composite_primary_forest}/YEAR/presence/CHUNK_SIZE_pixels/RUN_DATE/"
 
 # List of output directories from vegetation model with placeholders for parts of the directory
 veg_core_output_dirs = [
@@ -864,23 +883,22 @@ veg_core_output_dirs = [
     f"{veg_outputs_path}{litter_c_gross_removals_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
     f"{veg_outputs_path}{ch4_gross_emis_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
     f"{veg_outputs_path}{n2o_gross_emis_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{veg_outputs_path}{land_state_pattern}/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
+    f"{veg_outputs_path}{land_state_pattern}/START_END/class/CHUNK_SIZE_pixels/RUN_DATE/",
     f"{veg_outputs_path}{agc_rf_pre_dist_pattern}/START_END/PER_HA_OR_PIXEL/CHUNK_SIZE_pixels/RUN_DATE/"
 ]
 
-
 # Intermediate outputs from vegetation model
 veg_intermediate_output_dirs = [
-    f"{veg_outputs_path}{forest_age_output_pattern}/YEAR/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{veg_outputs_path}{gain_year_count_pattern}/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{veg_outputs_path}{most_recent_year_not_tall_veg}/RUNSTART_END/CHUNK_SIZE_pixels/RUN_DATE/", # Years represent from model start to current interval end
-    f"{veg_outputs_path}{max_height_since_last_time_not_tall_veg}/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{veg_outputs_path}{first_time_sig_loss_from_max_height}/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{veg_outputs_path}{part_or_full_dist_in_earlier_intervals}/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{veg_outputs_path}{part_or_full_dist_in_curr_interval}/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{veg_outputs_path}{times_burned_in_interval}/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{veg_outputs_path}{agc_emission_factor}/START_END/CHUNK_SIZE_pixels/RUN_DATE/",
-    f"{veg_outputs_path}{composite_primary_forest}/YEAR/CHUNK_SIZE_pixels/RUN_DATE/"
+    forest_age_output_dir,
+    gain_year_count_dir,
+    most_recent_year_not_tall_veg_dir,
+    max_height_since_last_time_not_tall_veg_dir,
+    first_time_sig_loss_from_max_height_dir,
+    part_or_full_dist_in_earlier_intervals_dir,
+    part_or_full_dist_in_curr_interval_dir,
+    burned_in_interval_dir,
+    agc_emission_factor_dir,
+    composite_primary_forest_dir
 ]
 
 # Summative outputs from core vegetation model

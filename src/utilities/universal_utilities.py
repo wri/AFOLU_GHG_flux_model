@@ -186,7 +186,7 @@ def save_and_upload_small_raster_set(bounds, chunk_length_pixels, tile_id,
 
     file_info = f'{tile_id}__{bounds_str}'
 
-    lu.print_and_log(f"Saving outputs in cluster for {bounds_str} in {tile_id}: {timestr()}", is_final, logger_worker)
+    lu.print_and_log(f"Saving outputs with no_data_val {no_data_val} in cluster for {bounds_str} in {tile_id}: {timestr()}", is_final, logger_worker)
 
     # For every output file, saves from array to local raster, then to s3.
     # Can't save directly to s3, unfortunately, so need to save locally first.
@@ -656,8 +656,9 @@ def stage_duration(start_time_str, end_time_str, stage, logger, format="full"):
 
     start_time = datetime.strptime(start_time_str, "%Y%m%d_%H_%M_%S")
     end_time = datetime.strptime(end_time_str, "%Y%m%d_%H_%M_%S")
+    elapsed_hours = (end_time - start_time).total_seconds() / 3600
 
-    logger.info(f"Elapsed time for {stage}: {end_time - start_time}" + "\n")
+    logger.info(f"Elapsed time for {stage} (hours): {elapsed_hours:.2f}" + "\n")
 
 
 # Lazily opens tile within provided bounds (i.e. one chunk) and returns as a numpy array.
