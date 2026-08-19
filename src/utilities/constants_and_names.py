@@ -254,6 +254,9 @@ deadwood_litter_emissions = np.array([0, 0, 1, 1]).astype('uint8')  # deadwood C
 all_non_soil_pools = np.array([1, 1, 1, 1]).astype('uint8')  # AGC, BGC, deadwood C, and litter C
 no_carbon_pools = np.array([0, 0, 0, 0]).astype('uint8')  # None
 
+# Branches where there are no removals after loss (basically, any time the ending landcover has no vegetation)
+no_post_dist_removals = np.array([np.nan, np.nan, np.nan, np.nan]).astype('float32')
+
 # SDPT v2.0 planted forest type codes
 SDPT_oil_palm_code = 1
 SDPT_wood_fiber_code = 2
