@@ -40,7 +40,6 @@ which is the situation for large analyses, obviously.
 https://app.asana.com/1/25496124013636/task/1206230383901961/comment/1210641504248464?focus=true
 
 #TODO update 1km drivers to correct year. Currently using through 2023. (But this would also mean changing it for zonal stats, including organic soil and mineral soil zstats. So, need to think through that.)
-#TODO potential change to 3112/3119
 #TODO potentially add branches for loss of primary forest (currently just have primary forest remaining primary forest)
 #TODO Change error/exception logic for input downloads to catch and retry everything (rather than exception types individually), per Claude session 'Failed Coiled tasks diagnosis'
 #TODO Figure out why log is only including some tasks (including performance stats at the end) and how to make it include all tasks
@@ -823,8 +822,8 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                             # print(f"Node code is {state_out}, permanent loss of mangroves to cropland (123)")
 
                         elif LC_curr == cn.builtup:
-                            state_out = nu.accrete_node(node, 4)    # Permanent loss of mangroves to settlement (124)
-                            # print(f"Node code is {state_out}, permanent loss of mangroves to settlement (124)")
+                            state_out = nu.accrete_node(node, 4)    # Permanent loss of mangroves to builtup (124)
+                            # print(f"Node code is {state_out}, permanent loss of mangroves to builtup (124)")
 
                         elif GLAD_short_veg_LC_curr:
                             state_out = nu.accrete_node(node, 5)    # Permanent loss of mangroves to short vegetation (125)
@@ -929,7 +928,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                             (c_gross_emis_out, c_gross_removals_out, c_dens_out, gain_year_count, forest_age_end_of_interval) = (
                                 nu.calc_NT_T(RF_AGC_final, RF_BGC_final, c_dens_in,
                                              deadwood_c_ratio=deadwood_c_ratio_non_mang, litter_c_ratio=litter_c_ratio_non_mang))
-                        else:  # Gain of trees outside forests (222) (uses c_dens_in_empty because ToF have no residual carbon in any pool)
+                        else:  # Gain of trees in other land uses (222) (uses c_dens_in_empty because ToF have no residual carbon in any pool)
                             state_out = nu.accrete_node(node, 2)
                             RF_AGC_final = cn.trees_outside_forests_agc_rf_max
                             RF_BGC_final = RF_AGC_final * r_s_ratio_non_mang
@@ -942,22 +941,48 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                     composite_primary_forest_cell = 0   # Sets composite primary forest value to 0 for this entire branch because loss has occurred
                     if all_planted_trees:  # Full loss of planted trees (31)
                         node = nu.accrete_node(node, 1)
-                        if all_oil_palm:  # Full loss of oil palm (incl. SDPT) (311->3119/3112)  #TODO This could have a conversion to short veg option (with short veg post-loss removals)
+                        if all_oil_palm:  # Full loss of oil palm (incl. SDPT) (311)
                             node = nu.accrete_node(node, 1)
-                            c_pools_EF_fire_CO2 = cn.biomass_emissions_only
-                            c_pools_EF_fire_non_CO2 = cn.biomass_emissions_only
-                            c_pools_EF_no_fire = cn.biomass_emissions_only
-                            rf_post_dist = np.array([0, 0, 0, 0]).astype('float32')
-                            (state_out, c_gross_emis_out, c_gross_removals_out, non_co2_flux_out, c_dens_out,
-                             RF_AGC_final, RF_BGC_final, agc_ef_out_cell, gain_year_count, forest_age_end_of_interval) = nu.calc_T_NT(
-                                node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
-                                c_pools_EF_no_fire, interval_end_year, c_dens_in, rf_post_dist, Cf_forest,
-                                Gef_ch4_forest, Gef_n2o_forest)
+                            if LC_curr == cn.cropland:  # Full loss of oil palm to cropland (3111->31119/31112)
+                                node = nu.accrete_node(node, 1)
+                                c_pools_EF_fire_CO2 = cn.biomass_emissions_only
+                                c_pools_EF_fire_non_CO2 = cn.biomass_emissions_only
+                                c_pools_EF_no_fire = cn.biomass_emissions_only
+                                rf_post_dist = np.array([cn.cropland_rf, 0, 0, 0]).astype('float32')
+                                (state_out, c_gross_emis_out, c_gross_removals_out, non_co2_flux_out, c_dens_out,
+                                 RF_AGC_final, RF_BGC_final, agc_ef_out_cell, gain_year_count, forest_age_end_of_interval) = nu.calc_T_NT(
+                                    node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
+                                    c_pools_EF_no_fire, interval_end_year, c_dens_in, rf_post_dist, Cf_forest,
+                                    Gef_ch4_forest, Gef_n2o_forest)
+                            elif GLAD_short_veg_LC_curr:  # Full loss of oil palm to short vegetation (3112->31129/31122)
+                                node = nu.accrete_node(node, 2)
+                                c_pools_EF_fire_CO2 = cn.biomass_emissions_only
+                                c_pools_EF_fire_non_CO2 = cn.biomass_emissions_only
+                                c_pools_EF_no_fire = cn.biomass_emissions_only
+                                rf_post_dist = short_veg_AGC_BGC_RF_adj
+                                (state_out, c_gross_emis_out, c_gross_removals_out, non_co2_flux_out, c_dens_out,
+                                 RF_AGC_final, RF_BGC_final, agc_ef_out_cell, gain_year_count, forest_age_end_of_interval) = nu.calc_T_NT(
+                                    node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
+                                    c_pools_EF_no_fire, interval_end_year, c_dens_in, rf_post_dist, Cf_forest,
+                                    Gef_ch4_forest, Gef_n2o_forest)
+                            else:  # Full loss of oil palm to anything else (3113->31139/31132)
+                                node = nu.accrete_node(node, 3)
+                                c_pools_EF_fire_CO2 = cn.biomass_emissions_only
+                                c_pools_EF_fire_non_CO2 = cn.biomass_emissions_only
+                                c_pools_EF_no_fire = cn.biomass_emissions_only
+                                burned_in_curr_interval = 0  # This particular node can't have fire emissions, so this is forced to 0
+                                rf_post_dist = np.array([0, 0, 0, 0]).astype('float32')
+                                (state_out, c_gross_emis_out, c_gross_removals_out, non_co2_flux_out, c_dens_out,
+                                 RF_AGC_final, RF_BGC_final, agc_ef_out_cell, gain_year_count,
+                                 forest_age_end_of_interval) = nu.calc_T_NT(
+                                    node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
+                                    c_pools_EF_no_fire, interval_end_year, c_dens_in, rf_post_dist, Cf_forest,
+                                    Gef_ch4_forest, Gef_n2o_forest)
                         else:  # Full loss of non-oil palm planted trees (312)
                             node = nu.accrete_node(node, 2)
-                            if LC_curr == cn.cropland:  # Full loss of non-oil palm planted trees as cropland (3121)
+                            if LC_curr == cn.cropland:  # Full loss of non-oil palm planted trees to cropland (3121)
                                 node = nu.accrete_node(node, 1)
-                                if planted_forest_tree_crop_cell == 2:  # Full loss of non-oil palm tree crops as cropland (31211->312119/312112)
+                                if planted_forest_tree_crop_cell == 2:  # Full loss of non-oil palm tree crops to cropland (31211->312119/312112)
                                     node = nu.accrete_node(node, 1)
                                     c_pools_EF_fire_CO2 = cn.biomass_emissions_only
                                     c_pools_EF_fire_non_CO2 = cn.biomass_emissions_only
@@ -968,7 +993,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                         c_pools_EF_no_fire, interval_end_year, c_dens_in, rf_post_dist, Cf_forest,
                                         Gef_ch4_forest, Gef_n2o_forest)
-                                else:  # Full loss of non-oil palm planted forest as cropland (31212->312129/312122)
+                                else:  # Full loss of non-oil palm planted forest to cropland (31212->312129/312122)
                                     node = nu.accrete_node(node, 2)
                                     c_pools_EF_fire_CO2 = cn.biomass_emissions_only
                                     c_pools_EF_fire_non_CO2 = cn.all_non_soil_pools
@@ -979,9 +1004,9 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                         c_pools_EF_no_fire, interval_end_year, c_dens_in, rf_post_dist, Cf_forest,
                                         Gef_ch4_forest, Gef_n2o_forest)
-                            elif GLAD_short_veg_LC_curr:  # Full loss of non-oil palm planted trees as short vegetation (3122)
+                            elif GLAD_short_veg_LC_curr:  # Full loss of non-oil palm planted trees to short vegetation (3122)
                                 node = nu.accrete_node(node, 2)
-                                if planted_forest_tree_crop_cell == 2:  # Full loss of non-oil palm tree crops as short vegetation (31221->312219/312212)
+                                if planted_forest_tree_crop_cell == 2:  # Full loss of non-oil palm tree crops to short vegetation (31221->312219/312212)
                                     node = nu.accrete_node(node, 1)
                                     c_pools_EF_fire_CO2 = cn.biomass_emissions_only
                                     c_pools_EF_fire_non_CO2 = cn.biomass_emissions_only
@@ -992,7 +1017,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                         c_pools_EF_no_fire, interval_end_year, c_dens_in, rf_post_dist, Cf_forest,
                                         Gef_ch4_forest, Gef_n2o_forest)
-                                else:  # Full loss of non-oil palm planted forest as short vegetation (31222->312229/312222)
+                                else:  # Full loss of non-oil palm planted forest to short vegetation (31222->312229/312222)
                                     node = nu.accrete_node(node, 2)
                                     c_pools_EF_fire_CO2 = cn.biomass_emissions_only
                                     c_pools_EF_fire_non_CO2 = cn.all_non_soil_pools
@@ -1003,9 +1028,9 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                         c_pools_EF_no_fire, interval_end_year, c_dens_in, rf_post_dist, Cf_forest,
                                         Gef_ch4_forest, Gef_n2o_forest)
-                            elif LC_curr == cn.builtup:  # Full loss of non-oil palm planted trees to settlement (3123)
+                            elif LC_curr == cn.builtup:  # Full loss of non-oil palm planted trees to builtup (3123)
                                 node = nu.accrete_node(node, 3)
-                                if planted_forest_tree_crop_cell == 2:  # Full loss of non-oil palm tree crops to settlement (31231->312319/312312)
+                                if planted_forest_tree_crop_cell == 2:  # Full loss of non-oil palm tree crops to builtup (31231->312319/312312)
                                     node = nu.accrete_node(node, 1)
                                     c_pools_EF_fire_CO2 = cn.biomass_emissions_only
                                     c_pools_EF_fire_non_CO2 = cn.biomass_emissions_only
@@ -1016,7 +1041,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                         c_pools_EF_no_fire, interval_end_year, c_dens_in, rf_post_dist, Cf_forest,
                                         Gef_ch4_forest, Gef_n2o_forest)
-                                else:  # Full loss of non-oil palm planted forest to settlement (31232->312329/312322)
+                                else:  # Full loss of non-oil palm planted forest to builtup (31232->312329/312322)
                                     node = nu.accrete_node(node, 2)
                                     c_pools_EF_fire_CO2 = cn.biomass_emissions_only
                                     c_pools_EF_fire_non_CO2 = cn.all_non_soil_pools
@@ -1055,9 +1080,9 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         Gef_ch4_forest, Gef_n2o_forest)
                     else:  # Full loss of non-planted trees (32)
                         node = nu.accrete_node(node, 2)
-                        if GLAD_tall_veg_LC_prev:  # Full loss of natural forest (321)
+                        if GLAD_tall_veg_LC_prev:  # Full loss of natural tree cover (321)
                             node = nu.accrete_node(node, 1)
-                            if LC_curr == cn.cropland:  # Natural forest converted to cropland (3211->32119/32112)
+                            if LC_curr == cn.cropland:  # Full loss of natural forest to cropland (3211->32119/32112)
                                 node = nu.accrete_node(node, 1)
                                 c_pools_EF_fire_CO2 = cn.all_non_soil_pools
                                 c_pools_EF_fire_non_CO2 = cn.all_non_soil_pools
@@ -1068,9 +1093,9 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                     node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                     c_pools_EF_no_fire, interval_end_year, c_dens_in, rf_post_dist, Cf_forest,
                                     Gef_ch4_forest, Gef_n2o_forest)
-                            elif GLAD_short_veg_LC_curr:  # Natural forest converted to short vegetation (3212)
+                            elif GLAD_short_veg_LC_curr:  # Full loss of natural tree cover to short vegetation (3212)
                                 node = nu.accrete_node(node, 2)
-                                if drivers_cell in cn.drivers_non_soil_C: # Natural forest converted to short vegetation with disturbance that emits all non-soil C pools (32121->321219/321212)
+                                if drivers_cell in cn.drivers_non_soil_C: # Full loss of natural tree cover to short vegetation with disturbance that emits all non-soil C pools (32121->321219/321212)
                                     node = nu.accrete_node(node, 1)
                                     c_pools_EF_fire_CO2 = cn.all_non_soil_pools
                                     c_pools_EF_fire_non_CO2 = cn.all_non_soil_pools
@@ -1081,7 +1106,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                         c_pools_EF_no_fire, interval_end_year, c_dens_in, rf_post_dist, Cf_forest,
                                         Gef_ch4_forest, Gef_n2o_forest)
-                                else:  # Natural forest converted to short vegetation with disturbance that emits biomass C pools only (32122->321229/321222)
+                                else:  # Full loss of natural tree cover to short vegetation with disturbance that emits biomass C pools only (32122->321229/321222)
                                     node = nu.accrete_node(node, 2)
                                     c_pools_EF_fire_CO2 = cn.agc_emissions_only
                                     c_pools_EF_fire_non_CO2 = cn.all_but_bgc_emissions
@@ -1092,7 +1117,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                         c_pools_EF_no_fire, interval_end_year, c_dens_in, rf_post_dist, Cf_forest,
                                         Gef_ch4_forest, Gef_n2o_forest)
-                            elif LC_curr == cn.builtup:  # Natural forest converted to settlement (3213->32139/32132)
+                            elif LC_curr == cn.builtup:  # Full loss of natural tree cover to builtup (3213->32139/32132)
                                 node = nu.accrete_node(node, 3)
                                 c_pools_EF_fire_CO2 = cn.all_non_soil_pools
                                 c_pools_EF_fire_non_CO2 = cn.all_non_soil_pools
@@ -1103,7 +1128,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                     node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                     c_pools_EF_no_fire, interval_end_year, c_dens_in, rf_post_dist, Cf_forest,
                                     Gef_ch4_forest, Gef_n2o_forest)
-                            else:  # Natural forest converted to anything else (wetland/open water/ice, etc.) (3214->32142) (no fire emissions allowed)
+                            else:  # Full loss of natural tree cover  to anything else (wetland/open water/ice, etc.) (3214->32142) (no fire emissions allowed)
                                 node = nu.accrete_node(node, 4)
                                 c_pools_EF_fire_CO2 = cn.biomass_emissions_only  # Fire emissions are treated as non-fire emissions
                                 c_pools_EF_fire_non_CO2 = np.array([0, 0, 0, 0]).astype('float32') # This particular node can't have fire emissions-- no non-CO2 emissions
@@ -1117,7 +1142,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                     Gef_ch4_forest, Gef_n2o_forest)
                         else:  # Full loss of trees outside forests (322)  (slightly compressed variable assignments compared to elsewhere)
                             node = nu.accrete_node(node, 2)
-                            if LC_curr == cn.cropland:  # Full loss of trees outside forests converted to cropland (3221->32219/32212)
+                            if LC_curr == cn.cropland:  # Full loss of trees in other land uses to cropland (3221->32219/32212)
                                 node = nu.accrete_node(node, 1)
                                 c_pools_EF_fire_CO2 = cn.agc_emissions_only
                                 c_pools_EF_fire_non_CO2 = cn.agc_emissions_only
@@ -1128,7 +1153,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                     node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                     c_pools_EF_no_fire, interval_end_year, c_dens_in_ToF, rf_post_dist, Cf_forest,
                                     Gef_ch4_forest, Gef_n2o_forest)
-                            elif GLAD_short_veg_LC_curr:  # Full loss of trees outside forests converted to short vegetation (3222->32229/32222)
+                            elif GLAD_short_veg_LC_curr:  # Full loss of trees in other land uses to short vegetation (3222->32229/32222)
                                 node = nu.accrete_node(node, 2)
                                 c_pools_EF_fire_CO2 = cn.agc_emissions_only
                                 c_pools_EF_fire_non_CO2 = cn.agc_emissions_only
@@ -1139,7 +1164,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                     node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                     c_pools_EF_no_fire, interval_end_year, c_dens_in_ToF, rf_post_dist, Cf_forest,
                                     Gef_ch4_forest, Gef_n2o_forest)
-                            elif LC_curr == cn.builtup:  # Full loss of trees outside forests converted to settlement (3223->32239/32232)
+                            elif LC_curr == cn.builtup:  # Full loss of trees in other land uses to builtup (3223->32239/32232)
                                 node = nu.accrete_node(node, 3)
                                 c_pools_EF_fire_CO2 = cn.agc_emissions_only
                                 c_pools_EF_fire_non_CO2 = cn.agc_emissions_only
@@ -1150,7 +1175,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                     node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                     c_pools_EF_no_fire, interval_end_year, c_dens_in_ToF, rf_post_dist, Cf_forest,
                                     Gef_ch4_forest, Gef_n2o_forest)
-                            else:  # Full loss of trees outside forests converted to anything else (3224->32242) (no fire emissions allowed)
+                            else:  # Full loss of trees in other land uses to anything else (3224->32242) (no fire emissions allowed)
                                 node = nu.accrete_node(node, 4)
                                 c_pools_EF_fire_CO2 = cn.agc_emissions_only
                                 c_pools_EF_fire_non_CO2 = cn.agc_emissions_only
@@ -1168,6 +1193,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                     node = nu.accrete_node(node, 4)
                     if interval_before_converted_to_oil_palm and (not oil_palm_pre_2000): # Non-planted trees with oil palm planted in the next interval (41->419/412)
                         node = nu.accrete_node(node, 1)
+                        part_or_full_dist_in_curr_interval = 1  # Force assignment of disturbance in this situation since it's not connected to height change
                         c_pools_EF_fire_CO2 = cn.all_non_soil_pools
                         c_pools_EF_fire_non_CO2 = cn.all_non_soil_pools
                         c_pools_EF_no_fire = cn.all_non_soil_pools
@@ -1207,16 +1233,28 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                         Cf_forest, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest)
                             else:  # Non-planted trees partially disturbed in the current interval (4212)
                                 node = nu.accrete_node(node, 2)
-                                if GLAD_tall_veg_LC_curr:  # Forest partially disturbed in the current interval (42121->421219/421212)
+                                if GLAD_tall_veg_LC_curr:  # Forest partially disturbed in the current interval (42121)
                                     node = nu.accrete_node(node, 1)
-                                    c_pools_EF_fire_CO2 = cn.agc_emissions_only
-                                    c_pools_EF_fire_non_CO2 = cn.agc_emissions_only
-                                    c_pools_EF_no_fire = np.array([partial_disturbance_EF_for_driver, partial_disturbance_EF_for_driver, 0, 0]).astype('float32')
-                                    (state_out, c_gross_emis_out, c_gross_removals_out, non_co2_flux_out, c_dens_out,
-                                     RF_AGC_final, RF_BGC_final, agc_ef_out_cell, gain_year_count, forest_age_end_of_interval) = nu.calc_T_T_non_stand_disturbs(
-                                        node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
-                                        c_pools_EF_no_fire, interval_end_year, c_dens_in, most_recent_year_not_tall_veg,
-                                        Cf_forest, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest)
+                                    if composite_primary_forest_cell:  # Primary forest partially disturbed in the current interval (421211->4212119/4212112)
+                                        node = nu.accrete_node(node, 1)
+                                        c_pools_EF_fire_CO2 = cn.agc_emissions_only
+                                        c_pools_EF_fire_non_CO2 = cn.agc_emissions_only
+                                        c_pools_EF_no_fire = np.array([partial_disturbance_EF_for_driver, partial_disturbance_EF_for_driver, 0, 0]).astype('float32')
+                                        (state_out, c_gross_emis_out, c_gross_removals_out, non_co2_flux_out, c_dens_out,
+                                         RF_AGC_final, RF_BGC_final, agc_ef_out_cell, gain_year_count, forest_age_end_of_interval) = nu.calc_T_T_non_stand_disturbs(
+                                            node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
+                                            c_pools_EF_no_fire, interval_end_year, c_dens_in, most_recent_year_not_tall_veg,
+                                            Cf_forest, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest)
+                                    else:  # Secondary forest partially disturbed in the current interval (421212->4212129/4212122)
+                                        node = nu.accrete_node(node, 2)
+                                        c_pools_EF_fire_CO2 = cn.agc_emissions_only
+                                        c_pools_EF_fire_non_CO2 = cn.agc_emissions_only
+                                        c_pools_EF_no_fire = np.array([partial_disturbance_EF_for_driver, partial_disturbance_EF_for_driver, 0, 0]).astype('float32')
+                                        (state_out, c_gross_emis_out, c_gross_removals_out, non_co2_flux_out, c_dens_out,
+                                         RF_AGC_final, RF_BGC_final, agc_ef_out_cell, gain_year_count, forest_age_end_of_interval) = nu.calc_T_T_non_stand_disturbs(
+                                            node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
+                                            c_pools_EF_no_fire, interval_end_year, c_dens_in, most_recent_year_not_tall_veg,
+                                            Cf_forest, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest)
                                 else:  # Trees in other land uses partially disturbed in the current interval (42122->421229/421222)
                                     node = nu.accrete_node(node, 2)
                                     c_pools_EF_fire_CO2 = cn.agc_emissions_only
