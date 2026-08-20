@@ -969,7 +969,7 @@ def calc_mang_loss(interval_length, first_mang_gain_year, first_mang_loss_year, 
 # Carbon pool fluxes and densities are input and output as Mg C/ha(/year) rather than Mg CO2 for arithmetic simplicity.
 @jit(nopython=True)
 def calc_T_NT(node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2, c_pools_EF_no_fire,
-              c_dens_in, post_dist_regrowth, Cf_forest, Gef_ch4, Gef_n2o):
+              c_dens_in, RF_post_dist, Cf_forest, Gef_ch4, Gef_n2o):
 
     # Retrieves the starting densities for each carbon pool from the input array (Mg C/ha)
     agc_dens_in, bgc_dens_in, deadwood_c_dens_in, litter_c_dens_in = unpack_starting_carbon_densities(c_dens_in)
@@ -1000,10 +1000,9 @@ def calc_T_NT(node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fir
     # Regrowth of short veg and cropland is a one-time value.
     # If no post-loss removals, then removal factors and gross removals are given NoData values
     # because the default assumption for a loss pixel is no removals/RF (and thus NoData).
-    if post_dist_regrowth[0] > 0:
-        c_gross_removals_out = post_dist_regrowth * -1
-
-        RF_AGC_out = post_dist_regrowth[0]
+    if RF_post_dist[0] > 0:
+        RF_AGC_out = RF_post_dist[0]
+        c_gross_removals_out = RF_post_dist * -1
 
     else:
         RF_AGC_out = np.nan
@@ -1013,7 +1012,11 @@ def calc_T_NT(node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fir
     # Step 3: Calculates ending carbon densities by carbon pool (Mg C/ha).
     # Starts with carbon density in (list converted to np array), adds gross removals (subtracts negative value), subtracts emissions (positive value).
     # Ending carbon pools are not affected by non-CO2 emissions in the next step.
-    c_dens_out = np.array(c_dens_in).astype('float32') - c_gross_removals_out - c_gross_emissions_out
+    c_dens_out = np.array(c_dens_in).astype('float32') - c_gross_emissions_out
+    # Only adjusts for removals if removals exist.
+    # Adding NaN removals to c_dens_out would convert c_dens_out to NoData as well, which we don't want.
+    if RF_post_dist[0] > 0:
+        c_dens_out = c_dens_out - c_gross_removals_out
 
 
     # Step 4: Calculates non-CO2 emissions (if relevant) (Mg CO2e/ha/year)
@@ -1261,9 +1264,13 @@ def calc_T_T_no_disturbs(node, forest_age_interval_start, burned_during_interval
 
 
     # Step 5: Calculates ending carbon densities by carbon pool.
-    # Starts with carbon density in (list converted to np array), adds gross removals (subtracts negative value), subtracts emissions.
+    # Starts with carbon density in (list converted to np array), adds gross removals (subtracts negative value), subtracts emissions (positive value).
     # Ending carbon pools are not affected by non-CO2 emissions in the next step.
-    c_dens_out = np.array(c_dens_in).astype('float32') - c_gross_removals_out - c_gross_emissions_out
+    c_dens_out = np.array(c_dens_in).astype('float32') - c_gross_removals_out
+    # Only adjusts for emissions if emissions exist.
+    # Adding NaN emissions to c_dens_out would convert c_dens_out to NoData as well, which we don't want.
+    if burned_during_interval > 0:
+        c_dens_out = c_dens_out - c_gross_emissions_out
 
 
     # Step 6: Calculates non-CO2 emissions (if relevant) (Mg CO2e/ha/interval)
@@ -1347,7 +1354,7 @@ def calc_NT_cropland_gain(c_pools_no_fire, c_dens_in, RF_array):
 # Gross fluxes and ending carbon stocks for cropland converted to non-cropland (without tall vegetation).
 # Removals only if converted to short vegetation. Non-CO2 emissions only if fire.
 @jit(nopython=True)
-def calc_cropland_non_cropland(node, c_dens_in, c_pools_no_fire, times_burned_in_interval, RF_post_dist,
+def calc_cropland_non_cropland(node, c_dens_in, c_pools_no_fire, burned_in_current_interval, RF_post_dist,
                                Cf_crop_residue, Gef_CH4_crop_residue, Gef_N2O_crop_residue):
 
     # Retrieves the starting densities for each carbon pool from the input array (Mg C/ha)
@@ -1362,19 +1369,28 @@ def calc_cropland_non_cropland(node, c_dens_in, c_pools_no_fire, times_burned_in
     litter_c_gross_emis_out = litter_c_dens_in * litter_c_ef_CO2
     c_gross_emissions_out = np.array([agc_gross_emis_out, bgc_gross_emis_out, deadwood_c_gross_emis_out, litter_c_gross_emis_out]).astype('float32')
 
-    # Step 2: Calculates carbon gross removals (Mg C/ha/interval) (only if converted to short vegetation). Gross removals are negative.
-    c_gross_removals_out = RF_post_dist * -1  # Would be short vegetation removals (only for AGC and BGC)
 
-    # Step 3: Calculates ending carbon densities (Mg C/ha)
-    c_dens_out = np.array(c_dens_in).astype('float32') - c_gross_removals_out - c_gross_emissions_out
+    # Step 2: Calculates carbon gross removals (Mg C/ha/interval) (only if converted to short vegetation). Gross removals are negative.
+    if RF_post_dist[0] > 0:
+        c_gross_removals_out = RF_post_dist * -1
+
+    else:
+        c_gross_removals_out = np.array([np.nan, np.nan, np.nan, np.nan]).astype('float32')
+
+
+    # Step 3: Calculates ending carbon densities (Mg C/ha).
+    # Starts with carbon density in (list converted to np array), adds gross removals (subtracts negative value), subtracts emissions (positive value).
+    # Ending carbon pools are not affected by non-CO2 emissions in the next step.
+    c_dens_out = np.array(c_dens_in).astype('float32') - c_gross_emissions_out
+    # Only adjusts for removals if removals exist.
+    # Adding NaN removals to c_dens_out would convert c_dens_out to NoData as well, which we don't want.
+    if RF_post_dist[0] > 0:
+        c_dens_out = c_dens_out - c_gross_removals_out
+
 
     # Step 4: Calculates non-CO2 emissions (if relevant) (Mg CO2e/ha/interval)
-    # Default non-CO2 emissions values
-    ch4_flux_out = 0
-    n2o_flux_out = 0
-
     # Only assigns fire node code and calculates CH4 and N2O emissions if the pixel burned in the last interval
-    if times_burned_in_interval > 0:
+    if burned_in_current_interval > 0:
 
         state_out = accrete_node(node, cn.land_state_node_fire_value)
 
@@ -1385,8 +1401,8 @@ def calc_cropland_non_cropland(node, c_dens_in, c_pools_no_fire, times_burned_in
         ch4_flux_out, n2o_flux_out = non_CO2_fire_equations(residue_carbon, Cf_crop_residue, Gef_CH4_crop_residue, Gef_N2O_crop_residue)
 
         # Multiplies the per-burn emissions by the number of times burned to get total emissions during the interval
-        ch4_flux_out = ch4_flux_out * times_burned_in_interval
-        n2o_flux_out = n2o_flux_out * times_burned_in_interval
+        ch4_flux_out = ch4_flux_out * burned_in_current_interval
+        n2o_flux_out = n2o_flux_out * burned_in_current_interval
 
         # # For testing non-CO2 emissions
         # print("c_dens_in:", c_dens_in)
@@ -1402,6 +1418,10 @@ def calc_cropland_non_cropland(node, c_dens_in, c_pools_no_fire, times_burned_in
 
         state_out = accrete_node(node, 2)
 
+        # Non-CO2 emissions get NoData if no fire
+        ch4_flux_out = np.nan
+        n2o_flux_out = np.nan
+
     non_co2_fluxes_out = np.array([ch4_flux_out, n2o_flux_out]).astype('float32')
 
     return state_out, c_gross_emissions_out, c_gross_removals_out, c_dens_out, non_co2_fluxes_out
@@ -1413,17 +1433,16 @@ def calc_cropland_non_cropland(node, c_dens_in, c_pools_no_fire, times_burned_in
 @jit(nopython=True)
 def calc_cropland_cropland(node, c_dens_in, times_burned_in_interval, Cf_crop_residue, Gef_CH4_crop_residue, Gef_N2O_crop_residue):
 
-    # Step 1: Calculates carbon densities, carbon gross emissions and carbon gross removals (no changes to any)
+    # Step 1: Calculates carbon densities, carbon gross emissions and carbon gross removals (no changes to any).
+    # Emissions and removals set to 0 because we are explicitly assuming no change in carbon densities
+    # in cropland remaining cropland. That is, emissions are removals in cropland remaining cropland are possible
+    # but we are setting them to 0 under Tier 1 assumptions.
     c_dens_out = np.array(c_dens_in).astype('float32')
-    c_gross_emissions_out = np.array([0, 0, 0, 0]).astype('float32')  # Specified for completeness
-    c_gross_removals_out = np.array([0, 0, 0, 0]).astype('float32')  # Specified for completeness
+    c_gross_emissions_out = np.array([0, 0, 0, 0]).astype('float32')
+    c_gross_removals_out = np.array([0, 0, 0, 0]).astype('float32')
 
 
     # Step 2: Calculates non-CO2 emissions (if relevant) (Mg CO2e/ha/interval)
-    # Default non-CO2 emissions values
-    ch4_flux_out = 0
-    n2o_flux_out = 0
-
     # Only assigns fire node code and calculates CH4 and N2O emissions if the pixel burned in the last interval
     if times_burned_in_interval > 0:
 
@@ -1449,11 +1468,14 @@ def calc_cropland_cropland(node, c_dens_in, times_burned_in_interval, Cf_crop_re
         #     print(f"ch4_flux_out: {ch4_flux_out}; n2o_flux_out: {n2o_flux_out};")
         #     # sys.quit()
 
-
     # Node code if no fire in the last interval. No CH4 and N2O emissions calculated.
     else:
 
         state_out = accrete_node(node, 2)
+
+        # Non-CO2 emissions get NoData if no fire
+        ch4_flux_out = np.nan
+        n2o_flux_out = np.nan
 
     non_co2_fluxes_out = np.array([ch4_flux_out, n2o_flux_out]).astype('float32')
 
@@ -1464,11 +1486,8 @@ def calc_cropland_cropland(node, c_dens_in, times_burned_in_interval, Cf_crop_re
 @jit(nopython=True)
 def calc_short_veg_gain(rf):
 
-    # C densities should already be 0 because the starting LC should have been forced to 0s, but this is safer.
+    # Step 1: C densities should already be 0 because the starting LC should have been forced to 0s, but this is safer.
     c_dens_in = [0, 0, 0, 0]
-
-    # Step 1: Calculates carbon densities, carbon gross emissions and carbon gross removals (no changes to any)
-    c_gross_emissions_out = np.array([0, 0, 0, 0]).astype('float32')  # Specified for completeness
 
     # Step 2: Calculates gross removals.
     # Gross removals is the annual crop AGC removals after residual carbon is lost (Mg C/ha/interval).
@@ -1480,14 +1499,14 @@ def calc_short_veg_gain(rf):
     # Ending carbon pools are not affected by non-CO2 emissions in the next step.
     c_dens_out = np.array(c_dens_in).astype('float32') - c_gross_removals_out
 
-    return c_gross_emissions_out, c_gross_removals_out, c_dens_out
+    return c_gross_removals_out, c_dens_out
 
 
 # Gross fluxes and ending carbon stocks for short vegetation converted to non-short vegetation, non-forest or non-cropland.
 # No CO2 removals. CO2 emissions occur.
 # There are non-CO2 emissions where there is fire (biomass burning).
 @jit(nopython=True)
-def calc_short_veg_loss(node, c_dens_in, c_pools_no_fire, times_burned_in_interval, Cf_grassland, Gef_CH4_grassland, Gef_N2O_grassland):
+def calc_short_veg_loss(node, c_dens_in, c_pools_no_fire, burned_in_current_interval, Cf_grassland, Gef_CH4_grassland, Gef_N2O_grassland):
 
     # Retrieves the starting densities for each carbon pool from the input array (Mg C/ha)
     agc_dens_in, bgc_dens_in, deadwood_c_dens_in, litter_c_dens_in = unpack_starting_carbon_densities(c_dens_in)
@@ -1508,16 +1527,11 @@ def calc_short_veg_loss(node, c_dens_in, c_pools_no_fire, times_burned_in_interv
 
     c_dens_out = np.array([agc_dens_out, bgc_dens_out, deadwood_c_dens_out, litter_c_dens_out]).astype('float32')
     c_gross_emissions_out = np.array([agc_gross_emis_out, bgc_gross_emis_out, deadwood_c_gross_emis_out, litter_c_gross_emis_out]).astype('float32')
-    c_gross_removals_out = np.array([0, 0, 0, 0]).astype('float32')  # Specified for completeness
 
 
-    # Step 2: Calculates non-CO2 emissions (if relevant) (Mg CO2e/ha/interval)
-    # Default non-CO2 emissions values
-    ch4_flux_out = 0
-    n2o_flux_out = 0
-
+    # Step 2: Calculates non-CO2 emissions (if relevant) (Mg CO2e/ha/year)
     # Only assigns fire node code and calculates CH4 and N2O emissions if the pixel burned in the last interval
-    if times_burned_in_interval > 0:
+    if burned_in_current_interval > 0:
 
         state_out = accrete_node(node, cn.land_state_node_fire_value)
 
@@ -1525,8 +1539,8 @@ def calc_short_veg_loss(node, c_dens_in, c_pools_no_fire, times_burned_in_interv
         ch4_flux_out, n2o_flux_out = non_CO2_fire_equations(c_dens_in[0], Cf_grassland, Gef_CH4_grassland, Gef_N2O_grassland)
 
         # Multiplies the per-burn emissions by the number of times burned to get total emissions during the interval
-        ch4_flux_out = ch4_flux_out * times_burned_in_interval
-        n2o_flux_out = n2o_flux_out * times_burned_in_interval
+        ch4_flux_out = ch4_flux_out * burned_in_current_interval
+        n2o_flux_out = n2o_flux_out * burned_in_current_interval
 
         # # For testing non-CO2 emissions
         # print("c_dens_in:", c_dens_in)
@@ -1541,9 +1555,13 @@ def calc_short_veg_loss(node, c_dens_in, c_pools_no_fire, times_burned_in_interv
 
         state_out = accrete_node(node, 2)
 
+        # Non-CO2 emissions get NoData if no fire
+        ch4_flux_out = np.nan
+        n2o_flux_out = np.nan
+
     non_co2_fluxes_out = np.array([ch4_flux_out, n2o_flux_out]).astype('float32')
 
-    return state_out, c_gross_emissions_out, c_gross_removals_out, c_dens_out, non_co2_fluxes_out
+    return state_out, c_gross_emissions_out, c_dens_out, non_co2_fluxes_out
 
 
 # Gross fluxes and ending carbon stocks for short vegetation remaining short vegetation.
@@ -1552,17 +1570,16 @@ def calc_short_veg_loss(node, c_dens_in, c_pools_no_fire, times_burned_in_interv
 @jit(nopython=True)
 def calc_short_veg_short_veg(node, c_dens_in, times_burned_in_interval, Cf_grassland, Gef_CH4_grassland, Gef_N2O_grassland):
 
-    # Step 1: Calculates carbon densities, carbon gross emissions and carbon gross removals (no changes to any)
+    # Step 1: Calculates carbon densities, carbon gross emissions and carbon gross removals (no changes to any).
+    # Emissions and removals set to 0 because we are explicitly assuming no change in carbon densities
+    # in cropland remaining cropland. That is, emissions are removals in cropland remaining cropland are possible
+    # but we are setting them to 0 under Tier 1 assumptions.
     c_dens_out = np.array(c_dens_in).astype('float32')
     c_gross_emissions_out = np.array([0, 0, 0, 0]).astype('float32')  # Specified for completeness
     c_gross_removals_out = np.array([0, 0, 0, 0]).astype('float32')  # Specified for completeness
 
 
-    # Step 2: Calculates non-CO2 emissions (if relevant) (Mg CO2e/ha/interval)
-    # Default non-CO2 emissions values
-    ch4_flux_out = 0
-    n2o_flux_out = 0
-
+    # Step 2: Calculates non-CO2 emissions (if relevant) (Mg CO2e/ha/year)
     # Only assigns fire node code and calculates CH4 and N2O emissions if the pixel burned in the last interval
     if times_burned_in_interval > 0:
 
@@ -1587,6 +1604,10 @@ def calc_short_veg_short_veg(node, c_dens_in, times_burned_in_interval, Cf_grass
     else:
 
         state_out = accrete_node(node, 2)
+
+        # Non-CO2 emissions get NoData if no fire
+        ch4_flux_out = np.nan
+        n2o_flux_out = np.nan
 
     non_co2_fluxes_out = np.array([ch4_flux_out, n2o_flux_out]).astype('float32')
 
