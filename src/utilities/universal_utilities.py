@@ -2400,6 +2400,20 @@ def determine_if_new_run(chunk_list, resume_run_datetime, stage, main_logger):
     return chunk_stats_prefix, remaining_chunk_list
 
 
+# Elementwise sum of same-shape float32 arrays that treats NaN as "no contribution" rather than
+# propagating it. Only returns NaN at a pixel where every input array is NaN there.
+# This matters because emissions and removals (or CO2 and non-CO2 emissions) can independently be
+# NoData for structural reasons even when the other component is a real value for that same pixel --
+# plain addition would turn that real value into NoData too.
+# Per Claude session 'NoData handling for chunk stats and fluxes'
+def combine_treating_nan_as_absent(*arrays):
+    stacked = np.stack(arrays)
+    all_nan = np.all(np.isnan(stacked), axis=0)
+    combined = np.nansum(stacked, axis=0).astype('float32')
+    combined[all_nan] = np.nan
+    return combined
+
+
 def gdal_vrt_progress(pct, message, data):
     """
     GDAL progress callback.

@@ -5,7 +5,8 @@ outputs that are useful for QC and potentially as contextual layers (e.g., compo
 
 NoData vs. 0 for float outputs:
 Basically, for state nodes where emissions are possible and there are no emissions, the emissions outputs are assigned 0.
-Likewise, for state nodes where removals are possible and there are no removals
+Likewise, for state nodes where removals are possible and there are no removals.
+NoData assignment based on Claude Session 'NoData handling for chunk stats and fluxes'
 
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
@@ -1478,65 +1479,6 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
         out_dict_float32[f"{cn.deadwood_c_modeled_dens_pattern}{cn.C_density_pixel_meaning}_{interval_end_year}"] = deadwood_c_dens_block.copy()
         out_dict_float32[f"{cn.litter_c_modeled_dens_pattern}{cn.C_density_pixel_meaning}_{interval_end_year}"] = litter_c_dens_block.copy()
 
-        # Summative outputs (Mg CO2(e)/ha/yr)
-        # Gross emissions across all carbon pools
-        out_dict_float32[f"{cn.gross_emis_all_C_pools_CO2_only_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"] = (
-                out_dict_float32[f"{cn.agc_gross_emis_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
-                + out_dict_float32[f"{cn.bgc_gross_emis_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
-                + out_dict_float32[f"{cn.deadwood_c_gross_emis_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
-                + out_dict_float32[f"{cn.litter_c_gross_emis_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"])
-
-        # Gross emissions for non-CO2 emissions
-        out_dict_float32[f"{cn.gross_emis_all_C_pools_non_CO2_only_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"] = (
-                out_dict_float32[f"{cn.ch4_gross_emis_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
-                + out_dict_float32[f"{cn.n2o_gross_emis_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"])
-
-        # Gross emissions for all carbon pools and all gases
-        out_dict_float32[f"{cn.gross_emis_all_C_pools_all_gases_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"] = (
-            out_dict_float32[f"{cn.gross_emis_all_C_pools_CO2_only_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
-            + out_dict_float32[f"{cn.gross_emis_all_C_pools_non_CO2_only_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
-        )
-
-        # Gross removals across all carbon pools
-        out_dict_float32[f"{cn.gross_removals_all_C_pools_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"] = (
-                out_dict_float32[f"{cn.agc_gross_removals_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
-                + out_dict_float32[f"{cn.bgc_gross_removals_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
-                + out_dict_float32[f"{cn.deadwood_c_gross_removals_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
-                + out_dict_float32[f"{cn.litter_c_gross_removals_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"])
-
-        # Net flux for each carbon pool
-        out_dict_float32[f"{cn.net_flux_agc_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"] = (
-                out_dict_float32[f"{cn.agc_gross_emis_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
-                + out_dict_float32[f"{cn.agc_gross_removals_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"])
-        out_dict_float32[f"{cn.net_flux_bgc_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"] = (
-                out_dict_float32[f"{cn.bgc_gross_emis_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
-                + out_dict_float32[f"{cn.bgc_gross_removals_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"])
-        out_dict_float32[f"{cn.net_flux_deadwood_c_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"] = (
-                out_dict_float32[f"{cn.deadwood_c_gross_emis_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
-                + out_dict_float32[f"{cn.deadwood_c_gross_removals_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"])
-        out_dict_float32[f"{cn.net_flux_litter_c_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"] = (
-                out_dict_float32[f"{cn.litter_c_gross_emis_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
-                + out_dict_float32[f"{cn.litter_c_gross_removals_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"])
-
-        # Net flux across all carbon pools but for CO2 only
-        out_dict_float32[f"{cn.net_flux_all_C_pools_CO2_only_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"] = (
-                out_dict_float32[f"{cn.net_flux_agc_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
-                + out_dict_float32[f"{cn.net_flux_bgc_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
-                + out_dict_float32[f"{cn.net_flux_deadwood_c_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
-                + out_dict_float32[f"{cn.net_flux_litter_c_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"])
-
-        # Net flux across all carbon pools, plus non-pool non-CO2 emissions
-        out_dict_float32[f"{cn.net_flux_all_C_pools_all_gases_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"] = (
-                out_dict_float32[f"{cn.net_flux_all_C_pools_CO2_only_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
-                + out_dict_float32[f"{cn.gross_emis_all_C_pools_non_CO2_only_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"])
-
-        # Carbon density for all non-soil C pools (Mg C)
-        out_dict_float32[f"{cn.non_soil_c_modeled_dens_pattern}{cn.C_density_pixel_meaning}_{interval_end_year}"] = (
-                out_dict_float32[f"{cn.agc_modeled_dens_pattern}{cn.C_density_pixel_meaning}_{interval_end_year}"]
-                + out_dict_float32[f"{cn.bgc_modeled_dens_pattern}{cn.C_density_pixel_meaning}_{interval_end_year}"]
-                + out_dict_float32[f"{cn.deadwood_c_modeled_dens_pattern}{cn.C_density_pixel_meaning}_{interval_end_year}"]
-                + out_dict_float32[f"{cn.litter_c_modeled_dens_pattern}{cn.C_density_pixel_meaning}_{interval_end_year}"])
-
         # Intermediate outputs
         out_dict_uint16[f"{cn.forest_age_output_pattern}_{interval_end_year}"] = forest_age_end_of_interval_block.copy()
         out_dict_uint8[f"{cn.gain_year_count_pattern}_{interval_end_year}"] = gain_year_count_out_block.copy()
@@ -1725,15 +1667,81 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
         del out_dict
 
     # print(out_dict_all_dtypes)
+    
+    
+    ### Part 5: Computes summative flux outputs in numpy rather than numba.
+    ### Necessary because emissions and removals (and CO2 vs. non-CO2 emissions) can independently be
+    ### NoData for structural reasons -- plain addition inside numba would turn a real value into NoData
+    ### whenever the other addend happened to be NaN for that pixel.
+    lu.print_and_log(f"Calculating summative vegetation flux outputs in {bounds_str} in {tile_id}: {uu.timestr()}", False, logger_worker)
+
+    for interval_end_year in output_years:
+
+        agc_gross_emis = out_dict_all_dtypes[f"{cn.agc_gross_emis_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
+        bgc_gross_emis = out_dict_all_dtypes[f"{cn.bgc_gross_emis_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
+        deadwood_c_gross_emis = out_dict_all_dtypes[f"{cn.deadwood_c_gross_emis_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
+        litter_c_gross_emis = out_dict_all_dtypes[f"{cn.litter_c_gross_emis_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
+
+        agc_gross_removals = out_dict_all_dtypes[f"{cn.agc_gross_removals_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
+        bgc_gross_removals = out_dict_all_dtypes[f"{cn.bgc_gross_removals_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
+        deadwood_c_gross_removals = out_dict_all_dtypes[f"{cn.deadwood_c_gross_removals_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
+        litter_c_gross_removals = out_dict_all_dtypes[f"{cn.litter_c_gross_removals_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
+
+        ch4_gross_emis = out_dict_all_dtypes[f"{cn.ch4_gross_emis_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
+        n2o_gross_emis = out_dict_all_dtypes[f"{cn.n2o_gross_emis_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"]
+
+        agc_dens = out_dict_all_dtypes[f"{cn.agc_modeled_dens_pattern}{cn.C_density_pixel_meaning}_{interval_end_year}"]
+        bgc_dens = out_dict_all_dtypes[f"{cn.bgc_modeled_dens_pattern}{cn.C_density_pixel_meaning}_{interval_end_year}"]
+        deadwood_c_dens = out_dict_all_dtypes[f"{cn.deadwood_c_modeled_dens_pattern}{cn.C_density_pixel_meaning}_{interval_end_year}"]
+        litter_c_dens = out_dict_all_dtypes[f"{cn.litter_c_modeled_dens_pattern}{cn.C_density_pixel_meaning}_{interval_end_year}"]
+
+        # Gross emissions across all carbon pools (CO2 only)
+        gross_emis_all_C_pools_CO2_only = uu.combine_treating_nan_as_absent(agc_gross_emis, bgc_gross_emis, deadwood_c_gross_emis, litter_c_gross_emis)
+        out_dict_all_dtypes[f"{cn.gross_emis_all_C_pools_CO2_only_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"] = gross_emis_all_C_pools_CO2_only
+
+        # Gross emissions for non-CO2 gases
+        gross_emis_all_C_pools_non_CO2_only = uu.combine_treating_nan_as_absent(ch4_gross_emis, n2o_gross_emis)
+        out_dict_all_dtypes[f"{cn.gross_emis_all_C_pools_non_CO2_only_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"] = gross_emis_all_C_pools_non_CO2_only
+
+        # Gross emissions for all carbon pools and all gases
+        gross_emis_all_C_pools_all_gases = uu.combine_treating_nan_as_absent(gross_emis_all_C_pools_CO2_only, gross_emis_all_C_pools_non_CO2_only)
+        out_dict_all_dtypes[f"{cn.gross_emis_all_C_pools_all_gases_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"] = gross_emis_all_C_pools_all_gases
+
+        # Gross removals across all carbon pools
+        gross_removals_all_C_pools = uu.combine_treating_nan_as_absent(agc_gross_removals, bgc_gross_removals, deadwood_c_gross_removals, litter_c_gross_removals)
+        out_dict_all_dtypes[f"{cn.gross_removals_all_C_pools_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"] = gross_removals_all_C_pools
+
+        # Net flux for each carbon pool
+        net_flux_agc = uu.combine_treating_nan_as_absent(agc_gross_emis, agc_gross_removals)
+        net_flux_bgc = uu.combine_treating_nan_as_absent(bgc_gross_emis, bgc_gross_removals)
+        net_flux_deadwood_c = uu.combine_treating_nan_as_absent(deadwood_c_gross_emis, deadwood_c_gross_removals)
+        net_flux_litter_c = uu.combine_treating_nan_as_absent(litter_c_gross_emis, litter_c_gross_removals)
+
+        out_dict_all_dtypes[f"{cn.net_flux_agc_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"] = net_flux_agc
+        out_dict_all_dtypes[f"{cn.net_flux_bgc_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"] = net_flux_bgc
+        out_dict_all_dtypes[f"{cn.net_flux_deadwood_c_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"] = net_flux_deadwood_c
+        out_dict_all_dtypes[f"{cn.net_flux_litter_c_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"] = net_flux_litter_c
+
+        # Net flux across all carbon pools, CO2 only
+        net_flux_all_C_pools_CO2_only = uu.combine_treating_nan_as_absent(net_flux_agc, net_flux_bgc, net_flux_deadwood_c, net_flux_litter_c)
+        out_dict_all_dtypes[f"{cn.net_flux_all_C_pools_CO2_only_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"] = net_flux_all_C_pools_CO2_only
+
+        # Net flux across all carbon pools, plus non-pool non-CO2 emissions
+        net_flux_all_C_pools_all_gases = uu.combine_treating_nan_as_absent(net_flux_all_C_pools_CO2_only, gross_emis_all_C_pools_non_CO2_only)
+        out_dict_all_dtypes[f"{cn.net_flux_all_C_pools_all_gases_pattern}{cn.flux_density_pixel_meaning}_{interval_end_year}"] = net_flux_all_C_pools_all_gases
+
+        # Carbon density for all non-soil C pools
+        non_soil_c_modeled_dens = uu.combine_treating_nan_as_absent(agc_dens, bgc_dens, deadwood_c_dens, litter_c_dens)
+        out_dict_all_dtypes[f"{cn.non_soil_c_modeled_dens_pattern}{cn.C_density_pixel_meaning}_{interval_end_year}"] = non_soil_c_modeled_dens
 
 
-    ### Part 5: Writes outputs to pre-existing global zarr (only if activated)
+    ### Part 6: Writes outputs to pre-existing global zarr (only if activated)
 
     zu.populate_zarr(bounds, bounds_str, create_zarr, output_years, is_large_run, logger_worker, zarr_path,
                      out_dict_all_dtypes, outputs_to_zarr, stage, tile_id)
 
 
-    ### Part 6: Calculates per ha min, per ha mean, per ha max, and per pixel sum for each output chunk.
+    ### Part 7: Calculates per ha min, per ha mean, per ha max, and per pixel sum for each output chunk.
     ### Useful for QC-- to see if there are any egregiously incorrect or unexpected values.
     ### Also useful for a quick sum of outputs without doing zonal stats
 
@@ -1770,7 +1778,7 @@ def calculate_and_upload_vegetation_fluxes(bounds, primary_forest_RF_array, part
     lu.print_and_log(f"Populated chunk stats for outputs in {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
 
 
-    ### Part 7: Saves numpy arrays as rasters and uploads to s3
+    ### Part 8: Saves numpy arrays as rasters and uploads to s3
 
     # Only saves arrays to geotifs and uploads them to s3 if enabled
     if no_upload == False:
