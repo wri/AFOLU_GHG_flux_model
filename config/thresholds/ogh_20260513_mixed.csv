@@ -1,0 +1,5 @@
+biome,best_mixed_threshold,operational_threshold,low_area_threshold,high_area_threshold
+unknown,0.27,0.27,0.27,0.27
+tropical,0.16,0.16,0.20,0.15
+boreal,0.30,0.30,0.57,0.26
+temperate,0.27,0.27,0.54,0.21
