@@ -52,14 +52,16 @@ python -m src.synthesis.scripts.1_create_AFOLU_0_04deg_global_display_maps \
 -osb s3://gfw2-data/climate/AFOLU_flux_model/organic_soils/outputs/version_1_0_1/0_01deg_output_aggregation/burned_total_Mg_CO2e_pixel_yr/ogh_mixed_f1_f15_f2_20260513/2021_2024/0_01deg_global__burned_total_Mg_CO2e_pixel_yr_2021_2024.tif \
 -ms_net s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_1__standard__global/SOC_net__mineral_soil_extent__0-30cm_MgCO2/2020/_0_04deg_yr/global/20260611/SOC_net__mineral_soil_extent__0-30cm_MgCO2_0_04deg_yr_v1_0_1_2020_global.tif \
 -veg_emis s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/gross_emissions__all_C_pools__all_gases__MgCO2e/annual_intervals/2024/_0_04deg_yr/global/20260130/gross_emissions__all_C_pools__all_gases__MgCO2e_0_04deg_yr_v1_0_5_2024_global.tif \
--ms_loss s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_1__standard__global/SOC_loss__mineral_soil_extent__0-30cm_MgCO2/2020/_0_04deg_yr/global/20260611/SOC_loss__mineral_soil_extent__0-30cm_MgCO2_0_04deg_yr_v1_0_1_2020_global.tif
--cl s3://gfw2-data/climate/AFOLU_flux_model/cropland_emissions/processed/Cornell_v20250828/year_2020/global_COG/all_sources/Global_grid_cropland_emissions_mean_rate_physical_area_CO2eq_all_crops_without_peat_burn_kg_ha_CO2__20260803__use_this_COG.tif
+-ms_loss s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_1__standard__global/SOC_loss__mineral_soil_extent__0-30cm_MgCO2/2020/_0_04deg_yr/global/20260611/SOC_loss__mineral_soil_extent__0-30cm_MgCO2_0_04deg_yr_v1_0_1_2020_global.tif \
+-cl s3://gfw2-data/climate/AFOLU_flux_model/cropland_emissions/processed/Cornell_v20250828/year_2020/global_COG/all_sources/Global_grid_cropland_emissions_total_amount_CO2eq_all_crops_without_peat_burn_kg_CO2__20260803_COG.tif \
 -ls s3://gfw2-data/climate/AFOLU_flux_model/livestock_emissions/raw__from_Cornell/20251223/Total_GHG_Emissions/Tot_CO2eq_kg_livestock_GHG_emissions.tif
 
 Example — Central Africa zoom (Parts 1-3 only, no component data-- and no flux annotation):
 python -m src.synthesis.scripts.1_create_AFOLU_0_04deg_global_display_maps
   [all the above arguments] \
   --center_latitude 0 --center_longitude 20 --lat_height 20 -bbd central_Africa
+
+#TODO Sampling the cropland and livestock emissions form 0.083 deg to 0.04 deg is distorting the values-- output geotifs don't seem to match originals well. Need to explore and fix.
 """
 
 import argparse
@@ -160,14 +162,16 @@ def reproject_to_robinson(path, local_folder, logger, reference_path=None, prefi
     return path_reproj
 
 
-def resample_to_0_04deg(path, reference_path, local_folder, logger, out_label=None):
-    """Resample a WGS84 raster to 0.04-degree resolution using sum aggregation.
+def resample_to_0_04deg(path, reference_path, local_folder, logger, out_label=None, src_nodata=None):
+    """Resample a WGS84 raster to 0.04-degree resolution using sum resampling.
 
     Uses the grid of reference_path as the output template — same CRS, transform,
     width, and height.  Designed for aggregating fine-resolution organic soil inputs
     (0.01°) onto the vegetation/mineral-soil grid (0.04°).
     Pass out_label to override the output filename stem (recommended to keep paths
     short enough for WSL's /mnt/c/ write limit).
+    Pass src_nodata to override the source file's declared nodata value — needed when
+    the file stores nodata as a data value (e.g. 0) without declaring it in metadata.
     Skips if output already exists.  Returns the output path.
     """
     filename = os.path.splitext(os.path.basename(path))[0]
@@ -183,6 +187,13 @@ def resample_to_0_04deg(path, reference_path, local_folder, logger, out_label=No
             dst_height    = ref.height
             dst_crs       = ref.crs
         with rasterio.open(path) as src:
+            effective_src_nodata = src_nodata if src_nodata is not None else src.nodata
+            src_pixel_area = abs(src.transform.a * src.transform.e)
+            dst_pixel_area = abs(dst_transform.a * dst_transform.e)
+            # Resampling.sum assigns the full source value to each overlapping output
+            # pixel (GDAL weights by output-pixel-area fraction, which is 1 for
+            # disaggregation). Divide by the area ratio to restore flux conservation.
+            disaggregation_scale = dst_pixel_area / src_pixel_area if dst_pixel_area < src_pixel_area else 1.0
             kwargs = src.meta.copy()
             kwargs.update({
                 'crs': dst_crs,
@@ -194,17 +205,20 @@ def resample_to_0_04deg(path, reference_path, local_folder, logger, out_label=No
             })
             with rasterio.open(path_out, 'w', **kwargs) as dst:
                 for i in range(1, src.count + 1):
+                    dest_arr = np.zeros((dst_height, dst_width), dtype='float32')
                     reproject(
                         source=rasterio.band(src, i),
-                        destination=rasterio.band(dst, i),
+                        destination=dest_arr,
                         src_transform=src.transform,
                         src_crs=src.crs,
                         dst_transform=dst_transform,
                         dst_crs=dst_crs,
                         resampling=Resampling.sum,
-                        src_nodata=src.nodata,
+                        src_nodata=effective_src_nodata,
                         dst_nodata=0,
                     )
+                    dest_arr *= disaggregation_scale
+                    dst.write(dest_arr, i)
     else:
         logger.info(f"  0.04-degree raster already exists: {path_out}")
 
@@ -613,17 +627,20 @@ def map_LULUCF_maps(lulucf_input_date,
 
         ### Vegetation
         # Vegetation net: average all years in WGS84, reproject the average once
-        veg_net_year_paths = _infer_veg_year_paths(veg_net_geotif, cn.veg_outputs_years)
-        main_logger.info(f"\nAveraging net vegetation ({len(veg_net_year_paths)} years) in WGS84")
-        data_veg_net_avg_wgs84 = np.mean(
-            np.stack([read_wgs84(p) for p in veg_net_year_paths]), axis=0
-        ).astype('float32')
-        main_logger.info(f"Vegetation net flux: averaged {len(veg_net_year_paths)} annual rasters in WGS84")
         veg_net_avg_wgs84_path = os.path.join(
             reproj_folder,
             f"{cn.net_flux_all_C_pools_all_gases_pattern}{cn.flux_aggreg_pixel_meaning}_v{cn.veg_model_version_underscore}_{cn.veg_year_range_str}_avg_global.tif",
         )
-        save_array_as_geotif(data_veg_net_avg_wgs84, veg_net_geotif, veg_net_avg_wgs84_path, main_logger)
+        if not os.path.exists(veg_net_avg_wgs84_path):
+            veg_net_year_paths = _infer_veg_year_paths(veg_net_geotif, cn.veg_outputs_years)
+            main_logger.info(f"\nAveraging net vegetation ({len(veg_net_year_paths)} years) in WGS84")
+            data_veg_net_avg_wgs84 = np.mean(
+                np.stack([read_wgs84(p) for p in veg_net_year_paths]), axis=0
+            ).astype('float32')
+            main_logger.info(f"Vegetation net flux: averaged {len(veg_net_year_paths)} annual rasters in WGS84")
+            save_array_as_geotif(data_veg_net_avg_wgs84, veg_net_geotif, veg_net_avg_wgs84_path, main_logger)
+        else:
+            main_logger.info(f"\nVegetation net WGS84 average already exists, skipping averaging: {veg_net_avg_wgs84_path}")
 
         main_logger.info("Reprojecting averaged vegetation net flux WGS84→Robinson")
         veg_net_avg_reproj_path = reproject_to_robinson(
@@ -730,17 +747,21 @@ def map_LULUCF_maps(lulucf_input_date,
     if has_gross_component_inputs:
 
         # Vegetation gross emissions: average all years in WGS84, reproject the average once
-        veg_emis_year_paths = _infer_veg_year_paths(veg_emis_geotif, cn.veg_outputs_years)
-        main_logger.info(f"\nAveraging vegetation gross emissions ({len(veg_emis_year_paths)} years) in WGS84")
-        data_veg_emis_avg_wgs84 = np.mean(
-            np.stack([read_wgs84(p) for p in veg_emis_year_paths]), axis=0
-        ).astype('float32')
-        main_logger.info(f"Vegetation gross emissions: averaged {len(veg_emis_year_paths)} annual rasters in WGS84")
         veg_emis_avg_wgs84_path = os.path.join(
             reproj_folder,
             f"{cn.gross_emis_all_C_pools_all_gases_pattern}{cn.flux_aggreg_pixel_meaning}_v{cn.veg_model_version_underscore}_{cn.veg_year_range_str}_avg.tif",
         )
-        save_array_as_geotif(data_veg_emis_avg_wgs84, veg_emis_geotif, veg_emis_avg_wgs84_path, main_logger)
+        if not os.path.exists(veg_emis_avg_wgs84_path):
+            veg_emis_year_paths = _infer_veg_year_paths(veg_emis_geotif, cn.veg_outputs_years)
+            main_logger.info(f"\nAveraging vegetation gross emissions ({len(veg_emis_year_paths)} years) in WGS84")
+            data_veg_emis_avg_wgs84 = np.mean(
+                np.stack([read_wgs84(p) for p in veg_emis_year_paths]), axis=0
+            ).astype('float32')
+            main_logger.info(f"Vegetation gross emissions: averaged {len(veg_emis_year_paths)} annual rasters in WGS84")
+            save_array_as_geotif(data_veg_emis_avg_wgs84, veg_emis_geotif, veg_emis_avg_wgs84_path, main_logger)
+        else:
+            main_logger.info(f"\nVegetation gross emissions WGS84 average already exists, skipping averaging: {veg_emis_avg_wgs84_path}")
+            data_veg_emis_avg_wgs84 = _read_full(veg_emis_avg_wgs84_path)
 
         main_logger.info("Reprojecting averaged vegetation gross emissions WGS84→Robinson")
         veg_emis_avg_reproj_path = reproject_to_robinson(
@@ -792,9 +813,11 @@ def map_LULUCF_maps(lulucf_input_date,
         ### Agriculture: resample 0.083333°→0.04° WGS84, convert kg→Mg, sum
         main_logger.info("\nResampling cropland and livestock 0.083333°→0.04° WGS84")
         cropland_kg_path  = resample_to_0_04deg(cropland_geotif_s3,  lulucf_net_wgs84_path, reproj_folder, main_logger,
-                                                 out_label='cropland_emis_kgCO2e_0_04deg')
+                                                 out_label='cropland_emissions_all_crops_without_peat_burn_kg_CO2e_0_04deg',
+                                                 src_nodata=0)
         livestock_kg_path = resample_to_0_04deg(livestock_geotif_s3, lulucf_net_wgs84_path, reproj_folder, main_logger,
-                                                 out_label='livestock_emis_kgCO2e_0_04deg')
+                                                 out_label='livestock_emissions_all_animals_kg_CO2e_0_04deg',
+                                                 src_nodata=0)
 
         main_logger.info("Converting cropland and livestock kg→Mg")
         cropland_Mg_path  = convert_kg_to_Mg(cropland_kg_path,  main_logger)
@@ -1113,6 +1136,25 @@ def main(lulucf_input_date,
     main_logger, main_log_local_path, n_workers = lu.populate_main_log_header(
         "NA", "NA", log_note, True, "NA", stage,
     )
+
+    main_logger.info("\nInput arguments:")
+    main_logger.info(f"  lulucf_input_date:            {lulucf_input_date}")
+    main_logger.info(f"  lulucf_model_type:            {lulucf_model_type}")
+    main_logger.info(f"  lulucf_model_path_description:{lulucf_model_path_description}")
+    main_logger.info(f"  parquet_path:                 {parquet_path}")
+    main_logger.info(f"  veg_net_geotif:               {veg_net_geotif}")
+    main_logger.info(f"  organic_soil_drained_s3:      {organic_soil_drained_s3}")
+    main_logger.info(f"  organic_soil_burned_s3:       {organic_soil_burned_s3}")
+    main_logger.info(f"  mineral_soil_s3:              {mineral_soil_s3}")
+    main_logger.info(f"  veg_emis_geotif:              {veg_emis_geotif}")
+    main_logger.info(f"  mineral_soil_loss_s3:         {mineral_soil_loss_s3}")
+    main_logger.info(f"  cropland_geotif_s3:           {cropland_geotif_s3}")
+    main_logger.info(f"  livestock_geotif_s3:          {livestock_geotif_s3}")
+    main_logger.info(f"  center_latitude:              {center_latitude}")
+    main_logger.info(f"  center_longitude:             {center_longitude}")
+    main_logger.info(f"  lat_height:                   {lat_height}")
+    main_logger.info(f"  bounding_box_description:     {bounding_box_description}")
+    main_logger.info("\n")
 
     # Reprojects country shapefile if not already reprojected
     country_shapefile = mu.check_and_reproject_shapefile(
