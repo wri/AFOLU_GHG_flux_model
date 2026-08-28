@@ -17,7 +17,7 @@ AFOLU_model_version_underscore = AFOLU_model_version.replace(".", "_")
 LULUCF_model_version = "1.0.0"
 LULUCF_model_version_underscore = LULUCF_model_version.replace(".", "_")
 
-veg_model_version = "1.0.6"
+veg_model_version = "1.0.5"
 veg_model_version_underscore = veg_model_version.replace(".", "_")
 
 organic_soil_model_version = "1.0.1"

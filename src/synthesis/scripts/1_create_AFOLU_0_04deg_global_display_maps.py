@@ -44,7 +44,7 @@ Made with Claude session 'Sector-level display maps refactor'
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 LULUCF global (all four parts):
-python -m src.LULUCF.synthesis.scripts.3_create_sector_level_0_04deg_global_display_maps \
+python -m src.synthesis.scripts.1_create_AFOLU_0_04deg_global_display_maps \
 -ld 20260614 \
 -pq /mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/LULUCF_v1_0_0__veg_v1_0_5__minsoil_v1_0_1__orgsoil_v1_0_1/LULUCF__v1_0_0__for_figures__wide__20260617.parquet \
 -veg_net s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/net_flux__all_C_pools__all_gases__MgCO2e/annual_intervals/2024/_0_04deg_yr/global/20260130/net_flux__all_C_pools__all_gases__MgCO2e_0_04deg_yr_v1_0_5_2024_global.tif \
@@ -55,7 +55,7 @@ python -m src.LULUCF.synthesis.scripts.3_create_sector_level_0_04deg_global_disp
 -ms_loss s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_1__standard__global/SOC_loss__mineral_soil_extent__0-30cm_MgCO2/2020/_0_04deg_yr/global/20260611/SOC_loss__mineral_soil_extent__0-30cm_MgCO2_0_04deg_yr_v1_0_1_2020_global.tif
 
 Example — Central Africa zoom (Parts 1-3 only, no component data-- and no flux annotation):
-python -m src.LULUCF.synthesis.scripts.3_create_sector_level_0_04deg_global_display_maps
+python -m src.synthesis.scripts.1_create_AFOLU_0_04deg_global_display_maps
   [all the above arguments] \
   --center_latitude 0 --center_longitude 20 --lat_height 20 -bbd central_Africa
 """
@@ -89,7 +89,17 @@ mpl.rcParams.update({
 
 # ── Raster helpers ──────────────────────────────────────────────────────────────
 
-def reproject_to_robinson(path, local_folder, logger, reference_path=None, prefix='', out_label=None):
+def _read_full(p):
+    with rasterio.open(p) as src:
+        return src.read(1).astype('float32')
+
+def read_wgs84(path):
+    """Read a raster (S3 or local), masking nodata to 0. Safe for files with any nodata value."""
+    with rasterio.open(path) as src:
+        data = src.read(1).astype('float32')
+        return np.where(src.dataset_mask() == 0, 0.0, data)
+
+def reproject_to_robinson(path, local_folder, logger, reference_path=None, prefix='', out_label=None, nodata=0):
     """Reproject a WGS84 geotif to Robinson projection. Skips if already done.
 
     Uses calculate_default_transform to derive the Robinson pixel grid from the
@@ -126,7 +136,7 @@ def reproject_to_robinson(path, local_folder, logger, reference_path=None, prefi
                 'transform': dst_transform,
                 'width': dst_width,
                 'height': dst_height,
-                'nodata': 0,
+                'nodata': nodata,
                 'compress': 'lzw',
             })
             with rasterio.open(path_reproj, 'w', **kwargs) as dst:
@@ -140,7 +150,7 @@ def reproject_to_robinson(path, local_folder, logger, reference_path=None, prefi
                         dst_crs=cn.Robinson_crs,
                         resampling=Resampling.nearest,
                         src_nodata=src_nodata,
-                        dst_nodata=0,
+                        dst_nodata=nodata,
                     )
     else:
         logger.info(f"  Reprojected raster already exists: {path_reproj}")
@@ -199,14 +209,14 @@ def resample_to_0_04deg(path, reference_path, local_folder, logger, out_label=No
     return path_out
 
 
-def save_array_as_geotif(data, reference_path, out_path, logger):
+def save_array_as_geotif(data, reference_path, out_path, logger, nodata=0):
     """Write a float32 numpy array to a GeoTIF using spatial metadata from reference_path. Skips if already exists."""
     if os.path.exists(out_path):
         logger.info(f"  Average raster already exists: {out_path}")
         return
     with rasterio.open(reference_path) as ref:
         meta = ref.meta.copy()
-    meta.update({'dtype': 'float32', 'count': 1, 'nodata': 0, 'compress': 'lzw'})
+    meta.update({'dtype': 'float32', 'count': 1, 'nodata': nodata, 'compress': 'lzw'})
     with rasterio.open(out_path, 'w', **meta) as dst:
         dst.write(data.astype('float32'), 1)
     logger.info(f"  Saved: {out_path}")
@@ -489,7 +499,7 @@ def render_percentage_map(data, raster_extent, bounding_box_proj, country_shapef
         list(zip(np.linspace(0, 1, len(percentiles_cfg)), colors_mpl)),
     )
     norm = Normalize(vmin=0, vmax=upper_lim)
-    masked = np.ma.masked_where(data <= 0, data)
+    masked = np.ma.masked_where(~np.isfinite(data) | (data < 0), data)
     rounded_upper = math.floor(upper_lim)
     tick_labels = ['0%', f'> {rounded_upper}%']
 
@@ -576,10 +586,16 @@ def map_LULUCF_maps(lulucf_input_date,
     )
     main_logger.info(f"LULUCF S3 paths:\n  net:  {lulucf_net_s3}\n  emis: {lulucf_emis_s3}\n  remv: {lulucf_remv_s3}")
 
-    main_logger.info("\nReprojecting LULUCF summative maps to Robinson")
-    lulucf_net_reproj = reproject_to_robinson(lulucf_net_s3, reproj_folder, main_logger)
-    lulucf_emis_reproj = reproject_to_robinson(lulucf_emis_s3, reproj_folder, main_logger)
-    lulucf_remv_reproj = reproject_to_robinson(lulucf_remv_s3, reproj_folder, main_logger)
+    main_logger.info("\nSaving LULUCF summative maps locally (WGS84) and reprojecting to Robinson")
+    lulucf_net_wgs84_path  = os.path.join(reproj_folder, os.path.basename(lulucf_net_s3))
+    lulucf_emis_wgs84_path = os.path.join(reproj_folder, os.path.basename(lulucf_emis_s3))
+    lulucf_remv_wgs84_path = os.path.join(reproj_folder, os.path.basename(lulucf_remv_s3))
+    save_array_as_geotif(read_wgs84(lulucf_net_s3),  lulucf_net_s3,  lulucf_net_wgs84_path,  main_logger)
+    save_array_as_geotif(read_wgs84(lulucf_emis_s3), lulucf_emis_s3, lulucf_emis_wgs84_path, main_logger)
+    save_array_as_geotif(read_wgs84(lulucf_remv_s3), lulucf_remv_s3, lulucf_remv_wgs84_path, main_logger)
+    lulucf_net_reproj  = reproject_to_robinson(lulucf_net_wgs84_path,  reproj_folder, main_logger)
+    lulucf_emis_reproj = reproject_to_robinson(lulucf_emis_wgs84_path, reproj_folder, main_logger)
+    lulucf_remv_reproj = reproject_to_robinson(lulucf_remv_wgs84_path, reproj_folder, main_logger)
 
     # Read LULUCF summative maps; derive raster_extent from LULUCF net
     main_logger.info(f"Reading average annual LULUCF gross and net maps")
@@ -594,18 +610,26 @@ def map_LULUCF_maps(lulucf_input_date,
     if has_net_component_inputs:
 
         ### Vegetation
-        # Vegetation net: reproject all years
+        # Vegetation net: average all years in WGS84, reproject the average once
         veg_net_year_paths = _infer_veg_year_paths(veg_net_geotif, cn.veg_outputs_years)
-        main_logger.info(f"\nReprojecting net vegetation ({len(veg_net_year_paths)} years) to Robinson")
-        veg_net_reprojected = [reproject_to_robinson(p, reproj_folder, main_logger, prefix='veg_') for p in veg_net_year_paths]
-        veg_net_reproj_ref_grid = veg_net_reprojected[-1]  # reference grid for organic soil reprojection
+        main_logger.info(f"\nAveraging net vegetation ({len(veg_net_year_paths)} years) in WGS84")
+        data_veg_net_avg_wgs84 = np.mean(
+            np.stack([read_wgs84(p) for p in veg_net_year_paths]), axis=0
+        ).astype('float32')
+        main_logger.info(f"Vegetation net flux: averaged {len(veg_net_year_paths)} annual rasters in WGS84")
+        veg_net_avg_wgs84_path = os.path.join(
+            reproj_folder,
+            f"{cn.net_flux_all_C_pools_all_gases_pattern}{cn.flux_aggreg_pixel_meaning}_v{cn.veg_model_version_underscore}_{cn.veg_year_range_str}_avg_global.tif",
+        )
+        save_array_as_geotif(data_veg_net_avg_wgs84, veg_net_geotif, veg_net_avg_wgs84_path, main_logger)
 
-        # Read and average vegetation net flux rasters
-        veg_net_arrays = [read_raster_clipped(p, bounding_box_proj)[0] for p in veg_net_reprojected]
-        data_veg_net_avg = np.mean(np.stack(veg_net_arrays), axis=0)
-        main_logger.info(f"Vegetation net flux: averaged {len(veg_net_arrays)} annual rasters")
-        veg_net_avg_path = f"{reproj_folder}veg_{cn.net_flux_all_C_pools_all_gases_pattern}_v{cn.flux_aggreg_pixel_meaning}{cn.veg_model_version_underscore}_{cn.veg_year_range_str}_avg_global_reproj.tif"
-        save_array_as_geotif(data_veg_net_avg, veg_net_reprojected[-1], veg_net_avg_path, main_logger)
+        main_logger.info("Reprojecting averaged vegetation net flux WGS84→Robinson")
+        veg_net_avg_reproj_path = reproject_to_robinson(
+            veg_net_avg_wgs84_path, reproj_folder, main_logger,
+            out_label=f"{cn.net_flux_all_C_pools_all_gases_pattern}{cn.flux_aggreg_pixel_meaning}_v{cn.veg_model_version_underscore}_{cn.veg_year_range_str}_avg_global",
+        )
+        veg_net_reproj_ref_grid = veg_net_avg_reproj_path  # reference grid for organic soil reprojection
+        data_veg_net_avg, _ = read_raster_clipped(veg_net_avg_reproj_path, bounding_box_proj)
 
 
         ### Mineral soil
@@ -636,9 +660,6 @@ def map_LULUCF_maps(lulucf_input_date,
 
         main_logger.info(f"Organic soil: averaging {len(cn.organic_soil_year_intervals)} intervals in WGS84")
         org_weights = [_interval_weight(ivl) for ivl in cn.organic_soil_year_intervals]
-        def _read_full(p):
-            with rasterio.open(p) as src:
-                return src.read(1).astype('float32')
 
         # Year-weighted annual average emissions from organic soil, 0.04x0.04 deg resolution WGS84 (drained + burned)
         drained_arrays = [_read_full(p) for p in drained_0_04deg]
@@ -662,9 +683,35 @@ def map_LULUCF_maps(lulucf_input_date,
         org_soil_reproj_path = reproject_to_robinson(
             org_soil_avg_wgs84_path, reproj_folder, main_logger,
             reference_path=veg_net_reproj_ref_grid,
-            out_label=f"org_soil_avg_{org_start}_{org_end}",
         )
         data_org_soil, _ = read_raster_clipped(org_soil_reproj_path, bounding_box_proj)
+
+
+        ### Combined soil (organic emissions + net mineral)
+        main_logger.info("\nCreating combined soil (organic + net mineral) geotifs")
+
+        with rasterio.open(mineral_soil_net_s3) as src:
+            _raw = src.read(1).astype('float32')
+            data_min_soil_wgs84 = np.where(src.dataset_mask() == 0, 0.0, _raw)   # Need to do this to handle NoData values; otherwise, I try summing NoData and values
+        min_soil_net_wgs84_path = os.path.join(
+            reproj_folder,
+            f"{os.path.splitext(os.path.basename(mineral_soil_net_s3))[0]}_nodata_masked.tif",
+        )
+        save_array_as_geotif(data_min_soil_wgs84, mineral_soil_net_s3, min_soil_net_wgs84_path, main_logger)
+        data_combined_soil_wgs84 = (data_org_soil_wgs84 + data_min_soil_wgs84).astype('float32')
+        combined_soil_wgs84_path = os.path.join(
+            reproj_folder,
+            f"soil_combined__MgCO2e_{cn.flux_aggreg_pixel_meaning}__{org_start}_{org_end}_avg_global_0_04deg.tif",
+        )
+        save_array_as_geotif(data_combined_soil_wgs84, drained_0_04deg[-1], combined_soil_wgs84_path, main_logger)
+
+        main_logger.info("Reprojecting combined soil WGS84→Robinson")
+        combined_soil_reproj_path = reproject_to_robinson(
+            combined_soil_wgs84_path, reproj_folder, main_logger,
+            reference_path=veg_net_reproj_ref_grid,
+        )
+        data_combined_soil, _ = read_raster_clipped(combined_soil_reproj_path, bounding_box_proj)
+
 
         # Version strings for file naming and slide text
         file_version_str = (f"{cn.veg_model_version_underscore}__organic_soil_v{cn.organic_soil_model_version_underscore}"
@@ -680,19 +727,61 @@ def map_LULUCF_maps(lulucf_input_date,
     has_gross_component_inputs = all([veg_emis_geotif, organic_soil_drained_s3, organic_soil_burned_s3, mineral_soil_loss_s3])
     if has_gross_component_inputs:
 
+        # Vegetation gross emissions: average all years in WGS84, reproject the average once
         veg_emis_year_paths = _infer_veg_year_paths(veg_emis_geotif, cn.veg_outputs_years)
-        main_logger.info(f"\nReprojecting vegetation gross emissions ({len(veg_emis_year_paths)} years) to Robinson")
-        veg_emis_reprojected = [reproject_to_robinson(p, reproj_folder, main_logger, prefix='veg_') for p in veg_emis_year_paths]
+        main_logger.info(f"\nAveraging vegetation gross emissions ({len(veg_emis_year_paths)} years) in WGS84")
+        data_veg_emis_avg_wgs84 = np.mean(
+            np.stack([read_wgs84(p) for p in veg_emis_year_paths]), axis=0
+        ).astype('float32')
+        main_logger.info(f"Vegetation gross emissions: averaged {len(veg_emis_year_paths)} annual rasters in WGS84")
+        veg_emis_avg_wgs84_path = os.path.join(
+            reproj_folder,
+            f"{cn.gross_emis_all_C_pools_all_gases_pattern}{cn.flux_aggreg_pixel_meaning}_v{cn.veg_model_version_underscore}_{cn.veg_year_range_str}_avg.tif",
+        )
+        save_array_as_geotif(data_veg_emis_avg_wgs84, veg_emis_geotif, veg_emis_avg_wgs84_path, main_logger)
+
+        main_logger.info("Reprojecting averaged vegetation gross emissions WGS84→Robinson")
+        veg_emis_avg_reproj_path = reproject_to_robinson(
+            veg_emis_avg_wgs84_path, reproj_folder, main_logger,
+            out_label=f"{cn.gross_emis_all_C_pools_all_gases_pattern}{cn.flux_aggreg_pixel_meaning}_v{cn.veg_model_version_underscore}_{cn.veg_year_range_str}_avg",
+        )
+        data_veg_emis_avg, _ = read_raster_clipped(veg_emis_avg_reproj_path, bounding_box_proj)
+
+        # Percentage contributions: compute in WGS84, save WGS84 geotifs, reproject each to Robinson
+        # data_org_soil_wgs84 is computed in has_net_component_inputs (requires same organic soil args)
+        main_logger.info("\nComputing gross emissions percentage contributions in WGS84")
+        data_lulucf_emis_wgs84 = _read_full(lulucf_emis_wgs84_path)
+        data_min_soil_loss_wgs84 = read_wgs84(mineral_soil_loss_s3)
+        # Use NaN as nodata for pct files: 0% is a valid value (source has no emissions but LULUCF does),
+        # so 0 cannot serve as the nodata sentinel. NaN marks pixels where LULUCF has no emissions.
+        with np.errstate(divide='ignore', invalid='ignore'):
+            pct_veg_emis_wgs84 = np.where(data_lulucf_emis_wgs84 > 0, data_veg_emis_avg_wgs84 / data_lulucf_emis_wgs84 * 100, np.nan).astype('float32')
+            pct_org_soil_wgs84 = np.where(data_lulucf_emis_wgs84 > 0, data_org_soil_wgs84      / data_lulucf_emis_wgs84 * 100, np.nan).astype('float32')
+            pct_min_loss_wgs84 = np.where(data_lulucf_emis_wgs84 > 0, data_min_soil_loss_wgs84 / data_lulucf_emis_wgs84 * 100, np.nan).astype('float32')
+
+        pct_veg_wgs84_path = os.path.join(reproj_folder, f"pct_veg_gross_emis_of_LULUCF_gross_emis__{file_version_str}_wgs84.tif")
+        pct_org_wgs84_path = os.path.join(reproj_folder, f"pct_org_soil_emis_of_LULUCF_gross_emis__{file_version_str}_wgs84.tif")
+        pct_min_wgs84_path = os.path.join(reproj_folder, f"pct_min_soil_loss_of_LULUCF_gross_emis__{file_version_str}_wgs84.tif")
+        save_array_as_geotif(pct_veg_emis_wgs84, veg_emis_geotif, pct_veg_wgs84_path, main_logger, nodata=np.nan)
+        save_array_as_geotif(pct_org_soil_wgs84, veg_emis_geotif, pct_org_wgs84_path, main_logger, nodata=np.nan)
+        save_array_as_geotif(pct_min_loss_wgs84, veg_emis_geotif, pct_min_wgs84_path, main_logger, nodata=np.nan)
+
+        min_soil_loss_wgs84_path = os.path.join(
+            reproj_folder,
+            f"{os.path.splitext(os.path.basename(mineral_soil_loss_s3))[0]}_nodata_masked.tif",
+        )
+        save_array_as_geotif(data_min_soil_loss_wgs84, mineral_soil_loss_s3, min_soil_loss_wgs84_path, main_logger)
 
         main_logger.info("\nReprojecting gross mineral soil loss to Robinson")
-        mineral_soil_loss_reproj = reproject_to_robinson(mineral_soil_loss_s3, reproj_folder, main_logger)
+        reproject_to_robinson(mineral_soil_loss_s3, reproj_folder, main_logger)
 
-        veg_emis_arrays = [read_raster_clipped(p, bounding_box_proj)[0] for p in veg_emis_reprojected]
-        data_veg_emis_avg = np.mean(np.stack(veg_emis_arrays), axis=0)
-        main_logger.info(f"Vegetation gross emissions: averaged {len(veg_emis_arrays)} annual rasters")
-        veg_emis_avg_path = f"{reproj_folder}veg_{cn.gross_emis_all_C_pools_all_gases_pattern}{cn.flux_aggreg_pixel_meaning}_v{cn.veg_model_version_underscore}_{cn.veg_year_range_str}_avg_reproj.tif"
-        save_array_as_geotif(data_veg_emis_avg, veg_emis_reprojected[-1], veg_emis_avg_path, main_logger)
-        data_min_soil_loss, _ = read_raster_clipped(mineral_soil_loss_reproj, bounding_box_proj)
+        main_logger.info("Reprojecting percentage geotifs WGS84→Robinson")
+        pct_veg_reproj_path = reproject_to_robinson(pct_veg_wgs84_path, reproj_folder, main_logger,
+            reference_path=veg_net_reproj_ref_grid, out_label=f"pct_veg_gross_emis_of_LULUCF_gross_emis__{file_version_str}", nodata=np.nan)
+        pct_org_reproj_path = reproject_to_robinson(pct_org_wgs84_path, reproj_folder, main_logger,
+            reference_path=veg_net_reproj_ref_grid, out_label=f"pct_org_soil_emis_of_LULUCF_gross_emis__{file_version_str}", nodata=np.nan)
+        pct_min_reproj_path = reproject_to_robinson(pct_min_wgs84_path, reproj_folder, main_logger,
+            reference_path=veg_net_reproj_ref_grid, out_label=f"pct_min_soil_loss_of_LULUCF_gross_emis__{file_version_str}", nodata=np.nan)
 
     lulucf_slide_text_with_disclaimer = f"{lulucf_slide_text} \n {cn.legend_percentile_disclaimer}"
 
@@ -834,13 +923,9 @@ def map_LULUCF_maps(lulucf_input_date,
     if has_gross_component_inputs:
         main_logger.info("\n\n\n---Part 4: Three-panel emissions source contribution map")
 
-        pct_veg_emis = np.where(data_lulucf_emis > 0, data_veg_emis_avg / data_lulucf_emis * 100, 0).astype('float32')
-        pct_org_soil = np.where(data_lulucf_emis > 0, data_org_soil    / data_lulucf_emis * 100, 0).astype('float32')
-        pct_min_loss = np.where(data_lulucf_emis > 0, data_min_soil_loss / data_lulucf_emis * 100, 0).astype('float32')
-
-        save_array_as_geotif(pct_veg_emis, lulucf_net_reproj, f"{reproj_folder}pct_veg_gross_emis_of_LULUCF_gross_emis__{file_version_str}_reproj.tif", main_logger)
-        save_array_as_geotif(pct_org_soil, lulucf_net_reproj, f"{reproj_folder}pct_org_soil_emis_of_LULUCF_gross_emis__{file_version_str}_reproj.tif", main_logger)
-        save_array_as_geotif(pct_min_loss, lulucf_net_reproj, f"{reproj_folder}pct_min_soil_loss_of_LULUCF_gross_emis__{file_version_str}_reproj.tif", main_logger)
+        pct_veg_emis, _ = read_raster_clipped(pct_veg_reproj_path, bounding_box_proj)
+        pct_org_soil, _ = read_raster_clipped(pct_org_reproj_path, bounding_box_proj)
+        pct_min_loss, _ = read_raster_clipped(pct_min_reproj_path, bounding_box_proj)
 
         pct_veg_core = f"pct_veg_gross_emis_of_LULUCF_gross_emis__{file_version_str}"
         jpeg_path_pct_veg = render_percentage_map(
