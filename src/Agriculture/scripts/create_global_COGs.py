@@ -4,7 +4,7 @@ From https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/685ee215-b624-800a-9ab
 
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model/
 
-python -m src.Agriculture.scripts.postprocessing.create_global_COGs
+python -m src.Agriculture.scripts.create_global_COGs
 """
 
 import os

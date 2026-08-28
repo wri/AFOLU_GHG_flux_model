@@ -1,8 +1,9 @@
 """
-Creates global outputs at 0.04x0.04 deg resolution (approximately 4x4 km at the equator) for specified inputs.
+Creates global geotifs at 0.04x0.04 deg resolution (approximately 4x4 km at the equator) for specified inputs.
 Units are Mg CO2(e)/0.04x0.04 deg pixel/year for annual data and annual averages.
-These are for presentations and other static displays.
+The geotifs can be used for presentations and other static displays.
 They are not to be used for calculations or statistics.
+This does not create display jpegs.
 
 Can only run on 10x10 degree tiles already in 0.04x0.04 deg resolution.
 
@@ -13,19 +14,19 @@ is by telling it to run on only the X first tiles with -ft argument.
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 Local test:
-python -m src.synthesis.scripts.2_create_LULUCF_global_0_04x0_04deg -mt standard -mpd global -fy 1 -fv 1 -ft 1 --run_local --no_upload --input_date 20260614
+python -m src.LULUCF.synthesis.scripts.2_create_LULUCF_global_0_04x0_04deg -mt standard -mpd global -fy 1 -fv 1 -ft 1 --run_local --no_upload --input_date 20260614
 
 Coiled small tests:
 python -m src.utilities.create_cluster -n 1 -t 1 -m 4 -cn LULUCF_summation
-python -m src.synthesis.scripts.2_create_LULUCF_global_0_04x0_04deg -cn LULUCF_summation -mt standard -mpd global -fy 1 -fv 1 -ft 1 --input_date 20260614
+python -m src.LULUCF.synthesis.scripts.2_create_LULUCF_global_0_04x0_04deg -cn LULUCF_summation -mt standard -mpd global -fy 1 -fv 1 -ft 1 --input_date 20260614
 
 Coiled large shapefile test:
 python -m src.utilities.create_cluster -n 10 -t 1 -m 4 -cn LULUCF_summation
-python -m src.synthesis.scripts.2_create_LULUCF_global_0_04x0_04deg -cn LULUCF_summation -mt standard -mpd global -fy 2 -fv 2 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp --input_date 20260614 -ln "This is intended to be the definitive 1884-chunk 0.04x0.04 deg output run."
+python -m src.LULUCF.synthesis.scripts.2_create_LULUCF_global_0_04x0_04deg -cn LULUCF_summation -mt standard -mpd global -fy 2 -fv 2 -cshp s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in__1884_test_features.shp --input_date 20260614 -ln "This is intended to be the definitive 1884-chunk 0.04x0.04 deg output run."
 
 Full run:
 python -m src.utilities.create_cluster -n 10 -t 1 -m 4 -cn LULUCF_summation
-python -m src.synthesis.scripts.2_create_LULUCF_global_0_04x0_04deg -cn LULUCF_summation --input_date 20260614 -mt standard -mpd global --log_note "This is a global run for LULUCF v1.0.0: veg v1.0.5 + SOC v1.0.1 + org soil v1.0.1, 2016-2024."
+python -m src.LULUCF.synthesis.scripts.2_create_LULUCF_global_0_04x0_04deg -cn LULUCF_summation --input_date 20260614 -mt standard -mpd global --log_note "This is a global run for LULUCF v1.0.0: veg v1.0.5 + SOC v1.0.1 + org soil v1.0.1, 2016-2024."
 
 Based on corresponding vegetation script, but with Claude session 'LULUCF global geotif setup'
 #TODO Output combined organic soil emissions + mineral soil net change geotif at 0.04x0.04 deg resolution

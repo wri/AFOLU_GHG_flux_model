@@ -1,5 +1,5 @@
 """
-Creates 4x4km (0.04-degree) display maps for LULUCF and (placeholder) AFOLU sectors.
+Creates 4x4km (0.04-degree) goetifs and display maps (jpegs) for LULUCF and (placeholder) AFOLU.
 
 Inputs:
 - An input_date (YYYYMMDD) for the summative LULUCF maps, used to construct S3 paths for
@@ -24,11 +24,13 @@ Inputs:
 - Regional map arguments
 
 Vegetation net flux and gross emissions: mean of all annual rasters in cn.interval_end_years_annual, inferred from the latest year path supplied on command line
-Organic soil: each 0.01°×0.01° interval raster is resampled (sum) to 0.04° WGS84 on the veg net grid, then drained+burned are summed per interval, then a weighted average is taken across cn.organic_soil_year_intervals (weight = years per interval), then the result is reprojected to Robinson once.  Paths are inferred from the latest-interval paths supplied on the command line.
+Organic soil: each 0.01°×0.01° interval raster is resampled (sum) to 0.04° WGS84 on the veg net grid, then drained+burned are summed per interval,
+then a weighted average is taken across cn.organic_soil_year_intervals (weight = years per interval), then the result is reprojected to Robinson once.
+Paths are inferred from the latest interval paths supplied on the command line.
 
 Maps produced:
-  Part 1 — Net and gross emis and removals LULUCF fluxes (annual average from pre-made S3 geotifs)
-  Part 2 — Three-panel LULUCF: gross emissions | gross removals | net flux (from parts 1 and 2 above)
+  Part 1 — Individual maps of net and gross emissions and removals for LULUCF (uses annual average from pre-made S3 geotifs)
+  Part 2 — Three-panel LULUCF: gross emissions | gross removals | net flux (from part 1)
   Part 3 — Four-panel LULUCF components: average annual veg net | mineral soil net change | organic soil gross emis | LULUCF net
   Part 4 — Percentage contribution to average annual LULUCF gross emissions from vegetation, organic soil, and mineral soil
 
@@ -42,7 +44,7 @@ Made with Claude session 'Sector-level display maps refactor'
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 LULUCF global (all four parts):
-python -m src.synthesis.scripts.3_create_sector_level_0_04deg_global_display_maps \
+python -m src.LULUCF.synthesis.scripts.3_create_sector_level_0_04deg_global_display_maps \
 -ld 20260614 \
 -pq /mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/LULUCF_v1_0_0__veg_v1_0_5__minsoil_v1_0_1__orgsoil_v1_0_1/LULUCF__v1_0_0__for_figures__wide__20260617.parquet \
 -veg_net s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/net_flux__all_C_pools__all_gases__MgCO2e/annual_intervals/2024/_0_04deg_yr/global/20260130/net_flux__all_C_pools__all_gases__MgCO2e_0_04deg_yr_v1_0_5_2024_global.tif \
@@ -53,7 +55,7 @@ python -m src.synthesis.scripts.3_create_sector_level_0_04deg_global_display_map
 -ms_loss s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_1__standard__global/SOC_loss__mineral_soil_extent__0-30cm_MgCO2/2020/_0_04deg_yr/global/20260611/SOC_loss__mineral_soil_extent__0-30cm_MgCO2_0_04deg_yr_v1_0_1_2020_global.tif
 
 Example — Central Africa zoom (Parts 1-3 only, no component data-- and no flux annotation):
-python -m src.synthesis.scripts.3_create_sector_level_0_04deg_global_display_maps
+python -m src.LULUCF.synthesis.scripts.3_create_sector_level_0_04deg_global_display_maps
   [all the above arguments] \
   --center_latitude 0 --center_longitude 20 --lat_height 20 -bbd central_Africa
 """
