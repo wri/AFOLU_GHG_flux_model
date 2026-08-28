@@ -53,6 +53,8 @@ python -m src.synthesis.scripts.1_create_AFOLU_0_04deg_global_display_maps \
 -ms_net s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_1__standard__global/SOC_net__mineral_soil_extent__0-30cm_MgCO2/2020/_0_04deg_yr/global/20260611/SOC_net__mineral_soil_extent__0-30cm_MgCO2_0_04deg_yr_v1_0_1_2020_global.tif \
 -veg_emis s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/gross_emissions__all_C_pools__all_gases__MgCO2e/annual_intervals/2024/_0_04deg_yr/global/20260130/gross_emissions__all_C_pools__all_gases__MgCO2e_0_04deg_yr_v1_0_5_2024_global.tif \
 -ms_loss s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_1__standard__global/SOC_loss__mineral_soil_extent__0-30cm_MgCO2/2020/_0_04deg_yr/global/20260611/SOC_loss__mineral_soil_extent__0-30cm_MgCO2_0_04deg_yr_v1_0_1_2020_global.tif
+-cl s3://gfw2-data/climate/AFOLU_flux_model/cropland_emissions/processed/Cornell_v20250828/year_2020/global_COG/all_sources/Global_grid_cropland_emissions_mean_rate_physical_area_CO2eq_all_crops_without_peat_burn_kg_ha_CO2__20260803__use_this_COG.tif
+-ls s3://gfw2-data/climate/AFOLU_flux_model/livestock_emissions/raw__from_Cornell/20251223/Total_GHG_Emissions/Tot_CO2eq_kg_livestock_GHG_emissions.tif
 
 Example — Central Africa zoom (Parts 1-3 only, no component data-- and no flux annotation):
 python -m src.synthesis.scripts.1_create_AFOLU_0_04deg_global_display_maps
@@ -783,6 +785,54 @@ def map_LULUCF_maps(lulucf_input_date,
         pct_min_reproj_path = reproject_to_robinson(pct_min_wgs84_path, reproj_folder, main_logger,
             reference_path=veg_net_reproj_ref_grid, out_label=f"pct_min_soil_loss_of_LULUCF_gross_emis__{file_version_str}", nodata=np.nan)
 
+    # Agriculture and AFOLU require both cropland and livestock
+    has_agriculture_inputs = all([cropland_geotif_s3, livestock_geotif_s3])
+    if has_agriculture_inputs:
+
+        ### Agriculture: resample 0.083333°→0.04° WGS84, convert kg→Mg, sum
+        main_logger.info("\nResampling cropland and livestock 0.083333°→0.04° WGS84")
+        cropland_kg_path  = resample_to_0_04deg(cropland_geotif_s3,  lulucf_net_wgs84_path, reproj_folder, main_logger,
+                                                 out_label='cropland_emis_kgCO2e_0_04deg')
+        livestock_kg_path = resample_to_0_04deg(livestock_geotif_s3, lulucf_net_wgs84_path, reproj_folder, main_logger,
+                                                 out_label='livestock_emis_kgCO2e_0_04deg')
+
+        main_logger.info("Converting cropland and livestock kg→Mg")
+        cropland_Mg_path  = convert_kg_to_Mg(cropland_kg_path,  main_logger)
+        livestock_Mg_path = convert_kg_to_Mg(livestock_kg_path, main_logger)
+
+        main_logger.info("Summing cropland + livestock → agriculture total in WGS84")
+        data_cropland_wgs84    = _read_full(cropland_Mg_path)
+        data_livestock_wgs84   = _read_full(livestock_Mg_path)
+        data_agriculture_wgs84 = (data_cropland_wgs84 + data_livestock_wgs84).astype('float32')
+        agriculture_wgs84_path = os.path.join(reproj_folder, 'agriculture_emis_MgCO2e_0_04deg.tif')
+        save_array_as_geotif(data_agriculture_wgs84, lulucf_net_wgs84_path, agriculture_wgs84_path, main_logger)
+
+        main_logger.info("Reprojecting agriculture total WGS84→Robinson")
+        agriculture_reproj_path = reproject_to_robinson(agriculture_wgs84_path, reproj_folder, main_logger,
+                                                         reference_path=lulucf_net_reproj)
+        data_agriculture, _ = read_raster_clipped(agriculture_reproj_path, bounding_box_proj)
+
+        ### AFOLU: LULUCF + agriculture, arithmetic in WGS84, reproject once each
+        main_logger.info("\nComputing AFOLU totals in WGS84")
+        data_afolu_net_wgs84  = (_read_full(lulucf_net_wgs84_path)  + data_agriculture_wgs84).astype('float32')
+        data_afolu_emis_wgs84 = (_read_full(lulucf_emis_wgs84_path) + data_agriculture_wgs84).astype('float32')
+        data_afolu_remv_wgs84 = _read_full(lulucf_remv_wgs84_path)
+
+        afolu_net_wgs84_path  = os.path.join(reproj_folder, 'AFOLU_net_flux_MgCO2e_0_04deg.tif')
+        afolu_emis_wgs84_path = os.path.join(reproj_folder, 'AFOLU_gross_emis_MgCO2e_0_04deg.tif')
+        afolu_remv_wgs84_path = os.path.join(reproj_folder, 'AFOLU_gross_remv_MgCO2_0_04deg.tif')
+        save_array_as_geotif(data_afolu_net_wgs84,  lulucf_net_wgs84_path, afolu_net_wgs84_path,  main_logger)
+        save_array_as_geotif(data_afolu_emis_wgs84, lulucf_net_wgs84_path, afolu_emis_wgs84_path, main_logger)
+        save_array_as_geotif(data_afolu_remv_wgs84, lulucf_net_wgs84_path, afolu_remv_wgs84_path, main_logger)
+
+        main_logger.info("Reprojecting AFOLU totals WGS84→Robinson")
+        afolu_net_reproj_path  = reproject_to_robinson(afolu_net_wgs84_path,  reproj_folder, main_logger, reference_path=lulucf_net_reproj)
+        afolu_emis_reproj_path = reproject_to_robinson(afolu_emis_wgs84_path, reproj_folder, main_logger, reference_path=lulucf_net_reproj)
+        afolu_remv_reproj_path = reproject_to_robinson(afolu_remv_wgs84_path, reproj_folder, main_logger, reference_path=lulucf_net_reproj)
+        data_afolu_net,  _ = read_raster_clipped(afolu_net_reproj_path,  bounding_box_proj)
+        data_afolu_emis, _ = read_raster_clipped(afolu_emis_reproj_path, bounding_box_proj)
+        data_afolu_remv, _ = read_raster_clipped(afolu_remv_reproj_path, bounding_box_proj)
+
     lulucf_slide_text_with_disclaimer = f"{lulucf_slide_text} \n {cn.legend_percentile_disclaimer}"
 
 
@@ -972,19 +1022,72 @@ def map_LULUCF_maps(lulucf_input_date,
         main_logger.infof("Skipping gross component percentage mapping")
 
 
-    # ### Part 5 (stub): AFOLU total map — cropland + livestock + LULUCF
-    # Implement when agriculture datasets are ready. Pixel-wise addition requires all inputs
-    # to be on a common grid; use a shared reference raster when adding reproject_to_reference().
-    #
-    # if not cropland_geotif_s3 and not livestock_geotif_s3:
-    #     main_logger.info("No agriculture inputs supplied — skipping AFOLU map.")
-    #     return
-    # cropland_reproj = reproject_to_robinson(cropland_geotif_s3, AFOLU_reproj_folder, main_logger)
-    # cropland_mg = convert_kg_to_Mg(cropland_reproj, main_logger)
-    # livestock_reproj = reproject_to_robinson(livestock_geotif_s3, AFOLU_reproj_folder, main_logger)
-    # livestock_mg = convert_kg_to_Mg(livestock_reproj, main_logger)
-    # data_afolu = data_lulucf_net + data_cropland + data_livestock  # ← needs aligned grids
-    # ...
+    ### Part 5: Agriculture gross emissions map
+    if has_agriculture_inputs:
+        main_logger.info("\n\n\n---Part 5: Agriculture gross emissions map")
+
+        agri_core = "agriculture_gross_emis__ktCO2e_yr"
+        jpeg_path_agri = render_unidirectional_map(
+            data_agriculture, raster_extent, bounding_box_proj, country_shapefile,
+            cn.emissions_colors_rgb, cn.emissions_percentiles,
+            title_text=f"Gross agriculture emissions\n{cn.veg_outputs_years[0]}-{cn.veg_outputs_years[-1]}\nkt CO$_2$e yr$^{{-1}}$",
+            non_pres_folder=non_pres_folder, pres_folder=pres_folder,
+            jpeg_name=jpeg_name(agri_core, bounding_box_description),
+            slide_text=lulucf_slide_text_with_disclaimer,
+            logger=main_logger,
+            mask_positive=True,
+        )
+        main_logger.info(f"Part 5 done in {round(time.time() - start_time)}s: {uu.timestr()}")
+
+
+    ### Part 6: AFOLU total maps (gross emissions | gross removals | net flux)
+    if has_agriculture_inputs:
+        main_logger.info("\n\n\n---Part 6: AFOLU total maps")
+
+        afolu_emis_core = "AFOLU_gross_emis__ktCO2e_yr"
+        jpeg_path_afolu_emis = render_unidirectional_map(
+            data_afolu_emis, raster_extent, bounding_box_proj, country_shapefile,
+            cn.emissions_colors_rgb, cn.emissions_percentiles,
+            title_text=f"Gross AFOLU emissions\n{cn.veg_outputs_years[0]}-{cn.veg_outputs_years[-1]}\nkt CO$_2$e yr$^{{-1}}$",
+            non_pres_folder=non_pres_folder, pres_folder=pres_folder,
+            jpeg_name=jpeg_name(afolu_emis_core, bounding_box_description),
+            slide_text=lulucf_slide_text_with_disclaimer,
+            logger=main_logger,
+            mask_positive=True,
+        )
+
+        afolu_remv_core = "AFOLU_gross_remv__ktCO2_yr"
+        jpeg_path_afolu_remv = render_unidirectional_map(
+            data_afolu_remv, raster_extent, bounding_box_proj, country_shapefile,
+            cn.removals_colors_rgb, cn.removals_percentiles,
+            title_text=f"Gross AFOLU removals\n{cn.veg_outputs_years[0]}-{cn.veg_outputs_years[-1]}\nkt CO$_2$ yr$^{{-1}}$",
+            non_pres_folder=non_pres_folder, pres_folder=pres_folder,
+            jpeg_name=jpeg_name(afolu_remv_core, bounding_box_description),
+            slide_text=lulucf_slide_text_with_disclaimer,
+            logger=main_logger,
+            mask_positive=False,
+        )
+
+        afolu_net_core = "AFOLU_net_flux__ktCO2e_yr"
+        jpeg_path_afolu_net = render_divergent_map(
+            data_afolu_net, raster_extent, bounding_box_proj, country_shapefile,
+            net_colors_rgb,
+            title_text=f"Net AFOLU flux\n{cn.veg_outputs_years[0]}-{cn.veg_outputs_years[-1]}\nkt CO$_2$e yr$^{{-1}}$",
+            veg_analysis_years=cn.veg_year_range_str,
+            non_pres_folder=non_pres_folder, pres_folder=pres_folder,
+            jpeg_name=jpeg_name(afolu_net_core, bounding_box_description),
+            slide_text=lulucf_slide_text_with_disclaimer,
+            logger=main_logger,
+        )
+
+        afolu_three_panel_core = "AFOLU_three_panel__emis_remv_net__ktCO2e_yr"
+        jpeg_path_afolu_three_panel = f"{non_pres_folder}/{jpeg_name(afolu_three_panel_core, bounding_box_description)}.jpeg"
+        mu.create_three_panel_map(
+            jpeg_path_afolu_three_panel,
+            jpeg_path_afolu_emis, jpeg_path_afolu_remv, jpeg_path_afolu_net,
+            "", main_logger,
+        )
+        main_logger.info(f"Part 6 done in {round(time.time() - start_time)}s: {uu.timestr()}")
 
 
 def main(lulucf_input_date,
