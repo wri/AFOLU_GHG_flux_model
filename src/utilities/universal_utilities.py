@@ -63,9 +63,23 @@ os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "TRUE"
 ###################################################################################################
 # Splits a full s3 path "s3://bucket-name/rest_of_path" into "bucket-name" and "rest_of_path"
 def split_s3_path(s3_path):
-    s3_path = s3_path.replace("s3://", "")   # Remove the "s3://" prefix
-    bucket, key = s3_path.split("/", 1)    # Split the remaining string by the first "/"
+    s3_path = s3_path.replace("s3://", "")  # Remove the "s3://" prefix
+    bucket, key = s3_path.split("/", 1)     # Split the remaining string by the first "/"
     return bucket, key
+
+# Checks if a file exists in s3
+def exists_in_s3(s3_path):
+    s3 = boto3.client("s3")
+    bucket, key = split_s3_path(s3_path)
+
+    try:
+        s3.head_object(Bucket=bucket, Key=key)
+        return True         # File exists
+    except s3.exceptions.ClientError as e:
+        if e.response["Error"]["Code"] == "404":
+            return False    # File does not exist
+        else:
+            raise           # Some other error occurred
 
 # List files in an S3 bucket with a certain pattern
 def list_s3_files_with_pattern(s3_path, pattern, use_regex=False):
@@ -118,23 +132,6 @@ def upload_s3_file(s3_path, local_path):
     s3 = boto3.client('s3')
     bucket, key = split_s3_path(s3_path)
     s3.upload_file(local_path, Bucket=bucket, Key=key)
-
-def check_s3_file_created(s3_path):
-
-    logger_worker = lu.setup_logging_worker()
-
-    s3 = boto3.client('s3')
-    bucket, key = split_s3_path(s3_path)
-
-    try:
-        s3.head_object(Bucket=bucket, Key=key)
-        lu.print_and_log(f"File successfully created at: {s3_path}", False, logger_worker)
-        return True
-    except s3.exceptions.ClientError as e:
-        if e.response['Error']['Code'] == "404":
-            raise RuntimeError(f"Failed to create file at: {s3_path}")
-        else:
-            raise RuntimeError(f"Error accessing S3: {e}")
 
 def check_and_make_s3_dir(s3_directory, main_logger):
     if s3_directory.startswith("s3://"):
@@ -2592,47 +2589,27 @@ def build_vrt_gdal_local(raw_raster_paths_list_s3, output_vrt_s3):
     gdal.BuildVRT(output_vrt_vsis3, raw_raster_paths_list_vsis3)
 
     #Check that s3 file exists
-    check_s3_file_created(output_vrt_s3)
-
-# Checks if a VRT already exists in s3
-# https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/67dc3f96-40f0-800a-9c89-2895c332bd01
-def vrt_exists_in_s3(output_vrt_s3):
-
-    s3 = boto3.client("s3")
-
-    # Parse the S3 path
-    s3_path_parts = output_vrt_s3.replace("s3://", "").split("/", 1)
-    bucket_name = s3_path_parts[0]
-    object_key = s3_path_parts[1]
-
-    try:
-        # Check if the file exists in S3
-        s3.head_object(Bucket=bucket_name, Key=object_key)
-        return True  # File exists
-    except s3.exceptions.ClientError as e:
-        if e.response["Error"]["Code"] == "404":
-            return False  # File does not exist
-        else:
-            raise  # Some other error occurred
+    exists_in_s3(output_vrt_s3)
 
 
 # Function to build a VRT using GDAL using tmp dir as intermediate step to download input files and build VRT
 # raw_raster_paths_list_s3 = list of s3 paths (with "s3://" prefix) to all raw raster used as input for the build VRT step
 # output_vrt_s3 = s3 path (with "s3://" prefix) where vrt is saved to
-def build_vrt_gdal_coiled(raw_raster_paths_list_s3, output_vrt_s3, local_vrt, main_logger):
+def build_vrt_gdal_coiled(raw_raster_paths_list_s3, output_vrt_s3, local_vrt):
+    os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "TRUE"
 
     logger_worker = lu.setup_logging_worker()
 
     # Check if the VRT file already exists in S3
-    if vrt_exists_in_s3(output_vrt_s3):
-        return main_logger.info(f"VRT file already exists in S3: {output_vrt_s3}. Skipping creation.")
+    if exists_in_s3(output_vrt_s3):
+        lu.print_and_log(f"VRT file already exists in S3: {output_vrt_s3}. Skipping creation.", False, logger_worker)
+        return
     vsis3_paths = []
     for s3_path in raw_raster_paths_list_s3:
         vsis3_path = s3_path.replace("s3://", "/vsis3/")
         vsis3_paths.append(vsis3_path)
 
     # Use GDAL to build the VRT
-    # gdal.BuildVRT(local_vrt, "/vsis3/gfw2-data/climate/ESA_CCI_biomass/v5_01/2015/AGB/raw/N00E010_ESACCI-BIOMASS-L4-AGB-MERGED-100m-2015-fv5.0.tif")
     gdal.BuildVRT(local_vrt, vsis3_paths)
     lu.print_and_log(f"Built {local_vrt}: {timestr('time')}", True, logger_worker)
 
@@ -2640,37 +2617,34 @@ def build_vrt_gdal_coiled(raw_raster_paths_list_s3, output_vrt_s3, local_vrt, ma
     try:
         vrt_dataset = rasterio.open(local_vrt)
     except rasterio.errors.RasterioIOError:
-        print("Error: VRT file not found or invalid.")
-        exit()
+        raise RuntimeError("Error: VRT file not found or invalid.")
 
     if vrt_dataset.count == 0:
-        print("VRT has no data or invalid sources.")
-        exit()
+        raise RuntimeError("Error: VRT has no data or invalid sources.")
     else:
         lu.print_and_log("VRT contains data.", True, logger_worker)
 
     if vrt_dataset.bounds:
         lu.print_and_log("VRT contains data or has valid metadata.", True, logger_worker)
     else:
-        print("VRT has no data or invalid metadata.")
-        exit()
+        raise RuntimeError("Error: VRT has no data or invalid metadata.")
 
     vrt_dataset.close()
 
-    #Upload to s3
+    # Upload to s3
     upload_s3_file(output_vrt_s3, local_vrt)
 
-    #If successfully uploaded, delete local vrt
-    if check_s3_file_created(output_vrt_s3):
-        #Delete local VRT file     #TODO create a microservice to do this instead of repeating code in multiple functions
+    # If successfully uploaded to s3, delete local vrt #TODO create a microservice to do this instead of repeating code in multiple functions
+    if exists_in_s3(output_vrt_s3):
+        lu.print_and_log(f"File uploaded to S3: {output_vrt_s3}", False, logger_worker)
         try:
             os.remove(local_vrt)
             if not os.path.exists(local_vrt):
-                main_logger.info(f"Deleted local VRT file: {local_vrt}")
+                lu.print_and_log(f"Deleted local VRT file: {local_vrt}", False, logger_worker)
             else:
-                main_logger.warning(f"Failed to delete local VRT file: {local_vrt}")
+                lu.print_and_log(f"Failed to delete local VRT file: {local_vrt}", False, logger_worker)
         except Exception as e:
-            main_logger.warning(f"Error deleting local VRT file: {local_vrt} — {e}")
+            lu.print_and_log(f"Error deleting local VRT file: {local_vrt} — {e}", False, logger_worker)
 
 
 # Function to read a VRT from S3 using GDAL and vsis3
@@ -2725,7 +2699,7 @@ def warp_to_hansen_local(source_raster_s3_path, output_raster_s3_path, xmin, ymi
         gdal.Warp(output_gdal_path, source_gdal_path, options=options)
 
         # Check that file exists
-        check_s3_file_created(output_raster_s3_path)
+        exists_in_s3(output_raster_s3_path)
 
     else:
         raise RuntimeError(f"Failed to open VRT: {source_gdal_path}")

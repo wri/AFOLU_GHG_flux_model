@@ -208,20 +208,16 @@ def main(cluster_name, datasets, years, tile_ids, skip_existing):
     # Creates the log for the main function and populates it with basic run information
     main_logger, main_log_local_path, n_workers= lu.populate_main_log_header(client, cluster, "Global COG creation", run_local, 'standard', 'Global COG creation')
 
-    #TODO: This branch is behind the current model version (1.0.5) Change to cn paths after merging to updated model branch.
-    emissions_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/gross_emissions__all_C_pools__all_gases__MgCO2e/annual_intervals/YYYY/_pixel_yr/40000_pixels/20260130/"
-    removals_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/gross_removals__all_C_pools__MgCO2/annual_intervals/YYYY/_pixel_yr/40000_pixels/20260130/"
-    net_flux_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/net_flux__all_C_pools__all_gases__MgCO2e/annual_intervals/YYYY/_pixel_yr/40000_pixels/20260130/"
-    mineral_soil_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_0__standard__global/SOC_change__mineral_soil_extent__0-30cm_MgC/YYYY/_ha_yr/4000_pixels/20251224/"
-    pixel_area_path = "s3://gfw2-data/analyses/area_28m/"
-    tclf_path = "s3://gfw2-data/climate/carbon_model/other_emissions_inputs/tree_cover_loss_fires/20260316/processed/"
+    #TODO: This script is behind the current model version (1.0.6) Change to cn paths after merging to updated model branch.
+    emissions_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/gross_emissions__all_C_pools__all_gases__MgCO2e/annual_intervals/YYYY/_ha_yr/40000_pixels/20260130/"
+    removals_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/gross_removals__all_C_pools__MgCO2/annual_intervals/YYYY/_ha_yr/40000_pixels/20260130/"
+    net_flux_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/net_flux__all_C_pools__all_gases__MgCO2e/annual_intervals/YYYY/_ha_yr/40000_pixels/20260130/"
+    mineral_soil_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_1__standard__global/SOC_net__mineral_soil_extent__0-30cm_MgCO2/YYYY/_ha_yr/40000_pixels/20260611/"
 
     emissions_pattern = "gross_emissions__all_C_pools__all_gases__MgCO2e_pixel_yr"
     removals_pattern = "gross_removals__all_C_pools__MgCO2_pixel_yr"
     net_flux_pattern = "net_flux__all_C_pools__all_gases__MgCO2e_pixel_yr"
     mineral_soil_pattern = "SOC_change__mineral_soil_extent__0-30cm_MgC_ha_yr"
-    pixel_area_pattern = "hansen_pixel_area"
-    tclf_pattern = "tree_cover_loss_fire_processed"
 
     # ------------------------------------------------------------------------------------------------------------------
 
@@ -231,9 +227,9 @@ def main(cluster_name, datasets, years, tile_ids, skip_existing):
     # Default to all available years if years are not provided by user
     if years is None:
         years = {
-            "emissions": cn.interval_end_years_annual,
-            "removals": cn.interval_end_years_annual,
-            "net_flux": cn.interval_end_years_annual,
+            "emissions": cn.LC_years,
+            "removals": cn.LC_years,
+            "net_flux": cn.LC_years,
             "mineral_soil": cn.SOC_change_intervals,
         }
 
