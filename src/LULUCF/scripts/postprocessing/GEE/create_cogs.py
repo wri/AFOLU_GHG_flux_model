@@ -4,13 +4,41 @@ Script to create global COGS:
 2) builds a global COG per dataset per year
 
 run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
-python -m src.utilities.create_cluster -cn 2016_emissions_cog -n 1 -m 32 --on_demand
+
+For global:
+python -m src.utilities.create_cluster -cn 2016_emissions_cog -t 1 -n 1 -m 64 -d 300 -c --on_demand
 python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs -cn 2016_emissions_cog -d emissions -y 2016
+
+python -m src.utilities.create_cluster -cn 2016_removals_cog -t 1 -n 1 -m 64 -d 1000 -c --on_demand
+python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs -cn 2016_removals_cog -d removals -y 2016
+
+
+For WWF Operational Landscapes:
+python -m src.utilities.create_cluster -cn WWF_2016_emissions_cog -n 1 -m 32 --on_demand
+python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs -cn WWF_2016_emissions_cog -d emissions -y 2016 -t /mnt/c/GIS/rasters/AFOLU_cogs/operational_landscapes_10x10_tile_ids.txt --skip_existing
 
 python -m src.utilities.create_cluster -cn WWF_2016_removals_cog -t 1 -n 1 -m 64 -d 300 --on_demand
 python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs -cn WWF_2016_removals_cog -d removals -y 2016 -t /mnt/c/GIS/rasters/AFOLU_cogs/operational_landscapes_10x10_tile_ids.txt --skip_existing
 
+
 Notes:
+
+For global:
+ - It took 2.8 minutes to build each VRT from 356 10x10 degree, per hectare tiles.
+ - For 2016 emissions:
+    - It took X hours to create a global cog with overviews. The final COG ended up being X GB.
+    - I used a r8g.2xlarge worker (memory = 64 GB, CPU = 8, disk = 300 GB) which used X credits in total.
+        - I initially tried with a 32 GB worker but after running for nearly 6 hours got this error:
+          "WARNING - Worker is at 80% memory usage. Pausing worker.  Process memory: 24.46 GiB -- Worker memory limit: 30.29 GiB
+           WARNING - Worker tls://10.0.253.8:41185 (pid=122) exceeded 95% memory budget. Restarting..."
+    - GDAL_CACHEMAX = 12 GB and BIG_TIFF=YES.
+    - Memory peaked at X GB, disk peaked at about X GB, and required X CPUs.
+ - For 2016 removals:
+    - It took X hours to create a global cog with overviews. The final COG ended up being X GB.
+    - I used a r8g.2xlarge worker (memory = 64 GB, CPU = 8, disk = 1 TB) which used X credits in total.
+    - GDAL_CACHEMAX = 12 GB and BIG_TIFF=YES.
+    - Memory peaked at X GB, disk peaked at about X GB, and required X CPUs.
+
 For WWF Operational Landscapes:
     - Took 1.5 minutes to build VRT from 191 10x10 degree, per pixel tiles
     - For emissions, it took 5 hours to create a cog (with no overviews) from 191 10x10 degree, per pixel tiles (28% of global extent).
@@ -18,7 +46,7 @@ For WWF Operational Landscapes:
       GDAL_CACHEMAX = 70% and BIG_TIFF=IF_SAFER.
       It looks like memory peaked at 8.5 GB, disk peaked at about 25 GB, and required 4 CPUs.
       So for global run, try:
-            - disk = 200 GB. Consider increasing CPU?
+            - disk = 300 GB. Consider increasing CPU?
       The final COG only ended up being 12 GB.
     - For removals, it failed after 6.5 hours the first time I tried to create a cog (with no overviews) from 191 10x10 degree, per pixel tiles.
       Got the following error:
@@ -152,8 +180,8 @@ def gdal_translate_cog(vrt, cog,  nodata, resample=None, build_overviews=True):
 
     # Set config options for GDAL translate
     with gdal.config_options({
-      "GDAL_CACHEMAX": "60%",
-      "GDAL_NUM_THREADS": "ALL_CPUS",
+        "GDAL_CACHEMAX": "12288",        # 12 GB
+        "GDAL_NUM_THREADS": "ALL_CPUS"
       #"ZSTD_LEVEL_OVERVIEW": "22"
       }):
         ds = gdal.Translate(cog, vrt, options=opts)
@@ -214,9 +242,9 @@ def main(cluster_name, datasets, years, tile_ids, skip_existing):
     net_flux_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/net_flux__all_C_pools__all_gases__MgCO2e/annual_intervals/YYYY/_ha_yr/40000_pixels/20260130/"
     mineral_soil_path = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_1__standard__global/SOC_net__mineral_soil_extent__0-30cm_MgCO2/YYYY/_ha_yr/40000_pixels/20260611/"
 
-    emissions_pattern = "gross_emissions__all_C_pools__all_gases__MgCO2e_pixel_yr"
-    removals_pattern = "gross_removals__all_C_pools__MgCO2_pixel_yr"
-    net_flux_pattern = "net_flux__all_C_pools__all_gases__MgCO2e_pixel_yr"
+    emissions_pattern = "gross_emissions__all_C_pools__all_gases__MgCO2e_ha_yr"
+    removals_pattern = "gross_removals__all_C_pools__MgCO2_ha_yr"
+    net_flux_pattern = "net_flux__all_C_pools__all_gases__MgCO2e_ha_yr"
     mineral_soil_pattern = "SOC_change__mineral_soil_extent__0-30cm_MgC_ha_yr"
 
     # ------------------------------------------------------------------------------------------------------------------
@@ -227,9 +255,9 @@ def main(cluster_name, datasets, years, tile_ids, skip_existing):
     # Default to all available years if years are not provided by user
     if years is None:
         years = {
-            "emissions": cn.LC_years,
-            "removals": cn.LC_years,
-            "net_flux": cn.LC_years,
+            "emissions": cn.veg_outputs_years,
+            "removals": cn.veg_outputs_years,
+            "net_flux": cn.veg_outputs_years,
             "mineral_soil": cn.SOC_change_intervals,
         }
 
@@ -338,13 +366,16 @@ def main(cluster_name, datasets, years, tile_ids, skip_existing):
         simple_dict[key] = items["s3_dir"]
 
         # Path of first tile in the dataset
-        first_tile = uu.first_file_name_in_s3_folder(simple_dict)
+        first_tile_dict = uu.first_file_name_in_s3_folder(simple_dict)
 
         # Gets datatype of first tile in input dataset and converts it to GDAL format
-        download_dict_with_data_types = uu.add_file_type_to_dict(first_tile)
+        download_dict_with_data_types = uu.add_file_type_to_dict(first_tile_dict)
         dtype = download_dict_with_data_types[key][1]
         gdal_dtype = uu.string_to_gdal_dtype_mapping.get(dtype)
         gdal_dtype_str = uu.gdal_to_string_dtype_mapping.get(gdal_dtype)
+
+        # Extract actual S3 path from dictionary
+        first_tile = first_tile_dict[key]
 
         # Open first tile and read NoData value
         ds = gdal.Open(first_tile.replace("s3://", "/vsis3/"))
@@ -352,7 +383,7 @@ def main(cluster_name, datasets, years, tile_ids, skip_existing):
             raise RuntimeError(f"Could not open raster: {first_tile}")
         band = ds.GetRasterBand(1)
         nodata = band.GetNoDataValue()
-        ds = None  #close gdal.Open()
+        ds = None
 
         # Choose overview resampling method based on datatype
         if gdal_dtype in (gdal.GDT_Float32, gdal.GDT_Float64):
