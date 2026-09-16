@@ -4,6 +4,9 @@ python -m src.utilities.create_cluster -n 1 -t 1 -m 16 -cn LULUCF_model
 python -m src.utilities.create_cluster -n 5 -t 1 -m 32 -cn LULUCF_model
 python -m src.utilities.create_cluster -n 20 -t 1 -m 64 -cn LULUCF_model
 
+To pass in Google Cloud local environment variables:
+python -m src.utilities.create_cluster -n 1 -m 4 -cn GEE_assets --gcp
+
 Table of instance types (and pricing): https://instances.vantage.sh/?id=9c1a108b13a45889fc00951e867ca5295e82dd2c
 Table of spot pricing: https://aws.amazon.com/ec2/spot/pricing/
 These are the cheapest worker types and they have fewer vCPUs than usual for the memory.
@@ -56,13 +59,19 @@ def write_gcp_creds():
     return destination, os.path.exists(destination)
 
 
-def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=None, on_demand=False, zonal_stats=False, gcp=None):
+def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=None, disk_space = None, on_demand=False, zonal_stats=False, cog=False, gcp=None):
 
     if zonal_stats or ("zonal" in cluster_name) or ("stats" in cluster_name):
         print("Using zonal stats worker configuration")
         zonal_stats = True
     else:
         zonal_stats = False
+
+    if cog or ("cog" in cluster_name.lower()):
+        print("Using cog worker configuration")
+        cog = True
+    else:
+        cog = False
 
     # Converts worker_memory from an integer to the required format (e.g., 8 to "8GiB")
     worker_memory_str = f"{worker_memory}GiB"
@@ -78,6 +87,9 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
         if zonal_stats == True:
             scheduler_vm_type = "r8g.xlarge"  # 8 vCPU/worker, what Solomon used for zonal stats
             worker_vm_type = "r8g.2xlarge"
+        elif cog == True:
+            scheduler_vm_type = "r8g.xlarge"  # 8 vCPU/worker, used for COG creation
+            worker_vm_type = "r8g.2xlarge"
         else:
             scheduler_vm_type = "x8g.xlarge"    # 4 vCPU/worker
             worker_vm_type = "x8g.xlarge"
@@ -87,6 +99,9 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
         if zonal_stats == True:
             scheduler_vm_type = "r8g.large"    # 4 vCPU/worker, same series as Solomon used for zonal stats
             worker_vm_type = "r8g.xlarge"
+        elif cog == True:
+            scheduler_vm_type = "m4.xlarge"    # 8 vCPU/worker, used for COG creation
+            worker_vm_type = "m4.2xlarge"
         else:
             scheduler_vm_type = "x8g.large"   # 2 vCPU/worker. x2gd.large also has this ratio, and theoretically lower interruption rates but has worse hardware.
             worker_vm_type = "x8g.large"      # per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/694bfc7f-fab0-8332-b903-d5efa84b61c3
@@ -98,6 +113,9 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
         if zonal_stats == True:
             scheduler_vm_type = "r8g.medium"    # 2 vCPU/worker, same series as Solomon used for zonal stats
             worker_vm_type = "r8g.large"
+        elif cog == True:
+            scheduler_vm_type = "m4.xlarge"     # 4 vCPU/worker, used for COG creation
+            worker_vm_type = "m4.xlarge"
         else:
             scheduler_vm_type = "x2gd.medium"   # 1 vCPU/worker
             worker_vm_type = "x2gd.medium"
@@ -182,23 +200,40 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
         with open(gcp_credentials_file, "rb") as f:
             gcp_creds_b64 = base64.b64encode(f.read()).decode("ascii")
 
-
-    cluster = coiled.Cluster(
-        n_workers=n_workers,
-        use_best_zone=use_best_zone,
-        compute_purchase_option=purchase_option,
-        idle_timeout=idle_timeout,
-        region="us-east-1",
-        name=cluster_name,
-        workspace=cn.Coiled_workspace,
-        tags = {"wri:project": "AFOLU_flux_model", "wri:program": "FLW"},
-        allow_cross_zone=allow_cross_zone,
-        scheduler_vm_types = scheduler_vm_type,
-        worker_vm_types = worker_vm_type,
-        worker_options = worker_options,
-        environ=env,  # pass env vars to scheduler/workers
-        **({'software': software} if software else {}),
-    )
+    if disk_space is not None:
+        cluster = coiled.Cluster(
+            n_workers=n_workers,
+            use_best_zone=use_best_zone,
+            compute_purchase_option=purchase_option,
+            idle_timeout=idle_timeout,
+            region="us-east-1",
+            name=cluster_name,
+            workspace=cn.Coiled_workspace,
+            tags = {"wri:project": "AFOLU_flux_model", "wri:program": "FLW"},
+            scheduler_vm_types=scheduler_vm_type,
+            worker_vm_types=worker_vm_type,
+            worker_options=worker_options,
+            worker_disk_size=f"{disk_space} GiB",
+            environ=env,  # pass env vars to scheduler/workers
+            **({'software': software} if software else {}),
+        )
+    else:
+        cluster = coiled.Cluster(
+            n_workers=n_workers,
+            use_best_zone=use_best_zone,
+            compute_purchase_option=purchase_option,
+            idle_timeout=idle_timeout,
+            region="us-east-1",
+            name=cluster_name,
+            workspace=cn.Coiled_workspace,
+            tags = {"wri:project": "AFOLU_flux_model", "wri:program": "FLW"},
+            allow_cross_zone=allow_cross_zone,
+            scheduler_vm_types = scheduler_vm_type,
+            worker_vm_types = worker_vm_type,
+            worker_options = worker_options,
+            environ=env,  # pass env vars to scheduler/workers
+            **({'software': software} if software else {}),
+        )
 
     client = Client(cluster)
 
@@ -248,8 +283,13 @@ if __name__ == "__main__":
     parser.add_argument('-n', '--n_workers', type=int, default=1, help='Number of workers for the cluster')
     parser.add_argument('-m', '--worker_memory', type=int, help='Memory per worker')
     parser.add_argument('-t', '--threads_per_worker', type=int, help='Number of threads/worker')
+    parser.add_argument('-d', '--disk_space', type=int, help='Disk space')
     parser.add_argument('-od', '--on_demand', action='store_true', help='Use on-demand workers (not spot workers)')
     parser.add_argument('-zs', '--zonal_stats', action='store_true', help='Use zonal stats worker configuration')
+    parser.add_argument('-c', '--cog', action='store_true', help='Use cog worker configuration')
+
+    # Options to copy certain local environments into Coiled workers
+    parser.add_argument("--gcp", action="store_true", help="If set, copy local GOOGLE_CLOUD_PROJECT and GOOGLE_APPLICATION_CREDENTIALS into the Coiled cluster.")
 
     args = parser.parse_args()
 
@@ -257,11 +297,14 @@ if __name__ == "__main__":
     n_workers = args.n_workers
     worker_memory = args.worker_memory
     threads_per_worker = args.threads_per_worker
+    disk_space = args.disk_space
     on_demand = args.on_demand
     zonal_stats = args.zonal_stats
+    cog = args.cog
+    gcp = args.gcp
 
     # Create the cluster with command line arguments
-    cluster = create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker, on_demand=on_demand, zonal_stats=zonal_stats)
+    cluster = create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker, disk_space=disk_space, on_demand=on_demand, zonal_stats=zonal_stats, cog=cog, gcp=gcp)
 
     # client = Client(cluster)
     # print(client.run(check_worker_memory_config))
