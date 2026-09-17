@@ -24,8 +24,9 @@ Cautions:
 
 
 Notes:
-    - For emissions could try 32 GB worker and/ or 50 GB of disk. Keep or increase CPU.
-    - For removals, could try 32 GB worker and/ or 300 GB of disk. Keep or increase CPU.
+    - For emissions could try 50 GB of disk. Keep or increase CPU.
+    - For removals, could try 300 GB of disk. Keep or increase CPU.
+    - Using 32 GB workers was WAAAAAY slower. Use 64 instead.
 
 TODO:
 - Ask Chris about attaching S3 directory so tiles don't have to be downloaded to save time. Then get rid of download_workers input argument.
@@ -43,6 +44,8 @@ import boto3
 from botocore.config import Config
 from osgeo import gdal
 from google.cloud import storage
+import google.auth
+from google.auth.transport.requests import Request
 
 # Project imports
 from src.utilities import constants_and_names as cn
@@ -248,6 +251,19 @@ def gdal_translate_cog(vrt, cog, nodata, resample=None, build_overviews=True):
             raise RuntimeError(f"GDAL Translate failed: {cog}: {gdal.GetLastErrorMsg()}")
         ds = None   #close
 
+def refresh_gcp_credentials():
+    logger_worker = lu.setup_logging_worker()
+
+    credentials, project = google.auth.default(
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+
+    lu.print_and_log(f"Refreshing GCP credentials for project: {project}", False, logger_worker)
+    credentials.refresh(Request())
+    lu.print_and_log( "GCP credentials refreshed successfully", False, logger_worker)
+
+    return credentials, project
+
 # Upload local file to Google Cloud Storage
 def upload_file_to_gcs(local_path, gcs_path):
     logger_worker = lu.setup_logging_worker()
@@ -258,7 +274,8 @@ def upload_file_to_gcs(local_path, gcs_path):
     path_without_prefix = gcs_path.replace("gs://", "", 1)
     bucket_name, blob_name = path_without_prefix.split("/", 1)
 
-    client = storage.Client()
+    credentials, project = refresh_gcp_credentials()
+    client = storage.Client(project=project, credentials=credentials)
     bucket = client.bucket(bucket_name)
     blob = bucket.blob(blob_name)
 
@@ -414,10 +431,10 @@ def main(cluster_name, datasets, fluxes, years, tile_ids, overwrite_existing_cog
 
 
     # GCS output directories
-    gcs_bucket = "lcl_public"
-    veg_asset_folder = f"wri_lgms/vegetation/v{veg_model_version_underscore}"
-    min_soil_asset_folder = f"wri_lgms/soil/mineral/v{cn.SOC_model_version_underscore}"
-    org_soil_asset_folder = f"wri_lgms/soil/organic/v{cn.organic_soil_model_version_underscore}"
+    gcs_bucket = "wri-lcl-lgms"
+    veg_asset_folder = f"vegetation/v{veg_model_version_underscore}"
+    min_soil_asset_folder = f"soil/mineral/v{cn.SOC_model_version_underscore}"
+    org_soil_asset_folder = f"soil/organic/v{cn.organic_soil_model_version_underscore}"
 
     emissions_gcs_dir = f"gs://{gcs_bucket}/{veg_asset_folder}/emissions/{emissions_pattern}/"
     removals_gcs_dir  = f"gs://{gcs_bucket}/{veg_asset_folder}/removals/{removals_pattern}/"
