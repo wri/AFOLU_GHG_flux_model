@@ -243,7 +243,6 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
     # This is not actually necessary for zonal stats clusters right now because they don't use src on workers,
     # but there's no harm in making this happen for all clusters.
     # Per Claude session 'Coiled cluster creation error'
-    print("Uploading src to workers")
     with tempfile.TemporaryDirectory() as tmpdir:
         zip_path = os.path.join(tmpdir, "src.zip")
         project_root = "/mnt/c/GIS/git/AFOLU_GHG_flux_model"

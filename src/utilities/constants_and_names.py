@@ -2122,3 +2122,29 @@ alt_AGB = 'ctrees_starting_AGC'
 alt_RF = 'alternative_RF'
 
 model_type_options = ['standard', low_EF, high_EF, alt_AGB, alt_RF]
+
+mineral_soil_year_map = {
+    2016: 2020,
+    2017: 2020,
+    2018: 2020,
+    2019: 2020,
+    2020: 2020,
+    2021: 2020,
+    2022: 2020,
+    2023: 2020,
+    2024: 2020,
+}
+
+# Organic soil:
+# Use strings because these are interval directory names, not integers.
+organic_soil_year_map = {
+    2016: "2016_2020",
+    2017: "2016_2020",
+    2018: "2016_2020",
+    2019: "2016_2020",
+    2020: "2016_2020",
+    2021: "2021_2024",
+    2022: "2021_2024",
+    2023: "2021_2024",
+    2024: "2021_2024",
+}
