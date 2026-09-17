@@ -54,14 +54,12 @@ python -m src.synthesis.scripts.1_create_AFOLU_0_04deg_global_display_maps \
 -veg_emis s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_vegetation/version_1_0_5__standard__global/gross_emissions__all_C_pools__all_gases__MgCO2e/annual_intervals/2024/_0_04deg_yr/global/20260130/gross_emissions__all_C_pools__all_gases__MgCO2e_0_04deg_yr_v1_0_5_2024_global.tif \
 -ms_loss s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/outputs_soil_organic_carbon/version_1_0_1__standard__global/SOC_loss__mineral_soil_extent__0-30cm_MgCO2/2020/_0_04deg_yr/global/20260611/SOC_loss__mineral_soil_extent__0-30cm_MgCO2_0_04deg_yr_v1_0_1_2020_global.tif \
 -cl s3://gfw2-data/climate/AFOLU_flux_model/cropland_emissions/processed/Cornell_v20250828/year_2020/global_COG/all_sources/Global_grid_cropland_emissions_total_amount_CO2eq_all_crops_without_peat_burn_kg_CO2__20260803_COG.tif \
--ls s3://gfw2-data/climate/AFOLU_flux_model/livestock_emissions/raw__from_Cornell/20251223/Total_GHG_Emissions/Tot_CO2eq_kg_livestock_GHG_emissions.tif
+-ls s3://gfw2-data/climate/AFOLU_flux_model/livestock_emissions/raw__from_Cornell/20260914/Total_GHG_kg_CO2e_yr_Livestock_ALL.tif
 
 Example — Central Africa zoom (Parts 1-3 only, no component data-- and no flux annotation):
 python -m src.synthesis.scripts.1_create_AFOLU_0_04deg_global_display_maps
   [all the above arguments] \
   --center_latitude 0 --center_longitude 20 --lat_height 20 -bbd central_Africa
-
-#TODO Sampling the cropland and livestock emissions form 0.083 deg to 0.04 deg is distorting the values-- output geotifs don't seem to match originals well. Need to explore and fix.
 """
 
 import argparse
@@ -188,12 +186,6 @@ def resample_to_0_04deg(path, reference_path, local_folder, logger, out_label=No
             dst_crs       = ref.crs
         with rasterio.open(path) as src:
             effective_src_nodata = src_nodata if src_nodata is not None else src.nodata
-            src_pixel_area = abs(src.transform.a * src.transform.e)
-            dst_pixel_area = abs(dst_transform.a * dst_transform.e)
-            # Resampling.sum assigns the full source value to each overlapping output
-            # pixel (GDAL weights by output-pixel-area fraction, which is 1 for
-            # disaggregation). Divide by the area ratio to restore flux conservation.
-            disaggregation_scale = dst_pixel_area / src_pixel_area if dst_pixel_area < src_pixel_area else 1.0
             kwargs = src.meta.copy()
             kwargs.update({
                 'crs': dst_crs,
@@ -205,10 +197,9 @@ def resample_to_0_04deg(path, reference_path, local_folder, logger, out_label=No
             })
             with rasterio.open(path_out, 'w', **kwargs) as dst:
                 for i in range(1, src.count + 1):
-                    dest_arr = np.zeros((dst_height, dst_width), dtype='float32')
                     reproject(
                         source=rasterio.band(src, i),
-                        destination=dest_arr,
+                        destination=rasterio.band(dst, i),
                         src_transform=src.transform,
                         src_crs=src.crs,
                         dst_transform=dst_transform,
@@ -217,12 +208,32 @@ def resample_to_0_04deg(path, reference_path, local_folder, logger, out_label=No
                         src_nodata=effective_src_nodata,
                         dst_nodata=0,
                     )
-                    dest_arr *= disaggregation_scale
-                    dst.write(dest_arr, i)
     else:
         logger.info(f"  0.04-degree raster already exists: {path_out}")
 
     return path_out
+
+
+def _fill_isolated_zero_cols(path, main_logger):
+    """Fill isolated columns of zero (NoData) pixels that have valid data on both sides.
+
+    Fixes the single-column vertical artifact produced by grid misalignment when
+    resampling coarse agriculture inputs to the finer 0.04° grid with dst_nodata=0.
+    This happens at around 0.149 deg W when cropland and livestock are resampled to 0.04 deg.
+    In-place edit of the file; skips if no such pixels are found.
+    """
+    with rasterio.open(path, 'r+') as ds:
+        data = ds.read(1).astype('float32')
+        left  = np.roll(data, 1,  axis=1)
+        right = np.roll(data, -1, axis=1)
+        gap = (data == 0) & (left != 0) & (right != 0)
+        gap[:, 0]  = False  # avoid wrap-around at array edges
+        gap[:, -1] = False
+        n = int(gap.sum())
+        if n > 0:
+            data[gap] = (left[gap] + right[gap]) / 2.0
+            ds.write(data, 1)
+            main_logger.info(f"  Gap-filled {n} isolated zero pixels in {os.path.basename(path)}")
 
 
 def save_array_as_geotif(data, reference_path, out_path, logger, nodata=0):
@@ -815,9 +826,10 @@ def map_LULUCF_maps(lulucf_input_date,
         cropland_kg_path  = resample_to_0_04deg(cropland_geotif_s3,  lulucf_net_wgs84_path, reproj_folder, main_logger,
                                                  out_label='cropland_emissions_all_crops_without_peat_burn_kg_CO2e_0_04deg',
                                                  src_nodata=0)
+        _fill_isolated_zero_cols(cropland_kg_path, main_logger)  # To fill a single column of empty pixels due to poor alignment of original and new resolutions.
         livestock_kg_path = resample_to_0_04deg(livestock_geotif_s3, lulucf_net_wgs84_path, reproj_folder, main_logger,
-                                                 out_label='livestock_emissions_all_animals_kg_CO2e_0_04deg',
-                                                 src_nodata=0)
+                                                 out_label='livestock_emissions_all_animals_kg_CO2e_0_04deg')
+        _fill_isolated_zero_cols(livestock_kg_path, main_logger)  # To fill a single column of empty pixels due to poor alignment of original and new resolutions.
 
         main_logger.info("Converting cropland and livestock kg→Mg")
         cropland_Mg_path  = convert_kg_to_Mg(cropland_kg_path,  main_logger)
@@ -867,7 +879,7 @@ def map_LULUCF_maps(lulucf_input_date,
     jpeg_path_lulucf_emis = render_unidirectional_map(
         data_lulucf_emis, raster_extent, bounding_box_proj, country_shapefile,
         cn.emissions_colors_rgb, cn.emissions_percentiles,
-        title_text=f"Gross land-based emissions\n{cn.veg_outputs_years[0]}-{cn.veg_outputs_years[-1]}\nkt CO$_2$e yr$^{{-1}}$",
+        title_text=f"Gross land use emissions\n{cn.veg_outputs_years[0]}-{cn.veg_outputs_years[-1]}\nkt CO$_2$e yr$^{{-1}}$",
         non_pres_folder=non_pres_folder, pres_folder=pres_folder,
         jpeg_name=jpeg_name(lulucf_emis_core, bounding_box_description),
         slide_text=lulucf_slide_text_with_disclaimer,
@@ -880,7 +892,7 @@ def map_LULUCF_maps(lulucf_input_date,
     jpeg_path_lulucf_remv = render_unidirectional_map(
         data_lulucf_remv, raster_extent, bounding_box_proj, country_shapefile,
         cn.removals_colors_rgb, cn.removals_percentiles,
-        title_text=f"Gross land-based removals\n{cn.veg_outputs_years[0]}-{cn.veg_outputs_years[-1]}\nkt CO$_2$ yr$^{{-1}}$",
+        title_text=f"Gross land use removals\n{cn.veg_outputs_years[0]}-{cn.veg_outputs_years[-1]}\nkt CO$_2$ yr$^{{-1}}$",
         non_pres_folder=non_pres_folder, pres_folder=pres_folder,
         jpeg_name=jpeg_name(lulucf_remv_core, bounding_box_description),
         slide_text=lulucf_slide_text_with_disclaimer,
@@ -893,7 +905,7 @@ def map_LULUCF_maps(lulucf_input_date,
     jpeg_path_lulucf_net = render_divergent_map(
         data_lulucf_net, raster_extent, bounding_box_proj, country_shapefile,
         net_colors_rgb,
-        title_text=f"Net land-based flux\n{cn.veg_outputs_years[0]}-{cn.veg_outputs_years[-1]}\nkt CO$_2$e yr$^{{-1}}$",
+        title_text=f"Net land use flux\n{cn.veg_outputs_years[0]}-{cn.veg_outputs_years[-1]}\nkt CO$_2$e yr$^{{-1}}$",
         veg_analysis_years=cn.veg_year_range_str,
         non_pres_folder=non_pres_folder, pres_folder=pres_folder,
         jpeg_name=jpeg_name(lulucf_net_core, bounding_box_description),
@@ -1111,6 +1123,55 @@ def map_LULUCF_maps(lulucf_input_date,
             "", main_logger,
         )
         main_logger.info(f"Part 6 done in {round(time.time() - start_time)}s: {uu.timestr()}")
+
+
+        ### Part 7: LULUCF net flux + cropland and LULUCF net flux + livestock
+        if has_agriculture_inputs:
+            main_logger.info("\n\n\n---Part 7: LULUCF net flux + cropland/livestock maps")
+
+            data_lulucf_net_wgs84 = _read_full(lulucf_net_wgs84_path)
+
+            lulucf_plus_cropland_wgs84 = (data_lulucf_net_wgs84 + data_cropland_wgs84).astype('float32')
+            lulucf_plus_cropland_wgs84_path = os.path.join(reproj_folder,
+                                                           'LULUCF_net_flux_plus_cropland_MgCO2e_0_04deg.tif')
+            save_array_as_geotif(lulucf_plus_cropland_wgs84, lulucf_net_wgs84_path, lulucf_plus_cropland_wgs84_path,
+                                 main_logger)
+            lulucf_plus_cropland_reproj_path = reproject_to_robinson(
+                lulucf_plus_cropland_wgs84_path, reproj_folder, main_logger, reference_path=lulucf_net_reproj)
+            data_lulucf_plus_cropland, _ = read_raster_clipped(lulucf_plus_cropland_reproj_path, bounding_box_proj)
+
+            lulucf_plus_livestock_wgs84 = (data_lulucf_net_wgs84 + data_livestock_wgs84).astype('float32')
+            lulucf_plus_livestock_wgs84_path = os.path.join(reproj_folder,
+                                                            'LULUCF_net_flux_plus_livestock_MgCO2e_0_04deg.tif')
+            save_array_as_geotif(lulucf_plus_livestock_wgs84, lulucf_net_wgs84_path, lulucf_plus_livestock_wgs84_path,
+                                 main_logger)
+            lulucf_plus_livestock_reproj_path = reproject_to_robinson(
+                lulucf_plus_livestock_wgs84_path, reproj_folder, main_logger, reference_path=lulucf_net_reproj)
+            data_lulucf_plus_livestock, _ = read_raster_clipped(lulucf_plus_livestock_reproj_path, bounding_box_proj)
+
+            render_divergent_map(
+                data_lulucf_plus_cropland, raster_extent, bounding_box_proj, country_shapefile,
+                net_colors_rgb,
+                title_text=f"Net LULUCF flux + \ncropland emissions\n{cn.veg_outputs_years[0]}-{cn.veg_outputs_years[-1]}\nkt CO$_2$e yr$^{{-1}}$",
+                veg_analysis_years=cn.veg_year_range_str,
+                non_pres_folder=non_pres_folder, pres_folder=pres_folder,
+                jpeg_name=jpeg_name("LULUCF_net_flux_plus_cropland__ktCO2e_yr", bounding_box_description),
+                slide_text=lulucf_slide_text_with_disclaimer,
+                logger=main_logger,
+            )
+
+            render_divergent_map(
+                data_lulucf_plus_livestock, raster_extent, bounding_box_proj, country_shapefile,
+                net_colors_rgb,
+                title_text=f"Net LULUCF flux + \nlivestock emissions\n{cn.veg_outputs_years[0]}-{cn.veg_outputs_years[-1]}\nkt CO$_2$e yr$^{{-1}}$",
+                veg_analysis_years=cn.veg_year_range_str,
+                non_pres_folder=non_pres_folder, pres_folder=pres_folder,
+                jpeg_name=jpeg_name("LULUCF_net_flux_plus_livestock__ktCO2e_yr", bounding_box_description),
+                slide_text=lulucf_slide_text_with_disclaimer,
+                logger=main_logger,
+            )
+
+            main_logger.info(f"Part 7 done in {round(time.time() - start_time)}s: {uu.timestr()}")
 
 
 def main(lulucf_input_date,
