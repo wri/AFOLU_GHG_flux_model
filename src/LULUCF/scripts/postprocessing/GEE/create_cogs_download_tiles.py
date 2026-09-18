@@ -12,15 +12,23 @@ Workflow for each dataset/year:
 This avoids /vsis3/ reads during gdal.Translate(), which makes the long COG build independent of transient S3 range-read failures.
 
 For global:
-python -m src.utilities.create_cluster -cn 2016_emissions_cog_no_overviews -t 1 -n 1 -m 64 -d 100 --cog --on_demand
-python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_emissions_cog_no_overviews -d vegetation -f emissions -y 2016
+gcloud auth application-default login
 
-python -m src.utilities.create_cluster -cn 2016_removals_cog_no_overviews -t 1 -n 1 -m 64 -d 500 --cog --on_demand
-python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_removals_cog_no_overviews -d vegetation -f removals -y 2016
+python -m src.utilities.create_cluster -cn 2016_emissions_cog -t 1 -n 1 -m 64 -d 100 --cog --on_demand
+python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_emissions_cog -d vegetation -f emissions -y 2016
+
+python -m src.utilities.create_cluster -cn 2016_removals_cog -t 1 -n 1 -m 64 -d 500 --cog --on_demand
+python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_removals_cog -d vegetation -f removals -y 2016
+
+python -m src.utilities.create_cluster -cn 2016_2020_mineral_soil_net_cog -t 1 -n 1 -m 64 -d 1000 --cog --on_demand
+python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_2020_mineral_soil_net_cog -d mineral_soil -f netflux -y 2016
+
+python -m src.utilities.create_cluster -cn 2016_2020_organic_soil -t 1 -n 2 -m 64 -d 100 --cog --on_demand
+python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_2020_organic_soil -d organic_soil -f emissions -y 2016
 
 Cautions:
 - Currently all int datasets are set to use mode (categorical) resampling algorithm and all float are set to use mean.
-  If creating a COG for a non-categorical int dataset, update thr code accordingly.
+  If creating a COG for a non-categorical int dataset, update the code accordingly.
 
 
 Notes:
@@ -29,6 +37,7 @@ Notes:
     - Using 32 GB workers was WAAAAAY slower. Use 64 instead.
 
 TODO:
+- The COG translation step takes a very long time. How to make this faster?
 - Ask Chris about attaching S3 directory so tiles don't have to be downloaded to save time. Then get rid of download_workers input argument.
 - Get rid of --tile_ids input argument (option to filter VRT/ COG to only certain tiles)?
 """
