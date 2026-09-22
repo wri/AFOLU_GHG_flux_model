@@ -14,16 +14,16 @@ This avoids /vsis3/ reads during gdal.Translate(), which makes the long COG buil
 For global:
 gcloud auth application-default login
 
-python -m src.utilities.create_cluster -cn 2016_emissions_cog -t 1 -n 1 -m 64 -d 100 --cog --on_demand
+python -m src.utilities.create_cluster -cn 2016_emissions_cog -t 1 -n 1 -m 64 -d 100 --cog --on_demand --gcp
 python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_emissions_cog -d vegetation -f emissions -y 2016
 
-python -m src.utilities.create_cluster -cn 2016_removals_cog -t 1 -n 1 -m 64 -d 500 --cog --on_demand
+python -m src.utilities.create_cluster -cn 2016_removals_cog -t 1 -n 1 -m 64 -d 500 --cog --on_demand --gcp
 python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_removals_cog -d vegetation -f removals -y 2016
 
-python -m src.utilities.create_cluster -cn 2016_2020_mineral_soil_net_cog -t 1 -n 1 -m 64 -d 1000 --cog --on_demand
+python -m src.utilities.create_cluster -cn 2016_2020_mineral_soil_net_cog -t 1 -n 1 -m 64 -d 1000 --cog --on_demand --gcp
 python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_2020_mineral_soil_net_cog -d mineral_soil -f netflux -y 2016
 
-python -m src.utilities.create_cluster -cn 2016_2020_organic_soil -t 1 -n 2 -m 64 -d 100 --cog --on_demand
+python -m src.utilities.create_cluster -cn 2016_2020_organic_soil -t 1 -n 2 -m 64 -d 50 --cog --on_demand --gcp
 python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_2020_organic_soil -d organic_soil -f emissions -y 2016
 
 Cautions:
@@ -40,6 +40,7 @@ TODO:
 - The COG translation step takes a very long time. How to make this faster?
 - Ask Chris about attaching S3 directory so tiles don't have to be downloaded to save time. Then get rid of download_workers input argument.
 - Get rid of --tile_ids input argument (option to filter VRT/ COG to only certain tiles)?
+- Upload to GCP is not working
 """
 
 import argparse
@@ -52,9 +53,9 @@ from pathlib import Path
 import boto3
 from botocore.config import Config
 from osgeo import gdal
-from google.cloud import storage
-import google.auth
-from google.auth.transport.requests import Request
+# from google.cloud import storage
+# import google.auth
+# from google.auth.transport.requests import Request
 
 # Project imports
 from src.utilities import constants_and_names as cn
@@ -260,40 +261,40 @@ def gdal_translate_cog(vrt, cog, nodata, resample=None, build_overviews=True):
             raise RuntimeError(f"GDAL Translate failed: {cog}: {gdal.GetLastErrorMsg()}")
         ds = None   #close
 
-def refresh_gcp_credentials():
-    logger_worker = lu.setup_logging_worker()
-
-    credentials, project = google.auth.default(
-        scopes=["https://www.googleapis.com/auth/cloud-platform"]
-    )
-
-    lu.print_and_log(f"Refreshing GCP credentials for project: {project}", False, logger_worker)
-    credentials.refresh(Request())
-    lu.print_and_log( "GCP credentials refreshed successfully", False, logger_worker)
-
-    return credentials, project
-
-# Upload local file to Google Cloud Storage
-def upload_file_to_gcs(local_path, gcs_path):
-    logger_worker = lu.setup_logging_worker()
-
-    if not gcs_path.startswith("gs://"):
-        raise ValueError(f"GCS path must start with gs://: {gcs_path}")
-
-    path_without_prefix = gcs_path.replace("gs://", "", 1)
-    bucket_name, blob_name = path_without_prefix.split("/", 1)
-
-    credentials, project = refresh_gcp_credentials()
-    client = storage.Client(project=project, credentials=credentials)
-    bucket = client.bucket(bucket_name)
-    blob = bucket.blob(blob_name)
-
-    blob.upload_from_filename(str(local_path))
-
-    if not blob.exists(client):
-        raise RuntimeError(f"GCS upload finished but file could not be verified: {gcs_path}")
-
-    lu.print_and_log(f"File uploaded successfully: {gcs_path}",False, logger_worker)
+# def refresh_gcp_credentials():
+#     logger_worker = lu.setup_logging_worker()
+#
+#     credentials, project = google.auth.default(
+#         scopes=["https://www.googleapis.com/auth/cloud-platform"]
+#     )
+#
+#     lu.print_and_log(f"Refreshing GCP credentials for project: {project}", False, logger_worker)
+#     credentials.refresh(Request())
+#     lu.print_and_log( "GCP credentials refreshed successfully", False, logger_worker)
+#
+#     return credentials, project
+#
+# # Upload local file to Google Cloud Storage
+# def upload_file_to_gcs(local_path, gcs_path):
+#     logger_worker = lu.setup_logging_worker()
+#
+#     if not gcs_path.startswith("gs://"):
+#         raise ValueError(f"GCS path must start with gs://: {gcs_path}")
+#
+#     path_without_prefix = gcs_path.replace("gs://", "", 1)
+#     bucket_name, blob_name = path_without_prefix.split("/", 1)
+#
+#     credentials, project = refresh_gcp_credentials()
+#     client = storage.Client(project=project, credentials=credentials)
+#     bucket = client.bucket(bucket_name)
+#     blob = bucket.blob(blob_name)
+#
+#     blob.upload_from_filename(str(local_path))
+#
+#     if not blob.exists(client):
+#         raise RuntimeError(f"GCS upload finished but file could not be verified: {gcs_path}")
+#
+#     lu.print_and_log(f"File uploaded successfully: {gcs_path}",False, logger_worker)
 
 # Download tiles -> build local VRT -> create local COG -> S3 and GCS upload -> tmp cleanup
 def stage_build_upload_cog(job, download_workers=8):
@@ -373,13 +374,13 @@ def stage_build_upload_cog(job, download_workers=8):
 
         # -------------------------------------------------------------------------------------------------------------------
         # Step 6: Upload COG to GCS
-        start_time = time.time()
-        lu.print_and_log("STEP 6 - Upload COG to GCS", False, logger_worker)
-
-        upload_file_to_gcs(tmp_cog_path, output_cog_gcs_path)
-
-        end_time = time.time()
-        lu.print_and_log(f"STEP 6 Complete - COG uploaded to GCS successfully in {round(end_time - start_time)} seconds",False, logger_worker)
+        # start_time = time.time()
+        # lu.print_and_log("STEP 6 - Upload COG to GCS", False, logger_worker)
+        #
+        # upload_file_to_gcs(tmp_cog_path, output_cog_gcs_path)
+        #
+        # end_time = time.time()
+        # lu.print_and_log(f"STEP 6 Complete - COG uploaded to GCS successfully in {round(end_time - start_time)} seconds",False, logger_worker)
 
         # -------------------------------------------------------------------------------------------------------------------
 
@@ -588,7 +589,11 @@ def main(cluster_name, datasets, fluxes, years, tile_ids, overwrite_existing_cog
             futures.append((key, future))
 
         for key, future in futures:
-            future.result()
+            try:
+                future.result()
+            except Exception as e:
+                main_logger.error(f"{key} failed: {e}")
+
     else:
         for key, job in jobs.items():
             main_logger.info(f"Staging COG build for {key}")
