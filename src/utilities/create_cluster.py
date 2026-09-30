@@ -183,16 +183,14 @@ def create_cluster(cluster_name, n_workers, worker_memory, threads_per_worker=No
     gcp_creds_b64 = None
 
     if gcp:
-        gcp_project = os.environ.get("GOOGLE_CLOUD_PROJECT")
-        gcp_credentials_file = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+        gcp_project = os.environ.get("GOOGLE_CLOUD_PROJECT", "landandcarbon")
+        gcp_credentials_file = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", os.path.expanduser(
+            "~/.config/gcloud/application_default_credentials.json"))
         gcp_credentials_dest = "/tmp/gcp.json"
 
-        if not gcp_project:
-            raise ValueError("GOOGLE_CLOUD_PROJECT is not set in your environment.")
-        if not gcp_credentials_file:
-            raise ValueError("GOOGLE_APPLICATION_CREDENTIALS is not set in your environment.")
         if not os.path.exists(gcp_credentials_file):
-            raise FileNotFoundError(f"Credentials file not found: {gcp_credentials_file}")
+            raise FileNotFoundError(
+                f"GCP ADC file not found: {gcp_credentials_file}. Run: gcloud auth application-default login")
 
         env["GOOGLE_CLOUD_PROJECT"] = gcp_project
         env["GOOGLE_APPLICATION_CREDENTIALS"] = gcp_credentials_dest

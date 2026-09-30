@@ -3,7 +3,7 @@ Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model/
 python -m src.LULUCF.scripts.zonal_statistics.iso_summary
 
 TODO: Option to pass in list of isos from the command line
-TODO: update with ag data
+TODO: Update with ag data
 TODO: Inputs/outputs in s3 instead of local copy
 TODO: Update column names with units
 """
@@ -17,31 +17,32 @@ import pandas as pd
 # ---------------------------------------------------------------------
 
 veg_parquet = ("/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/LULUCF__v1_0_0__for_figures__wide__20260802_wdpa_fixed__from_Erin_Glen_via_Slack_20260803.parquet")
+org_soil_parquet = ("/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/LULUCF__v1_0_0__for_figures__wide__20260827_annual_v2_fixed.parquet")
 
 output_dir = ("/mnt/c/GIS/AFOLU_flux_model/LULUCF/zonal_statistics/iso_summary")
 output_file = os.path.join(output_dir, "LGMS_Horizon_Launch_QC_iso_summary.xlsx")
 
-#isos = ["GMB", "IDN", "BOL", "SWE"]
-isos =['AFG' 'ALB' 'DZA' 'AND' 'AGO' 'AIA' 'ATG' 'ARG' 'ARM' 'ABW' 'AUS' 'AUT'
-       'AZE' 'BHS' 'BHR' 'BGD' 'BRB' 'BLR' 'BEL' 'BLZ' 'BEN' 'BMU' 'BTN' 'BOL'
-       'BES' 'BIH' 'BWA' 'BRA' 'VGB' 'BRN' 'BGR' 'BFA' 'BDI' 'KHM' 'CMR' 'CAN'
-       'CPV' 'CYM' 'CAF' 'TCD' 'CHL' 'CHN' 'COL' 'COM' 'CRI' 'HRV' 'CUB' 'CUW'
-       'CYP' 'CZE' 'CIV' 'COD' 'DNK' 'DJI' 'DMA' 'DOM' 'TLS' 'ECU' 'EGY' 'SLV'
-       'GNQ' 'ERI' 'EST' 'ETH' 'FLK' 'FRO' 'FJI' 'FIN' 'FRA' 'GUF' 'ATF' 'GAB'
-       'GMB' 'GEO' 'DEU' 'GHA' 'GIB' 'GRC' 'GRL' 'GRD' 'GLP' 'GTM' 'GGY' 'GIN'
-       'GNB' 'GUY' 'HTI' 'VAT' 'HND' 'HUN' 'ISL' 'IND' 'IDN' 'IRN' 'IRQ' 'IRL'
-       'IMN' 'ISR' 'ITA' 'JAM' 'JPN' 'JEY' 'JOR' 'KAZ' 'KEN' 'KIR' 'KOR' 'PRK'
-       'KWT' 'KGZ' 'LAO' 'LVA' 'LBN' 'LSO' 'LBR' 'LBY' 'LIE' 'LTU' 'LUX' 'MDG'
-       'MWI' 'MYS' 'MDV' 'MLI' 'MLT' 'MTQ' 'MRT' 'MUS' 'MYT' 'MEX' 'FSM' 'MDA'
-       'MCO' 'MNG' 'MNE' 'MSR' 'MAR' 'MOZ' 'MMR' 'NAM' 'NRU' 'NPL' 'NLD' 'NCL'
-       'NZL' 'NIC' 'NER' 'NGA' 'NFK' 'MKD' 'NOR' 'OMN' 'PAK' 'PLW' 'PSE' 'PAN'
-       'PNG' 'PRY' 'PER' 'PHL' 'POL' 'PRT' 'PRI' 'QAT' 'COG' 'ROU' 'RUS' 'RWA'
-       'REU' 'BLM' 'KNA' 'LCA' 'MAF' 'SPM' 'VCT' 'SMR' 'STP' 'SAU' 'SEN' 'SRB'
-       'SYC' 'SLE' 'SGP' 'SXM' 'SVK' 'SVN' 'SLB' 'SOM' 'ZAF' 'SSD' 'ESP' 'LKA'
-       'SDN' 'SUR' 'SJM' 'SWZ' 'SWE' 'CHE' 'SYR' 'TWN' 'TJK' 'TZA' 'THA' 'TGO'
-       'TTO' 'TUN' 'TUR' 'TKM' 'TCA' 'TUV' 'USA' 'UGA' 'UKR' 'ASM' 'ATA' 'COK'
-       'GUM' 'MHL' 'PYF' 'TON' 'WLF' 'WSM' 'ARE' 'GBR' 'UMI' 'URY' 'UZB' 'VUT'
-       'VEN' 'VNM' 'VIR' 'ESH' 'YEM' 'ZMB' 'ZWE' 'NA' 'ALA']
+isos = ["GMB", "IDN", "BOL", "SWE", "BRA", "COL", "COD", "GAB", "CHN", "JPN"]
+# isos =['AFG' 'ALB' 'DZA' 'AND' 'AGO' 'AIA' 'ATG' 'ARG' 'ARM' 'ABW' 'AUS' 'AUT'
+#        'AZE' 'BHS' 'BHR' 'BGD' 'BRB' 'BLR' 'BEL' 'BLZ' 'BEN' 'BMU' 'BTN' 'BOL'
+#        'BES' 'BIH' 'BWA' 'BRA' 'VGB' 'BRN' 'BGR' 'BFA' 'BDI' 'KHM' 'CMR' 'CAN'
+#        'CPV' 'CYM' 'CAF' 'TCD' 'CHL' 'CHN' 'COL' 'COM' 'CRI' 'HRV' 'CUB' 'CUW'
+#        'CYP' 'CZE' 'CIV' 'COD' 'DNK' 'DJI' 'DMA' 'DOM' 'TLS' 'ECU' 'EGY' 'SLV'
+#        'GNQ' 'ERI' 'EST' 'ETH' 'FLK' 'FRO' 'FJI' 'FIN' 'FRA' 'GUF' 'ATF' 'GAB'
+#        'GMB' 'GEO' 'DEU' 'GHA' 'GIB' 'GRC' 'GRL' 'GRD' 'GLP' 'GTM' 'GGY' 'GIN'
+#        'GNB' 'GUY' 'HTI' 'VAT' 'HND' 'HUN' 'ISL' 'IND' 'IDN' 'IRN' 'IRQ' 'IRL'
+#        'IMN' 'ISR' 'ITA' 'JAM' 'JPN' 'JEY' 'JOR' 'KAZ' 'KEN' 'KIR' 'KOR' 'PRK'
+#        'KWT' 'KGZ' 'LAO' 'LVA' 'LBN' 'LSO' 'LBR' 'LBY' 'LIE' 'LTU' 'LUX' 'MDG'
+#        'MWI' 'MYS' 'MDV' 'MLI' 'MLT' 'MTQ' 'MRT' 'MUS' 'MYT' 'MEX' 'FSM' 'MDA'
+#        'MCO' 'MNG' 'MNE' 'MSR' 'MAR' 'MOZ' 'MMR' 'NAM' 'NRU' 'NPL' 'NLD' 'NCL'
+#        'NZL' 'NIC' 'NER' 'NGA' 'NFK' 'MKD' 'NOR' 'OMN' 'PAK' 'PLW' 'PSE' 'PAN'
+#        'PNG' 'PRY' 'PER' 'PHL' 'POL' 'PRT' 'PRI' 'QAT' 'COG' 'ROU' 'RUS' 'RWA'
+#        'REU' 'BLM' 'KNA' 'LCA' 'MAF' 'SPM' 'VCT' 'SMR' 'STP' 'SAU' 'SEN' 'SRB'
+#        'SYC' 'SLE' 'SGP' 'SXM' 'SVK' 'SVN' 'SLB' 'SOM' 'ZAF' 'SSD' 'ESP' 'LKA'
+#        'SDN' 'SUR' 'SJM' 'SWZ' 'SWE' 'CHE' 'SYR' 'TWN' 'TJK' 'TZA' 'THA' 'TGO'
+#        'TTO' 'TUN' 'TUR' 'TKM' 'TCA' 'TUV' 'USA' 'UGA' 'UKR' 'ASM' 'ATA' 'COK'
+#        'GUM' 'MHL' 'PYF' 'TON' 'WLF' 'WSM' 'ARE' 'GBR' 'UMI' 'URY' 'UZB' 'VUT'
+#        'VEN' 'VNM' 'VIR' 'ESH' 'YEM' 'ZMB' 'ZWE' 'NA' 'ALA']
 years = list(range(2016, 2025))
 
 
@@ -54,7 +55,7 @@ removals_col = "veg__gross_removals__all_C_pools__MgCO2_yr"
 emissions_col = ( "veg__gross_emissions__all_C_pools__all_gases__MgCO2e_yr")
 mineral_removals_col = ("SOC_gain__mineral_soil_extent__0_30cm_MgCO2_yr")
 mineral_emissions_col = ("SOC_loss__mineral_soil_extent__0_30cm_MgCO2_yr")
-organic_emissions_col = ("org_soil_drained_burned__all_gases__MgCO2e_yr")
+organic_emissions_col = ("org_soil_emis__all_gases__MgCO2e_yr")
 
 
 # ---------------------------------------------------------------------
@@ -80,16 +81,19 @@ excluded_from_non_trees = (
 # READ PARQUET
 # ---------------------------------------------------------------------
 df = pd.read_parquet(veg_parquet)
+org_df = pd.read_parquet(org_soil_parquet)
 
 
 # ---------------------------------------------------------------------
 # CLEAN GROUPING COLUMNS
 # ---------------------------------------------------------------------
 # Normalize ISO codes
-df["adm0"] = (df["adm0"].astype(str).str.strip().str.upper())
+df["adm0"] = df["adm0"].astype(str).str.strip().str.upper()
+org_df["adm0"] = org_df["adm0"].astype(str).str.strip().str.upper()
 
 # Make sure year is numeric
 df["year"] = pd.to_numeric(df["year"], errors="coerce")
+org_df["year"] = pd.to_numeric(org_df["year"], errors="coerce")
 
 
 # ---------------------------------------------------------------------
@@ -108,6 +112,7 @@ print("\nRows before filtering:", len(df))
 # FILTER
 # ---------------------------------------------------------------------
 df = df[df["adm0"].isin(isos) & df["year"].isin(years)].copy()
+org_df = org_df[org_df["adm0"].isin(isos) & org_df["year"].isin(years)].copy()
 
 # ---------------------------------------------------------------------
 # HELPER
@@ -192,7 +197,7 @@ out["mineral_soil_emissions"] = summarize(df, mineral_emissions_col)
 # ---------------------------------------------------------------------
 # ORGANIC SOIL
 # ---------------------------------------------------------------------
-out["organic_soil_emissions"] = summarize(df, organic_emissions_col)
+out["organic_soil_emissions"] = summarize(org_df, organic_emissions_col)
 
 
 # ---------------------------------------------------------------------
@@ -264,12 +269,12 @@ out = out[column_order]
 # ---------------------------------------------------------------------
 # Divide every column except iso and year by 1e6.
 # Use column positions because some column names intentionally occur twice.
-for i, col in enumerate(out.columns):
-    if col not in ["iso", "year"]:
-        out.iloc[:, i] = pd.to_numeric(
-            out.iloc[:, i],
-            errors="coerce"
-        ) / 1e6
+# for i, col in enumerate(out.columns):
+#     if col not in ["iso", "year"]:
+#         out.iloc[:, i] = pd.to_numeric(
+#             out.iloc[:, i],
+#             errors="coerce"
+#         ) / 1e6
 
 
 # ---------------------------------------------------------------------
