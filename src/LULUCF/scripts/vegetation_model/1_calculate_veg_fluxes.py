@@ -490,10 +490,8 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                 c_dens_in_tree_crops = [agc_dens_in, bgc_dens_in, np.float32(0), np.float32(0)]
                 # Trees outside forests: no deadwood or litter carbon
                 c_dens_in_ToF = [agc_dens_in, bgc_dens_in, np.float32(0), np.float32(0)]
-                # Annual crops: only AGC
+                # Annual crops: only AGC. Forces other carbon pools to 0, which can violate mass-balance (BGC, deadwood and litter disappear without corresponding emissions)
                 c_dens_in_cropland = [np.float32(cn.cropland_agc_dens), np.float32(0), np.float32(0), np.float32(0)]
-                # Short vegetation: no deadwood or litter carbon. Forces them to 0, which can violate mass-balance (deadwood and litter disappear without corresponding emisssions)
-                c_dens_in_short_veg = [agc_dens_in, bgc_dens_in, np.float32(0), np.float32(0)]
                 # No starting carbon
                 c_dens_in_empty = [np.float32(0), np.float32(0), np.float32(0), np.float32(0)]
 
@@ -763,7 +761,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
 
                 node = 0
                 gain_year_count = 0
-                agc_ef_out_cell = 0  # AGC emission factor is reported as 0 unless specified otherwise
+                EF_AGC_out_cell = 0  # AGC emission factor is reported as 0 unless specified otherwise
 
 
                 ### Mangrove gain
@@ -779,7 +777,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                         # Only AGC and BGC pools are used to calculate emissions for temp mangrove loss
                         mang_c_pools_EF_no_fire = cn.biomass_emissions_only
 
-                        (c_gross_emis_out, c_gross_removals_out, c_dens_out, agc_ef_out_cell, gain_year_count, forest_age_end_of_interval) = (
+                        (c_gross_emis_out, c_gross_removals_out, c_dens_out, EF_AGC_out_cell, gain_year_count, forest_age_end_of_interval) = (
                             nu.calc_mang_loss(interval_length, first_mang_gain_year, first_mang_loss_year, interval_start_year,
                                 mang_c_pools_EF_no_fire, mang_loss_year_in_interval, mang_gain_year_count_pre_loss, mang_gain_year_count_post_loss,
                                 RF_AGC_final_cell, RF_BGC_final, c_dens_in, deadwood_c_ratio_mang, litter_c_ratio_mang))
@@ -812,7 +810,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                     else:
                         mang_c_pools_EF_no_fire = cn.biomass_emissions_only
 
-                    (c_gross_emis_out, c_gross_removals_out, c_dens_out, agc_ef_out_cell, gain_year_count, forest_age_end_of_interval) = (
+                    (c_gross_emis_out, c_gross_removals_out, c_dens_out, EF_AGC_out_cell, gain_year_count, forest_age_end_of_interval) = (
                         nu.calc_mang_loss(interval_length, first_mang_gain_year, first_mang_loss_year, interval_start_year,
                             mang_c_pools_EF_no_fire, mang_loss_year_in_interval, mang_gain_year_count_pre_loss, mang_gain_year_count_post_loss,
                             RF_AGC_final_cell, RF_BGC_final, c_dens_in, deadwood_c_ratio_mang, litter_c_ratio_mang))
@@ -865,7 +863,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                         state_out = nu.accrete_node(node, 1)    # Mangrove remaining mangrove + temp loss in interval (131)
                         mang_c_pools_EF_no_fire = cn.biomass_emissions_only
 
-                        (c_gross_emis_out, c_gross_removals_out, c_dens_out, agc_ef_out_cell, gain_year_count, forest_age_end_of_interval) = (
+                        (c_gross_emis_out, c_gross_removals_out, c_dens_out, EF_AGC_out_cell, gain_year_count, forest_age_end_of_interval) = (
                             nu.calc_mang_loss(interval_length, first_mang_gain_year, first_mang_loss_year, interval_start_year,
                                 mang_c_pools_EF_no_fire, mang_loss_year_in_interval, mang_gain_year_count_pre_loss, mang_gain_year_count_post_loss,
                                 RF_AGC_final_cell, RF_BGC_final, c_dens_in, deadwood_c_ratio_mang, litter_c_ratio_mang))
@@ -943,7 +941,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                             litter_c_ratio = 0
                             c_dens_in_for_gain = c_dens_in_empty
                     # NoData assignment and calculations for branch
-                    agc_ef_out_cell = np.nan  # Emissions not possible for branch (builds on any existing carbon), so emission factor given NoData
+                    EF_AGC_out_cell = np.nan  # Emissions not possible for branch (builds on any existing carbon), so emission factor given NoData
                     c_gross_emis_out = np.array([np.nan, np.nan, np.nan, np.nan]).astype('float32')  # Mg C/ha/interval
                     non_co2_flux_out = np.array([np.nan, np.nan]).astype('float32')   # Emissions from fire not possible for tree gain
                     composite_primary_forest_cell = 0   # Landcover class sets composite primary forest value to 0
@@ -1107,7 +1105,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                     forest_age_end_of_interval = 0   # Resets the forest age to 0 because there was full loss
                     gain_year_count = 0   # No gain in loss years, so set to 0.
                     (state_out, c_gross_emis_out, c_gross_removals_out, non_co2_flux_out, c_dens_out,
-                     RF_AGC_final_cell, agc_ef_out_cell) = nu.calc_T_NT(
+                     RF_AGC_final_cell, EF_AGC_out_cell) = nu.calc_T_NT(
                         node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                         c_pools_EF_no_fire, c_dens_in, rf_post_dist, Cf_forest, Gef_ch4_forest, Gef_n2o_forest)
 
@@ -1124,7 +1122,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                         rf_post_dist = cn.no_post_dist_removals   # No oil palm removals in the interval of loss
                         composite_primary_forest_cell = 0  # Sets composite primary forest value to 0 for this entire branch because loss has occurred
                         (state_out, c_gross_emis_out, c_gross_removals_out, non_co2_flux_out, c_dens_out,
-                         RF_AGC_final_cell, agc_ef_out_cell) = nu.calc_T_NT(
+                         RF_AGC_final_cell, EF_AGC_out_cell) = nu.calc_T_NT(
                             node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                             c_pools_EF_no_fire, c_dens_in, rf_post_dist, Cf_forest, Gef_ch4_forest, Gef_n2o_forest)
                     else:  # Trees remaining trees- no conversion to oil palm (42)
@@ -1168,7 +1166,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                             gain_year_count = 0   # No gain in disturbance years, so set to 0.
                             RF_AGC_final_cell = np.nan  # No removals in disturbance years, so RFs and gross removals are given NoData
                             c_gross_removals_out = np.array([np.nan, np.nan, np.nan, np.nan]).astype('float32')
-                            (state_out, c_gross_emis_out, non_co2_flux_out, c_dens_out, agc_ef_out_cell) = nu.calc_T_T_non_stand_disturbs(
+                            (state_out, c_gross_emis_out, non_co2_flux_out, c_dens_out, EF_AGC_out_cell) = nu.calc_T_T_non_stand_disturbs(
                                 node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
                                 c_pools_EF_no_fire, c_dens_in, Cf_forest, Gef_co2_forest, Gef_ch4_forest, Gef_n2o_forest)
 
@@ -1232,7 +1230,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                                     deadwood_c_ratio = 0
                                     litter_c_ratio = 0
                             # NoData assignments and calculation for branch
-                            (state_out, c_gross_emis_out, c_gross_removals_out, agc_ef_out_cell,
+                            (state_out, c_gross_emis_out, c_gross_removals_out, EF_AGC_out_cell,
                              non_co2_flux_out, c_dens_out, gain_year_count,
                              forest_age_end_of_interval) = nu.calc_T_T_no_disturbs(
                                 node, forest_age_start_of_interval, first_year_burned_during_interval,
@@ -1248,7 +1246,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                     state_out = nu.accrete_node(node, 1)  # Annual crop gain (51)
                     c_pools_EF_no_fire = cn.all_non_soil_pools  # Fire not considered in intervals with annual crop gain, so no fire option
                     RF_AGC_final_cell = cn.cropland_rf
-                    agc_ef_out_cell = c_pools_EF_no_fire[0]  # Emission factor used for output geotif
+                    EF_AGC_out_cell = c_pools_EF_no_fire[0]  # Emission factor used for output geotif
                     rf_array = np.array([RF_AGC_final_cell, 0, 0, 0]).astype('float32')
                     # NoData assignments and calculation for branch
                     forest_age_end_of_interval = 0  # Sets forest age to 0 because there's no forest
@@ -1265,13 +1263,13 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                         c_pools_EF_no_fire = cn.agc_emissions_only  # There should only be AGC in crops anyway
                         RF_AGC_final_cell = short_veg_AGC_BGC_RF_adj[0]  # Sets the output RF to use the AGC short veg gain RF
                         c_dens_in = c_dens_in_cropland
-                        agc_ef_out_cell = c_pools_EF_no_fire[0]  # Emission factor used for output geotif
+                        EF_AGC_out_cell = c_pools_EF_no_fire[0]  # Emission factor used for output geotif
                         rf_post_dist = short_veg_AGC_BGC_RF_adj  # Post conversion removals to short veg
                     elif water_LC_curr:
                         node = nu.accrete_node(node, 2)  # Annual crop loss to water (522->5222) (no fire option)
                         c_pools_EF_no_fire = cn.agc_emissions_only  # There should only be AGC in crops anyway
                         c_dens_in = c_dens_in_cropland
-                        agc_ef_out_cell = c_pools_EF_no_fire[0]  # Emission factor used for output geotif
+                        EF_AGC_out_cell = c_pools_EF_no_fire[0]  # Emission factor used for output geotif
                         rf_post_dist = cn.no_post_dist_removals
                         RF_AGC_final_cell = np.nan   # No removals possible, so need to assign this output to NaN
                         burned_in_current_interval = 0  # No fire possible in this case
@@ -1279,7 +1277,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                         node = nu.accrete_node(node, 3)  # Annual crop loss to anything else (522->5239/5232) (fire option permitted because water is its own branch)
                         c_pools_EF_no_fire = cn.agc_emissions_only  # There should only be AGC in crops anyway
                         c_dens_in = c_dens_in_cropland
-                        agc_ef_out_cell = c_pools_EF_no_fire[0]  # Emission factor used for output geotif
+                        EF_AGC_out_cell = c_pools_EF_no_fire[0]  # Emission factor used for output geotif
                         rf_post_dist = cn.no_post_dist_removals
                         RF_AGC_final_cell = np.nan   # No removals possible, so need to assign this output to NaN
                     # NoData assignments and calculation for branch
@@ -1322,18 +1320,18 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                         # NoData assignments and calculation for branch
                         forest_age_end_of_interval = 0  # Sets forest age to 0 because there's no forest
                         composite_primary_forest_cell = 0   # Land cover class sets composite primary forest value to 0
-                        agc_ef_out_cell = np.nan   # Emissions not possible for branch (starting landcover has no vegetation), so emission factor given NoData
+                        EF_AGC_out_cell = np.nan   # Emissions not possible for branch (starting landcover has no vegetation), so emission factor given NoData
                         non_co2_flux_out = np.array([np.nan, np.nan]).astype('float32')   # Emissions from fire not possible for short veg gain
                         c_gross_emis_out = np.array([np.nan, np.nan, np.nan, np.nan]).astype('float32')    # No emissions in short veg gain (starting landcover has no vegetation)
-                        c_gross_removals_out, c_dens_out = nu.calc_short_veg_gain(rf_array)
+                        c_gross_removals_out, c_dens_out = nu.calc_short_veg_gain(c_dens_in, rf_array)
                     else:
                         state_out = nu.accrete_node(node, 2)  # Short vegetation gain without GPW height confirmation (no removals) (612)
                         # NoData assignments and calculation for branch
                         forest_age_end_of_interval = 0  # Sets forest age to 0 because there's no forest
-                        composite_primary_forest_cell = 0  # Landcover class sets composite primary forest value to 0
+                        composite_primary_forest_cell = 0  # Land cover class sets composite primary forest value to 0
                         RF_AGC_final_cell = np.nan
-                        agc_ef_out_cell = np.nan
-                        c_dens_out = np.array([0, 0, 0, 0]).astype('float32')  # Land cover has no vegetation so density is 0 (as opposed to NaN)
+                        EF_AGC_out_cell = np.nan
+                        c_dens_out = np.array([0, 0, deadwood_c_dens_in, litter_c_dens_in]).astype('float32')  # Residual deadwood and litter C can be carried through. Otherwise, they disappear upon short veg gain and violate mass-balance.
                         c_gross_emis_out = np.array([np.nan, np.nan, np.nan, np.nan]).astype('float32')
                         non_co2_flux_out = np.array([np.nan, np.nan]).astype('float32')  # No confirmed vegetation, so fire emissions not possible
                         c_gross_removals_out = np.array([np.nan, np.nan, np.nan, np.nan]).astype('float32')
@@ -1350,20 +1348,18 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                         node = nu.accrete_node(node, 1)  # Short vegetation loss with GPW height confirmation (fluxes calculated) (621)
                         if water_LC_curr:
                             node = nu.accrete_node(node, 1)  # Short vegetation converted to water with GPW height confirmation (6211->62112) (no fire option)
-                            c_dens_in = c_dens_in_short_veg
-                            c_pools_EF_no_fire = cn.biomass_emissions_only
+                            c_pools_EF_no_fire = cn.all_non_soil_pools  # Includes any residual deadwood or litter C
                             burned_in_current_interval = 0    # No fire emissions when short veg is converted to water. Simplest way is to just overwrite the burned count.
-                            agc_ef_out_cell = c_pools_EF_no_fire[0]  # Emission factor used for output geotif
+                            EF_AGC_out_cell = c_pools_EF_no_fire[0]  # Emission factor used for output geotif
                         else:
                             node = nu.accrete_node(node, 2)  # Short vegetation converted to non-tall veg/annual crop/water with GPW height confirmation (6212->62129/62122)
-                            c_dens_in = c_dens_in_short_veg
-                            c_pools_EF_no_fire = cn.biomass_emissions_only
-                            agc_ef_out_cell = c_pools_EF_no_fire[0]  # Emission factor used for output geotif
+                            c_pools_EF_no_fire = cn.all_non_soil_pools  # Includes any residual deadwood or litter C
+                            EF_AGC_out_cell = c_pools_EF_no_fire[0]  # Emission factor used for output geotif
                         # NoData assignments and calculation for branch
                         forest_age_end_of_interval = 0  # Sets forest age to 0 because there's no forest
                         composite_primary_forest_cell = 0  # Land cover class sets composite primary forest value to 0
                         RF_AGC_final_cell = np.nan   # No removals possible, so need to assign this output to NaN
-                        c_gross_removals_out = np.array([np.nan, np.nan, np.nan, np.nan]).astype('float32')   # No removals in short veg loss (end landcover has no vegetation)
+                        c_gross_removals_out = np.array([np.nan, np.nan, np.nan, np.nan]).astype('float32')   # No removals in short veg loss (end land cover has no vegetation)
                         (state_out, c_gross_emis_out, c_dens_out, non_co2_flux_out) = nu.calc_short_veg_loss(node, c_dens_in, c_pools_EF_no_fire,
                                                                                 burned_in_current_interval, Cf_grassland,
                                                                                 Gef_CH4_grassland, Gef_N2O_grassland)
@@ -1374,8 +1370,8 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                         forest_age_end_of_interval = 0  # Sets forest age to 0 because there's no forest
                         composite_primary_forest_cell = 0  # Land cover class sets composite primary forest value to 0
                         RF_AGC_final_cell = np.nan  # No removals possible, so need to assign this output to NaN
-                        agc_ef_out_cell = np.nan
-                        c_dens_out = np.array([0, 0, 0, 0]).astype('float32')  # Land cover has no vegetation so density is 0 (as opposed to NaN)
+                        EF_AGC_out_cell = np.nan  # Loss not confirmed, so no emissions possible either
+                        c_dens_out = np.array([0, 0, deadwood_c_dens_in, litter_c_dens_in]).astype('float32')  # Residual deadwood and litter C can be carried through. Otherwise, they disappear upon short veg loss and violate mass-balance.
                         c_gross_emis_out = np.array([np.nan, np.nan, np.nan, np.nan]).astype('float32')
                         non_co2_flux_out = np.array([np.nan, np.nan]).astype('float32')  # No confirmed vegetation, so fire emissions not possible
                         c_gross_removals_out = np.array([np.nan, np.nan, np.nan, np.nan]).astype('float32')
@@ -1386,10 +1382,9 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                 elif GLAD_short_veg_LC_prev and GLAD_short_veg_LC_curr:
                     node = nu.accrete_node(node, cn.grassland_node)  # General short veg node code (6)
                     node = nu.accrete_node(node, 3)  # Short vegetation remaining short vegetation (63->639/632)
-                    c_dens_in = c_dens_in_short_veg  # Forces deadwood and litter C to 0, regardless of any residual stocks
                     # NoData assignments and calculation for branch
                     forest_age_end_of_interval = 0  # Sets forest age to 0 because there's no forest
-                    composite_primary_forest_cell = 0  # Landcover class sets composite primary forest value to 0
+                    composite_primary_forest_cell = 0  # Land cover class sets composite primary forest value to 0
                     (state_out, c_gross_emis_out, c_gross_removals_out,
                      c_dens_out, non_co2_flux_out) = nu.calc_short_veg_short_veg(node, c_dens_in, burned_in_current_interval,
                                                                                  Cf_grassland, Gef_CH4_grassland, Gef_N2O_grassland)
@@ -1409,7 +1404,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                         c_gross_removals_out = np.array([np.nan, np.nan, np.nan, np.nan]).astype('float32')
                         non_co2_flux_out = np.array([np.nan, np.nan]).astype('float32')
                         RF_AGC_final_cell = np.nan
-                        agc_ef_out_cell = np.nan
+                        EF_AGC_out_cell = np.nan
 
                     else:
                         state_out = cn.other_landcover_node    # 7 (bare ground, built-up without trees, non-ocean water, maybe something else)
@@ -1425,7 +1420,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                         c_gross_removals_out = np.array([np.nan, np.nan, np.nan, np.nan]).astype('float32')
                         non_co2_flux_out = np.array([np.nan, np.nan]).astype('float32')
                         RF_AGC_final_cell = np.nan
-                        agc_ef_out_cell = np.nan
+                        EF_AGC_out_cell = np.nan
 
 
                 ### Populates the output arrays with the calculated fluxes and densities
@@ -1479,7 +1474,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                 part_or_full_dist_in_earlier_intervals_block[row, col] = part_or_full_dist_in_earlier_intervals
                 part_or_full_dist_in_curr_interval_block[row, col] = part_or_full_dist_in_curr_interval
                 burned_in_current_interval_block[row, col] = burned_in_current_interval
-                agc_ef_out_block[row, col] = agc_ef_out_cell
+                agc_ef_out_block[row, col] = EF_AGC_out_cell
                 composite_primary_forest_block[row, col] = composite_primary_forest_cell
 
         # os.quit()   # For testing the first interval
@@ -2197,9 +2192,6 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
 
 
     # This approach handles large task lists (graphs) better than [dask.delayed(calculate_and_upload_vegetation_fluxes ... )]
-    # safe_vegetation_task is supposed to report task/worker crashes.
-    # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6949a74e-1388-832d-8f8e-5e9bf084ecb8
-    # That chat has a table that explains what different combinations of traceback & memory presence/absence mean for the failure.
     futures = []
     for chunk in chunk_list:
         future = client.submit(

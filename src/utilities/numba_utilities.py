@@ -1484,18 +1484,14 @@ def calc_cropland_cropland(node, c_dens_in, times_burned_in_interval, Cf_crop_re
 
 # Gross fluxes and ending carbon stocks for non-short vegetation/non-forest/non-cropland converted to short vegetation.
 @jit(nopython=True)
-def calc_short_veg_gain(rf):
+def calc_short_veg_gain(c_dens_in, rf):
 
-    # Step 1: C densities should already be 0 because the starting LC should have been forced to 0s, but this is safer.
-    c_dens_in = [0, 0, 0, 0]
-
-    # Step 2: Calculates gross removals.
-    # Gross removals is the annual crop AGC removals after residual carbon is lost (Mg C/ha/interval).
+    # Step 1: Calculates gross removals.
     # Gross removals is negative.
     c_gross_removals_out = -1 * rf
 
-    # Step 3: Calculates ending carbon densities by carbon pool (Mg C/ha).
-    # Starts with carbon density in (list converted to np array), subtracts emissions (positive value), subtracts cropland removals (negative value).
+    # Step 2: Calculates ending carbon densities by carbon pool (Mg C/ha).
+    # Starts with carbon density in (list converted to np array), subtracts short veg removals (negative value).
     # Ending carbon pools are not affected by non-CO2 emissions in the next step.
     c_dens_out = np.array(c_dens_in).astype('float32') - c_gross_removals_out
 
@@ -1514,7 +1510,7 @@ def calc_short_veg_loss(node, c_dens_in, c_pools_no_fire, burned_in_current_inte
     agc_ef_CO2, bgc_ef_CO2, deadwood_c_ef_CO2, litter_c_ef_CO2 = unpack_emission_factors(c_pools_no_fire)
 
 
-    # Step 1: Calculates carbon densities (all pools 0 Mg C/ha), carbon gross emissions (AGC only) and carbon gross removals (none)
+    # Step 1: Calculates carbon densities and carbon gross emissions (all pools). No removals.
     agc_gross_emis_out = agc_dens_in * agc_ef_CO2
     bgc_gross_emis_out = bgc_dens_in * bgc_ef_CO2
     deadwood_c_gross_emis_out = deadwood_c_dens_in * deadwood_c_ef_CO2

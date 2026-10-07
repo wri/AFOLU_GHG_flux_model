@@ -93,6 +93,184 @@ def print_and_log(text, is_large_run, logger):
         print(text, flush=True)
 
 
+### New approach for compiling worker logs, from Claude conversation 'Missing worker tasks in veg log'
+
+import gzip
+from datetime import datetime, timedelta
+
+import coiled
+import pytz
+
+# Patterns for selecting lines for the readable worker log.
+# The raw worker log keeps everything regardless of these.
+FLM_TAG = "flm:"
+SEVERITY_PATTERN = re.compile(r"\b(WARNING|ERROR|CRITICAL)\b")
+LIFECYCLE_PATTERN = re.compile(
+    # Task failures
+    r"KilledWorker|marked as failed|"
+    # Worker process deaths and restarts (nanny)
+    r"Worker process died unexpectedly|Nanny asking worker to close|Worker process still alive|"
+    r"Failed to restart worker|Restarting worker|"
+    # Scheduler removing workers
+    r"Remove worker|Removing worker|Lost all workers|"
+    # Memory
+    r"memory usage\. (Pausing|Resuming) worker|Unmanaged memory use is high|Worker memory limit|"
+    # System-level (not from Dask; unverified against Coiled system logs)
+    r"\bOOM\b|oom-kill|Out of memory|Segmentation fault|SIGSEGV|SIGKILL|"
+    # Communication problems
+    r"CommClosedError|Timed out",
+    re.IGNORECASE,
+)
+TRACEBACK_START = "Traceback (most recent call last)"
+TRACEBACK_CONTINUATION = re.compile(
+    r"^\s|^$|^[\w.]+(Error|Exception|Exit|Interrupt|Warning)\b|"
+    r"^During handling of the above exception|^The above exception was the direct cause"
+)
+
+
+# Converts a timestr()-format string (US/Eastern, %Y%m%d_%H_%M_%S) to epoch milliseconds
+def _timestr_to_epoch_ms(time_str):
+    eastern = pytz.timezone('US/Eastern')
+    t = eastern.localize(datetime.strptime(time_str, "%Y%m%d_%H_%M_%S"))
+    return int(t.timestamp() * 1000)
+
+
+# Maps Coiled instance ids to readable labels (scheduler or worker name)
+def _coiled_instance_labels(cluster_id, workspace):
+    details = coiled.cluster_details(cluster_id, workspace=workspace)
+    labels = {}
+    scheduler_id = (details.get("scheduler") or {}).get("instance", {}).get("id")
+    if scheduler_id:
+        labels[scheduler_id] = "scheduler"
+    for worker in details.get("workers", []):
+        if worker.get("instance"):
+            labels[worker["instance"]["id"]] = worker.get("name") or str(worker["instance"]["id"])
+    return labels
+
+
+# Yields all Coiled log events (dask + system, all instances) between since_ms and until_ms, oldest first.
+# The endpoint returns a limited number of events per request, so this pages forward from the last
+# timestamp received, skipping events already seen at that timestamp (same approach as `coiled cluster logs`).
+def _iter_coiled_log_events(cluster_id, workspace, since_ms, until_ms, logger, progress_every=25):
+    from_ts = since_ms
+    seen_at_from_ts = set()
+    pages = 0
+    n_events = 0
+
+    while True:
+        events = coiled.better_cluster_logs(cluster_id=cluster_id, workspace=workspace,
+                                            dask=True, system=True,
+                                            since_ms=from_ts, until_ms=until_ms)
+
+        new_events = [e for e in events
+                      if not (e["timestamp"] == from_ts and
+                              f"{e['timestamp']}#{e.get('instance_id')}#{e['message']}" in seen_at_from_ts)]
+        if not new_events:
+            break
+
+        for e in new_events:
+            yield e
+
+        # Tracks events at the newest timestamp so they aren't repeated on the next page
+        last_ts = new_events[-1]["timestamp"]
+        last_keys = {f"{e['timestamp']}#{e.get('instance_id')}#{e['message']}"
+                     for e in new_events if e["timestamp"] == last_ts}
+        seen_at_from_ts = seen_at_from_ts | last_keys if last_ts == from_ts else last_keys
+        from_ts = last_ts
+
+        pages += 1
+        n_events += len(new_events)
+        if pages % progress_every == 0:
+            t = datetime.fromtimestamp(from_ts / 1000, pytz.timezone('US/Eastern')).strftime("%Y%m%d_%H_%M_%S")
+            logger.info(f"  Retrieved {n_events} log events in {pages} requests (up to {t}): {uu.timestr()}")
+
+
+# Log compilation and uploading
+# Gets the logs for the scheduler and all workers (including replaced workers) from Coiled for the whole stage.
+# Writes two files:
+#   1. Raw log (gzipped, uploaded to s3): every log line from every instance, unfiltered.
+#   2. Readable log (returned, later merged with main log): flm lines, warnings/errors, tracebacks,
+#      and worker lifecycle events (killed, lost, memory, etc.), labeled by instance.
+def compile_worker_logs_new(no_log, cluster, stage, start_time_str, logger):
+
+    # Only consolidates the worker logs and uploads to s3 if not deactivated
+    if no_log:
+        return
+
+    log_time = time.strftime('%Y%m%d_%H_%M_%S')
+    combined_worker_log_name = f"{cn.combined_log}_workers_{stage}_{log_time}.log"
+    worker_log_local_path = f"{cn.local_log_path}{combined_worker_log_name}"
+    raw_worker_log_name = f"{cn.combined_log}_workers_raw_{stage}_{log_time}.log.gz"
+    raw_worker_log_local_path = f"{cn.local_log_path}{raw_worker_log_name}"
+
+    logger.info(f"Combining worker logs into {combined_worker_log_name} (raw: {raw_worker_log_name}): {uu.timestr()}")
+
+    cluster_id = cluster.cluster_id
+    workspace = cluster.workspace
+    instance_labels = _coiled_instance_labels(cluster_id, workspace)
+
+    # Starts a bit before the stage start to catch worker startup messages
+    since_ms = _timestr_to_epoch_ms(start_time_str) - int(timedelta(minutes=10).total_seconds() * 1000)
+    until_ms = int(time.time() * 1000)
+
+    eastern = pytz.timezone('US/Eastern')
+    in_traceback = {}   # Per-instance flag for whether the current line continues a traceback
+    n_raw = n_kept = n_flm = n_severity = n_tracebacks = 0
+
+    with gzip.open(raw_worker_log_local_path, "wt") as raw_file, open(worker_log_local_path, "w") as readable_file:
+        for event in _iter_coiled_log_events(cluster_id, workspace, since_ms, until_ms, logger):
+
+            instance_id = event.get("instance_id")
+            label = instance_labels.get(instance_id, str(instance_id or event.get("instance", "unknown")))
+            t = datetime.fromtimestamp(event["timestamp"] / 1000, eastern).strftime("%Y-%m-%d %H:%M:%S")
+
+            # An event can contain multiple lines (e.g., a traceback), so they are handled together
+            lines = event["message"].split("\n")
+            out_lines = [f"({label}) {t} {line}\n" for line in lines]
+
+            for out_line in out_lines:
+                raw_file.write(out_line)
+            n_raw += len(lines)
+
+            # Keeps the whole event if any of its lines match, so that multi-line records
+            # (e.g., Dask's "Compute Failed" with Key/Exception/Traceback) stay intact
+            has_flm = any(FLM_TAG in line for line in lines)
+            has_severe = any(SEVERITY_PATTERN.search(line) for line in lines)
+            has_lifecycle = any(LIFECYCLE_PATTERN.search(line) for line in lines)
+            has_tb_start = any(TRACEBACK_START in line for line in lines)
+
+            # Tracebacks split across separate events are followed until a non-traceback line
+            continues_tb = in_traceback.get(instance_id) and TRACEBACK_CONTINUATION.match(lines[0])
+
+            if has_tb_start:
+                in_traceback[instance_id] = True
+                n_tracebacks += 1
+            elif not continues_tb:
+                in_traceback[instance_id] = False
+
+            if has_flm or has_severe or has_lifecycle or has_tb_start or continues_tb:
+                readable_file.writelines(out_lines)
+                n_kept += len(lines)
+                n_flm += has_flm
+                n_severity += has_severe
+
+    # Uploads the raw log to s3 so that nothing is lost even if the readable filter is too narrow
+    s3_client = boto3.client("s3")
+    s3_client.upload_file(raw_worker_log_local_path, "gfw2-data", Key=f"{cn.s3_log_path}{raw_worker_log_name}")
+
+    # Counts unique chunks that finished, as a quick check of log completeness
+    with open(worker_log_local_path, "r") as f:
+        finished_chunks = set(re.findall(r"Total chunk processing for (\S+)", f.read()))
+
+    logger.info(f"Worker log lines: {n_raw} raw, {n_kept} kept in readable log "
+                f"({n_flm} flm, {n_severity} WARNING/ERROR/CRITICAL, {n_tracebacks} tracebacks)")
+    logger.info(f"Unique chunks with 'Total chunk processing' in worker log: {len(finished_chunks)}")
+    logger.info(f"Raw worker log uploaded to s3://gfw2-data/{cn.s3_log_path}{raw_worker_log_name}: {uu.timestr()}")
+
+    return worker_log_local_path
+
+
+
 # Log compilation and uploading
 # From https://chatgpt.com/share/e/4fe1e9c8-05a0-4e9d-8eee-64168891b5e2
 # Gets the logs for all workers
