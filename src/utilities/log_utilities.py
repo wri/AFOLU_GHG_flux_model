@@ -6,6 +6,10 @@ import statistics
 import sys
 import time
 import numpy as np
+import gzip
+from datetime import datetime, timedelta
+import coiled
+import pytz
 
 from dask.distributed import print
 
@@ -94,13 +98,6 @@ def print_and_log(text, is_large_run, logger):
 
 
 ### New approach for compiling worker logs, from Claude conversation 'Missing worker tasks in veg log'
-
-import gzip
-from datetime import datetime, timedelta
-
-import coiled
-import pytz
-
 # Patterns for selecting lines for the readable worker log.
 # The raw worker log keeps everything regardless of these.
 FLM_TAG = "flm:"
@@ -114,7 +111,7 @@ LIFECYCLE_PATTERN = re.compile(
     # Scheduler removing workers
     r"Remove worker|Removing worker|Lost all workers|"
     # Memory
-    r"memory usage\. (Pausing|Resuming) worker|Unmanaged memory use is high|Worker memory limit|"
+    r"memory budget|memory usage\. (Pausing|Resuming) worker|Unmanaged memory use is high|Worker memory limit|"
     # System-level (not from Dask; unverified against Coiled system logs)
     r"\bOOM\b|oom-kill|Out of memory|Segmentation fault|SIGSEGV|SIGKILL|"
     # Communication problems
@@ -266,43 +263,6 @@ def compile_worker_logs_new(no_log, cluster, stage, start_time_str, logger):
                 f"({n_flm} flm, {n_severity} WARNING/ERROR/CRITICAL, {n_tracebacks} tracebacks)")
     logger.info(f"Unique chunks with 'Total chunk processing' in worker log: {len(finished_chunks)}")
     logger.info(f"Raw worker log uploaded to s3://gfw2-data/{cn.s3_log_path}{raw_worker_log_name}: {uu.timestr()}")
-
-    return worker_log_local_path
-
-
-
-# Log compilation and uploading
-# From https://chatgpt.com/share/e/4fe1e9c8-05a0-4e9d-8eee-64168891b5e2
-# Gets the logs for all workers
-def compile_worker_logs(no_log, cluster, stage, start_time_str, logger):
-
-    # Only consolidates the worker logs and uploads to s3 if not deactivated
-    if no_log:
-        return
-
-    combined_worker_log_name = f"{cn.combined_log}_workers_{stage}_{time.strftime('%Y%m%d_%H_%M_%S')}.log"
-    worker_log_local_path = f"{cn.local_log_path}{combined_worker_log_name}"
-
-    logger.info(f"Combining worker logs into {combined_worker_log_name}")
-
-    # Recovers legs from Coiled
-    logs = cluster.get_logs()
-
-    # Filters lines containing 'flm',
-    filtered_logs = []
-    for worker_id, log in logs.items():
-        for line in log.split('\n'):
-            if 'flm' in line:
-                filtered_logs.append(line)
-
-
-    combined_filtered_logs = (
-            "\n".join(filtered_logs) + "\n"
-    )
-
-    # Saves the filtered logs to a text file
-    with open(worker_log_local_path, "w") as file:
-        file.write(combined_filtered_logs)
 
     return worker_log_local_path
 

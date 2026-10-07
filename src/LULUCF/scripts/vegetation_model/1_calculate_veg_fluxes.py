@@ -85,7 +85,7 @@ from src.utilities import resize_cluster
 # To get enhanced logging from workers so that I can tell why they are lost. I don't know if this works.
 # Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6949a74e-1388-832d-8f8e-5e9bf084ecb8
 dask.config.set({
-    "distributed.logging.distributed": "info",   # show detailed worker logs
+    "distributed.logging.distributed": "info",
     "distributed.logging.bokeh": "critical",      # silence dashboard noise
 })
 
@@ -2181,207 +2181,217 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
         zarr_path = None
         outputs_to_zarr = False
 
-
-    ### Step 3: Create 1x1 degree outputs
-
-    # Creates list of tasks to run (1 task = 1 chunk)
-    main_logger.info(f"Creating tasks and starting processing: {uu.timestr()}")
-    main_logger.info("Workers' logs to be appended after main function log"+ "\n")
-
-    # Accumulates all output messages and statistics across batches
-    # From https://chatgpt.com/share/e/5599b6b0-1aaa-4d54-98d3-c720a436dd9a
-    all_results = []
-
-
-    # This approach handles large task lists (graphs) better than [dask.delayed(calculate_and_upload_vegetation_fluxes ... )]
+    # Steps 3-7 are wrapped so that, whatever happens, worker logs are collected, merged with the main log,
+    # and uploaded (Step 8, in the finally block). Errors are written to the main log before being re-raised.
+    # Reorganized per Claude conversation 'Missing worker tasks in veg log'
     futures = []
-    for chunk in chunk_list:
-        future = client.submit(
-                    calculate_and_upload_vegetation_fluxes,
-                    chunk, primary_forest_RF_array, partial_disturbance_EF_array, mangrove_C_ratio_array,
-                    download_dict_with_data_types, start_year, end_year, interval_length_list,
-                    output_years, is_large_run, no_upload, create_zarr,
-                    output_dir_list, stage, chunk_stats_prefix, model_type, zarr_path, outputs_to_zarr,
-                    retries=retries, key=f"vegflux-{chunk}")  # To prevent infinite retries and rerunning completed tasks (happens in global runs)
-        futures.append(future)
 
-    results = client.gather(futures)
+    try:
 
-    for result in results:
-        if isinstance(result, dict) and result.get("status") == "failed":
-            main_logger.error(
-                "Task failed\n"
-                f"Chunk: {result.get('chunk', 'unknown')}\n"
-                f"Error: {result['error']}\n"
-                f"Memory at failure (GB): {result['memory_at_failure']}\n"
-                f"Traceback:\n{result['traceback']}"
-            )
+        ### Step 3: Create 1x1 degree outputs
 
-    all_results.extend(results)
+        # Creates list of tasks to run (1 task = 1 chunk)
+        main_logger.info(f"Creating tasks and starting processing: {uu.timestr()}")
+        main_logger.info("Workers' logs to be appended after main function log" + "\n")
 
-    success_count, all_stats = uu.count_successful_chunks(chunk_list, is_large_run, main_logger, results)
+        # Accumulates all output messages and statistics across batches
+        # From https://chatgpt.com/share/e/5599b6b0-1aaa-4d54-98d3-c720a436dd9a
+        all_results = []
 
-    del futures
-    del results
-    client.run(gc.collect)
+        # This approach handles large task lists (graphs) better than [dask.delayed(calculate_and_upload_vegetation_fluxes ... )]
+        for chunk in chunk_list:
+            future = client.submit(
+                calculate_and_upload_vegetation_fluxes,
+                chunk, primary_forest_RF_array, partial_disturbance_EF_array, mangrove_C_ratio_array,
+                download_dict_with_data_types, start_year, end_year, interval_length_list,
+                output_years, is_large_run, no_upload, create_zarr,
+                output_dir_list, stage, chunk_stats_prefix, model_type, zarr_path, outputs_to_zarr,
+                retries=retries, key=f"vegflux-{chunk}")  # To prevent infinite retries and rerunning completed tasks (happens in global runs)
+            futures.append(future)
 
-    uu.stage_duration(start_time, uu.timestr(), stage, main_logger)
+        results = client.gather(futures)
 
+        all_results.extend(results)
 
-    ### Step 4: Gather worker logs (preliminary, just in case later step goes awry)
+        success_count, all_stats = uu.count_successful_chunks(chunk_list, is_large_run, main_logger, results)
 
-    # Collects worker logs before moving to processing that doesn't need the cluster
-    if not run_local:
+        futures = []
+        del results
+        client.run(gc.collect)
 
-        # Creates combined log from all workers if not deactivated
-        worker_log_local_path_prelim = lu.compile_worker_logs(no_log, cluster, stage, start_time, main_logger)
-        uu.stage_duration(start_time, uu.timestr(), f"{stage} with preliminary worker log compilation", main_logger)
+        uu.stage_duration(start_time, uu.timestr(), stage, main_logger)
 
+        ### Step 4: Consolidate chunk stats and export
 
-    ### Step 5: Consolidate chunk stats and export
+        # Prepares chunk stats spreadsheet: min, mean, max, and sum for all input and output chunks,
+        # and min and max values across all chunks for all inputs and outputs
+        # only if not suppressed by the --no_stats flag and at least one chunk was successful (wasn't skipped).
+        if (not no_stats) and (success_count > 0):
+            all_stats = uu.load_all_chunk_stats_from_s3(cn.short_bucket_prefix, chunk_stats_prefix)
+            main_logger.info(f"Loaded stats for {len(all_stats)} chunk-layer records (inputs + outputs) from S3 across all completed chunks")
+            model_chunk_stats_path = uu.compile_1x1_chunk_stats(all_stats, chunk_shapefile_uri, stage, no_upload, main_logger)
 
-    # Prepares chunk stats spreadsheet: min, mean, max, and sum for all input and output chunks,
-    # and min and max values across all chunks for all inputs and outputs
-    # only if not suppressed by the --no_stats flag and at least one chunk was successful (wasn't skipped).
-    if (not no_stats) and (success_count > 0):
-        all_stats = uu.load_all_chunk_stats_from_s3(cn.short_bucket_prefix, chunk_stats_prefix)
-        main_logger.info(f"Loaded stats for {len(all_stats)} chunk-layer records (inputs + outputs) from S3 across all completed chunks")
-        model_chunk_stats_path = uu.compile_1x1_chunk_stats(all_stats, chunk_shapefile_uri, stage, no_upload, main_logger)
+        ### Step 5: Compare model output chunk stats to zarr chunk stats for each variable (only if chunk stats and zarr created)
 
+        # Prepares chunk stats spreadsheet: min, mean, max, and sum for all input and output chunks,
+        # and min and max values across all chunks for all inputs and outputs
+        # only if not suppressed by the --no_stats flag and at least one chunk was successful (wasn't skipped).
+        if (not no_stats) and create_zarr:
 
-    ### Step 6: Compare model output chunk stats to zarr chunk stats for each variable (only if chunk stats and zarr created)
+            main_logger.info(f"Starting zarr chunk stats comparison: {uu.timestr()}")
 
-    # Prepares chunk stats spreadsheet: min, mean, max, and sum for all input and output chunks,
-    # and min and max values across all chunks for all inputs and outputs
-    # only if not suppressed by the --no_stats flag and at least one chunk was successful (wasn't skipped).
-    if (not no_stats) and create_zarr:
+            # Text added to output chunk stats table name(s) (Excel or Parquet)
+            comparison_insert = "_original_zarr_comparison"
 
-        main_logger.info(f"Starting zarr chunk stats comparison: {uu.timestr()}")
+            # The name of the chunk stats table from the model
+            model_chunk_stats_table_name = os.path.basename(model_chunk_stats_path)
+            # print(model_chunk_stats_table_name)
 
-        # Text added to output chunk stats table name(s) (Excel or Parquet)
-        comparison_insert = "_original_zarr_comparison"
+            tables_to_compare_dict, zarr_comparison_stats_name, zarr_comparison_stats_path = zu.get_table_names_for_zarr_stats_comparison(
+                comparison_insert, main_logger, model_chunk_stats_path)
 
-        # The name of the chunk stats table from the model
-        model_chunk_stats_table_name = os.path.basename(model_chunk_stats_path)
-        # print(model_chunk_stats_table_name)
+            # List of dataframes with original and zarr chunk stats and their difference for each dataset-year combination
+            all_merged_tables = []
 
-        tables_to_compare_dict, zarr_comparison_stats_name, zarr_comparison_stats_path = zu.get_table_names_for_zarr_stats_comparison(
-            comparison_insert, main_logger, model_chunk_stats_path)
+            # Number of chunks with differences between original and zarr exceeding tolerance
+            chunks_count_exceeding_total = 0
 
-        # List of dataframes with original and zarr chunk stats and their difference for each dataset-year combination
-        all_merged_tables = []
+            # Number of chuinks that have model chunk stats but not corresponding zarr chunk stats
+            chunks_without_zarr_stats_total = 0
 
-        # Number of chunks with differences between original and zarr exceeding tolerance
-        chunks_count_exceeding_total = 0
+            # Iterates through select variables/datasets for chunk stats comparison. Can modify as needed.
+            outputs_to_compare = [
+                cn.gross_emis_all_C_pools_CO2_only_pattern, cn.gross_emis_all_C_pools_non_CO2_only_pattern, cn.gross_emis_all_C_pools_all_gases_pattern,
+                cn.gross_removals_all_C_pools_pattern,
+                cn.net_flux_all_C_pools_CO2_only_pattern, cn.net_flux_all_C_pools_all_gases_pattern,
+                cn.non_soil_c_modeled_dens_pattern, cn.land_state_pattern
+            ]
 
-        # Number of chuinks that have model chunk stats but not corresponding zarr chunk stats
-        chunks_without_zarr_stats_total = 0
+            for var_name in outputs_to_compare:
 
-        # Iterates through select variables/datasets for chunk stats comparison. Can modify as needed.
-        outputs_to_compare = [
-            cn.gross_emis_all_C_pools_CO2_only_pattern, cn.gross_emis_all_C_pools_non_CO2_only_pattern, cn.gross_emis_all_C_pools_all_gases_pattern,
-            cn.gross_removals_all_C_pools_pattern,
-            cn.net_flux_all_C_pools_CO2_only_pattern, cn.net_flux_all_C_pools_all_gases_pattern,
-            cn.non_soil_c_modeled_dens_pattern, cn.land_state_pattern
+                main_logger.info(f"Starting {var_name}: {uu.timestr()}")
+                var_start_time = time.time()
+
+                # Runs chunk stats for a dataset (all years) in the zarr in parallel
+                chunk_stats_variable_year_zarr = zu.run_parallel_stats(
+                    client=client,
+                    chunk_list=chunk_list,
+                    var=var_name,
+                    zarr_path=zarr_path,
+                    output_years=output_years
+                )
+                # print("chunk_stats_variable_year_zarr:", chunk_stats_variable_year_zarr)
+
+                # After all zarr chunk stats is done for the dataset-year combination,
+                # the chunk stats from the zarr are compared to the chunk stats from the model.
+                # This is done with Pandas dataframes and is not parallelized because it's just table manipulation
+                # for each dataset-year combination.
+                # The model output vs. zarr comparison is done after each dataset-year combination
+                # to get more real-time feedback on how the datasets compare (rather than waiting until after
+                # all zarr chunk stats have been calculated to do the metric comparisons).
+                chunks_count_exceeding, chunks_without_zarr_stats = zu.compare_dataset_year_chunk_stats(
+                    all_merged_tables,
+                    chunk_stats_variable_year_zarr,
+                    main_logger,
+                    tables_to_compare_dict,
+                    var_name,
+                    zarr_comparison_stats_path)
+
+                # Total number of chunks that have differences in metrics between the model and zarr
+                # that exceed the tolerance
+                chunks_count_exceeding_total += chunks_count_exceeding
+                chunks_without_zarr_stats_total += chunks_without_zarr_stats
+
+                var_end_time = time.time()
+                main_logger.info(f"  Processed {var_name} in {round(var_end_time - var_start_time)} seconds: {uu.timestr()}")
+
+            # Counts up chunks that had differences exceeding the tolerance and uploads chunk stats comparisons.
+            zu.upload_zarr_chunk_stat_comparisons(chunks_count_exceeding_total, chunks_without_zarr_stats_total,
+                                                  main_logger, model_chunk_stats_table_name,
+                                                  stage, start_time, zarr_comparison_stats_name, zarr_comparison_stats_path)
+
+        ### Step 6: Resize cluster down to 1 worker for remaining steps since they only need a minimal remainder of the
+        ### cluster, not all the workers.
+
+        if not run_local:
+            workers = client.scheduler_info()["workers"]
+            n_workers = len(workers)
+
+            # Reduces number of workers in the cluster down to 1 if there is more than 10
+            if n_workers > 10:
+                main_logger.info("Resizing cluster to 1 worker")
+
+                resize_cluster.resize_coiled_cluster(cluster_name, 1)
+
+        ### Step 7: Count output geotifs in s3
+        # Iterates through select output folders and counts the number of output rasters (only if uploads enabled and a large run (to save console space))
+
+        main_logger.info(f"Counting geotifs in select output folders. Expecting {len(chunk_list)} in each: {uu.timestr()}")
+        keywords = ["gross", "net", "state"]
+        output_dir_list_to_count = [
+            item for item in output_dir_list
+            if any(keyword in item for keyword in keywords)
         ]
+        if not no_upload and is_large_run:
+            for output_folder in output_dir_list_to_count:
+                geotiff_files, file_count = uu.list_raster_full_paths_in_s3_folder_and_count(output_folder)
+                main_logger.info(f"Output rasters in {output_folder}: {file_count}")
+                if file_count != len(chunk_list):
+                    main_logger.warning(f"WARNING: Output file count in {output_folder} does not match expectations!")
+                # print(geotiff_files)
 
-        for var_name in outputs_to_compare:
+        uu.stage_duration(start_time, uu.timestr(), f"{stage} with output counts", main_logger)
 
-            main_logger.info(f"Starting {var_name}: {uu.timestr()}")
-            var_start_time = time.time()
+    except BaseException as e:
+        # Records the error (or Ctrl+C) and its traceback in the main log, not just the terminal.
+        # For a failed chunk task, the traceback is the one from the worker.
+        if isinstance(e, KeyboardInterrupt):
+            main_logger.error(f"Run interrupted (KeyboardInterrupt): {uu.timestr()}")
+        else:
+            main_logger.exception(f"Run failed with {type(e).__name__}: {uu.timestr()}")
 
-            # Runs chunk stats for a dataset (all years) in the zarr in parallel
-            chunk_stats_variable_year_zarr = zu.run_parallel_stats(
-                client=client,
-                chunk_list=chunk_list,
-                var=var_name,
-                zarr_path=zarr_path,
-                output_years=output_years
-            )
-            # print("chunk_stats_variable_year_zarr:", chunk_stats_variable_year_zarr)
+        # Cancels chunk tasks that are still queued or running so they don't keep using the cluster while logs are collected
+        if futures and not run_local:
+            main_logger.info(f"Cancelling {sum(not f.done() for f in futures)} unfinished tasks: {uu.timestr()}")
+            client.cancel(futures)
 
-            # After all zarr chunk stats is done for the dataset-year combination,
-            # the chunk stats from the zarr are compared to the chunk stats from the model.
-            # This is done with Pandas dataframes and is not parallelized because it's just table manipulation
-            # for each dataset-year combination.
-            # The model output vs. zarr comparison is done after each dataset-year combination
-            # to get more real-time feedback on how the datasets compare (rather than waiting until after
-            # all zarr chunk stats have been calculated to do the metric comparisons).
-            chunks_count_exceeding, chunks_without_zarr_stats = zu.compare_dataset_year_chunk_stats(all_merged_tables,
-                                                                   chunk_stats_variable_year_zarr,
-                                                                   main_logger,
-                                                                   tables_to_compare_dict,
-                                                                   var_name,
-                                                                   zarr_comparison_stats_path)
+        # Shrinks the cluster so that idle workers don't run while logs are collected in the finally block
+        if not run_local:
+            try:
+                main_logger.info(f"Resizing cluster to 1 worker after failure: {uu.timestr()}")
+                resize_cluster.resize_coiled_cluster(cluster_name, 1)
+            except Exception:
+                main_logger.exception("Resizing cluster after failure also failed")
 
-            # Total number of chunks that have differences in metrics between the model and zarr
-            # that exceed the tolerance
-            chunks_count_exceeding_total += chunks_count_exceeding
-            chunks_without_zarr_stats_total += chunks_without_zarr_stats
+        raise
 
-            var_end_time = time.time()
-            main_logger.info(f"  Processed {var_name} in {round(var_end_time - var_start_time)} seconds: {uu.timestr()}")
+    finally:
 
-        # Counts up chunks that had differences exceeding the tolerance and uploads chunk stats comparisons.
-        zu.upload_zarr_chunk_stat_comparisons(chunks_count_exceeding_total, chunks_without_zarr_stats_total,
-                                              main_logger, model_chunk_stats_table_name,
-                                              stage, start_time, zarr_comparison_stats_name, zarr_comparison_stats_path)
+        ### Step 8: Gather worker logs and merge them with the main log (runs whether or not the steps above succeeded)
+        if not run_local:
 
+            # Creates combined log from all workers (scheduler, workers, system logs) if not deactivated.
+            # A failure here is logged but doesn't stop the main log from being merged and uploaded.
+            worker_log_local_path = None
+            try:
+                worker_log_local_path = lu.compile_worker_logs_new(no_log, cluster, stage, start_time, main_logger)
+                uu.stage_duration(start_time, uu.timestr(), f"{stage} with worker log compilation", main_logger)
+            except Exception:
+                main_logger.exception(
+                    f"Worker log compilation failed; combined log will only have the main log: {uu.timestr()}")
 
-    ### Step 7: Gather worker logs
+            # Adds the workers' logs to the main log and uploads to s3.
+            # If worker logs weren't compiled, merges and uploads just the main log.
+            try:
+                lu.merge_main_and_worker_upload_logs(no_log or worker_log_local_path is None,
+                                                     main_log_local_path, worker_log_local_path, stage)
+            except Exception:
+                main_logger.exception(
+                    f"Merging/uploading logs failed. Main log is still at {main_log_local_path}: {uu.timestr()}")
 
-    # Collects worker logs before moving to processing that doesn't need the cluster
-    if not run_local:
-
-        # Creates combined log from all workers if not deactivated
-        worker_log_local_path = lu.compile_worker_logs(no_log, cluster, stage, start_time, main_logger)
-        uu.stage_duration(start_time, uu.timestr(), f"{stage} with worker log compilation", main_logger)
-
-
-    ### Step 8: Resize cluster down to 1 worker for remaining steps since they only need a minimal remainder of the
-    ### cluster, not all the workers.
-
-    if not run_local:
-        workers = client.scheduler_info()["workers"]
-        n_workers = len(workers)
-
-        # Reduces number of workers in the cluster down to 1 if there is more than 10
-        if n_workers > 10:
-            main_logger.info("Resizing cluster to 1 worker")
-
-            resize_cluster.resize_coiled_cluster(cluster_name, 1)
-
-
-    ### Step 9: Count output geotifs in s3
-    # Iterates through select output folders and counts the number of output rasters (only if uploads enabled and a large run (to save console space))
-
-    main_logger.info(f"Counting geotifs in select output folders. Expecting {len(chunk_list)} in each: {uu.timestr()}")
-    keywords = ["gross", "net", "state"]
-    output_dir_list_to_count = [
-        item for item in output_dir_list
-        if any(keyword in item for keyword in keywords)
-    ]
-    if not no_upload and is_large_run:
-        for output_folder in output_dir_list_to_count:
-            geotiff_files, file_count = uu.list_raster_full_paths_in_s3_folder_and_count(output_folder)
-            main_logger.info(f"Output rasters in {output_folder}: {file_count}")
-            if file_count != len(chunk_list):
-                main_logger.warning(f"WARNING: Output file count in {output_folder} does not match expectations!")
-            # print(geotiff_files)
-
-    uu.stage_duration(start_time, uu.timestr(), f"{stage} with output counts", main_logger)
-
-
-    ### Step 10: Merge compiled worker log and main log
-    if not run_local:
-
-        # Adds the workers' logs to the main log and uploads to s3
-        lu.merge_main_and_worker_upload_logs(no_log, main_log_local_path, worker_log_local_path, stage)
-
-
-    # Closes the Dask client if not running locally
-    if not run_local:
-        client.close()
+            # Closes the Dask client if not running locally
+            if not run_local:
+                client.close()
 
 
 if __name__ == "__main__":
