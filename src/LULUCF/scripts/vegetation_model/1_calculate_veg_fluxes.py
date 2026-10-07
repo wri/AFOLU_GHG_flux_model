@@ -47,6 +47,8 @@ https://app.asana.com/1/25496124013636/task/1206230383901961/comment/12106415042
 #TODO update 1km drivers to correct year. Currently using through 2023. (But this would also mean changing it for zonal stats, including organic soil and mineral soil zstats. So, need to think through that.)
 #TODO Change error/exception logic for input downloads to catch and retry everything (rather than exception types individually), per Claude session 'Failed Coiled tasks diagnosis'
 #TODO Figure out why log is only including some tasks (including performance stats at the end) and how to make it include all tasks
+#TODO Migrate inputs and outputs to new lcl bucket
+#TODO Update through 2025
 #TODO Mel Update mangrove branches with 2015-2020 data only and use new NoData vs. 0 convention (discuss with David before implementing)
 """
 
@@ -933,7 +935,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                             deadwood_c_ratio = deadwood_c_ratio_non_mang
                             litter_c_ratio = litter_c_ratio_non_mang
                             c_dens_in_for_gain = c_dens_in
-                        else:  # Gain of trees in other land covers (222) (uses c_dens_in_empty because ToF have no residual carbon in any pool)
+                        else:  # Gain of trees in other land covers (222) (uses c_dens_in_empty because ToF have no residual carbon in any pool. Causes mass-balance issue if there's residual deadwood or litter C.)
                             state_out = nu.accrete_node(node, 2)
                             RF_AGC_final_cell = cn.trees_outside_forests_agc_rf_max
                             RF_BGC_final = RF_AGC_final_cell * r_s_ratio_non_mang
