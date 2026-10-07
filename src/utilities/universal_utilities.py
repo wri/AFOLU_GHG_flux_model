@@ -799,6 +799,121 @@ def get_tile_dataset_rio(uri, bounds, chunk_length_pixels, logger_worker, data_t
                 return data, status
 
 
+# Lazily opens tile within provided bounds (i.e. one chunk) and returns as a numpy array.
+# If it can't open the uri for the chunk (tile does not exist), it creates a numpy array of all 0s
+# of the correct datatype for that input.
+# The returned chunk needs to have the correct datatype because it'll eventually be used in a
+# numba function, which is very particular about datatypes.
+# For example, a dataset that's float32 can't have NoData chunks that are uint8 because
+# the Numba functions won't be able to handle that (since they're so particular about datatypes).
+# So, that is addressed here through setting the array of 0s to the datatype of the dataset.
+# Revised with https://chatgpt.com/share/e/67bde66c-d9a0-800a-a524-a9ef88c641a2 to return status messages
+# Entire function further revised with Claude session 'Failed Coiled tasks diagnosis'
+def get_tile_dataset_rio(uri, bounds, chunk_length_pixels, logger_worker, data_type):
+
+    bounds_str = boundstr(bounds)
+    numpy_dtype = map_to_numpy_dtype(data_type)
+    expected_shape = (chunk_length_pixels, chunk_length_pixels)
+
+    # Number of retries for submitting requests to s3
+    MAX_RETRIES = 11
+
+    # Determines if the uri being accessed is from OpenGeoHub (because it needs special request staggering)
+    is_OGH_data = urlparse(uri).netloc.endswith("s3.opengeohub.org")
+
+    # Non-retryable RasterioIOError means the file doesn't exist; return zeros instead of raising.
+    # All other errors (S3 throttling, transient read failures, WindowError, etc.) are retried.
+    # List of keywords built up over time from encountered transient errors.
+    # From https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/68c3235e-a590-832d-bfdc-c1531416c311
+    retryable_keywords = [
+        "SlowDown", "Please reduce", "503", "Read failed", "previous exception", "internal error",
+        "not recognized",
+        "CURL", "Recv failure", "Connection reset by peer", "Connection timed out", "Timeout",
+        "Operation timed out", "Could not resolve host", "Failed to connect", "Empty reply from server",
+        "TLS", "SSL"
+    ]
+
+    # If the uri exists, the relevant window is opened and returned as an array.
+    # Note that this chunk could still just have NoData values, which would be downloaded.
+    # If the uri exists but the raster just doesn't completely cover the area (e.g., far north), the array has to be padded to
+    # reach the expected size.
+    # Retries accessing the raster specified number of times in case too many requests to s3 are being made.
+    # https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/68c3235e-a590-832d-bfdc-c1531416c311
+    # and further revised with Claude session 'Failed Coiled tasks diagnosis'
+    last_exception = None
+    for attempt in range(MAX_RETRIES):
+        try:
+
+            # Accessing OGH data in a burst causes fatal errors.
+            # This specifically staggers and slows down requests for OGH data,
+            # per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/69446f3d-0fbc-832a-9629-ae5469adeae3
+            if is_OGH_data and attempt == 0:
+                time.sleep(random.uniform(0.0, 0.2))
+
+            # Speeds up accessing the input geotifs from s3 when they are in a folder with lots of files.
+            # The more files in an s3 folder, the longer it takes to access them without this environment variable.
+            # It takes about 9 minutes to access the inputs for a 1x1 deg summative output without this and <1 minute with it.
+            # Per https://chatgpt.com/g/g-vK4oPfjfp-coding-assistant/c/68bb4948-c75c-8331-bdf7-1d892029dc0f
+            with rasterio.Env(aws_session, AWS_REQUEST_PAYER='requester', GDAL_DISABLE_READDIR_ON_OPEN='TRUE'):
+                with rasterio.open(uri) as ds:
+                    window = rasterio.windows.from_bounds(*bounds, ds.transform)
+                    data = ds.read(1, window=window)
+
+                    # Checks if array shape is not what we expect (full chunk size) and pads the array with np.NaN if the array is incomplete.
+                    # Was using 0s before but 0 has meaning and np.NaN doesn't.
+                    # Per https://chatgpt.com/c/67dcb99b-edb8-800a-abd8-f718de76043c
+                    if data.shape != expected_shape:
+                        original_shape = data.shape
+
+                        # Necessary for OGH vegetation height data. Otherwise, it errors because of a type issue.
+                        # This is outside the OGH veg height extent.
+                        # Per Claude session 'Quick task completion analysis'
+                        fill_value = np.nan if np.issubdtype(np.dtype(numpy_dtype), np.floating) else 0
+                        padded_data = np.full(expected_shape, fill_value, dtype=numpy_dtype)
+
+                        # Calculates offset in pixels relative to chunk
+                        row_offset = max(0, int(window.row_off))
+                        col_offset = max(0, int(window.col_off))
+                        rows, cols = data.shape
+                        end_row = min(row_offset + rows, chunk_length_pixels)
+                        end_col = min(col_offset + cols, chunk_length_pixels)
+
+                        # Fills the correct slice of the padded array
+                        padded_data[row_offset:end_row, col_offset:end_col] = data[:end_row - row_offset, :end_col - col_offset]
+
+                        data = padded_data
+                        status = f"padded {bounds_str} for {uri} from {original_shape} to {expected_shape} with data_type {data_type}/{numpy_dtype}"
+
+                    else:
+                        status = f"success- {bounds_str} for {uri} complete, no padding needed"
+
+            # If previous attempts failed, log that this attempt succeeded
+            if attempt > 0:
+                lu.print_and_log(f"Succeeded downloading {uri} on attempt {attempt}: {timestr()}", False, logger_worker)
+
+            return data, status
+
+        except rasterio.errors.RasterioIOError as e:
+            # Non-retryable: file doesn't exist or other permanent I/O issue — return zeros
+            if not any(keyword in str(e) for keyword in retryable_keywords):
+                data = np.full(expected_shape, 0, dtype=numpy_dtype)
+                status = f"Can't access dataset {uri} for {bounds_str}. Returning array of all 0s: {e}"
+                return data, status
+            last_exception = e
+
+        except Exception as e:
+            # All other exceptions (WindowError from garbled S3 header reads, etc.) are retried.
+            # If genuinely non-transient, retries will exhaust and raise below.
+            last_exception = e
+
+        # Shared backoff for all retryable exceptions
+        sleep_time = min(30.0, 1.0 * (2 ** attempt)) + random.uniform(0.0, 1.0)
+        lu.print_and_log(f"Error for {uri} on attempt {attempt} ({last_exception}). Retrying in {sleep_time:.2f}s...: {timestr()}", False, logger_worker)
+        time.sleep(sleep_time)
+
+    raise RuntimeError(f"Error persisted after {MAX_RETRIES} retries for {uri}: {timestr()}") from last_exception
+
+
 # Prepares list of chunks to download.
 # Chunks are defined by a bounding box.
 # Revised with https://chatgpt.com/share/e/67bde66c-d9a0-800a-a524-a9ef88c641a2 to return status messages

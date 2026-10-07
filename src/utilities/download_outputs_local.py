@@ -59,6 +59,11 @@ def main():
             if not filename:
                 continue  # Skip keys that are directories or empty
 
+            # Only download GeoTIFFs
+            if not filename.lower().endswith((".tif", ".tiff")):
+                filtered_out += 1
+                continue
+
             # Filter by substring if provided
             if filter_str and filter_str not in filename:
                 filtered_out += 1

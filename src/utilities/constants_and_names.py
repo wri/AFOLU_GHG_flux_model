@@ -17,7 +17,7 @@ AFOLU_model_version_underscore = AFOLU_model_version.replace(".", "_")
 LULUCF_model_version = "1.0.0"
 LULUCF_model_version_underscore = LULUCF_model_version.replace(".", "_")
 
-veg_model_version = "1.0.5"
+veg_model_version = "1.0.6"
 veg_model_version_underscore = veg_model_version.replace(".", "_")
 
 organic_soil_model_version = "1.0.1"
@@ -864,7 +864,7 @@ part_or_full_dist_in_curr_interval_dir = f"{veg_outputs_path}{part_or_full_dist_
 burned_in_interval = "veg_burned_in_current_interval"
 burned_in_interval_dir = f"{veg_outputs_path}{burned_in_interval}/START_END/presence/CHUNK_SIZE_pixels/RUN_DATE/"
 
-agc_emission_factor = "veg_AGC_emission_factor_CO2_only__fraction"
+agc_emission_factor = "veg_emission_factor__AGC__CO2_only__fraction"
 agc_emission_factor_dir = f"{veg_outputs_path}{agc_emission_factor}/START_END/fraction/CHUNK_SIZE_pixels/RUN_DATE/"
 
 composite_primary_forest = "veg_composite_primary_forest"
@@ -1198,7 +1198,7 @@ first_year_LC_composite_test_chunk = [19, 44, 20, 45] # 145 in top-left, 244 in 
 
 state_node_lookup_table_local = "/mnt/c/GIS/git/AFOLU_GHG_flux_model/src/LULUCF/LULUCF_state_node_lookup_table.xlsx"
 state_node_lookup_table_s3 = "http://gfw2-data.s3.amazonaws.com/climate/AFOLU_flux_model/LULUCF/state_node_lookup_tables/LULUCF_state_node_lookup_table.xlsx"
-sheet = "v105_20260601"
+sheet = "v106_20261006"
 
 primary_forest_IFL_codes = np.array([0, 1], dtype=np.uint8)
 

@@ -16,8 +16,8 @@ from rasterio.windows import Window
 from rasterio.transform import Affine
 
 # Desired tile extent (1x1 deg)
-lon_min = 124
-lat_max = -29
+lon_min = 111
+lat_max = -2
 pixel_size = 0.00025
 tile_px = int(1.0 / pixel_size)  # 4000
 
@@ -49,5 +49,5 @@ for year in range(2015, 2025, 1):
                 "dtype": 'float32'
             })
 
-            with rasterio.open(f"20S_120E__124_-30_125_-29__GPW_veg_height_m_{year}.tif", "w", **out_meta) as dest:
+            with rasterio.open(f"00N_110E__111_-3_112_-2__GPW_veg_height_m_{year}.tif", "w", **out_meta) as dest:
                 dest.write(data_rescale, 1)
