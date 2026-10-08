@@ -128,6 +128,8 @@ LIFECYCLE_PATTERN = re.compile(
     r"memory budget|memory usage\. (Pausing|Resuming) worker|Unmanaged memory use is high|Worker memory limit|"
     # System-level (not from Dask; unverified against Coiled system logs)
     r"\bOOM\b|oom-kill|Out of memory|Segmentation fault|SIGSEGV|SIGKILL|"
+    # Shutdowns started outside Dask (e.g., Coiled stopping the cluster)
+    r"Received signal SIG|Closing scheduler|"
     # Communication problems
     r"CommClosedError|Timed out",
     re.IGNORECASE,
