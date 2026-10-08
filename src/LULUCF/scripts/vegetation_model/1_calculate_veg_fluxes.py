@@ -78,7 +78,6 @@ from src.utilities import log_utilities as lu
 from src.utilities import numba_utilities as nu
 from src.utilities import universal_utilities as uu
 from src.utilities import zarr_utilities as zu
-from src.utilities import resize_cluster
 
 
 # Silences dashboard noise
@@ -2318,7 +2317,7 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
             if n_workers > 10:
                 main_logger.info("Resizing cluster to 1 worker")
 
-                resize_cluster.resize_coiled_cluster(cluster_name, 1)
+                cluster.scale(1)
 
         ### Step 7: Count output geotifs in s3
         # Iterates through select output folders and counts the number of output rasters (only if uploads enabled and a large run (to save console space))
@@ -2356,7 +2355,7 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
         if not run_local:
             try:
                 main_logger.info(f"Resizing cluster to 1 worker after failure: {uu.timestr()}")
-                resize_cluster.resize_coiled_cluster(cluster_name, 1)
+                cluster.scale(1)
             except Exception:
                 main_logger.exception("Resizing cluster after failure also failed")
 

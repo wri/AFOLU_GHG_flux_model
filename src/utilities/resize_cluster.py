@@ -1,10 +1,12 @@
 import argparse
 import coiled
 
+from src.utilities import constants_and_names as cn
+
 
 def resize_coiled_cluster(cluster_name, n_workers):
     # Connect to the existing cluster using the cluster's name
-    cluster = coiled.Cluster(name=cluster_name)
+    cluster = coiled.Cluster(name=cluster_name, workspace=cn.Coiled_workspace)
 
     # Resize the cluster to the specified number of workers
     cluster.scale(n_workers)

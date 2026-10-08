@@ -320,7 +320,7 @@ def populate_zarr(bounds, bounds_str, create_zarr, interval_end_years, is_large_
         lu.print_and_log(f"Not writing outputs for {bounds_str} in {tile_id} to global zarr: {uu.timestr()}", False, logger_worker)
         return
 
-    lu.print_and_log(f"Writing select outputs to global zarr for {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
+    lu.print_and_log(f"Writing selected outputs to global zarr for {bounds_str} in {tile_id}: {uu.timestr()}", is_large_run, logger_worker)
 
     zarr_start = time.time()
 

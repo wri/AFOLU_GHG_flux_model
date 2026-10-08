@@ -130,7 +130,6 @@ LIFECYCLE_PATTERN = re.compile(
     r"\bOOM\b|oom-kill|Out of memory|Segmentation fault|SIGSEGV|SIGKILL|"
     # Communication problems
     r"CommClosedError|Timed out",
-
     re.IGNORECASE,
 )
 
@@ -178,41 +177,74 @@ def _coiled_instance_labels(cluster_id, workspace):
     return labels
 
 
+# Key that identifies a log event, for skipping events that were already retrieved
+def _event_key(e):
+    return e.get("id") or f"{e['timestamp']}#{e.get('instance_id')}#{e['message']}"
+
+# Formats a duration in seconds as hours (2 decimals), matching stage_duration, e.g. "0.19 hours"
+def _format_duration(seconds):
+    return f"{seconds / 3600:.2f} hours"
+
 # Yields all Coiled log events (dask + system, all instances) between since_ms and until_ms, oldest first.
-# The endpoint returns a limited number of events per request, so this pages forward from the last
-# timestamp received, skipping events already seen at that timestamp (same approach as `coiled cluster logs`).
-def _iter_coiled_log_events(cluster_id, workspace, since_ms, until_ms, logger, progress_every=25):
+# The endpoint returns a limited number of events per request, so this pages forward from the newest
+# timestamp received, skipping events already retrieved at that timestamp (same approach as `coiled cluster logs`).
+# Coiled has been seen to return the whole time range again on a later request (while the cluster was running),
+# so events older than the newest timestamp already retrieved are skipped to prevent duplicates.
+def _iter_coiled_log_events(cluster_id, workspace, since_ms, until_ms, logger, progress_interval_s=30):
     from_ts = since_ms
     seen_at_from_ts = set()
     pages = 0
     n_events = 0
+    n_skipped_old = 0
+    eastern = pytz.timezone('US/Eastern')
+    total_range_ms = max(until_ms - since_ms, 1)
+    retrieval_start = last_progress = time.time()
 
     while True:
         events = coiled.better_cluster_logs(cluster_id=cluster_id, workspace=workspace,
                                             dask=True, system=True,
                                             since_ms=from_ts, until_ms=until_ms)
 
-        new_events = [e for e in events
-                      if not (e["timestamp"] == from_ts and
-                              f"{e['timestamp']}#{e.get('instance_id')}#{e['message']}" in seen_at_from_ts)]
+        new_events = []
+        for e in events:
+            if e["timestamp"] < from_ts:
+                n_skipped_old += 1
+            elif not (e["timestamp"] == from_ts and _event_key(e) in seen_at_from_ts):
+                new_events.append(e)
+
         if not new_events:
             break
+
+        new_events.sort(key=lambda e: e["timestamp"])
 
         for e in new_events:
             yield e
 
         # Tracks events at the newest timestamp so they aren't repeated on the next page
         last_ts = new_events[-1]["timestamp"]
-        last_keys = {f"{e['timestamp']}#{e.get('instance_id')}#{e['message']}"
-                     for e in new_events if e["timestamp"] == last_ts}
+        last_keys = {_event_key(e) for e in new_events if e["timestamp"] == last_ts}
         seen_at_from_ts = seen_at_from_ts | last_keys if last_ts == from_ts else last_keys
         from_ts = last_ts
 
         pages += 1
         n_events += len(new_events)
-        if pages % progress_every == 0:
-            t = datetime.fromtimestamp(from_ts / 1000, pytz.timezone('US/Eastern')).strftime("%Y%m%d_%H_%M_%S")
-            logger.info(f"  Retrieved {n_events} log events in {pages} requests (up to {t}): {uu.timestr()}")
+
+        # Progress report at most every progress_interval_s seconds.
+        # Percent is the share of the log time range covered so far. It is approximate because log events
+        # aren't spread evenly over time (most are written while chunks are processing).
+        now = time.time()
+        if now - last_progress >= progress_interval_s:
+            last_progress = now
+            pct = min(100.0, 100.0 * (from_ts - since_ms) / total_range_ms)
+            t = datetime.fromtimestamp(from_ts / 1000, eastern).strftime("%Y%m%d_%H_%M_%S")
+            elapsed = now - retrieval_start
+            logger.info(f"  Log retrieval ~{pct:.0f}% of time range (up to {t}): {n_events} events in {pages} requests, "
+                        f"{n_events / elapsed:.0f} events/s, {_format_duration(elapsed)} elapsed: {uu.timestr()}")
+
+    if n_skipped_old:
+        logger.info(f"  Skipped {n_skipped_old} log events that Coiled returned more than once")
+
+    logger.info(f"  Retrieved {n_events} log events in {pages} requests in {_format_duration(time.time() - retrieval_start)}")
 
 
 # Log compilation and uploading
@@ -228,6 +260,8 @@ def compile_worker_logs(no_log, cluster, stage, start_time_str, logger):
     if no_log:
         return
 
+    compile_start = time.time()
+
     log_time = time.strftime('%Y%m%d_%H_%M_%S')
     combined_worker_log_name = f"{cn.combined_log}_workers_{stage}_{log_time}.log"
     worker_log_local_path = f"{cn.local_log_path}{combined_worker_log_name}"
@@ -240,9 +274,15 @@ def compile_worker_logs(no_log, cluster, stage, start_time_str, logger):
     workspace = cluster.workspace
     instance_labels = _coiled_instance_labels(cluster_id, workspace)
 
-    # Starts a bit before the stage start to catch worker startup messages
+    # Time range of logs to download: from a bit before the stage start (to catch worker startup messages) to now
     since_ms = _timestr_to_epoch_ms(start_time_str) - int(timedelta(minutes=1).total_seconds() * 1000)
     until_ms = int(time.time() * 1000)
+
+    # Gives Coiled time to receive the last worker log lines before downloading
+    # Gives Coiled time to receive the last worker log lines before downloading
+    logger.info(f"Waiting 30 s for Coiled to receive the last worker log lines: {uu.timestr()}")
+    time.sleep(30)
+    logger.info(f"Retrieving Coiled logs (progress reported every 30 s): {uu.timestr()}")
 
     eastern = pytz.timezone('US/Eastern')
     in_traceback = {}   # Per-instance flag for whether the current line continues a traceback
@@ -293,6 +333,9 @@ def compile_worker_logs(no_log, cluster, stage, start_time_str, logger):
                 f"({n_flm} flm, {n_severity} WARNING/ERROR/CRITICAL, {n_tracebacks} tracebacks)")
     logger.info(f"Unique chunks with 'Total chunk processing' in worker log: {len(finished_chunks)}")
     logger.info(f"Raw worker log saved locally to {raw_worker_log_local_path}: {uu.timestr()}")
+
+    logger.info(f"Worker log compilation took {_format_duration(time.time() - compile_start)} "
+                f"(including the 30 s wait for Coiled to receive the last log lines): {uu.timestr()}")
 
     return worker_log_local_path
 
