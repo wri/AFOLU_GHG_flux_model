@@ -254,7 +254,7 @@ def _iter_coiled_log_events(cluster_id, workspace, since_ms, until_ms, logger, p
 #   2. Readable log (returned, later merged with main log): flm lines, warnings/errors, tracebacks,
 #      and worker lifecycle events (killed, lost, memory, etc.), labeled by instance.
 # From Claude conversation 'Missing worker tasks in veg log'
-def compile_worker_logs(no_log, cluster, stage, start_time_str, logger):
+def compile_worker_logs(no_log, cluster, stage, start_time_str, logger, end_time_str=None):
 
     # Only consolidates the worker logs and uploads to s3 if not deactivated
     if no_log:
@@ -274,11 +274,13 @@ def compile_worker_logs(no_log, cluster, stage, start_time_str, logger):
     workspace = cluster.workspace
     instance_labels = _coiled_instance_labels(cluster_id, workspace)
 
-    # Time range of logs to download: from a bit before the stage start (to catch worker startup messages) to now
+    # Time range of logs to download: from a bit before the stage start (to catch worker startup messages)
     since_ms = _timestr_to_epoch_ms(start_time_str) - int(timedelta(minutes=1).total_seconds() * 1000)
-    until_ms = int(time.time() * 1000)
 
-    # Gives Coiled time to receive the last worker log lines before downloading
+    # Downloads logs up to end_time_str if supplied (e.g., when the cluster was shrunk, so workers being shut down during cluster resize
+    # aren't reported as dying); otherwise logs downloaded up to now
+    until_ms = _timestr_to_epoch_ms(end_time_str) if end_time_str else int(time.time() * 1000)
+
     # Gives Coiled time to receive the last worker log lines before downloading
     logger.info(f"Waiting 30 s for Coiled to receive the last worker log lines: {uu.timestr()}")
     time.sleep(30)

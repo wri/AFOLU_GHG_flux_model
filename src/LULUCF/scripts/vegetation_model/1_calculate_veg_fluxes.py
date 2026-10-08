@@ -2182,6 +2182,8 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
     # Reorganized per Claude conversation 'Missing worker tasks in veg log'
     futures = []
 
+    resize_time_str = None
+
     try:
 
         ### Step 3: Create 1x1 degree outputs
@@ -2315,8 +2317,8 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
 
             # Reduces number of workers in the cluster down to 1 if there is more than 10
             if n_workers > 10:
-                main_logger.info("Resizing cluster to 1 worker")
-
+                resize_time_str = uu.timestr()
+                main_logger.info(f"Resizing cluster to 1 worker: {resize_time_str}")
                 cluster.scale(1)
 
         ### Step 7: Count output geotifs in s3
@@ -2328,13 +2330,19 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
             item for item in output_dir_list
             if any(keyword in item for keyword in keywords)
         ]
+
+        # Outputs that don't have the expected number of output geotifs
+        outputs_with_unexpected_counts = 0
+
         if not no_upload and is_large_run:
             for output_folder in output_dir_list_to_count:
                 geotiff_files, file_count = uu.list_raster_full_paths_in_s3_folder_and_count(output_folder)
                 main_logger.info(f"Output rasters in {output_folder}: {file_count}")
                 if file_count != len(chunk_list):
                     main_logger.warning(f"WARNING: Output file count in {output_folder} does not match expectations!")
+                    outputs_with_unexpected_counts += 1
                 # print(geotiff_files)
+            main_logger.info(f"Number of outputs with unexpected geotif counts: {outputs_with_unexpected_counts}")
 
         uu.stage_duration(start_time, uu.timestr(), f"{stage} with output counts", main_logger)
 
@@ -2351,10 +2359,13 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
             main_logger.info(f"Cancelling {sum(not f.done() for f in futures)} unfinished tasks: {uu.timestr()}")
             client.cancel(futures)
 
+        if resize_time_str is None:
+            resize_time_str = uu.timestr()
+
         # Shrinks the cluster so that idle workers don't run while logs are collected in the finally block
         if not run_local:
             try:
-                main_logger.info(f"Resizing cluster to 1 worker after failure: {uu.timestr()}")
+                main_logger.info(f"Resizing cluster to 1 worker after failure: {resize_time_str}")
                 cluster.scale(1)
             except Exception:
                 main_logger.exception("Resizing cluster after failure also failed")
@@ -2370,7 +2381,7 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
             # A failure here is logged but doesn't stop the main log from being merged and uploaded.
             worker_log_local_path = None
             try:
-                worker_log_local_path = lu.compile_worker_logs(no_log, cluster, stage, start_time, main_logger)
+                worker_log_local_path = lu.compile_worker_logs(no_log, cluster, stage, start_time, main_logger, end_time_str=resize_time_str)
                 uu.stage_duration(start_time, uu.timestr(), f"{stage} with worker log compilation", main_logger)
             except Exception:
                 main_logger.exception(

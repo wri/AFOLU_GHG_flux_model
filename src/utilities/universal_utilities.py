@@ -1614,6 +1614,7 @@ def count_successful_chunks(chunk_list, is_final, main_logger, results):
             main_logger.info(message)
 
     # Print the counts of successful and skipped chunks
+    main_logger.info("")
     main_logger.info(f"Number of 'Success' chunks: {success_count}")
     main_logger.info(f"Number of 'Skipped' chunks: {skipping_chunk_count}")
     main_logger.info(f"Number of 'Error' chunks: {error_chunk_count}")
