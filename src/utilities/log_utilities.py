@@ -176,26 +176,28 @@ def _coiled_instance_labels(cluster_id, workspace):
             labels[worker["instance"]["id"]] = f"id-{name.rsplit('-', 1)[-1]}" if name else f"id-{worker['instance']['id']}"
     return labels
 
-
-# Key that identifies a log event, for skipping events that were already retrieved
+# Key that identifies a log event, for skipping events that were already retrieved.
+# (Coiled's event "id" field is empty, so time, instance, and message are used.)
 def _event_key(e):
-    return e.get("id") or f"{e['timestamp']}#{e.get('instance_id')}#{e['message']}"
+    return f"{e['timestamp']}#{e.get('instance_id')}#{e['message']}"
 
 # Formats a duration in seconds as hours (2 decimals), matching stage_duration, e.g. "0.19 hours"
 def _format_duration(seconds):
     return f"{seconds / 3600:.2f} hours"
 
-# Yields all Coiled log events (dask + system, all instances) between since_ms and until_ms, oldest first.
-# The endpoint returns a limited number of events per request, so this pages forward from the newest
-# timestamp received, skipping events already retrieved at that timestamp (same approach as `coiled cluster logs`).
-# Coiled has been seen to return the whole time range again on a later request (while the cluster was running),
-# so events older than the newest timestamp already retrieved are skipped to prevent duplicates.
+# Yields all Coiled log events (dask + system, all instances) between since_ms and until_ms, oldest first, once each.
+# The endpoint returns a limited number of events per request, so this pages forward from the newest timestamp received
+# (same approach as `coiled cluster logs`).
+# When queried soon after a run (cluster running or just shut down), Coiled has been seen to return the whole time range
+# again on a later request, and to return two copies of each event in a single response. So each page is sorted by time,
+# events older than the newest timestamp already yielded are skipped, and events at that timestamp are skipped if
+# already yielded. Only keys at the newest timestamp are kept, so memory use stays small for large runs.
 def _iter_coiled_log_events(cluster_id, workspace, since_ms, until_ms, logger, progress_interval_s=30):
-    from_ts = since_ms
-    seen_at_from_ts = set()
-    pages = 0
+    current_ts = since_ms          # Newest timestamp yielded so far (also where the next request starts)
+    keys_at_current_ts = set()     # Events already yielded at current_ts
+    requests = 0
     n_events = 0
-    n_skipped_old = 0
+    n_skipped = 0
     eastern = pytz.timezone('US/Eastern')
     total_range_ms = max(until_ms - since_ms, 1)
     retrieval_start = last_progress = time.time()
@@ -203,31 +205,32 @@ def _iter_coiled_log_events(cluster_id, workspace, since_ms, until_ms, logger, p
     while True:
         events = coiled.better_cluster_logs(cluster_id=cluster_id, workspace=workspace,
                                             dask=True, system=True,
-                                            since_ms=from_ts, until_ms=until_ms)
+                                            since_ms=current_ts, until_ms=until_ms)
+        requests += 1
+        n_new = 0
 
-        new_events = []
-        for e in events:
-            if e["timestamp"] < from_ts:
-                n_skipped_old += 1
-            elif not (e["timestamp"] == from_ts and _event_key(e) in seen_at_from_ts):
-                new_events.append(e)
+        for e in sorted(events, key=lambda e: e["timestamp"]):
+            key = _event_key(e)
 
-        if not new_events:
-            break
+            # Skips events already yielded (older than the newest timestamp, or already seen at it)
+            if e["timestamp"] < current_ts or (e["timestamp"] == current_ts and key in keys_at_current_ts):
+                n_skipped += 1
+                continue
 
-        new_events.sort(key=lambda e: e["timestamp"])
+            # Moves forward to a newer timestamp
+            if e["timestamp"] > current_ts:
+                current_ts = e["timestamp"]
+                keys_at_current_ts = set()
 
-        for e in new_events:
+            keys_at_current_ts.add(key)
+            n_new += 1
             yield e
 
-        # Tracks events at the newest timestamp so they aren't repeated on the next page
-        last_ts = new_events[-1]["timestamp"]
-        last_keys = {_event_key(e) for e in new_events if e["timestamp"] == last_ts}
-        seen_at_from_ts = seen_at_from_ts | last_keys if last_ts == from_ts else last_keys
-        from_ts = last_ts
+        # Stops when a request returns nothing that hasn't already been yielded
+        if n_new == 0:
+            break
 
-        pages += 1
-        n_events += len(new_events)
+        n_events += n_new
 
         # Progress report at most every progress_interval_s seconds.
         # Percent is the share of the log time range covered so far. It is approximate because log events
@@ -235,16 +238,16 @@ def _iter_coiled_log_events(cluster_id, workspace, since_ms, until_ms, logger, p
         now = time.time()
         if now - last_progress >= progress_interval_s:
             last_progress = now
-            pct = min(100.0, 100.0 * (from_ts - since_ms) / total_range_ms)
-            t = datetime.fromtimestamp(from_ts / 1000, eastern).strftime("%Y%m%d_%H_%M_%S")
+            pct = min(100.0, 100.0 * (current_ts - since_ms) / total_range_ms)
+            t = datetime.fromtimestamp(current_ts / 1000, eastern).strftime("%Y%m%d_%H_%M_%S")
             elapsed = now - retrieval_start
-            logger.info(f"  Log retrieval ~{pct:.0f}% of time range (up to {t}): {n_events} events in {pages} requests, "
+            logger.info(f"  Log retrieval ~{pct:.0f}% of time range (up to {t}): {n_events} events in {requests} requests, "
                         f"{n_events / elapsed:.0f} events/s, {_format_duration(elapsed)} elapsed: {uu.timestr()}")
 
-    if n_skipped_old:
-        logger.info(f"  Skipped {n_skipped_old} log events that Coiled returned more than once")
+    if n_skipped:
+        logger.info(f"  Skipped {n_skipped} log events that Coiled returned more than once")
 
-    logger.info(f"  Retrieved {n_events} log events in {pages} requests in {_format_duration(time.time() - retrieval_start)}")
+    logger.info(f"  Retrieved {n_events} log events in {requests} requests in {_format_duration(time.time() - retrieval_start)}")
 
 
 # Log compilation and uploading
