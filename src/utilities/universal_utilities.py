@@ -1122,15 +1122,13 @@ def check_chunk_for_data(required_layers, bounds_str, tile_id, any_or_all, is_fi
             # (at least one chunk has data).
             # The one print statement regardless of whether the model is full-scale or not.
             if min != None:  # if min exists, there must be data in the chunk
-                logger.info(f"flm: Data in chunk {bounds_str}. Proceeding: {timestr()}")
-                print(f"flm: Data in chunk {bounds_str}. Proceeding: {timestr()}")
+                lu.print_and_log(f"Data in chunk {bounds_str}. Proceeding: {timestr()}", False, logger)
                 return True
 
             i += 1
 
         # Printed regardless of whether or not the model is full-scale
-        logger.info(f"flm: No data in chunk {bounds_str} for assessed inputs: {timestr()}")
-        print(f"flm: No data in chunk {bounds_str} for assessed inputs: {timestr()}")
+        lu.print_and_log(f"No data in chunk {bounds_str} for assessed inputs: {timestr()}", False, logger)
         return False
 
     # Checks if ALL of the assessed inputs are present
@@ -1150,15 +1148,12 @@ def check_chunk_for_data(required_layers, bounds_str, tile_id, any_or_all, is_fi
             # Don't need to keep checking chunk for data because at least one input doesn't have data,
             # so not ALL of the inputs exist
             if min == max:
-                # Printed regardless of whether or not the model is full-scale
-                logger.info(f"flm: Chunk {bounds_str} does not exist for {key}. Skipped chunk: {timestr()}")  # The one print statement regardless of whether the model is full-scale or not
-                print(f"flm: Chunk {bounds_str} does not exist for {key}. Skipped chunk: {timestr()}")
+                lu.print_and_log(f"Chunk {bounds_str} does not exist for {key}. Skipped chunk: {timestr()}", False, logger)
                 return False
 
         # If all required inputs are checked (for loop is completed), ALL inputs exist.
         # Printed regardless of whether or not the model is full-scale.
-        logger.info(f"flm: Chunk {bounds_str} has data for all assessed inputs: {timestr()}")  # The one print statement regardless of whether the model is full-scale or not
-        print(f"flm: Chunk {bounds_str} has data for all assessed inputs: {timestr()}")
+        lu.print_and_log(f"Chunk {bounds_str} has data for all assessed inputs: {timestr()}", False, logger)
         return True
 
     else:
@@ -1175,7 +1170,7 @@ def make_tile_footprint_shp(input_dict, no_upload):
     pattern = list(input_dict.values())[0]
 
     # Task properties
-    lu.print_and_log(f"flm: Making tile index shapefile for: {in_folder}: {timestr()}", True, logger_worker)
+    lu.print_and_log(f"Making tile index shapefile for: {in_folder}: {timestr()}", True, logger_worker)
 
     # Folder including s3 key
     s3_in_folder = in_folder
@@ -1306,7 +1301,7 @@ def merge_small_tiles_gdal(s3_name_dict, is_final, no_upload, output_dir=None, s
     # Lists the tile paths for the relevant rasters
     tile_paths = [vsis3_in_folder + filename for filename in filenames_in_focus_area]
 
-    lu.print_and_log(f"flm: Merging small rasters in {tile_id} in {vsis3_in_folder}: {timestr()}", False, logger_worker)
+    lu.print_and_log(f"Merging small rasters in {tile_id} in {vsis3_in_folder}: {timestr()}", False, logger_worker)
 
     # Names the output folder. Same as the input folder but with the dimensions in pixels replaced
     out_folder = re.sub(r'\d+_pixels', f'{cn.full_raster_dims}_pixels', in_folder)

@@ -22,7 +22,7 @@ from src.utilities import constants_and_names as cn
 from src.utilities import log_utilities as lu
 from src.utilities import universal_utilities as uu
 
-# Creates the s3 paths for the raw and rechunked mega-zarrs
+# Creates the s3 paths for the raw zarr
 def create_zarr_path(zarr_basic_path, chunk_size_pixels, run_date, main_logger,
                      model_version=None, model_type=None, model_path_description=None):
 
@@ -31,7 +31,7 @@ def create_zarr_path(zarr_basic_path, chunk_size_pixels, run_date, main_logger,
     mega_zarr_path = mega_zarr_path.replace("RUN_DATE", run_date)
     mega_zarr_path = mega_zarr_path.replace("CHUNK_SIZE", str(chunk_size_pixels))
 
-    main_logger.info(f"\n Zarr path to use: {mega_zarr_path}")
+    main_logger.info(f"\nZarr path to use: {mega_zarr_path}")
 
     return mega_zarr_path
 
@@ -63,7 +63,7 @@ def initialize_global_zarr(store_url, dataset_keys, n_years, chunk_size, main_lo
     # Checks if zarr already exists at that location. Does not make one if it already exits.
     # per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6945fc55-7d3c-832d-9724-c718ec0abbe3
     if fs.exists(store_url):
-        main_logger.info(f"Mega-zarr already exists at {store_url}. Skipping initialization: {uu.timestr()}")
+        main_logger.info(f"Zarr already exists at {store_url}. Skipping initialization: {uu.timestr()}")
         return
 
     # Computes dimensions
@@ -96,7 +96,7 @@ def initialize_global_zarr(store_url, dataset_keys, n_years, chunk_size, main_lo
     encoding = {}
 
     for key in dataset_keys:
-        main_logger.info(f"Creating {key} in global mega-zarr: {uu.timestr()}")
+        main_logger.info(f"Creating {key} in global zarr: {uu.timestr()}")
 
         # Rather than pre-creating an output datatype dictionary, I'm taking the hard-coded route
         # and just assigning the output datatype here for each dataset that goes in the zarr
@@ -175,7 +175,7 @@ def initialize_global_zarr(store_url, dataset_keys, n_years, chunk_size, main_lo
     main_logger.info(f"dataset info: {ds}: {uu.timestr()}")
 
     # Writes only metadata to s3 (lazy), not values
-    main_logger.info(f"Writing metadata for mega-zarr: {uu.timestr()}")
+    main_logger.info(f"Writing metadata for zarr: {uu.timestr()}")
     mapper = fs.get_mapper(store_url)
     ds.to_zarr(
         store=mapper,
@@ -185,10 +185,10 @@ def initialize_global_zarr(store_url, dataset_keys, n_years, chunk_size, main_lo
         zarr_format=3
     )
 
-    main_logger.info(f"Created metadata for mega-zarr: {uu.timestr()}")
+    main_logger.info(f"Created metadata for zarr: {uu.timestr()}")
 
     z = zarr.open_group(mapper, mode="r")
-    main_logger.info(f"Mega-zarr group info: {z.info}: {uu.timestr()}")
+    main_logger.info(f"Zarr group info: {z.info}: {uu.timestr()}")
 
     # Clean _FillValue in populated zarr
     # Need to remove _FillValue attribute in zarr because it's being encoded in some way that is incompatible with xarray while using zarr v3,
@@ -210,7 +210,7 @@ def initialize_global_zarr(store_url, dataset_keys, n_years, chunk_size, main_lo
     main_logger.info(f"Cleaned _FillValue from Zarr metadata: {uu.timestr()}")
 
     end_time = time.time()
-    main_logger.info(f"Initialized spatial mega-zarr metadata at {store_url} in {round(end_time-start_time)} seconds: {uu.timestr()}")
+    main_logger.info(f"Initialized spatial zarr metadata at {store_url} in {round(end_time-start_time)} seconds: {uu.timestr()}")
 
 def initialize_ipcc_global_zarr(store_url, chunk_size, main_logger, fill_value=0):
     dataset_keys = [
@@ -309,7 +309,7 @@ def initialize_ipcc_global_zarr(store_url, chunk_size, main_logger, fill_value=0
     main_logger.info(f"Initialized IPCC global zarr at {store_url}: {uu.timestr()}")
 
 
-# Populates pre-existing global mega-zarr with select output numpy arrays (out_dict_all_dtypes)
+# Populates pre-existing global zarr with select output numpy arrays (out_dict_all_dtypes)
 # Accelerated by writing all years at once
 # Originally per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/694612e9-0d2c-832f-8b6d-e7cb247ff781
 # and modified in Claude session 'NoData handling for chunk stats and fluxes'
@@ -324,7 +324,7 @@ def populate_zarr(bounds, bounds_str, create_zarr, interval_end_years, is_large_
 
     zarr_start = time.time()
 
-    # Opens pre-created global mega-zarr
+    # Opens pre-created global zarr
     fs = fsspec.filesystem("s3", anon=False)
     mapper = fs.get_mapper(mega_zarr_path)
     z = zarr.open(mapper, mode="r+")

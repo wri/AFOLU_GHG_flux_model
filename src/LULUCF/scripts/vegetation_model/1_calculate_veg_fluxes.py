@@ -81,12 +81,9 @@ from src.utilities import zarr_utilities as zu
 from src.utilities import resize_cluster
 
 
-
-# To get enhanced logging from workers so that I can tell why they are lost. I don't know if this works.
-# Per https://chatgpt.com/g/g-p-69399a7fcc808191b337d3fac695447c-afolu-flux-model/c/6949a74e-1388-832d-8f8e-5e9bf084ecb8
+# Silences dashboard noise
 dask.config.set({
-    "distributed.logging.distributed": "info",
-    "distributed.logging.bokeh": "critical",      # silence dashboard noise
+    "distributed.logging.bokeh": "critical",
 })
 
 # Speeds up accessing the input geotifs from s3 when they are in a folder with lots of files.
@@ -2071,15 +2068,15 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
         for key, value in download_dict.items()
     }
 
-    main_logger.info("\n Download dictionary:")
+    main_logger.info("\nDownload dictionary:")
     for key, item in download_dict.items():
-        main_logger.info(f"{key}: {item}")
+        main_logger.info(f" {key}: {item}")
 
 
     # Returns the first tile in each input so that the datatype can be determined.
     # This is done up front, once per tile set, rather than on each chunk, since
     # all tiles have the same datatype for each input-- it only needs to be done once at the very beginning of the stage.
-    main_logger.info(f"\n Getting tile_id of first tile in each tile set: {uu.timestr()}")
+    main_logger.info(f"\nGetting tile_id of first tile in each tile set: {uu.timestr()}")
     first_tiles = uu.first_file_name_in_s3_folder(download_dict)
 
     # Creates a download dictionary with the datatype of each input in the values.
@@ -2191,7 +2188,7 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
         ### Step 3: Create 1x1 degree outputs
 
         # Creates list of tasks to run (1 task = 1 chunk)
-        main_logger.info(f"Creating tasks and starting processing: {uu.timestr()}")
+        main_logger.info(f"\nCreating tasks and starting processing: {uu.timestr()}")
         main_logger.info("Workers' logs to be appended after main function log" + "\n")
 
         # Accumulates all output messages and statistics across batches
@@ -2238,7 +2235,7 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
         # only if not suppressed by the --no_stats flag and at least one chunk was successful (wasn't skipped).
         if (not no_stats) and create_zarr:
 
-            main_logger.info(f"Starting zarr chunk stats comparison: {uu.timestr()}")
+            main_logger.info(f"\nStarting zarr chunk stats comparison: {uu.timestr()}")
 
             # Text added to output chunk stats table name(s) (Excel or Parquet)
             comparison_insert = "_original_zarr_comparison"

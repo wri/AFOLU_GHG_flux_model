@@ -11,8 +11,8 @@ from datetime import datetime, timedelta
 import coiled
 from coiled.v2 import cluster_details
 import pytz
-
-from dask.distributed import print
+import builtins
+from dask.distributed import get_worker, print
 
 from src.utilities import constants_and_names as cn
 from src.utilities import universal_utilities as uu
@@ -28,7 +28,7 @@ def setup_logging_main(log_filename=None):
 
     # Ensure no duplicate handlers
     if not logger.hasHandlers():
-        formatter = logging.Formatter('flm: %(message)s')
+        formatter = logging.Formatter('%(message)s')
 
         # Console handler
         console_handler = logging.StreamHandler(sys.stdout)
@@ -91,11 +91,24 @@ def setup_logging_worker():
     return logger
 
 
-# Determines whether statement should be printed to the console as well as logged
+# Determines whether statement should be printed to the console as well as logged in workers.
+# On a Dask worker, the message is sent only to the client's terminal.
+# Off a Dask worker, it prints normally to the console.
+# From Claude conversation 'Missing worker tasks in veg log'
 def print_and_log(text, is_large_run, logger):
+    # On Coiled, goes to the worker's log. In local runs, goes to the terminal (not the main log file).
+    # This way, everything gets logged during a Coiled run.
     logger.info(f"flm: {text}")
+
+    # Only affects what is printed in the terminal.
+    # Essentially, things are printed to terminal only during small runs.
     if not is_large_run:
-        print(text, flush=True)
+        try:  # Checks if running on a Dask worker (i.e., on Coiled)
+            worker = get_worker()
+        except ValueError:  # Not running on a worker, so just prints to terminal
+            builtins.print(text, flush=True)
+        else:  # On a worker for a small run: sends the message to the terminal, without printing it on the worker
+            worker.log_event("print", {"args": (str(text),), "sep": " ", "end": "\n", "flush": True})
 
 
 ### New approach for compiling worker logs, from Claude conversation 'Missing worker tasks in veg log'
@@ -131,6 +144,17 @@ TRACEBACK_CONTINUATION = re.compile(
     r"^During handling of the above exception|^The above exception was the direct cause"
 )
 
+# Parts of worker log lines removed from the readable log, so lines read "<worker id> <time> - <message>"
+SYSTEM_LINE_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:\d{2}|Z)\s+\S+\s+")  # "<UTC time> <machine> " on system lines
+FLM_LOGGER_PREFIX = re.compile(r"^distributed\.worker - INFO - (?=flm:)")  # Dask logger name and level, on flm lines only (logged by my code as opposed to Dask system)
+FLM_TIMESTAMP_SUFFIX = re.compile(r":\s*\d{8}_\d{2}_\d{2}_\d{2}\s*$")  # ": 20261008_11_33_26" at the end of flm lines
+
+# Removes repeated information (logger name, extra timestamps, machine address) from a line for the readable log
+def _clean_readable_line(line):
+    line = SYSTEM_LINE_PREFIX.sub("", line)
+    line = FLM_LOGGER_PREFIX.sub("", line)
+    return FLM_TIMESTAMP_SUFFIX.sub("", line)
+
 
 # Converts a timestr()-format string (US/Eastern, %Y%m%d_%H_%M_%S) to epoch milliseconds
 def _timestr_to_epoch_ms(time_str):
@@ -148,7 +172,9 @@ def _coiled_instance_labels(cluster_id, workspace):
         labels[scheduler_id] = "scheduler"
     for worker in details.get("workers", []):
         if worker.get("instance"):
-            labels[worker["instance"]["id"]] = worker.get("name") or str(worker["instance"]["id"])
+            # Worker names are "<cluster name>-worker-<id>"; keeps just the id
+            name = worker.get("name")
+            labels[worker["instance"]["id"]] = f"id-{name.rsplit('-', 1)[-1]}" if name else f"id-{worker['instance']['id']}"
     return labels
 
 
@@ -231,10 +257,10 @@ def compile_worker_logs(no_log, cluster, stage, start_time_str, logger):
 
             # An event can contain multiple lines (e.g., a traceback), so they are handled together
             lines = event["message"].split("\n")
-            out_lines = [f"({label}) {t} {line}\n" for line in lines]
+            # Raw log keeps messages as they arrived; readable log has repeated information removed
+            raw_file.writelines(f"{label} {t} - {line}\n" for line in lines)
+            out_lines = [f"{label} {t} - {_clean_readable_line(line)}\n" for line in lines]
 
-            for out_line in out_lines:
-                raw_file.write(out_line)
             n_raw += len(lines)
 
             # Keeps the whole event if any of its lines match, so that multi-line records
@@ -340,7 +366,7 @@ def merge_main_and_worker_upload_logs(no_log, main_log, worker_log, stage):
     # Step 3: Append results to the log file
     with open(combined_local_log, "a") as outfile:
         outfile.write("\n")
-        outfile.write("=== Chunk-level processing times (approximate because some of worker log may be missing) ===\n")
+        outfile.write("=== Chunk-level processing times ===\n")
         outfile.write(f"Processing stats for calculation code ({len(calc_proc_times__sec)} tasks):\n")
         outfile.write(f"  Average and stdev: {avg_calc_proc_times__sec:.0f} seconds (stdev: {stdev_calc_proc_times__sec:.0f})\n")
         outfile.write(f"  Min and max: {min_calc_proc_times__sec:.0f}-{max_calc_proc_times__sec:.0f}\n")
@@ -371,7 +397,7 @@ def merge_main_and_worker_upload_logs(no_log, main_log, worker_log, stage):
     # Removes the main log if the stage doesn't run in batches.
     # The main log must be kept for stages that run in batches because each batch uses the same main log.
     # The main log can be manually deleted after the run is done.
-    if stage not in ["create_forest_age_2010_2015__1x1_deg", "vegetation_fluxes", "soil_carbon_densities_and_changes"]:
+    if stage not in ["create_forest_age_2010_2015__1x1_deg", "soil_carbon_densities_and_changes"]:
         os.remove(main_log)
 
     if not no_log:
