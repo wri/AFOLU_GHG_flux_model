@@ -258,6 +258,8 @@ def _iter_coiled_log_events(cluster_id, workspace, since_ms, until_ms, logger, p
 #   1. Raw log (gzipped, saved locally): every log line from every instance, unfiltered.
 #   2. Readable log (returned, later merged with main log): flm lines, warnings/errors, tracebacks,
 #      and worker lifecycle events (killed, lost, memory, etc.), labeled by instance.
+# Also summarizes worker restarts for exceeding the memory limit and unexpected worker deaths, so the cause of
+# a failed run is visible in the main log.
 # From Claude conversation 'Missing worker tasks in veg log'
 def compile_worker_logs(no_log, cluster, stage, start_time_str, logger, end_time_str=None):
 
@@ -294,6 +296,7 @@ def compile_worker_logs(no_log, cluster, stage, start_time_str, logger, end_time
     eastern = pytz.timezone('US/Eastern')
     in_traceback = {}   # Per-instance flag for whether the current line continues a traceback
     n_raw = n_kept = n_flm = n_severity = n_tracebacks = 0
+    n_memory_restarts = n_worker_deaths = 0
 
     with gzip.open(raw_worker_log_local_path, "wt") as raw_file, open(worker_log_local_path, "w") as readable_file:
         for event in _iter_coiled_log_events(cluster_id, workspace, since_ms, until_ms, logger):
@@ -301,14 +304,23 @@ def compile_worker_logs(no_log, cluster, stage, start_time_str, logger, end_time
             instance_id = event.get("instance_id")
             label = instance_labels.get(instance_id, str(instance_id or event.get("instance", "unknown")))
             t = datetime.fromtimestamp(event["timestamp"] / 1000, eastern).strftime("%Y-%m-%d %H:%M:%S")
+            message = event["message"]
 
             # An event can contain multiple lines (e.g., a traceback), so they are handled together
-            lines = event["message"].split("\n")
+            lines = message.split("\n")
             # Raw log keeps messages as they arrived; readable log has repeated information removed
             raw_file.writelines(f"{label} {t} - {line}\n" for line in lines)
             out_lines = [f"{label} {t} - {_clean_readable_line(line)}\n" for line in lines]
 
             n_raw += len(lines)
+
+            # Counts worker restarts for exceeding the memory limit and unexpected worker deaths (for the summary below).
+            # Only Dask's own log lines are counted, because some machines also copy these messages into their system log.
+            if event.get("log_type") == "dask":
+                if re.search(r"exceeded \d+% memory budget", message):
+                    n_memory_restarts += 1
+                if "Worker process died unexpectedly" in message:
+                    n_worker_deaths += 1
 
             # Keeps the whole event if any of its lines match, so that multi-line records
             # (e.g., Dask's "Compute Failed" with Key/Exception/Traceback) stay intact
@@ -326,7 +338,7 @@ def compile_worker_logs(no_log, cluster, stage, start_time_str, logger, end_time
             elif not continues_tb:
                 in_traceback[instance_id] = False
 
-            if not IGNORE_PATTERN.search(event["message"]) and (has_flm or has_severe or has_lifecycle or has_tb_start or continues_tb):
+            if not IGNORE_PATTERN.search(message) and (has_flm or has_severe or has_lifecycle or has_tb_start or continues_tb):
                 readable_file.writelines(out_lines)
                 n_kept += len(lines)
                 n_flm += has_flm
@@ -338,6 +350,8 @@ def compile_worker_logs(no_log, cluster, stage, start_time_str, logger, end_time
 
     logger.info(f"Worker log lines: {n_raw} raw, {n_kept} kept in readable log "
                 f"({n_flm} flm, {n_severity} WARNING/ERROR/CRITICAL, {n_tracebacks} tracebacks)")
+    logger.info(f"Worker restarts for exceeding memory limit: {n_memory_restarts}; "
+                f"unexpected worker deaths: {n_worker_deaths}")
     logger.info(f"Unique chunks with 'Total chunk processing' in worker log: {len(finished_chunks)}")
     logger.info(f"Raw worker log saved locally to {raw_worker_log_local_path}: {uu.timestr()}")
 

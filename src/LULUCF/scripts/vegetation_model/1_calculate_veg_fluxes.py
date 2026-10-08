@@ -2374,6 +2374,7 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
         # Cancels chunk tasks that are still queued or running so they don't keep using the cluster while logs are collected
         if futures and not run_local:
             main_logger.info(f"Cancelling {sum(not f.done() for f in futures)} unfinished tasks: {uu.timestr()}")
+            main_logger.info("Check combined worker log for more information.")
             client.cancel(futures)
 
         # Time of the cluster resizing to 1 worker. Used to cut off worker logging so that the controlled shutdown of

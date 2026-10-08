@@ -11,10 +11,10 @@ from src.utilities import universal_utilities as uu
 
 ### Model versions. Written order should be as below for consistency.
 
-AFOLU_model_version = "1.0.0"
+AFOLU_model_version = "1.0.1"
 AFOLU_model_version_underscore = AFOLU_model_version.replace(".", "_")
 
-LULUCF_model_version = "1.0.0"
+LULUCF_model_version = "1.0.1"
 LULUCF_model_version_underscore = LULUCF_model_version.replace(".", "_")
 
 veg_model_version = "1.0.6"
