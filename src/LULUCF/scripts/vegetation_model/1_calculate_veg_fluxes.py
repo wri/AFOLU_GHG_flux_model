@@ -2374,7 +2374,7 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
             # A failure here is logged but doesn't stop the main log from being merged and uploaded.
             worker_log_local_path = None
             try:
-                worker_log_local_path = lu.compile_worker_logs_new(no_log, cluster, stage, start_time, main_logger)
+                worker_log_local_path = lu.compile_worker_logs(no_log, cluster, stage, start_time, main_logger)
                 uu.stage_duration(start_time, uu.timestr(), f"{stage} with worker log compilation", main_logger)
             except Exception:
                 main_logger.exception(

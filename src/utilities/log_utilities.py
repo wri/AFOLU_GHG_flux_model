@@ -9,6 +9,7 @@ import numpy as np
 import gzip
 from datetime import datetime, timedelta
 import coiled
+from coiled.v2 import cluster_details
 import pytz
 
 from dask.distributed import print
@@ -134,7 +135,7 @@ def _timestr_to_epoch_ms(time_str):
 
 # Maps Coiled instance ids to readable labels (scheduler or worker name)
 def _coiled_instance_labels(cluster_id, workspace):
-    details = coiled.cluster_details(cluster_id, workspace=workspace)
+    details = cluster_details(cluster_id, workspace=workspace)
     labels = {}
     scheduler_id = (details.get("scheduler") or {}).get("instance", {}).get("id")
     if scheduler_id:
@@ -185,10 +186,11 @@ def _iter_coiled_log_events(cluster_id, workspace, since_ms, until_ms, logger, p
 # Log compilation and uploading
 # Gets the logs for the scheduler and all workers (including replaced workers) from Coiled for the whole stage.
 # Writes two files:
-#   1. Raw log (gzipped, uploaded to s3): every log line from every instance, unfiltered.
+#   1. Raw log (gzipped, saved locally): every log line from every instance, unfiltered.
 #   2. Readable log (returned, later merged with main log): flm lines, warnings/errors, tracebacks,
 #      and worker lifecycle events (killed, lost, memory, etc.), labeled by instance.
-def compile_worker_logs_new(no_log, cluster, stage, start_time_str, logger):
+# From Claude conversation 'Missing worker tasks in veg log'
+def compile_worker_logs(no_log, cluster, stage, start_time_str, logger):
 
     # Only consolidates the worker logs and uploads to s3 if not deactivated
     if no_log:
@@ -251,10 +253,6 @@ def compile_worker_logs_new(no_log, cluster, stage, start_time_str, logger):
                 n_flm += has_flm
                 n_severity += has_severe
 
-    # Uploads the raw log to s3 so that nothing is lost even if the readable filter is too narrow
-    s3_client = boto3.client("s3")
-    s3_client.upload_file(raw_worker_log_local_path, "gfw2-data", Key=f"{cn.s3_log_path}{raw_worker_log_name}")
-
     # Counts unique chunks that finished, as a quick check of log completeness
     with open(worker_log_local_path, "r") as f:
         finished_chunks = set(re.findall(r"Total chunk processing for (\S+)", f.read()))
@@ -262,7 +260,7 @@ def compile_worker_logs_new(no_log, cluster, stage, start_time_str, logger):
     logger.info(f"Worker log lines: {n_raw} raw, {n_kept} kept in readable log "
                 f"({n_flm} flm, {n_severity} WARNING/ERROR/CRITICAL, {n_tracebacks} tracebacks)")
     logger.info(f"Unique chunks with 'Total chunk processing' in worker log: {len(finished_chunks)}")
-    logger.info(f"Raw worker log uploaded to s3://gfw2-data/{cn.s3_log_path}{raw_worker_log_name}: {uu.timestr()}")
+    logger.info(f"Raw worker log saved locally to {raw_worker_log_local_path}: {uu.timestr()}")
 
     return worker_log_local_path
 
