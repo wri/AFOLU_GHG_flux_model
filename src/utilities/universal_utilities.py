@@ -2503,7 +2503,7 @@ def determine_if_new_run(chunk_list, resume_run_datetime, stage, main_logger):
     remaining_chunk_list = [c for c in chunk_list if boundstr(c) not in completed_chunk_ids]
 
     main_logger.info(f"Already completed under this run_datetime ({run_datetime}): {len(completed_chunk_ids)}")
-    main_logger.info(f"Remaining to process in {run_datetime}: {len(remaining_chunk_list)}")
+    main_logger.info(f"Remaining to process in {run_datetime}: {len(remaining_chunk_list)} out of {chunk_list}")
 
     return chunk_stats_prefix, remaining_chunk_list
 

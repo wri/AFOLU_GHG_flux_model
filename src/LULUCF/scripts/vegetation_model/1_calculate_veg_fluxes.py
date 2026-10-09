@@ -46,8 +46,6 @@ which is the situation for large analyses, obviously.
 https://app.asana.com/1/25496124013636/task/1206230383901961/comment/1210641504248464?focus=true
 
 #TODO update 1km drivers to correct year. Currently using through 2023. (But this would also mean changing it for zonal stats, including organic soil and mineral soil zstats. So, need to think through that.)
-#TODO Change error/exception logic for input downloads to catch and retry everything (rather than exception types individually), per Claude session 'Failed Coiled tasks diagnosis'
-#TODO Figure out why log is only including some tasks (including performance stats at the end) and how to make it include all tasks
 #TODO Migrate inputs and outputs to new lcl bucket
 #TODO Update through 2025
 #TODO Mel Update mangrove branches with 2015-2020 data only and use new NoData vs. 0 convention (discuss with David before implementing)
