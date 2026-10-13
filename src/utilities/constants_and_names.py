@@ -11,13 +11,13 @@ from src.utilities import universal_utilities as uu
 
 ### Model versions. Written order should be as below for consistency.
 
-AFOLU_model_version = "1.0.1"
+AFOLU_model_version = "1.0.0"
 AFOLU_model_version_underscore = AFOLU_model_version.replace(".", "_")
 
-LULUCF_model_version = "1.0.1"
+LULUCF_model_version = "1.0.0"
 LULUCF_model_version_underscore = LULUCF_model_version.replace(".", "_")
 
-veg_model_version = "1.0.6"
+veg_model_version = "1.0.5"
 veg_model_version_underscore = veg_model_version.replace(".", "_")
 
 organic_soil_model_version = "1.0.1"
@@ -2102,7 +2102,7 @@ organic_soil_pres_text = f"Organic soil: v{organic_soil_model_version}, 2021-202
 mineral_soil_pres_text = f"Mineral soil: v{SOC_model_version}, 2021-2022"
 cropland_pres_text = f"Cropland: vYYYYMMDD, ca. 2020"
 livestock_pres_text = f"Livestock: vYYYYMMDD, ca. 2020"
-legend_percentile_disclaimer = f"Legend value range represents {saturation_percentile} and {1-saturation_percentile} percentiles of fluxes."
+legend_percentile_disclaimer = f"Legend value range represents {saturation_percentile} and {100-saturation_percentile} percentiles of fluxes."
 
 # Output global aggregated jpeg names
 three_panel_jpeg_base = f"three_panels__4km_aggregation__v{veg_model_version}"
