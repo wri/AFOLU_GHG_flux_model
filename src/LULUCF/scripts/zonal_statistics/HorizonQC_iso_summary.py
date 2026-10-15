@@ -1,4 +1,6 @@
 """
+Gives LULUCF fluxes partitioned by simplified land state code for QC with results in Horizon
+
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model/
 python -m src.LULUCF.scripts.zonal_statistics.iso_summary
 
