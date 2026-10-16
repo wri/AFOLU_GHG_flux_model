@@ -187,10 +187,11 @@ def remove_ticks(ax):
     ax.set_xticklabels([])  # Remove x-axis labels
     ax.set_yticklabels([])  # Remove y-axis labels
 
-def create_divergent_legend_asymmetric(fig, vmin, vmax, title_text, tick_labels,
+def create_divergent_legend_asymmetric(fig, ax, vmin, vmax, title_text, tick_labels,
                                        year, colors_rgb, percentiles, percentile_0, main_logger,
                                        colorbar_height_multiplier=1.0, add_intermediate_ticks=False,
-                                       show_direction_arrows=False, colorbar_left_offset=0.0):
+                                       show_direction_arrows=False, colorbar_left_offset=0.0,
+                                       cbar_left_fig_frac=None):
     """
     Creates a vertical divergent colorbar legend whose colors match the map exactly.
 
@@ -241,13 +242,15 @@ def create_divergent_legend_asymmetric(fig, vmin, vmax, title_text, tick_labels,
     main_logger.info(f"  Neutral tick at bar height 0.5 (TwoSlopeNorm convention)")
 
     # Adds the colorbar axis; height is scaled by colorbar_height_multiplier;
-    # left position shifted by colorbar_left_offset to make room for direction arrows if needed
-    cbar_ax = fig.add_axes([          # [left, bottom, width, height]
-        cn.colorbar_dimensions[0] + cn.colorbar_dimensions[2] + colorbar_left_offset,
-        cn.colorbar_dimensions[1],
-        cn.colorbar_dimensions[2],
-        cn.colorbar_dimensions[3] * colorbar_height_multiplier
-    ])
+    # left position shifted by colorbar_left_offset to make room for direction arrows if needed.
+    # cbar_left_fig_frac overrides the default position (useful for regional maps where the
+    # default left-margin position would float in transparent ocean).
+    left_fig = cbar_left_fig_frac if cbar_left_fig_frac is not None else (
+        cn.colorbar_dimensions[0] + cn.colorbar_dimensions[2] + colorbar_left_offset)
+    bot_fig  = cn.colorbar_dimensions[1]
+    w_fig    = cn.colorbar_dimensions[2]
+    h_fig    = cn.colorbar_dimensions[3] * colorbar_height_multiplier
+    cbar_ax = fig.add_axes([left_fig, bot_fig, w_fig, h_fig])
 
     # Colorbar ticks are in DATA space (kt); TwoSlopeNorm positions them correctly on the bar
     cb = plt.colorbar(sm, cax=cbar_ax, orientation="vertical")
@@ -305,10 +308,10 @@ def create_divergent_legend_asymmetric(fig, vmin, vmax, title_text, tick_labels,
         transform=cbar_ax.transAxes
     )
 
-def create_unidirection_legend(fig, img, lower_lim_all_yrs, upper_lim_all_yrs, title_text, tick_labels,
+def create_unidirection_legend(fig, ax, img, lower_lim_all_yrs, upper_lim_all_yrs, title_text, tick_labels,
                                year, colors_rgb, percentiles, main_logger,
                                colorbar_height_multiplier=1.0, add_intermediate_ticks=False,
-                               label_divisor=1.0, colorbar_left_offset=0.0):
+                               label_divisor=1.0, colorbar_left_offset=0.0, cbar_left_fig_frac=None):
     """
     Creates a vertical colorbar legend with a left-aligned title above it.
     :param fig: The figure
@@ -332,13 +335,15 @@ def create_unidirection_legend(fig, img, lower_lim_all_yrs, upper_lim_all_yrs, t
     net_colors_rgb_hex = ['#{:02x}{:02x}{:02x}'.format(r, g, b) for r, g, b in colors_rgb]
 
     # Add a vertical colorbar (legend) in the bottom-left of the map;
-    # height scaled by colorbar_height_multiplier; position shifted right by colorbar_left_offset
-    cbar_ax = fig.add_axes([          # [left, bottom, width, height]
-        cn.colorbar_dimensions[0] + cn.colorbar_dimensions[2] + colorbar_left_offset,
-        cn.colorbar_dimensions[1],
-        cn.colorbar_dimensions[2],
-        cn.colorbar_dimensions[3] * colorbar_height_multiplier
-    ])
+    # height scaled by colorbar_height_multiplier; position shifted right by colorbar_left_offset.
+    # cbar_left_fig_frac overrides the default position (useful for regional maps where the
+    # default left-margin position would float in transparent ocean).
+    left_fig = cbar_left_fig_frac if cbar_left_fig_frac is not None else (
+        cn.colorbar_dimensions[0] + cn.colorbar_dimensions[2] + colorbar_left_offset)
+    bot_fig  = cn.colorbar_dimensions[1]
+    w_fig    = cn.colorbar_dimensions[2]
+    h_fig    = cn.colorbar_dimensions[3] * colorbar_height_multiplier
+    cbar_ax = fig.add_axes([left_fig, bot_fig, w_fig, h_fig])
     cb = plt.colorbar(img, cax=cbar_ax, orientation="vertical")
 
     if add_intermediate_ticks:
@@ -798,7 +803,7 @@ def map_net_flux(s3_folders, model_type, model_path_description,
             title_text = f"Net greenhouse gas flux\nAll vegetation pools, CO2 only\nkt CO$_2$e yr$^{{-1}}$"
 
         # Creates legend
-        create_divergent_legend_asymmetric(fig, rounded_lower_lim_all_yrs, rounded_upper_lim_all_yrs,
+        create_divergent_legend_asymmetric(fig, ax, rounded_lower_lim_all_yrs, rounded_upper_lim_all_yrs,
                                            title_text, tick_labels,
                                            year, colors_rgb, percentiles, percentile_0, main_logger,
                                            colorbar_height_multiplier=1.8, add_intermediate_ticks=True,
@@ -873,7 +878,7 @@ def map_net_flux(s3_folders, model_type, model_path_description,
                        percentile_0_mean * cn.net_percentiles[5], percentile_0_mean * cn.net_percentiles[6], percentile_0_mean * cn.net_percentiles[7],
                        percentile_0_mean * cn.net_percentiles[8], percentile_0_mean * cn.net_percentiles[9]]
 
-    create_divergent_legend_asymmetric(fig, rounded_lower_lim_all_yrs, rounded_upper_lim_all_yrs,
+    create_divergent_legend_asymmetric(fig, ax, rounded_lower_lim_all_yrs, rounded_upper_lim_all_yrs,
                                        title_text, tick_labels,
                                        "avg", colors_rgb, percentiles_avg, percentile_0_mean, main_logger,
                                        colorbar_height_multiplier=1.8, add_intermediate_ticks=True,
@@ -1140,7 +1145,7 @@ def map_gross(s3_folders, model_type, model_path_description,
             ax.set_ylim(extent[2], extent[3])
 
         # Legend for gross fluxes
-        create_unidirection_legend(fig, img, lower_lim_all_yrs, upper_lim_all_yrs,
+        create_unidirection_legend(fig, ax, img, lower_lim_all_yrs, upper_lim_all_yrs,
                                    title_text, tick_labels,
                                    year, colors_rgb, percentiles, main_logger,
                                    colorbar_height_multiplier=1.8, add_intermediate_ticks=True,
@@ -1191,7 +1196,7 @@ def map_gross(s3_folders, model_type, model_path_description,
         ax.set_ylim(extent[2], extent[3])
 
     # Legend for gross fluxes
-    create_unidirection_legend(fig, img, lower_lim_all_yrs, upper_lim_all_yrs,
+    create_unidirection_legend(fig, ax, img, lower_lim_all_yrs, upper_lim_all_yrs,
                                title_text, tick_labels,
                                'avg', colors_rgb, percentiles, main_logger,
                                colorbar_height_multiplier=1.8, add_intermediate_ticks=True,

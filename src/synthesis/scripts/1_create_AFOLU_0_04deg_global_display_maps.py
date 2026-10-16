@@ -60,6 +60,8 @@ Example — Central Africa zoom (Parts 1-3 only, no component data-- and no flux
 python -m src.synthesis.scripts.1_create_AFOLU_0_04deg_global_display_maps
   [all the above arguments] \
   --center_latitude 0 --center_longitude 20 --lat_height 20 -bbd central_Africa
+  OR
+  --center_latitude 55 --center_longitude 30 --lat_height 40 -bbd Europe
 """
 
 import argparse
@@ -439,10 +441,11 @@ def render_divergent_map(data, raster_extent, bounding_box_proj, country_shapefi
                 ha='center', va='bottom', fontsize=cn.legend_fontsize * 1, color='black')
 
     mu.create_divergent_legend_asymmetric(
-        fig, rounded_lower, rounded_upper, title_text, tick_labels,
+        fig, ax, rounded_lower, rounded_upper, title_text, tick_labels,
         veg_analysis_years, net_colors_rgb, percentiles, percentile_0, logger,
         colorbar_height_multiplier=1.8, add_intermediate_ticks=True,
         show_direction_arrows=True, colorbar_left_offset=0.02,
+        cbar_left_fig_frac=0.20 if bounding_box_proj is not None else None,
     )
     mu.remove_ticks(ax)
 
@@ -496,10 +499,11 @@ def render_unidirectional_map(data, raster_extent, bounding_box_proj, country_sh
                 ha='center', va='bottom', fontsize=cn.legend_fontsize * 1, color='black')
 
     mu.create_unidirection_legend(
-        fig, img, lower_lim, upper_lim, title_text, tick_labels,
+        fig, ax, img, lower_lim, upper_lim, title_text, tick_labels,
         'avg', colors_rgb, percentiles_cfg, logger,
         colorbar_height_multiplier=1.8, add_intermediate_ticks=True,
         label_divisor=1e3, colorbar_left_offset=0.00,
+        cbar_left_fig_frac=0.20 if bounding_box_proj is not None else None,
     )
     mu.remove_ticks(ax)
 
@@ -541,10 +545,11 @@ def render_percentage_map(data, raster_extent, bounding_box_proj, country_shapef
         ax.set_ylim(extent[2], extent[3])
 
     mu.create_unidirection_legend(
-        fig, img, 0, upper_lim, title_text, tick_labels,
+        fig, ax, img, 0, upper_lim, title_text, tick_labels,
         'avg', colors_rgb, percentiles_cfg, logger,
         colorbar_height_multiplier=1.8, add_intermediate_ticks=True,
         label_divisor=1, colorbar_left_offset=0.00,
+        cbar_left_fig_frac=0.20 if bounding_box_proj is not None else None,
     )
     mu.remove_ticks(ax)
 
