@@ -56,12 +56,12 @@ python -m src.synthesis.scripts.1_create_AFOLU_0_04deg_global_display_maps \
 -cl s3://gfw2-data/climate/AFOLU_flux_model/cropland_emissions/processed/Cornell_v20250828/year_2020/global_COG/all_sources/Global_grid_cropland_emissions_total_amount_CO2eq_all_crops_without_peat_burn_kg_CO2__20260803_COG.tif \
 -ls s3://gfw2-data/climate/AFOLU_flux_model/livestock_emissions/raw__from_Cornell/20260914/Total_GHG_kg_CO2e_yr_Livestock_ALL.tif
 
-Example — Central Africa zoom (Parts 1-3 only, no component data-- and no flux annotation):
+Regional examples:
 python -m src.synthesis.scripts.1_create_AFOLU_0_04deg_global_display_maps
   [all the above arguments] \
-  --center_latitude 0 --center_longitude 20 --lat_height 20 -bbd central_Africa
+  --center_latitude 0 --center_longitude 20 --lat_height 20 --cbar_left_fig_frac 0.18 -bbd central_Africa
   OR
-  --center_latitude 55 --center_longitude 30 --lat_height 40 -bbd Europe
+  --center_latitude 55 --center_longitude 30 --lat_height 40 --cbar_left_fig_frac 0.20 -bbd Europe
 """
 
 import argparse
@@ -391,7 +391,7 @@ def _round_limits_to_kt(lower_lim, upper_lim):
 def render_divergent_map(data, raster_extent, bounding_box_proj, country_shapefile,
                           net_colors_rgb, title_text, veg_analysis_years,
                           non_pres_folder, pres_folder, jpeg_name, slide_text, logger,
-                          percentile_multipliers=None, bottom_annotation=None):
+                          percentile_multipliers=None, bottom_annotation=None, cbar_left_fig_frac=None):
     """Full pipeline for a divergent (net flux) map: percentiles → colormap → figure → legend → save.
 
     Returns the non-presentation JPEG path.
@@ -445,7 +445,7 @@ def render_divergent_map(data, raster_extent, bounding_box_proj, country_shapefi
         veg_analysis_years, net_colors_rgb, percentiles, percentile_0, logger,
         colorbar_height_multiplier=1.8, add_intermediate_ticks=True,
         show_direction_arrows=True, colorbar_left_offset=0.02,
-        cbar_left_fig_frac=0.20 if bounding_box_proj is not None else None,
+        cbar_left_fig_frac=cbar_left_fig_frac if cbar_left_fig_frac is not None else (0.20 if bounding_box_proj is not None else None),
     )
     mu.remove_ticks(ax)
 
@@ -458,7 +458,7 @@ def render_divergent_map(data, raster_extent, bounding_box_proj, country_shapefi
 def render_unidirectional_map(data, raster_extent, bounding_box_proj, country_shapefile,
                                colors_rgb, percentiles_cfg, title_text,
                                non_pres_folder, pres_folder, jpeg_name, slide_text, logger,
-                               mask_positive=True, bottom_annotation=None):
+                               mask_positive=True, bottom_annotation=None, cbar_left_fig_frac=None):
     """Full pipeline for a unidirectional (emissions or removals) map.
 
     mask_positive=True  → show only positive values (emissions, masks <= 0).
@@ -503,7 +503,7 @@ def render_unidirectional_map(data, raster_extent, bounding_box_proj, country_sh
         'avg', colors_rgb, percentiles_cfg, logger,
         colorbar_height_multiplier=1.8, add_intermediate_ticks=True,
         label_divisor=1e3, colorbar_left_offset=0.00,
-        cbar_left_fig_frac=0.20 if bounding_box_proj is not None else None,
+        cbar_left_fig_frac=cbar_left_fig_frac if cbar_left_fig_frac is not None else (0.20 if bounding_box_proj is not None else None),
     )
     mu.remove_ticks(ax)
 
@@ -515,7 +515,8 @@ def render_unidirectional_map(data, raster_extent, bounding_box_proj, country_sh
 
 def render_percentage_map(data, raster_extent, bounding_box_proj, country_shapefile,
                            colors_rgb, percentiles_cfg, title_text,
-                           non_pres_folder, pres_folder, jpeg_name, slide_text, logger):
+                           non_pres_folder, pres_folder, jpeg_name, slide_text, logger,
+                           cbar_left_fig_frac=None):
     """Full pipeline for a percentage (0–100%) contribution map.
 
     Always anchors the colormap at 0% and masks non-positive pixels.
@@ -549,7 +550,7 @@ def render_percentage_map(data, raster_extent, bounding_box_proj, country_shapef
         'avg', colors_rgb, percentiles_cfg, logger,
         colorbar_height_multiplier=1.8, add_intermediate_ticks=True,
         label_divisor=1, colorbar_left_offset=0.00,
-        cbar_left_fig_frac=0.20 if bounding_box_proj is not None else None,
+        cbar_left_fig_frac=cbar_left_fig_frac if cbar_left_fig_frac is not None else (0.20 if bounding_box_proj is not None else None),
     )
     mu.remove_ticks(ax)
 
@@ -575,7 +576,8 @@ def map_LULUCF_maps(lulucf_input_date,
                     veg_net_geotif=None,
                     organic_soil_drained_s3=None, organic_soil_burned_s3=None, mineral_soil_net_s3=None,
                     veg_emis_geotif=None, mineral_soil_loss_s3=None,
-                    cropland_geotif_s3=None, livestock_geotif_s3=None):
+                    cropland_geotif_s3=None, livestock_geotif_s3=None,
+                    cbar_left_fig_frac=None):
 
     start_time = time.time()
 
@@ -891,6 +893,7 @@ def map_LULUCF_maps(lulucf_input_date,
         logger=main_logger,
         mask_positive=True,
         bottom_annotation=_flux_annotation(df_stats, 'LULUCF_gross_emissions__all_gases__MgCO2e_yr', 'Average gross emissions', uncertainty="2.6"),
+        cbar_left_fig_frac=cbar_left_fig_frac,
     )
 
     lulucf_remv_core = f"LULUCF_gross_remv__{file_version_str}__ktCO2e_yr"
@@ -904,6 +907,7 @@ def map_LULUCF_maps(lulucf_input_date,
         logger=main_logger,
         mask_positive=False,
         bottom_annotation=_flux_annotation(df_stats, 'LULUCF_gross_removals__MgCO2_yr', 'Average gross removals', unit='Gt CO$_2$ yr$^{-1}$', uncertainty="3.1"),
+        cbar_left_fig_frac=cbar_left_fig_frac,
     )
 
     lulucf_net_core = f"LULUCF_net_flux__{file_version_str}__ktCO2e_yr"
@@ -917,6 +921,7 @@ def map_LULUCF_maps(lulucf_input_date,
         slide_text=lulucf_slide_text_with_disclaimer,
         logger=main_logger,
         bottom_annotation=_flux_annotation(df_stats, 'LULUCF_net_flux__MgCO2e_yr', 'Average net flux', uncertainty="4.0"),
+        cbar_left_fig_frac=cbar_left_fig_frac,
     )
 
     main_logger.info(f"Part 1 done in {round(time.time() - start_time)}s: {uu.timestr()}")
@@ -957,6 +962,7 @@ def map_LULUCF_maps(lulucf_input_date,
             logger=main_logger,
             percentile_multipliers=cn.net_percentiles,
             bottom_annotation=_flux_annotation(df_stats, 'veg__net_flux__all_C_pools__all_gases__MgCO2e_yr', 'Average net flux'),
+            cbar_left_fig_frac=cbar_left_fig_frac,
         )
 
         # Panel b: Mineral soil net SOC change
@@ -973,6 +979,7 @@ def map_LULUCF_maps(lulucf_input_date,
             logger=main_logger,
             bottom_annotation=_flux_annotation(df_stats, 'SOC_net__mineral_soil_extent__0_30cm_MgCO2_yr', 'Average net flux',
                                                 unit='Gt CO$_2$ yr$^{-1}$'),
+            cbar_left_fig_frac=cbar_left_fig_frac,
         )
 
         # Panel c: Organic soil gross emissions — weighted average across intervals, computed above
@@ -989,6 +996,7 @@ def map_LULUCF_maps(lulucf_input_date,
             logger=main_logger,
             mask_positive=True,
             bottom_annotation=_flux_annotation(df_stats, 'org_soil_emis__all_gases__MgCO2e_yr', 'Average gross emissions'),
+            cbar_left_fig_frac=cbar_left_fig_frac,
         )
 
         # Four-panel composite
@@ -1026,6 +1034,7 @@ def map_LULUCF_maps(lulucf_input_date,
             jpeg_name=jpeg_name(pct_veg_core, bounding_box_description),
             slide_text=lulucf_slide_text_with_disclaimer,
             logger=main_logger,
+            cbar_left_fig_frac=cbar_left_fig_frac,
         )
 
         pct_org_core = f"pct_org_soil_emis_of_LULUCF_gross_emis__{file_version_str}"
@@ -1037,6 +1046,7 @@ def map_LULUCF_maps(lulucf_input_date,
             jpeg_name=jpeg_name(pct_org_core, bounding_box_description),
             slide_text=lulucf_slide_text_with_disclaimer,
             logger=main_logger,
+            cbar_left_fig_frac=cbar_left_fig_frac,
         )
 
         pct_min_core = f"pct_min_soil_loss_of_LULUCF_gross_emis__{file_version_str}"
@@ -1048,6 +1058,7 @@ def map_LULUCF_maps(lulucf_input_date,
             jpeg_name=jpeg_name(pct_min_core, bounding_box_description),
             slide_text=lulucf_slide_text_with_disclaimer,
             logger=main_logger,
+            cbar_left_fig_frac=cbar_left_fig_frac,
         )
 
         pct_three_panel_core = f"LULUCF_pct_gross_emis__veg_orgsoil_minsoil__{file_version_str}"
@@ -1076,6 +1087,7 @@ def map_LULUCF_maps(lulucf_input_date,
             slide_text=lulucf_slide_text_with_disclaimer,
             logger=main_logger,
             mask_positive=True,
+            cbar_left_fig_frac=cbar_left_fig_frac,
         )
         main_logger.info(f"Part 5 done in {round(time.time() - start_time)}s: {uu.timestr()}")
 
@@ -1094,6 +1106,7 @@ def map_LULUCF_maps(lulucf_input_date,
             slide_text=lulucf_slide_text_with_disclaimer,
             logger=main_logger,
             mask_positive=True,
+            cbar_left_fig_frac=cbar_left_fig_frac,
         )
 
         afolu_remv_core = "AFOLU_gross_remv__ktCO2_yr"
@@ -1106,6 +1119,7 @@ def map_LULUCF_maps(lulucf_input_date,
             slide_text=lulucf_slide_text_with_disclaimer,
             logger=main_logger,
             mask_positive=False,
+            cbar_left_fig_frac=cbar_left_fig_frac,
         )
 
         afolu_net_core = "AFOLU_net_flux__ktCO2e_yr"
@@ -1118,6 +1132,7 @@ def map_LULUCF_maps(lulucf_input_date,
             jpeg_name=jpeg_name(afolu_net_core, bounding_box_description),
             slide_text=lulucf_slide_text_with_disclaimer,
             logger=main_logger,
+            cbar_left_fig_frac=cbar_left_fig_frac,
         )
 
         afolu_three_panel_core = "AFOLU_three_panel__emis_remv_net__ktCO2e_yr"
@@ -1163,6 +1178,7 @@ def map_LULUCF_maps(lulucf_input_date,
                 jpeg_name=jpeg_name("LULUCF_net_flux_plus_cropland__ktCO2e_yr", bounding_box_description),
                 slide_text=lulucf_slide_text_with_disclaimer,
                 logger=main_logger,
+                cbar_left_fig_frac=cbar_left_fig_frac,
             )
 
             render_divergent_map(
@@ -1174,6 +1190,7 @@ def map_LULUCF_maps(lulucf_input_date,
                 jpeg_name=jpeg_name("LULUCF_net_flux_plus_livestock__ktCO2e_yr", bounding_box_description),
                 slide_text=lulucf_slide_text_with_disclaimer,
                 logger=main_logger,
+                cbar_left_fig_frac=cbar_left_fig_frac,
             )
 
             main_logger.info(f"Part 7 done in {round(time.time() - start_time)}s: {uu.timestr()}")
@@ -1194,7 +1211,8 @@ def main(lulucf_input_date,
          cropland_geotif_s3=None, livestock_geotif_s3=None,
 
          # For regional maps
-         center_latitude=None, center_longitude=None, lat_height=None, bounding_box_description=None):
+         center_latitude=None, center_longitude=None, lat_height=None, bounding_box_description=None,
+         cbar_left_fig_frac=None):
 
     stage = 'summative_4x4km_LULUCF_jpegs'
     log_note = '4x4 km jpegs for presenations/manuscript'
@@ -1220,6 +1238,7 @@ def main(lulucf_input_date,
     main_logger.info(f"  center_longitude:             {center_longitude}")
     main_logger.info(f"  lat_height:                   {lat_height}")
     main_logger.info(f"  bounding_box_description:     {bounding_box_description}")
+    main_logger.info(f"  cbar_left_fig_frac:           {cbar_left_fig_frac}")
     main_logger.info("\n")
 
     # Reprojects country shapefile if not already reprojected
@@ -1259,6 +1278,7 @@ def main(lulucf_input_date,
         mineral_soil_loss_s3=mineral_soil_loss_s3,
         cropland_geotif_s3=cropland_geotif_s3,
         livestock_geotif_s3=livestock_geotif_s3,
+        cbar_left_fig_frac=cbar_left_fig_frac,
     )
 
 
@@ -1291,6 +1311,8 @@ if __name__ == '__main__':
     parser.add_argument('-clon', '--center_longitude', type=float, help='Longitude to center output maps (optional)')
     parser.add_argument('-lh', '--lat_height', type=float, help='Total latitude height around center (optional)')
     parser.add_argument('-bbd', '--bounding_box_description', default='global', help='Description of bounding box to include in output names')
+    parser.add_argument('-clf', '--cbar_left_fig_frac', type=float, default=None,
+                        help='Figure-fraction x position for legend colorbar left edge (default: 0.14 for global, 0.20 for regional maps)')
 
     args = parser.parse_args()
 
@@ -1315,4 +1337,5 @@ if __name__ == '__main__':
         center_longitude=args.center_longitude,
         lat_height=args.lat_height,
         bounding_box_description=args.bounding_box_description,
+        cbar_left_fig_frac=args.cbar_left_fig_frac,
     )
