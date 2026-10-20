@@ -238,7 +238,7 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
     # Adds the state_node meaning and classifications to the dataframe
     if cn.land_state_pattern in df_with_areas.columns:
         df_with_areas = df_with_areas.merge(state_node_df[['land_state', 'land_state_meaning', 'land_state_broad_class', 'land_state_detailed_class', 'tall_veg_type', 'tree_focused_2x2']],
-              left_on='land_state_node', right_on='land_state',
+              left_on=cn.land_state_pattern, right_on='land_state',
               how='left')
     # print("merged:", df_with_areas)
 
@@ -251,6 +251,8 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
     df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("all_gases", na=False), "gas"] = "all gases"
     df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("SOC", na=False), "gas"] = "CO2"
     df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("C__MgCO2", na=False), "gas"] = "CO2"  # Captures individual carbon pools
+    df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("_co2_Mg_CO2", na=False), "gas"] = "CO2"  # Organic soil CO2-only (burned_co2, drained_co2)
+    df_with_areas.loc[df_with_areas["analysis_layer"].str.contains("_total_Mg_CO2e", na=False), "gas"] = "all gases"  # Organic soil all gases (burned_total, drained_total)
 
     # Replaces the year index with the actual reporting year (differs for vegetation and SOC)
     if flux_type == "vegetation":
@@ -375,6 +377,178 @@ def create_df(coord_dict, state_node_df, merge_keys, tile_id, flux_type, main_lo
     df_with_areas = df_with_areas.rename(columns={'pixel_area_ha': 'area_ha'})
 
     return df_with_areas
+
+
+# Adds ISO3, country name and UN regions from the numeric GADM adm0 code. Same mapping as in create_df.
+def add_country_columns(df):
+    df[cn.adm0_pattern] = df[cn.adm0_pattern].map(cn.numeric_to_alpha3)
+    df['country_name'] = df[cn.adm0_pattern].map(cn.iso_to_country)
+    df['region_L1'] = df[cn.adm0_pattern].map(cn.iso_to_region_UN_geoscheme_L1)
+    df['region_L2_L3'] = df[cn.adm0_pattern].map(cn.iso_to_region_UN_geoscheme_L2_L3)
+
+    for col in [cn.adm0_pattern, 'country_name', 'region_L1', 'region_L2_L3']:
+        df[col] = df[col].fillna("Unassigned")
+
+    df["country_name"] = df["country_name"].replace({
+        "United Kingdom of Great Britain and Northern Ireland": "United Kingdom",
+        "Russian Federation": "Russia",
+        "Democratic Republic of the Congo": "DR Congo",
+        "United States of America (the)": "USA"
+    })
+    return df
+
+
+### Output table columns, in order
+
+# Flux tables. Columns of contextual layers that aren't selected are left out.
+FLUX_OUTPUT_COLS = [
+    "analysis_layer",
+    cn.adm0_pattern, "country_name", "region_L1", "region_L2_L3",
+    "cont_eco", "continent", "ecozone", "continent_ecozone", "climate_domain",
+    "starting_composite_primary_forest",
+    "land_state_broad_class", "tall_veg_type",
+    "IPCC_class", "IPCC_class_name",
+    "IPCC_change", "IPCC_change_name",
+    "IPCC_summary", "IPCC_summary_name",
+    "IPCC_node_code", "IPCC_node_code_name",
+    "gas",
+    "year",
+    "tile_id",
+    "value",
+    "area_ha",
+]
+
+# IPCC class area tables
+CLASS_AREA_OUTPUT_COLS = [
+    cn.adm0_pattern, "country_name", "region_L1", "region_L2_L3",
+    "starting_composite_primary_forest",
+    "land_state_broad_class", "tall_veg_type",
+    "IPCC_class", "IPCC_class_name",
+    "IPCC_change", "IPCC_change_name",
+    "IPCC_summary", "IPCC_summary_name",
+    "IPCC_node_code", "IPCC_node_code_name",
+    "year",
+    "tile_id",
+    "area_ha",
+]
+
+# Columns create_df makes that aren't in the flux output tables.
+# Any other column it makes (e.g., from extra contextual layers like WDPA) is kept, before gas.
+FLUX_DROPPED_COLS = [cn.land_state_pattern, "land_state_meaning", "land_state_detailed_class", "tree_focused_2x2", "density__Mg_ha"]
+
+# Land state columns kept in the output tables (from the land state node table)
+LAND_STATE_OUTPUT_COLS = ["land_state_broad_class", "tall_veg_type"]
+
+
+# Land state nodes without a row in the node table (e.g., 0) have no broad class or tall veg type
+def fill_land_state_columns(df):
+    for col in LAND_STATE_OUTPUT_COLS:
+        if col in df.columns:
+            df[col] = df[col].fillna("Unassigned")
+    return df
+
+
+# Sums value columns over rows that are identical in every other output column.
+# Rows from different land state nodes (or other dropped columns) are different pixels, so their areas and values add up.
+def collapse_rows(df, output_cols, value_cols):
+    group_cols = [c for c in output_cols if c in df.columns and c not in value_cols]
+    totals_in = df[value_cols].astype("float64").sum()
+    df = df.copy()
+    df[value_cols] = df[value_cols].astype("float64")
+    collapsed = (
+        df.groupby(group_cols, dropna=False, observed=True, as_index=False, sort=False)[value_cols]
+          .sum()
+    )
+    totals_out = collapsed[value_cols].sum()
+    max_diff = float((totals_out - totals_in).abs().max())
+    return collapsed[group_cols + value_cols], max_diff
+
+
+# Flux table from create_df -> output columns, with land state nodes collapsed into land_state_broad_class and tall_veg_type
+def collapse_flux_df(df, tile_id, main_logger):
+
+    n_rows_in = len(df.index)
+    df = fill_land_state_columns(df)
+
+    # Columns of extra contextual layers (e.g., WDPA) are kept, just before gas
+    extra_cols = [c for c in df.columns if c not in FLUX_OUTPUT_COLS and c not in FLUX_DROPPED_COLS]
+    output_cols = [c for c in FLUX_OUTPUT_COLS if c in df.columns]
+    gas_pos = output_cols.index("gas") if "gas" in output_cols else len(output_cols)
+    output_cols = output_cols[:gas_pos] + extra_cols + output_cols[gas_pos:]
+
+    df, max_diff = collapse_rows(df, output_cols, ["value", "area_ha"])
+
+    missing = [c for c in FLUX_OUTPUT_COLS if c not in df.columns]
+    main_logger.info(f"  {tile_id} flux table: {n_rows_in} -> {len(df.index)} rows after collapsing land state nodes "
+                     f"(max total difference {max_diff:.6f})")
+    if extra_cols:
+        main_logger.info(f"  {tile_id} flux table extra contextual columns: {extra_cols}")
+    if missing:
+        main_logger.info(f"  {tile_id} flux table columns not included (contextual layers not selected): {missing}")
+
+    return df
+
+
+# Converts the sparse flox output of pixel area summed by country x primary forest x land state node x
+# IPCC class/change/summary/node x year (as a coord_dict from convert_to_coord_dict) into the IPCC class area table.
+# Land state nodes are converted to land_state_broad_class and tall_veg_type and rows that become identical are summed.
+# This is the total area of all pixels, not only the area of pixels with flux.
+def create_ipcc_class_area_df(class_area_coord_dict, state_node_df, tile_id, main_logger):
+
+    main_logger.info(f"  Creating {tile_id} IPCC class area data frame: {uu.timestr()}")
+
+    df = pd.DataFrame(class_area_coord_dict).rename(columns={"value": "area_ha"})
+    df = df[df["area_ha"] > 0].copy()
+    n_rows_in = len(df.index)
+
+    df["tile_id"] = str(tile_id)
+    df["year"] = df["year"].astype(int) + cn.veg_outputs_years[0]   # Year index -> actual year, same as create_df
+    for col in [cn.starting_composite_primary_forest_pattern, cn.land_state_pattern, cn.IPCC_class_pattern,
+                cn.IPCC_change_pattern, cn.IPCC_summary_pattern, cn.IPCC_node_pattern]:
+        df[col] = df[col].astype(int)
+
+    df[f"{cn.IPCC_class_pattern}_name"] = df[cn.IPCC_class_pattern].map(cn.numeric_to_ipcc_class).fillna("Unassigned")
+    df[f"{cn.IPCC_change_pattern}_name"] = df[cn.IPCC_change_pattern].map(cn.numeric_to_ipcc_change).fillna("Unassigned")
+    df[f"{cn.IPCC_summary_pattern}_name"] = df[cn.IPCC_summary_pattern].map(cn.numeric_to_ipcc_change).fillna("Unassigned")
+    df[f"{cn.IPCC_node_pattern}_name"] = df[cn.IPCC_node_pattern].map(cn.numeric_to_ipcc_node_code).fillna("Unassigned")
+
+    # Land state node -> broad class and tall vegetation type
+    df = df.merge(state_node_df[['land_state'] + LAND_STATE_OUTPUT_COLS],
+                  left_on=cn.land_state_pattern, right_on='land_state', how='left').drop(columns='land_state')
+    df = fill_land_state_columns(df)
+
+    df = add_country_columns(df)
+
+    df, max_diff = collapse_rows(df, CLASS_AREA_OUTPUT_COLS, ["area_ha"])
+    main_logger.info(f"  {tile_id} IPCC class area table: {n_rows_in} -> {len(df.index)} rows after collapsing land state nodes "
+                     f"(total difference {max_diff:.6f} ha)")
+
+    return df.reset_index(drop=True)
+
+
+# Combines tile-level IPCC class area tables.
+# Returns a long table (all tile rows, same columns as the tile tables) and a wide table
+# (country x year, one column per IPCC class plus total).
+def combine_ipcc_class_area_tables(df_list, main_logger):
+
+    long_df = (
+        pd.concat(df_list, axis=0, ignore_index=True)
+          .sort_values([cn.adm0_pattern, "year", cn.IPCC_class_pattern, "tile_id"])
+          .reset_index(drop=True)
+    )
+
+    country_cols = [cn.adm0_pattern, "country_name", "region_L1", "region_L2_L3", "year"]
+    wide_df = (
+        long_df
+        .pivot_table(index=country_cols, columns=f"{cn.IPCC_class_pattern}_name", values="area_ha", aggfunc="sum", fill_value=0)
+    )
+    wide_df.columns = [f"{c}__area_ha" for c in wide_df.columns]
+    wide_df["total__area_ha"] = wide_df.sum(axis=1)
+    wide_df = wide_df.reset_index()
+
+    main_logger.info(f"IPCC class area: {len(long_df.index)} long rows, {len(wide_df.index)} country-year rows")
+
+    return long_df, wide_df
 
 
 # Converts long-format df to wide-format df
