@@ -2,65 +2,51 @@
 Purpose: Calculates zonal statistics for LULUCF flux outputs using IPCC land use classifications and other contextual datasets.
 The script reads vegetation, LULUCF, mineral soil (SOC), organic soil, and IPCC land use zarrs, converts per-hectare fluxes to per-pixel totals,
 and summarizes emissions, removals, net flux, and area by IPCC land use class + transition + summary, land state, administrative unit, and other
-contextual layers for each 10×10° tile. Tile-level outputs are written as parquet tables and optionally combined into global zonal statistics tables.
+contextual layers for each 10x10 deg tile. Tile-level outputs are written as parquet tables and optionally combined into global zonal statistics tables.
 
-Two kinds of area are output:
-    1. area_ha in the flux tables: area of the contextual-layer combination, attached only to rows where that flux layer is non-zero.
-       Summing it for one analysis layer gives the area with that flux, NOT the total area of a country/class.
-    2. ipcc_class_area tables (separate outputs in the ipcc_class_area/ subfolder): total pixel area of all pixels, whether or not
-       they have flux, by country, primary forest, land state (broad class, tall vegetation type) and IPCC class/change/summary/node,
-       2016-2024. Use these for total country/class areas.
+Contextual layers are also filters: flox drops any pixel whose value in a grouping layer isn't in that layer's expected codes.
+So totals only match the old script when the default contextual layers are used. Runs with other -cl selections can have
+different totals for the same analysis layer.
 
-Output columns (in order; columns of contextual layers that aren't selected are left out, and columns of extra selected
-contextual layers such as WDPA go before gas):
-    Flux:       analysis_layer, adm0, country_name, region_L1, region_L2_L3, cont_eco, continent, ecozone, continent_ecozone,
-                climate_domain, starting_composite_primary_forest, land_state_broad_class, tall_veg_type, IPCC_class,
-                IPCC_class_name, IPCC_change, IPCC_change_name, IPCC_summary, IPCC_summary_name, IPCC_node_code,
-                IPCC_node_code_name, gas, year, tile_id, value, area_ha
-    Class area: adm0, country_name, region_L1, region_L2_L3, starting_composite_primary_forest, land_state_broad_class,
-                tall_veg_type, IPCC_class, IPCC_class_name, IPCC_change, IPCC_change_name, IPCC_summary, IPCC_summary_name,
-                IPCC_node_code, IPCC_node_code_name, year, tile_id, area_ha
-Zonal stats are run on veg_land_state_node; nodes are then converted to land_state_broad_class and tall_veg_type and rows
-that become identical are summed, so the tables have fewer rows.
-
-Soil analysis layers are mapped onto the LULUCF analysis years (2016-2024) using cn.mineral_soil_year_map and cn.organic_soil_year_map.
+Total area by IPCC class, country, etc. (all pixels whether or not they have flux) is calculated by a separate script:
+    0_calculate_IPCC_class_area_zonal_stats.py
 
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
 10x10:
-python -m src.utilities.create_cluster -n 10 -m 128 -cn IPCC_land_use_zonal_stats --zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.LUC.0_calculate_LULUCF_vegetation_soil_IPCC_zonal_stats -cn IPCC_land_use_zonal_stats -bb 100 10 110 20 -zd 20N_100W
+python -m src.utilities.create_cluster -n 10 -m 128 -cn IPCC_flux_zonal_stats --zonal_stats
+python -m src.LULUCF.scripts.zonal_statistics.LUC.0_calculate_LULUCF_vegetation_soil_IPCC_zonal_stats -cn IPCC_flux_zonal_stats -bb 100 10 110 20 -zd 20N_100W
 
 Central and East Africa (8 10x10 tiles):
-python -m src.utilities.create_cluster -n 25 -m 32 -cn IPCC_land_use_zonal_stats__Central_Africa --zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.LUC.0_calculate_LULUCF_vegetation_soil_IPCC_zonal_stats -cn IPCC_land_use_zonal_stats__Central_Africa -bb 13 -14 44 -3 -zd Central_Africa
+python -m src.utilities.create_cluster -n 25 -m 32 -cn IPCC_flux_zonal_stats__Central_Africa --zonal_stats
+python -m src.LULUCF.scripts.zonal_statistics.LUC.0_calculate_LULUCF_vegetation_soil_IPCC_zonal_stats -cn IPCC_flux_zonal_stats__Central_Africa -bb 13 -14 44 -3 -zd Central_Africa
 
 Sweden:
-python -m src.utilities.create_cluster -n 10 -m 32 -cn IPCC_land_use_zonal_stats__Sweden --zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.LUC.0_calculate_LULUCF_vegetation_soil_IPCC_zonal_stats -cn IPCC_land_use_zonal_stats__Sweden -bb 10 55 25 70 -zd Sweden -d vegetation mineral_soil organic_soil -g CO2 all_gases
+python -m src.utilities.create_cluster -n 15 -m 32 -cn IPCC_flux_zonal_stats__Sweden --zonal_stats
+python -m src.LULUCF.scripts.zonal_statistics.LUC.0_calculate_LULUCF_vegetation_soil_IPCC_zonal_stats -cn IPCC_flux_zonal_stats__Sweden -bb 10 55 25 70 -zd Sweden -d vegetation mineral_soil organic_soil -g CO2 all_gases
 
 EU27 (30 10x10 tiles):
-python -m src.utilities.create_cluster -n 50 -m 32 -cn IPCC_land_use_zonal_stats__EU27 --zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.LUC.0_calculate_LULUCF_vegetation_soil_IPCC_zonal_stats -cn IPCC_land_use_zonal_stats__EU27 -bb -11 34 35 71 -zd EU27 -d vegetation mineral_soil organic_soil -g CO2 all_gases
+python -m src.utilities.create_cluster -n 50 -m 32 -cn IPCC_flux_zonal_stats__EU27 --zonal_stats
+python -m src.LULUCF.scripts.zonal_statistics.LUC.0_calculate_LULUCF_vegetation_soil_IPCC_zonal_stats -cn IPCC_flux_zonal_stats__EU27 -bb -11 34 35 71 -zd EU27 -d vegetation mineral_soil organic_soil -g CO2 all_gases
 
 Global run:
-python -m src.utilities.create_cluster -n 25 -m 64 -cn IPCC_land_use_zonal_stats__global --zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.LUC.0_calculate_LULUCF_vegetation_soil_IPCC_zonal_stats -cn IPCC_land_use_zonal_stats__global -zd global --log_note "Zonal stats for IPCC land use model v1.0.0."
+python -m src.utilities.create_cluster -n 25 -m 64 -cn IPCC_flux_zonal_stats__global --zonal_stats
+python -m src.LULUCF.scripts.zonal_statistics.LUC.0_calculate_LULUCF_vegetation_soil_IPCC_zonal_stats -cn IPCC_flux_zonal_stats__global -zd global --log_note "Zonal stats for IPCC land use model v1.0.0."
 
 global_south
-python -m src.utilities.create_cluster -n 25 -m 64 -cn IPCC_land_use_zonal_stats__global_south --zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.LUC.0_calculate_LULUCF_vegetation_soil_IPCC_zonal_stats -cn IPCC_LULUCF_zonal_stats_global_south --tile_ids_file /mnt/c/GIS/AFOLU_flux_model/land_use/global_south.txt -zd global --log_note "Zonal stats for IPCC land use model v1.0.0."
+python -m src.utilities.create_cluster -n 25 -m 64 -cn IPCC_flux_zonal_stats__global_south --zonal_stats
+python -m src.LULUCF.scripts.zonal_statistics.LUC.0_calculate_LULUCF_vegetation_soil_IPCC_zonal_stats -cn IPCC_flux_zonal_stats__global_south --tile_ids_file /mnt/c/GIS/AFOLU_flux_model/land_use/global_south.txt -zd global --log_note "Zonal stats for IPCC land use model v1.0.0."
 
 global_north
-python -m src.utilities.create_cluster -n 25 -m 64 -cn IPCC_land_use_zonal_stats__global_north --zonal_stats
-python -m src.LULUCF.scripts.zonal_statistics.LUC.0_calculate_LULUCF_vegetation_soil_IPCC_zonal_stats -cn IPCC_LULUCF_zonal_stats_global_north --tile_ids_file /mnt/c/GIS/AFOLU_flux_model/land_use/global_north.txt -zd global --log_note "Zonal stats for IPCC land use model v1.0.0."
+python -m src.utilities.create_cluster -n 25 -m 64 -cn IPCC_flux_zonal_stats__global_north --zonal_stats
+python -m src.LULUCF.scripts.zonal_statistics.LUC.0_calculate_LULUCF_vegetation_soil_IPCC_zonal_stats -cn IPCC_flux_zonal_stats__global_north --tile_ids_file /mnt/c/GIS/AFOLU_flux_model/land_use/global_north.txt -zd global --log_note "Zonal stats for IPCC land use model v1.0.0."
 
 Notes:
     - Took 5 minutes to run for 10x10 degree area (00N_110E) with 25 workers (17 credits, $1).
         Analysis layers = LULUCF emissions, LULUCF removals, and LULUCF net flux, vegetation net flux, pixel area
-        Contextual layers = IPCC class, node, change and summary, land state node, continent/ecozone, driver, primary/IFL
+        Contextual layers = IPCC class, node, change and summary, land state node, continent/ecozone, primary/IFL
     - Toook 19 minutes to run for Central Africa (8 tiles) with 50 workers (128 credits, $7)
 
 Selecting analysis and contextual layers (defaults are set in the Run settings block):
@@ -70,24 +56,19 @@ Selecting analysis and contextual layers (defaults are set in the Run settings b
     -cl / --contextual_layers   any of CONTEXTUAL_LAYER_OPTIONS, or all            (default: DEFAULT_CONTEXTUAL_LAYERS)
 
     Contextual layers multiply: flox indexes every combination of their codes, and the product has to fit in a 64-bit integer.
-    The defaults are ~3e13 combinations. "all" (~2e21) is too many for one pass and the script stops before loading anything.
-    Leaving out watersheds and cont_eco from "all" brings it under the limit.
+    "all" is too many for one pass and the script stops before loading anything.
 
     An analysis layer is used if it matches ALL of the selected dataset, gas and flux filters.
     Removals and mineral soil fluxes are CO2 only, so they count as both CO2 and all_gases.
-    Organic soil only has emissions. Mineral soil has loss (emissions), gain (removals) and net (netflux).
+    Organic soil only has emissions.
 
     Examples:
-        # Only CO2 from vegetation and LULUCF, by country and IPCC class only
-        ... -d LULUCF vegetation -g CO2 -cl adm0 IPCC_class -zd adm0_vegetation_LULUCF_CO2
+        # Only CO2 from vegetation and LULUCF
+        ... -d LULUCF vegetation -g CO2 -zd vegetation_LULUCF_CO2
         # Only soils, all gases, with default contextual layers
         ... -d mineral_soil organic_soil -zd soils
-        # Protected areas, Indigenous lands and KBAs with country and IPCC class
+        # Protected areas, Indigenous lands and KBAs with country and IPCC class (totals can differ from default runs; see above)
         ... -cl adm0 IPCC_class WDPA landmark KBA -zd protected_areas
-
-TODO:
-- Paths, version, etc had to be modified in this script because cn is more up-to-date than our previous outputs. Update
-  constants and utilities in this script once everything matches in cn.
 """
 
 import argparse
@@ -111,7 +92,6 @@ from src.utilities import log_utilities as lu
 from src.utilities import universal_utilities as uu
 from src.utilities import zarr_utilities as zu
 from src.utilities import zonal_stats_utilities as zsu
-# from src.utilities import terminate_cluster   # Not used: see cluster shutdown at the end of main()
 
 ########################################################################################################################
 # Run settings: defaults used when the corresponding command line argument isn't given.
@@ -119,10 +99,13 @@ from src.utilities import zonal_stats_utilities as zsu
 # 1x1 deg fishnet of chunks to process (used when no bounding box is given)
 CHUNK_SHAPEFILE_URI = "s3://gfw2-data/climate/AFOLU_flux_model/fishnet_1x1deg/20250429/fishnet_GADM41_1x1deg__spatial_join_intersect__20250428__center_in.shp"
 
-VEG_MODEL_VERSION = "1.0.5"       # Vegetation model version of the VEG_INPUT_DATE run (overrides cn.veg_model_version for the vegetation zarr)
-PRIMARY_FOREST_MODEL_VERSION = cn.veg_model_version # Model version folder of the starting composite primary forest zarr (fills version_MODEL_VERSION__TYPE__DESCRIPTION in its cn path)
-# Starting composite primary forest zarr (version and run date differ from cn.starting_composite_primary_forest_zarr_path)
-PRIMARY_FOREST_ZARR_PATH = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/starting_composite_primary_forest/version_1_0_5__standard__global/2015/presence/zarr/4000_pixels/20260210/starting_composite_primary_forest.zarr"
+# Model versions of the inputs. Every zarr path, output file name and output folder uses these, not the versions in
+# constants_and_names, so updating cn doesn't change which zarrs are read. Same versions as the validated IPCC_LULUCF_zonal_stats.py run.
+VEG_MODEL_VERSION = "1.0.5"
+LULUCF_MODEL_VERSION = "1.0.0"
+IPCC_LU_VERSION = "1.0.0"
+SOC_MODEL_VERSION = "1.0.1"
+ORGANIC_SOIL_MODEL_VERSION = "1.0.1"
 
 LULUCF_INPUT_DATE = "20260614"    # Total LULUCF model run date
 VEG_INPUT_DATE = "20260130"       # Vegetation model run date
@@ -130,8 +113,31 @@ SOC_INPUT_DATE = "20260611"       # Mineral soil (SOC) zarr run date
 LU_INPUT_DATE = "20260617"        # IPCC land use run date
 #TODO: Add organic soil run date
 
+# Starting composite primary forest zarr. Primary forest is also a filter (pixels with values other than 0 or 1 are left out),
+# so it changes totals, not only the primary/non-primary split.
+#   - PRIMARY_FOREST_ZARR_PATH: read this zarr. The default is the one the validated IPCC_LULUCF_zonal_stats.py run read
+#     (Sweden -38.3 Mt CO2e/yr). It's in a different folder from the path cn builds now.
+#   - Set PRIMARY_FOREST_ZARR_PATH = None to build the path from cn with PRIMARY_FOREST_RUN_DATE instead.
+PRIMARY_FOREST_ZARR_PATH = "s3://gfw2-data/climate/AFOLU_flux_model/LULUCF/starting_composite_primary_forest/version_1_0_5__standard__global/2015/presence/zarr/4000_pixels/20260210/starting_composite_primary_forest.zarr"
+# TODO: Not in sync with cn
+PRIMARY_FOREST_RUN_DATE = "20260210"
+
+# Sheet of the state node lookup table. Its land state codes are the expected groups for flox, so pixels with land states that
+# aren't in the sheet are left out of the zonal stats. It has to match the vegetation zarr being summarized.
+#   - Default: v105_20260601, the sheet cn had for the validated IPCC_LULUCF_zonal_stats.py run.
+#   - cn now has v106_20261006. Set STATE_NODE_SHEET = cn.sheet to use it.
+STATE_NODE_SHEET = "v105_20260601"
+
+# The vegetation zarr was written before the cn vegetation patterns got their veg_ prefix:
+#   cn:   veg_gross_emissions__all_C_pools__all_gases__MgCO2e, veg_land_state_node, ...
+#   zarr: gross_emissions__all_C_pools__all_gases__MgCO2e,     land_state_node, ...
+# True:  removes veg_ from the start of cn names before looking them up in the zarrs.
+# False: uses the cn names exactly. Set to False once the zarr names match cn.
+DROP_VEG_PREFIX = True
+
 # Position of each organic soil interval in the organic soil zarr's year dimension (5 positions).
 # Only 2016 onward is used: 2016-2020 analysis years use the 2016_2020 position, 2021-2024 use the 2021_2024 position.
+#TODO: Update with strings instead of positions
 ORGANIC_SOIL_INTERVAL_POSITIONS = {'2016_2020': -2, '2021_2024': -1}
 
 # Analysis layer filters (all used by default)
@@ -139,19 +145,36 @@ DATASET_OPTIONS = ["LULUCF", "vegetation", "mineral_soil", "organic_soil"]
 GAS_OPTIONS = ["CO2", "non_CO2", "all_gases"]
 FLUX_OPTIONS = ["emissions", "removals", "netflux"]
 
-# Contextual layers that can be used, and the ones used by default
+# Contextual layers that can be used, in the order they are grouped by.
 CONTEXTUAL_LAYER_OPTIONS = [
     "adm0", "land_state", "WDPA", "cont_eco", "landmark", "primary_forest", "KBA", "watersheds", "drivers",
     "forest_age", "BRA_biomes", "managed_land_CAN", "managed_land_USA",
     "IPCC_class", "IPCC_node", "IPCC_change", "IPCC_summary",
 ]
+
+# Contextual layers are also filters (see docstring), so these have to stay the same for totals to match the old script.
 DEFAULT_CONTEXTUAL_LAYERS = [
-    "adm0", "land_state", "cont_eco", "primary_forest", "IPCC_class", "IPCC_node", "IPCC_change", "IPCC_summary",
+    "adm0", "land_state", "cont_eco", "primary_forest", #"drivers",
+    "IPCC_class", "IPCC_node", "IPCC_change", "IPCC_summary",
 ]
 
 ########################################################################################################################
 # Utilities
 ########################################################################################################################
+# Version with underscores instead of dots, as used in zarr paths and file names (e.g., 1.0.5 -> 1_0_5)
+def underscore(version):
+    return version.replace(".", "_")
+
+
+# Local folder for the zonal stats tables: cn.land_use_zonal_stats_table_folder with the IPCC land use version from Run settings
+def zonal_stats_folder():
+    cn_folder = cn.land_use_zonal_stats_table_folder
+    cn_version_part = f"_v{cn.IPCC_LU_version_underscore}_"
+    if cn_version_part in cn_folder:
+        return cn_folder.replace(cn_version_part, f"_v{underscore(IPCC_LU_VERSION)}_")
+    return cn_folder
+
+
 def read_tile_ids_file(tile_ids_file):
     with open(tile_ids_file, "r") as f:
         return {
@@ -161,25 +184,28 @@ def read_tile_ids_file(tile_ids_file):
         }
 
 
-# Builds a zarr path by filling in the model version/type/description, chunk size and run date placeholders.
-# Same replacements as zu.create_zarr_path but with explicit keyword arguments, so argument order can't get mixed up.
-def build_zarr_path(zarr_basic_path, chunk_size_pixels, run_date, model_version, model_type, model_path_description):
-    zarr_path = zarr_basic_path.replace(cn.model_version_type_description_placeholder, f"version_{model_version}__{model_type}__{model_path_description}")
-    zarr_path = zarr_path.replace("RUN_DATE", run_date)
-    zarr_path = zarr_path.replace("CHUNK_SIZE", str(chunk_size_pixels))
-    return zarr_path
+# Name of a cn variable in the zarrs: removes a leading veg_ if DROP_VEG_PREFIX is True (see Run settings)
+def zarr_var_name(name):
+    if DROP_VEG_PREFIX and name.startswith("veg_"):
+        return name[len("veg_"):]
+    return name
 
 
-# Finds the name a variable actually has in a dataset (with or without the _ha_yr per-hectare suffix).
-# Returns None if the variable isn't in the dataset.
-def resolve_var_name(ds, var_name):
-    candidates = [var_name, f"{var_name}_ha_yr", var_name.replace("_ha_yr", "")]
-    if var_name.startswith("veg_"):
-        candidates += [c[len("veg_"):] for c in candidates]
-    for candidate in candidates:
-        if candidate in ds.data_vars:
-            return candidate
+# Returns the zarr name of the first name in names that is a variable in ds, or None. Exact matches only.
+def find_var_name(ds, names):
+    for name in names:
+        if zarr_var_name(name) in ds.data_vars:
+            return zarr_var_name(name)
     return None
+
+
+# Returns the land state variable from the vegetation zarr
+def get_land_state_da(veg_ds):
+    land_state_var = find_var_name(veg_ds, [cn.land_state_pattern])
+    if land_state_var is None:
+        raise KeyError(f"{zarr_var_name(cn.land_state_pattern)} is not in the vegetation zarr (DROP_VEG_PREFIX = {DROP_VEG_PREFIX}). "
+                       f"Variables in it: {sorted(veg_ds.data_vars)}")
+    return veg_ds[land_state_var]
 
 
 # Maps a soil layer that has its own time steps (e.g., SOC change intervals or organic soil five-year intervals)
@@ -234,44 +260,58 @@ def map_layer_to_analysis_years(da, analysis_year_coord, analysis_year_values, y
     return mapped.assign_coords(year=analysis_year_coord.values)
 
 
-# All analysis layers that can be run, tagged by dataset, flux type and gas. "name" is the variable name in the source zarr (with units).
+# All analysis layers that can be run, tagged by dataset, flux type and gas.
+#   names: cn variable names (with units) to look for, in order. Exact matches only, after DROP_VEG_PREFIX is applied.
+#   output_name: analysis_layer name in the output tables, if different from the zarr variable
 # Fluxes that only involve CO2 (removals, mineral soil) are tagged as both CO2 and all_gases, because CO2 is all of their gases.
 def get_analysis_layer_config():
 
     def with_units(pattern):
         return zu.add_units_year_to_pattern(pattern, 9999)[0]
 
+    # The old script used "LULUCF_" + the vegetation pattern. Its cn patterns didn't have the veg_ prefix, so that
+    # gave e.g. LULUCF_gross_emissions__..., which is the current cn LULUCF pattern. "LULUCF_" + the current veg_ pattern is
+    # kept as a second option in case a LULUCF zarr uses it.
+    def lulucf_names(veg_pattern, lulucf_pattern_attr):
+        names = []
+        lulucf_pattern = getattr(cn, lulucf_pattern_attr, None)
+        if lulucf_pattern:
+            names.append(with_units(lulucf_pattern))
+        old_style_name = with_units(f"LULUCF_{veg_pattern}")
+        if old_style_name not in names:
+            names.append(old_style_name)
+        return names
+
     co2_is_all_gases = ["CO2", "all_gases"]
 
     return [
         # LULUCF totals
-        {"dataset": "LULUCF", "flux": "emissions", "gases": ["CO2"],           "name": with_units(cn.gross_emis_all_C_pools_CO2_only_LULUCF_pattern)},
-        {"dataset": "LULUCF", "flux": "emissions", "gases": ["non_CO2"],       "name": with_units(cn.gross_emis_all_C_pools_non_CO2_only_LULUCF_pattern)},
-        {"dataset": "LULUCF", "flux": "emissions", "gases": ["all_gases"],     "name": with_units(cn.gross_emis_all_C_pools_all_gases_LULUCF_pattern)},
-        {"dataset": "LULUCF", "flux": "removals",  "gases": co2_is_all_gases,  "name": with_units(cn.gross_removals_all_C_pools_LULUCF_pattern)},
-        {"dataset": "LULUCF", "flux": "netflux",   "gases": ["CO2"],           "name": with_units(cn.net_flux_all_C_pools_CO2_only_LULUCF_pattern)},
-        {"dataset": "LULUCF", "flux": "netflux",   "gases": ["all_gases"],     "name": with_units(cn.net_flux_all_C_pools_all_gases_LULUCF_pattern)},
+        {"dataset": "LULUCF", "flux": "emissions", "gases": ["CO2"],           "names": lulucf_names(cn.gross_emis_all_C_pools_CO2_only_pattern, "gross_emis_all_C_pools_CO2_only_LULUCF_pattern")},
+        {"dataset": "LULUCF", "flux": "emissions", "gases": ["non_CO2"],       "names": lulucf_names(cn.gross_emis_all_C_pools_non_CO2_only_pattern, "gross_emis_all_C_pools_non_CO2_only_LULUCF_pattern")},
+        {"dataset": "LULUCF", "flux": "emissions", "gases": ["all_gases"],     "names": lulucf_names(cn.gross_emis_all_C_pools_all_gases_pattern, "gross_emis_all_C_pools_all_gases_LULUCF_pattern")},
+        {"dataset": "LULUCF", "flux": "removals",  "gases": co2_is_all_gases,  "names": lulucf_names(cn.gross_removals_all_C_pools_pattern, "gross_removals_all_C_pools_LULUCF_pattern")},
+        {"dataset": "LULUCF", "flux": "netflux",   "gases": ["CO2"],           "names": lulucf_names(cn.net_flux_all_C_pools_CO2_only_pattern, "net_flux_all_C_pools_CO2_only_LULUCF_pattern")},
+        {"dataset": "LULUCF", "flux": "netflux",   "gases": ["all_gases"],     "names": lulucf_names(cn.net_flux_all_C_pools_all_gases_pattern, "net_flux_all_C_pools_all_gases_LULUCF_pattern")},
 
         # Vegetation
-        {"dataset": "vegetation", "flux": "emissions", "gases": ["CO2"],       "name": with_units(cn.gross_emis_all_C_pools_CO2_only_pattern)},
-        {"dataset": "vegetation", "flux": "emissions", "gases": ["non_CO2"],   "name": with_units(cn.gross_emis_all_C_pools_non_CO2_only_pattern)},
-        {"dataset": "vegetation", "flux": "emissions", "gases": ["all_gases"], "name": with_units(cn.gross_emis_all_C_pools_all_gases_pattern)},
-        {"dataset": "vegetation", "flux": "removals",  "gases": co2_is_all_gases, "name": with_units(cn.gross_removals_all_C_pools_pattern)},
-        {"dataset": "vegetation", "flux": "netflux",   "gases": ["CO2"],       "name": with_units(cn.net_flux_all_C_pools_CO2_only_pattern)},
-        {"dataset": "vegetation", "flux": "netflux",   "gases": ["all_gases"], "name": with_units(cn.net_flux_all_C_pools_all_gases_pattern)},
+        {"dataset": "vegetation", "flux": "emissions", "gases": ["CO2"],          "names": [with_units(cn.gross_emis_all_C_pools_CO2_only_pattern)]},
+        {"dataset": "vegetation", "flux": "emissions", "gases": ["non_CO2"],      "names": [with_units(cn.gross_emis_all_C_pools_non_CO2_only_pattern)]},
+        {"dataset": "vegetation", "flux": "emissions", "gases": ["all_gases"],    "names": [with_units(cn.gross_emis_all_C_pools_all_gases_pattern)]},
+        {"dataset": "vegetation", "flux": "removals",  "gases": co2_is_all_gases, "names": [with_units(cn.gross_removals_all_C_pools_pattern)]},
+        {"dataset": "vegetation", "flux": "netflux",   "gases": ["CO2"],          "names": [with_units(cn.net_flux_all_C_pools_CO2_only_pattern)]},
+        {"dataset": "vegetation", "flux": "netflux",   "gases": ["all_gases"],    "names": [with_units(cn.net_flux_all_C_pools_all_gases_pattern)]},
 
         # Mineral soil (CO2 only)
-        # {"dataset": "mineral_soil", "flux": "emissions", "gases": co2_is_all_gases, "name": with_units(cn.SOC_loss_min_soil_extent_pattern)},
-        # {"dataset": "mineral_soil", "flux": "removals",  "gases": co2_is_all_gases, "name": with_units(cn.SOC_gain_min_soil_extent_pattern)},
-        {"dataset": "mineral_soil", "flux": "netflux",   "gases": co2_is_all_gases, "name": with_units(cn.SOC_net_min_soil_extent_pattern)},
+        # {"dataset": "mineral_soil", "flux": "emissions", "gases": co2_is_all_gases, "names": [with_units(cn.SOC_loss_min_soil_extent_pattern)]},
+        # {"dataset": "mineral_soil", "flux": "removals",  "gases": co2_is_all_gases, "names": [with_units(cn.SOC_gain_min_soil_extent_pattern)]},
+        {"dataset": "mineral_soil", "flux": "netflux",   "gases": co2_is_all_gases, "names": [with_units(cn.SOC_net_min_soil_extent_pattern)]},
         #TODO: Uncomment min soil gain/loss
 
         # Organic soil (emissions only). Names already include units.
-        # output_name is the analysis_layer name in the output tables (prefixed with organic_soil_); name is the zarr variable.
-        {"dataset": "organic_soil", "flux": "emissions", "gases": ["CO2"],       "name": "burned_co2_Mg_CO2_ha_yr",     "output_name": "organic_soil_burned_co2_Mg_CO2_ha_yr"},
-        {"dataset": "organic_soil", "flux": "emissions", "gases": ["CO2"],       "name": "drained_co2_Mg_CO2_ha_yr",    "output_name": "organic_soil_drained_co2_Mg_CO2_ha_yr"},
-        {"dataset": "organic_soil", "flux": "emissions", "gases": ["all_gases"], "name": "burned_total_Mg_CO2e_ha_yr",  "output_name": "organic_soil_burned_total_Mg_CO2e_ha_yr"},
-        {"dataset": "organic_soil", "flux": "emissions", "gases": ["all_gases"], "name": "drained_total_Mg_CO2e_ha_yr", "output_name": "organic_soil_drained_total_Mg_CO2e_ha_yr"},
+        {"dataset": "organic_soil", "flux": "emissions", "gases": ["CO2"],       "names": ["burned_co2_Mg_CO2_ha_yr"],     "output_name": "organic_soil_burned_co2_Mg_CO2_ha_yr"},
+        {"dataset": "organic_soil", "flux": "emissions", "gases": ["CO2"],       "names": ["drained_co2_Mg_CO2_ha_yr"],    "output_name": "organic_soil_drained_co2_Mg_CO2_ha_yr"},
+        {"dataset": "organic_soil", "flux": "emissions", "gases": ["all_gases"], "names": ["burned_total_Mg_CO2e_ha_yr"],  "output_name": "organic_soil_burned_total_Mg_CO2e_ha_yr"},
+        {"dataset": "organic_soil", "flux": "emissions", "gases": ["all_gases"], "names": ["drained_total_Mg_CO2e_ha_yr"], "output_name": "organic_soil_drained_total_Mg_CO2e_ha_yr"},
     ]
 
 
@@ -287,7 +327,9 @@ def get_contextual_layer_config():
         "WDPA":             {"pattern": cn.WDPA_pattern, "source": "static", "zarr_path": cn.WDPA_zarr_path, "rename": True, "codes": cn.WDPA_codes},
         "cont_eco":         {"pattern": cn.cont_eco_zstats_pattern, "source": "static", "zarr_path": cn.cont_eco_zarr_path, "rename": True, "codes": cn.cont_eco_codes},
         "landmark":         {"pattern": cn.landmark_pattern, "source": "static", "zarr_path": cn.landmark_zarr_path, "rename": True, "codes": cn.landmark_codes},
-        "primary_forest":   {"pattern": cn.starting_composite_primary_forest_pattern, "source": "static", "zarr_path": cn.starting_composite_primary_forest_zarr_path, "rename": False, "codes": cn.composite_primary_codes},
+        # No rename because it's created by a different process where the variable is named starting_composite_primary_forest.
+        # Opened from build_zarr_paths() in main() because the cn path has version and chunk size placeholders.
+        "primary_forest":   {"pattern": cn.starting_composite_primary_forest_pattern, "source": "static", "zarr_path": None, "rename": False, "codes": cn.composite_primary_codes},
         "KBA":              {"pattern": cn.KBA_pattern, "source": "static", "zarr_path": cn.KBA_zarr_path, "rename": True, "codes": cn.KBA_codes},
         "watersheds":       {"pattern": cn.watersheds_pattern, "source": "static", "zarr_path": cn.watersheds_zarr_path, "rename": True, "codes": cn.watershed_codes},
         "drivers":          {"pattern": cn.drivers_of_loss_pattern, "source": "static", "zarr_path": cn.drivers_of_loss_zarr_path, "rename": True, "codes": cn.drivers_codes},
@@ -302,11 +344,6 @@ def get_contextual_layer_config():
     }
 
 
-# Contextual layers the IPCC class area tables are grouped by (plus adm0 and year), whatever layers are selected for the flux tables.
-# Land state nodes are converted to land_state_broad_class and tall_veg_type in the output tables.
-CLASS_AREA_CONTEXT_KEYS = ["primary_forest", "land_state", "IPCC_class", "IPCC_change", "IPCC_summary", "IPCC_node"]
-
-
 # True if a file name is an output of this zonal stats run: ..._v<version>_<description>_<timestamp>.parquet.
 # Exact match, so -zd Sweden doesn't pick up files from runs like Sweden_class_area.
 def is_run_output(file_name, zonal_stats_description):
@@ -314,21 +351,80 @@ def is_run_output(file_name, zonal_stats_description):
                      file_name) is not None
 
 
-# Subsets a contextual layer to the tile. If the layer doesn't extend to the tile, returns all 0s.
-def subset_context_layer(da, name, west, south, east, north, zero_template, tile_id, main_logger):
-    subset = da.sel(x=slice(west, east), y=slice(north, south))
-    if subset.sizes.get("x", 0) == 0 or subset.sizes.get("y", 0) == 0:
-        main_logger.info(f"  {name} not in {tile_id}. Creating xarray of all 0s.")
-        return xr.zeros_like(zero_template).rename(name)
-    return subset.rename(name)
+
+# NEW: Builds every zarr path the script reads, so the diagnostic script reads exactly the same zarrs.
+# The old script built these with cn.veg_outputs_path_mega_zarr and an older zu.create_zarr_path that took an interval argument ("annual").
+# Neither exists in the current utilities: the current zu.create_zarr_path only fills placeholders, so annual_intervals is added here.
+def build_zarr_paths(model_type, veg_input_date, lulucf_input_date, lu_input_date, soc_input_date,
+                     veg_model_path_description, lulucf_model_path_description, lu_model_path_description,
+                     soc_model_path_description, main_logger):
+
+    source_zarr_chunk_size = cn.chunk_dims  # 4000x4000
+    # Versions from Run settings, not cn
+    veg_model_version = underscore(VEG_MODEL_VERSION)
+    lulucf_model_version = underscore(LULUCF_MODEL_VERSION)
+    soc_model_version = underscore(SOC_MODEL_VERSION)
+    organic_soil_model_version = underscore(ORGANIC_SOIL_MODEL_VERSION)
+
+    paths = {}
+
+    # Vegetation zarr (mega_zarr/annual_intervals/)
+    paths["vegetation"] = zu.create_zarr_path(cn.veg_outputs_path_zarr.replace("/zarr/", "/mega_zarr/annual_intervals/"),
+                                              source_zarr_chunk_size, veg_input_date, main_logger,
+                                              model_version=veg_model_version, model_type=model_type,
+                                              model_path_description=veg_model_path_description)
+
+    # LULUCF zarr (same as the old script)
+    paths["LULUCF"] = (
+        f"{cn.full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/"
+        f"outputs_LULUCF_totals/"
+        f"LULUCF_version_{lulucf_model_version}_standard__{lulucf_model_path_description}"
+        f"__veg_v{veg_model_version}"
+        f"__org_soil_v{organic_soil_model_version}"
+        f"__min_soil_v{soc_model_version}"
+        f"/zarr/annual_intervals/{source_zarr_chunk_size}_pixels/{lulucf_input_date}/LULUCF_annual.zarr"
+    )
+
+    # IPCC land use zarr (mega_zarr/annual_intervals/). Built here because the cn path has cn's IPCC land use version in it.
+    # The land use folder uses the version with dots (land_use/1.0.0/).
+    paths["land_use"] = zu.create_zarr_path(
+        f"{cn.full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/land_use/{IPCC_LU_VERSION}/mega_zarr/annual_intervals/CHUNK_SIZE_pixels/RUN_DATE/land_use_zarr.zarr",
+        source_zarr_chunk_size, lu_input_date, main_logger)
+
+    # Starting composite primary forest zarr: PRIMARY_FOREST_ZARR_PATH if set, otherwise built from cn
+    # (the cn path has version and chunk size placeholders)
+    if PRIMARY_FOREST_ZARR_PATH:
+        paths["primary_forest"] = PRIMARY_FOREST_ZARR_PATH
+    else:
+        paths["primary_forest"] = zu.create_zarr_path(
+            cn.starting_composite_primary_forest_zarr_path.replace(cn.starting_composite_primary_forest_run_date, PRIMARY_FOREST_RUN_DATE),
+            source_zarr_chunk_size, PRIMARY_FOREST_RUN_DATE, main_logger,
+            model_version=veg_model_version, model_type="standard", model_path_description="global")
+
+    # Soil zarrs (not in the old script)
+    paths["mineral_soil"] = zu.create_zarr_path(cn.SOC_path_zarr, source_zarr_chunk_size, soc_input_date, main_logger,
+                                                model_version=soc_model_version, model_type=model_type,
+                                                model_path_description=soc_model_path_description)
+    # The cn organic soil path has cn's organic soil version in it; it's replaced with ORGANIC_SOIL_MODEL_VERSION
+    cn_organic_version_part = f"/version_{cn.organic_soil_model_version_underscore}/"
+    if cn_organic_version_part not in cn.organic_soil_zarr_path:
+        raise ValueError(f"Can't find {cn_organic_version_part} in cn.organic_soil_zarr_path ({cn.organic_soil_zarr_path}) to set the organic soil version")
+    paths["organic_soil"] = cn.organic_soil_zarr_path.replace(cn_organic_version_part, f"/version_{organic_soil_model_version}/")
+
+    return paths
 
 
+# The body of main() is the body of main() in IPCC_LULUCF_zonal_stats.py, in the same order and with the same variable names.
+# Lines that differ are marked:
+#   # NEW:     not in the old script (dataset/gas/flux/contextual layer selection, soil layers, extra checks and logging)
+#   # CHANGED: changed to work with the current utilities or the current zarr variable names, without changing values
 def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, soc_input_date, model_type="standard", lulucf_model_path_description="global",
          veg_model_path_description="global", lu_model_path_description="global", soc_model_path_description="global", zonal_stats_description="global",
          chunk_shapefile_uri=False, bounding_box=None, first_variables_to_process=None, first_tiles_to_process=None,
          model_chunk_stats_table_name=None, log_note=None, tile_ids_file=None,
          datasets=None, gases=None, fluxes=None, contextual_layers=None):
 
+    # NEW: layer selection (defaults: all datasets, gases and fluxes; the old script's contextual layers)
     datasets = datasets or DATASET_OPTIONS
     gases = gases or GAS_OPTIONS
     fluxes = fluxes or FLUX_OPTIONS
@@ -338,14 +434,15 @@ def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, soc_inp
 
     # Model stage being run
     stage = "IPCC_land_use_zonal_statistics"
-    veg_model_version = VEG_MODEL_VERSION.replace(".", "_")
-    lulucf_model_version = cn.LULUCF_model_version_underscore
-    lu_model_version = cn.IPCC_LU_version_underscore
+    veg_model_version = underscore(VEG_MODEL_VERSION)
+    lulucf_model_version = underscore(LULUCF_MODEL_VERSION)
+    lu_model_version = underscore(IPCC_LU_VERSION)
 
     # Connects to Coiled cluster if not running locally and the named cluster exists
     cluster, client, run_local = uu.connect_to_Coiled_cluster(cluster_name, False)
 
-    # If an area smaller than 6x6 deg is given (for testing), the sub_tile_test flag is activated and the analysis extent changes further down
+    # If an area smaller than 6x6 deg is given (for testing), the sub_tile_test flag is activated
+    # and the analysis extent changes further down
     if (not chunk_shapefile_uri) and ((abs(bounding_box[0] - bounding_box[2]) < 6) and (abs(bounding_box[1] - bounding_box[3]) < 6)):
         sub_tile_test = True
     else:
@@ -363,21 +460,19 @@ def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, soc_inp
     main_logger.info(f"Vegetation version: {VEG_MODEL_VERSION}")
     main_logger.info(f"Vegetation model path description: {veg_model_path_description}")
     main_logger.info(f"Vegetation input date: {veg_input_date}")
-    main_logger.info(f"LULUCF version: {cn.LULUCF_model_version}")
+    main_logger.info(f"LULUCF version: {LULUCF_MODEL_VERSION}")
     main_logger.info(f"LULUCF model path description: {lulucf_model_path_description}")
     main_logger.info(f"LULUCF input date: {lulucf_input_date}")
-    main_logger.info(f"IPCC land use model version: {cn.IPCC_LU_version}")
+    main_logger.info(f"IPCC land use model version: {IPCC_LU_VERSION}")
     main_logger.info(f"IPCC land use path description: {lu_model_path_description}")
     main_logger.info(f"IPCC land use input date: {lu_input_date}")
-    main_logger.info(f"Mineral soil version: {cn.SOC_model_version}")
-    main_logger.info(f"Mineral soil model path description: {soc_model_path_description}")
-    main_logger.info(f"Mineral soil input date: {soc_input_date}")
-    main_logger.info(f"Organic soil version: {cn.organic_soil_model_version}")
-    main_logger.info(f"Datasets: {datasets}")
-    main_logger.info(f"Gases: {gases}")
-    main_logger.info(f"Fluxes: {fluxes}")
-    main_logger.info(f"Contextual layers: {contextual_layers}")
     main_logger.info(f"Running sub-tile test area: {sub_tile_test}")
+    main_logger.info(f"Mineral soil version: {SOC_MODEL_VERSION}, path description: {soc_model_path_description}, input date: {soc_input_date}")
+    main_logger.info(f"Organic soil version: {ORGANIC_SOIL_MODEL_VERSION}")
+    main_logger.info(f"Datasets: {datasets}; gases: {gases}; fluxes: {fluxes}")
+    main_logger.info(f"Contextual layers: {contextual_layers}")
+    main_logger.info(f"DROP_VEG_PREFIX: {DROP_VEG_PREFIX}")
+    main_logger.info(f"State node lookup table sheet: {STATE_NODE_SHEET} (cn.sheet: {cn.sheet})")   # NEW
 
     # Returns a dataframe of chunk_id and ISO for the GADM4.1 1x1 deg fishnet.
     fishnet_iso_df = uu.fishnet_with_GADM_iso(chunk_shapefile_uri)
@@ -409,7 +504,9 @@ def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, soc_inp
             f"Filtered tile list from {original_count} to {len(unique_tile_ids)} using {tile_ids_file}"
         )
 
-    # Analysis layers to run zonal stats on: those matching the selected datasets, gases and fluxes
+    # Outputs to performs zonal stats on
+    # CHANGED: chosen with -d/-g/-f instead of a fixed list. With -d LULUCF vegetation -g all_gases -f emissions removals netflux,
+    # the old script's four layers (LULUCF emissions, removals and net flux; vegetation net flux) are all included.
     all_analysis_layers = get_analysis_layer_config()
     selected_analysis_layers = [
         layer for layer in all_analysis_layers
@@ -424,15 +521,19 @@ def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, soc_inp
     n_selected = len(selected_analysis_layers)
     if first_variables_to_process:
         selected_analysis_layers = selected_analysis_layers[0:first_variables_to_process]
-    main_logger.info(f"Analysis layers to run zonal stats on ({len(selected_analysis_layers)} out of {n_selected} selected):")
+    main_logger.info(f"Variables to run zonal stats on ({len(selected_analysis_layers)} out of {n_selected} selected):")
     for layer in selected_analysis_layers:
-        output_name_note = f" (output: {layer['output_name']})" if "output_name" in layer else ""
-        main_logger.info(f"  {layer['dataset']} | {layer['flux']} | {'/'.join(layer['gases'])} | {layer['name']}{output_name_note}")
+        main_logger.info(f"  {layer['dataset']} | {layer['flux']} | {'/'.join(layer['gases'])} | {[zarr_var_name(n) for n in layer['names']]}")
 
-    # Contextual layers to group by, in a fixed order (order of CONTEXTUAL_LAYER_OPTIONS)
+    # NEW: contextual layers to group by, in a fixed order (the old script's order for its layers)
     contextual_layer_config = get_contextual_layer_config()
     selected_contextual_layers = [key for key in CONTEXTUAL_LAYER_OPTIONS if key in contextual_layers]
     main_logger.info(f"Contextual layers to group by: {selected_contextual_layers}")
+    if selected_contextual_layers != DEFAULT_CONTEXTUAL_LAYERS:
+        main_logger.warning(
+            f"Contextual layers differ from the defaults ({DEFAULT_CONTEXTUAL_LAYERS}). Contextual layers also filter pixels "
+            f"(pixels with values outside a layer's expected codes are dropped), so totals from this run won't necessarily "
+            f"match runs with the default layers or IPCC_LULUCF_zonal_stats.py.")
 
     if first_tiles_to_process:
         tile_ids_to_process = unique_tile_ids[0:first_tiles_to_process]
@@ -443,76 +544,41 @@ def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, soc_inp
     # lat-long chunk size for source zarr
     source_zarr_chunk_size = cn.chunk_dims  # 4000x4000
 
-    # Vegetation zarr
-    # Vegetation outputs are in a mega_zarr folder, not the zarr folder in cn.veg_outputs_path_zarr
-    # Vegetation outputs are in mega_zarr/annual_intervals/, not the zarr/ folder in cn.veg_outputs_path_zarr
-    veg_zarr_path = build_zarr_path(cn.veg_outputs_path_zarr.replace("/zarr/", "/mega_zarr/annual_intervals/"),
-                                    source_zarr_chunk_size, veg_input_date, veg_model_version, model_type, veg_model_path_description)
-    #TODO: zarr vs mega_zarr mismatch in constants and names for vegetation
+    # CHANGED: zarr paths are built in build_zarr_paths() (see the note there)
+    zarr_paths = build_zarr_paths(model_type, veg_input_date, lulucf_input_date, lu_input_date, soc_input_date,
+                                  veg_model_path_description, lulucf_model_path_description, lu_model_path_description,
+                                  soc_model_path_description, main_logger)
+    veg_zarr_path = zarr_paths["vegetation"]
+    lulucf_zarr_path = zarr_paths["LULUCF"]
+    lu_zarr_path = zarr_paths["land_use"]
 
-    # Mineral soil zarr
-    SOC_zarr_path = build_zarr_path(cn.SOC_path_zarr, source_zarr_chunk_size, soc_input_date,
-                                    cn.SOC_model_version_underscore, model_type, soc_model_path_description)
-    # Organic soil zarr
-    organic_soil_zarr_path = cn.organic_soil_zarr_path
     main_logger.info(f"Vegetation zarr path: {veg_zarr_path}")
-    main_logger.info(f"Mineral soil zarr path: {SOC_zarr_path}")
-    main_logger.info(f"Organic soil zarr path: {organic_soil_zarr_path}")
-
-
-    # LULUCF zarr
-    lulucf_zarr_path = (
-        f"{cn.full_bucket_prefix}/climate/AFOLU_flux_model/LULUCF/outputs_LULUCF_totals/"
-        f"LULUCF_version_{lulucf_model_version}_standard__{lulucf_model_path_description}"
-        f"__veg_v{veg_model_version}__org_soil_v{cn.organic_soil_model_version_underscore}"
-        f"__min_soil_v{cn.SOC_model_version_underscore}/zarr/annual_intervals/"
-        f"{source_zarr_chunk_size}_pixels/{lulucf_input_date}/LULUCF_annual.zarr"
-    )
-
     main_logger.info(f"Zonal stats from zarr ({source_zarr_chunk_size} pixel chunks): {lulucf_zarr_path}")
-
-    # Land use outputs are in mega_zarr/annual_intervals/
-    lu_zarr_path = build_zarr_path( cn.IPCC_outputs_path_mega_zarr.replace("/mega_zarr/", "/mega_zarr/annual_intervals/"),
-                                    source_zarr_chunk_size, lu_input_date, lu_model_version, model_type, lu_model_path_description)
-    main_logger.info(f"IPCC land use zarr path: {lu_zarr_path}")
-    #TODO: annual_intervals doesn't match naming convention
+    main_logger.info(f"IPCC land use zarr path: {lu_zarr_path}")                                # NEW
+    main_logger.info(f"Primary forest zarr path: {zarr_paths['primary_forest']}")              # NEW
+    main_logger.info(f"Mineral soil zarr path: {zarr_paths['mineral_soil']}")                  # NEW
+    main_logger.info(f"Organic soil zarr path: {zarr_paths['organic_soil']}")                  # NEW
 
     # Creates dataframe of state_node codes and meanings
-    state_node_df = zsu.create_state_node_df(cn.state_node_lookup_table_local, cn.state_node_lookup_table_s3, cn.sheet)
-    # Includes 0 (no land state) so those pixels aren't dropped from the zonal stats.
-    # Note: [0] + np.array(...) adds 0 to every element rather than prepending 0, so concatenate is used.
-    node_codes = np.unique(np.concatenate([[0], np.array(list(state_node_df['land_state']), dtype=np.uint32)])).astype(np.uint32)
+    # CHANGED: sheet from STATE_NODE_SHEET (Run settings), which decides which land states are counted
+    state_node_df = zsu.create_state_node_df(cn.state_node_lookup_table_local, cn.state_node_lookup_table_s3, STATE_NODE_SHEET)
+    # Same as the old script. NOTE: [0] + np.array(...) adds 0 to every code; it does NOT add a 0 code.
+    # So pixels with land state 0 aren't in the expected groups and are left out, as in the old script.
+    node_codes = [0] + np.array(list(state_node_df['land_state']), dtype=np.uint32)
+    contextual_layer_config["land_state"]["codes"] = node_codes   # NEW
 
-    # flox indexes every possible combination of contextual layer codes (x years), so the product of the number of codes
-    # in each layer has to fit in a 64-bit integer. Checks that before any zarrs are opened.
-    contextual_layer_config["land_state"]["codes"] = node_codes
+    # NEW: flox indexes every combination of contextual layer codes (x years); the product has to fit in a 64-bit integer
     group_counts = {key: len(contextual_layer_config[key]["codes"]) for key in selected_contextual_layers}
     n_group_combinations = math.prod(group_counts.values()) * len(cn.veg_outputs_years)
     main_logger.info(f"Contextual layer code counts: {group_counts}; possible combinations: {n_group_combinations:.2e}")
     if n_group_combinations > 2**62:
         raise ValueError(
             f"Too many contextual layer combinations for flox ({n_group_combinations:.2e}; limit ~{2**62:.1e}). "
-            f"Codes per layer: {group_counts}. Drop some layers with many codes (e.g., watersheds, cont_eco, adm0, IPCC_node, "
-            f"IPCC_change, IPCC_summary), or run them in separate passes with different -zd descriptions."
+            f"Codes per layer: {group_counts}. Drop some layers with many codes, or run them in separate passes with different -zd descriptions."
         )
-    # Same check for the IPCC class area tables (adm0 x CLASS_AREA_CONTEXT_KEYS x year)
-    class_area_group_counts = {"adm0": len(cn.gadm_adm0_ids),
-                               **{key: len(contextual_layer_config[key]["codes"]) for key in CLASS_AREA_CONTEXT_KEYS}}
-    n_class_area_combinations = math.prod(class_area_group_counts.values()) * len(cn.veg_outputs_years)
-    main_logger.info(f"IPCC class area code counts: {class_area_group_counts}; possible combinations: {n_class_area_combinations:.2e}")
-    if n_class_area_combinations > 2**62:
-        raise ValueError(f"Too many IPCC class area combinations for flox ({n_class_area_combinations:.2e}). "
-                         f"Remove a layer from CLASS_AREA_CONTEXT_KEYS.")
 
-    # main_logger.info(f"State nodes are from: {cn.state_node_lookup_table_local} or {cn.state_node_lookup_table_s3}, sheet {cn.sheet}")
-    # main_logger.info(f"State nodes are: {node_codes}")
-
-    local_zonal_stats_folder = Path(cn.land_use_zonal_stats_table_folder)
+    local_zonal_stats_folder = Path(zonal_stats_folder())   # CHANGED: folder name uses IPCC_LU_VERSION from Run settings
     local_zonal_stats_folder.mkdir(parents=True, exist_ok=True)
-
-    # Separate folder for total area of IPCC land use classes per country (not restricted to pixels with flux)
-    local_class_area_folder = local_zonal_stats_folder / "ipcc_class_area"
-    local_class_area_folder.mkdir(parents=True, exist_ok=True)
 
     if model_chunk_stats_table_name:
         main_logger.info(f"Reading local model chunk stats tables: {uu.timestr()}")
@@ -530,187 +596,221 @@ def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, soc_inp
 
     prep_start_time = time.time()
 
-    # Pixel area is the reference grid that everything else is cropped and aligned to
+    adm0_xr = xr.open_zarr(cn.adm0_zarr_path, consolidated=False).rename_vars(band_data=cn.adm0_pattern)
     pixel_area_xr = xr.open_zarr(cn.pixel_area_zarr_path, consolidated=False).rename_vars(band_data=cn.pixel_area_zstats_pattern)
+    cont_eco_xr = xr.open_zarr(cn.cont_eco_zarr_path, consolidated=False).rename_vars(band_data=cn.cont_eco_zstats_pattern)
+    # CHANGED: primary forest path from build_zarr_paths (the cn path has placeholders). No rename because it's created by a
+    # different process where the variable is named starting_composite_primary_forest
+    composite_primary_xr = xr.open_zarr(zarr_paths["primary_forest"], consolidated=False)
+    drivers_xr = xr.open_zarr(cn.drivers_of_loss_zarr_path, consolidated=False).rename_vars(band_data=cn.drivers_of_loss_pattern)
+
+    # Open LULUCF, vegetation, and land use zarrs
+    # CHANGED: the LULUCF zarr is only opened if a LULUCF layer is selected
+    selected_dataset_names = {layer["dataset"] for layer in selected_analysis_layers}
+    lulucf_ds = xr.open_zarr(lulucf_zarr_path, consolidated=False) if "LULUCF" in selected_dataset_names else xr.Dataset()
+    veg_ds = xr.open_zarr(veg_zarr_path, consolidated=False)
+    lu_ds = xr.open_zarr(lu_zarr_path, consolidated=False)
+
+    # CHANGED: variables are found by name (after DROP_VEG_PREFIX), for the LULUCF and vegetation layers that were selected.
+    # Same as the old script's  [v for v in vars_to_process if v in ds.data_vars]  otherwise.
+    lulucf_vars_to_process = []
+    veg_vars_to_process = []
+    soil_layers_to_process = []   # NEW: (dataset, zarr variable, output name)
+    soil_sources = {}             # NEW
+    for layer in selected_analysis_layers:
+        if layer["dataset"] == "LULUCF":
+            ds = lulucf_ds
+        elif layer["dataset"] == "vegetation":
+            ds = veg_ds
+        else:
+            if layer["dataset"] not in soil_sources:
+                soil_sources[layer["dataset"]] = xr.open_zarr(zarr_paths[layer["dataset"]], consolidated=False)
+            ds = soil_sources[layer["dataset"]]
+        var_name = find_var_name(ds, layer["names"])
+        if var_name is None:
+            main_logger.warning(f"None of {[zarr_var_name(n) for n in layer['names']]} are in the {layer['dataset']} zarr "
+                                f"(DROP_VEG_PREFIX = {DROP_VEG_PREFIX}). Skipping it. Variables in that zarr: {sorted(ds.data_vars)}")
+            continue
+        if layer["dataset"] == "LULUCF":
+            lulucf_vars_to_process.append(var_name)
+        elif layer["dataset"] == "vegetation":
+            veg_vars_to_process.append(var_name)
+        else:
+            soil_layers_to_process.append((layer["dataset"], var_name, layer.get("output_name", var_name)))
+
+    main_logger.info(f"LULUCF variables to process: {lulucf_vars_to_process}")
+    main_logger.info(f"Vegetation variables to process: {veg_vars_to_process}")
+    main_logger.info(f"Soil variables to process: {soil_layers_to_process}")   # NEW
+    if not (lulucf_vars_to_process or veg_vars_to_process or soil_layers_to_process):
+        raise ValueError("None of the selected analysis layers were found in their zarrs")   # NEW
+
+    lulucf_selected = lulucf_ds[lulucf_vars_to_process]
+    veg_selected = veg_ds[veg_vars_to_process]
+
+    ds_selected_analysis_vars = xr.merge([lulucf_selected, veg_selected], compat="override")
+
+    # Round and align
+    main_logger.info(f"Rounding coordinates: {uu.timestr()}")
+
+    adm0_xr = zsu.round_coords(adm0_xr)
     reference = zsu.round_coords(pixel_area_xr[cn.pixel_area_zstats_pattern])
+    cont_eco_xr = zsu.round_coords(cont_eco_xr)
+    composite_primary_xr = zsu.round_coords(composite_primary_xr)
+    drivers_xr = zsu.round_coords(drivers_xr)
+    land_state_node = zsu.round_coords(get_land_state_da(veg_ds))   # CHANGED: land state found by name (after DROP_VEG_PREFIX)
+    lu_ds = zsu.round_coords(lu_ds)
+    if veg_vars_to_process or lulucf_vars_to_process:   # NEW: an empty dataset (soil layers only) has no coordinates to round
+        ds_selected_analysis_vars = zsu.round_coords(ds_selected_analysis_vars)
+
+
+    main_logger.info(f"Cropping: {uu.timestr()}")
+    adm0_aligned = zsu.safe_crop(adm0_xr, reference)
+    pixel_area_aligned = reference
+    cont_eco_aligned = zsu.safe_crop(cont_eco_xr, reference)
+    composite_primary_aligned = zsu.safe_crop(composite_primary_xr, reference)
+    drivers_aligned = zsu.safe_crop(drivers_xr, reference)
+    land_state_node_aligned = zsu.safe_crop(land_state_node, reference)
+    lu_ds = zsu.safe_crop(lu_ds, reference)
+    if veg_vars_to_process or lulucf_vars_to_process:   # NEW
+        ds_selected_analysis_vars_aligned = zsu.safe_crop(ds_selected_analysis_vars, reference)
+    else:
+        ds_selected_analysis_vars_aligned = ds_selected_analysis_vars
+
+    # List of selected variable names (already aligned and cropped)
+    main_logger.info(f"Selecting datasets: {uu.timestr()}")
+    selected_datasets = list(ds_selected_analysis_vars_aligned.data_vars)
+
+    # NEW: analysis years come from the vegetation zarr if only soil layers are selected (no LULUCF or vegetation layers)
+    analysis_year_coord = ds_selected_analysis_vars_aligned.year if selected_datasets else veg_ds.year
+
+    # Expand pixel_area to match shape of flux variables
+    pixel_area_expanded = pixel_area_aligned.expand_dims(year=analysis_year_coord)
+
+    # Use the exact same x/y coordinates for both
     x_coords = reference.coords['x']
     y_coords = reference.coords['y']
 
-    # Country boundaries are always opened because the IPCC class area tables are by country,
-    # even if adm0 isn't one of the selected contextual layers
-    adm0_xr = xr.open_zarr(cn.adm0_zarr_path, consolidated=False).rename_vars(band_data=cn.adm0_pattern)
-    adm0_aligned = zsu.safe_crop(zsu.round_coords(adm0_xr), reference)[cn.adm0_pattern].reset_coords(drop=True)
+    # Replace coords in both sources
+    main_logger.info(f"Replacing coordinates: {uu.timestr()}")
+    ds_selected_analysis_vars_aligned = ds_selected_analysis_vars_aligned.assign_coords(x=x_coords, y=y_coords)
 
-    # Vegetation and land use zarrs are always opened (analysis years, land state, IPCC class area tables)
-    veg_ds = zsu.round_coords(xr.open_zarr(veg_zarr_path, consolidated=False))
-    lu_ds = xr.open_zarr(lu_zarr_path, consolidated=False)
-    lu_ds = zsu.safe_crop(zsu.round_coords(lu_ds), reference)
-
-    # LULUCF analysis years (index values) and the reporting years they correspond to (2016-2024)
-    analysis_years = veg_ds["year"]
-    analysis_year_values = [int(cn.veg_outputs_years[0] + int(i)) for i in analysis_years.values]   # Same conversion as zsu.create_df
-    main_logger.info(f"Analysis years: {analysis_year_values}")
-
-    # Opens only the zarrs needed for the selected datasets
-    selected_dataset_names = {str(layer["dataset"]) for layer in selected_analysis_layers}
-    dataset_sources = {}
-    if "LULUCF" in selected_dataset_names:
-        dataset_sources["LULUCF"] = xr.open_zarr(lulucf_zarr_path, consolidated=False)
-    if "vegetation" in selected_dataset_names:
-        dataset_sources["vegetation"] = veg_ds
-    if "mineral_soil" in selected_dataset_names:
-        dataset_sources["mineral_soil"] = xr.open_zarr(SOC_zarr_path, consolidated=False)
-    if "organic_soil" in selected_dataset_names:
-        dataset_sources["organic_soil"] = xr.open_zarr(organic_soil_zarr_path, consolidated=False)
-    for name, ds in dataset_sources.items():
-        main_logger.info(f"{name} zarr variables: {list(ds.data_vars)}; dims: {dict(ds.sizes)}")
-
-    # Year mapping for soil datasets, which have their own time steps
-    soil_year_mapping = {
-        "mineral_soil": (cn.mineral_soil_year_map, cn.SOC_density_intervals),
-        "organic_soil": (cn.organic_soil_year_map, ORGANIC_SOIL_INTERVAL_POSITIONS),
-    }
-
-    # Pixel area in ha, expanded to the analysis years
+    # Convert pixel_area from m² to hectares, then adds to the list of layers to analyze (to get area of contextual layers)
     main_logger.info(f"Calculating pixel area: {uu.timestr()}")
-    pixel_area_layer = (reference.expand_dims(year=analysis_years.values) * cn.m2_to_ha).astype("float32")
+    pixel_area_layer = (pixel_area_expanded * cn.m2_to_ha).astype("float32")
 
-    # Multiplies each analysis layer by pixel area to get per-pixel values
+    # Multiply each flux var by pixel_area and create flux-specific area layers
     main_logger.info(f"Calculating per-pixel values for analysis layers: {uu.timestr()}")
+
     flux_layers = []
     analysis_layer_names = []
 
-    for layer in selected_analysis_layers:
-        ds = dataset_sources[layer["dataset"]]
-        ds_var_name = resolve_var_name(ds, layer["name"])
-        if ds_var_name is None:
-            main_logger.warning(f"{layer['name']} not found in {layer['dataset']} zarr. Skipping it.")
-            continue
+    for var in selected_datasets:
+        flux_scaled = (ds_selected_analysis_vars_aligned[var] * pixel_area_layer).astype("float32")
+        flux_layers.append(flux_scaled)
+        analysis_layer_names.append(var)
 
-        main_logger.info(f"Preparing {layer['dataset']} layer {layer['name']}: {uu.timestr()}")
-        da = zsu.safe_crop(zsu.round_coords(ds[ds_var_name]), reference)
-
-        if layer["dataset"] in soil_year_mapping:
-            year_map, interval_labels = soil_year_mapping[layer["dataset"]]
-            da = map_layer_to_analysis_years(da, analysis_years, analysis_year_values,
-                                             year_map, interval_labels, layer["name"], main_logger)
-        else:
-            if da.sizes.get("year") != analysis_years.size:
-                raise ValueError(f"{layer['name']} has {da.sizes.get('year')} years; expected {analysis_years.size}")
-            da = da.assign_coords(year=analysis_years.values)
-
-        da = da.assign_coords(x=x_coords, y=y_coords).transpose("year", "y", "x")
-        flux_layers.append((da * pixel_area_layer).astype("float32"))
-        analysis_layer_names.append(layer.get("output_name", layer["name"]))   # Name in the output tables
-
-    if not flux_layers:
-        raise ValueError("None of the selected analysis layers were found in their zarrs")
+    # NEW: soil layers (not in the old script), mapped onto the analysis years, then multiplied by pixel area the same way
+    if soil_layers_to_process:
+        analysis_year_values = [int(cn.veg_outputs_years[0] + int(i)) for i in analysis_year_coord.values]   # Same conversion as zsu.create_df
+        main_logger.info(f"Analysis years for soil layers: {analysis_year_values}")
+        soil_year_mapping = {
+            "mineral_soil": (cn.mineral_soil_year_map, cn.SOC_density_intervals),
+            "organic_soil": (cn.organic_soil_year_map, ORGANIC_SOIL_INTERVAL_POSITIONS),
+        }
+        for dataset, var_name, output_name in soil_layers_to_process:
+            main_logger.info(f"Preparing {dataset} layer {var_name}: {uu.timestr()}")
+            da = zsu.safe_crop(zsu.round_coords(soil_sources[dataset][var_name]), reference)
+            year_map, interval_labels = soil_year_mapping[dataset]
+            da = map_layer_to_analysis_years(da, analysis_year_coord, analysis_year_values, year_map, interval_labels, var_name, main_logger)
+            da = da.assign_coords(x=x_coords, y=y_coords)
+            flux_scaled = (da * pixel_area_layer).astype("float32").transpose(*pixel_area_layer.dims)
+            flux_layers.append(flux_scaled)
+            analysis_layer_names.append(output_name)
 
     # Total IPCC-context area
     flux_layers.append(pixel_area_layer)
     analysis_layer_names.append("pixel_area_ha")
 
-    # Drops non-dimension coordinates (e.g., spatial_ref, band) so layers from different zarrs can be stacked
-    flux_layers = [layer.reset_coords(drop=True) for layer in flux_layers]
+    # NEW: layers from the soil zarrs can have non-dimension coordinates (e.g., spatial_ref, band) that stop them from being stacked.
+    # Those coordinates are only dropped when soil layers are used. Values aren't changed either way.
+    if soil_layers_to_process:
+        flux_layers = [layer.reset_coords(drop=True) for layer in flux_layers]
+
+    selected_datasets = analysis_layer_names
 
     # Stack into one flux cube: shape (analysis_layer, year, y, x)
     main_logger.info(f"Stacking analysis layers into flux cube: {uu.timestr()}")
     flux_cube = xr.concat(flux_layers, dim="analysis_layer")
-    flux_cube = flux_cube.assign_coords(analysis_layer=("analysis_layer", analysis_layer_names))
+
+    # Set the analysis_layer coordinate names
+    flux_cube = flux_cube.assign_coords(
+        analysis_layer=("analysis_layer", selected_datasets)
+    )
     flux_cube = zsu.round_coords(flux_cube)
     main_logger.info(f"flux_cube: {flux_cube}")
 
-    ### Contextual layers, cropped to the reference grid. Annual layers are aligned to the analysis years.
-    # IPCC outputs have 10 annual positions (2015-2024); LULUCF flux outputs have 9 (2016-2024)
-    #   IPCC class/node: positions 0-9 are annual outputs
-    #   IPCC change: position 0 is empty, positions 1-9 are change interval end years
-    #   IPCC summary: position 0 is static 2015_2024 summary, positions 1-9 are empty
-    main_logger.info(f"Preparing contextual layers: {uu.timestr()}")
-
-    def prepare_context_layer(key):
-        cfg = contextual_layer_config[key]
-        pattern = cfg["pattern"]
-
-        if cfg["source"] == "static":
-            if key == "adm0":
-                da = adm0_aligned
-            else:
-                # Fills any version/type/description and chunk size placeholders (the primary forest path has them)
-                # Primary forest path is set in Run settings; other static layers use their cn paths
-                ctx_zarr_path = PRIMARY_FOREST_ZARR_PATH if key == "primary_forest" else cfg["zarr_path"]
-                main_logger.info(f"  {key} zarr path: {ctx_zarr_path}")
-                ctx_ds = xr.open_zarr(ctx_zarr_path, consolidated=False)
-                if cfg["rename"]:
-                    ctx_ds = ctx_ds.rename_vars(band_data=pattern)
-                da = zsu.safe_crop(zsu.round_coords(ctx_ds), reference)[pattern]
-            # Some static layers (e.g., composite primary forest) are stored with a length-1 year dimension
-            if "year" in da.dims:
-                da = da.isel(year=0, drop=True)
-
-
-        elif cfg["source"] == "veg":
-
-            veg_var = resolve_var_name(veg_ds, pattern)
-
-            if veg_var is None:
-                raise KeyError(f"{pattern} not found in vegetation zarr. Variables: {list(veg_ds.data_vars)}")
-
-            da = zsu.safe_crop(veg_ds[veg_var], reference).assign_coords(year=analysis_years.values)
-
-
-        elif cfg["source"] == "forest_age":
-
-            age_var = resolve_var_name(veg_ds, cn.forest_age_output_pattern)
-
-            if age_var is None:
-                raise KeyError(
-                    f"{cn.forest_age_output_pattern} not found in vegetation zarr. Variables: {list(veg_ds.data_vars)}")
-
-            forest_age = zsu.safe_crop(veg_ds[age_var], reference)
-            da = zsu.categorize_age(forest_age).astype(np.uint8).assign_coords(year=analysis_years.values)
-
-        elif cfg["source"] == "ipcc":
-            if key == "IPCC_summary":
-                da = lu_ds[pattern].isel(year=0, drop=True).expand_dims(year=analysis_years.values)
-            else:
-                da = lu_ds[pattern].isel(year=slice(1, 10)).assign_coords(year=analysis_years.values)
-
-        else:
-            raise ValueError(f"Unknown contextual layer source {cfg['source']} for {key}")
-
-        da = da.reset_coords(drop=True).rename(pattern)
-        main_logger.info(f"  {key} ({pattern}): dims {dict(da.sizes)}")
-        return da
-
-    # Contextual layers for the flux tables
-    context_das = {key: prepare_context_layer(key) for key in selected_contextual_layers}
-
-    # Contextual layers for the IPCC class area tables (reuses the flux table layers where they're the same)
-    main_logger.info(f"Preparing IPCC class area layers: {uu.timestr()}")
-    class_area_das = {key: context_das[key] if key in context_das else prepare_context_layer(key)
-                      for key in CLASS_AREA_CONTEXT_KEYS}
-
-    # Pixel area in ha (no year dimension) for the class area tables
-    pixel_area_ha_2d = (reference * cn.m2_to_ha).astype("float32").reset_coords(drop=True).rename("area_ha")
-
     prep_end_time = time.time()
     main_logger.info(f"  Finished zonal stats prep, took {round(prep_end_time - prep_start_time)} seconds: {uu.timestr()}")
+
+    # IPCC land use contextusl layers aligned to LULUCF analysis years.
+    # LULUCF flux outputs have 9 interval end years (2016-2024)
+    # IPCC outputs have 10 annual positions (2015-2024)
+        # IPCC class/node: positions 0-9 are annual outputs
+        # IPCC change: position 0 is empty, positions 1-9 are change interval end years
+        # IPCC summary: position 0 is static 2015_2024 summary, positions 1-9 are empty
+    main_logger.info(f"Selecting IPCC land use contextual layers: {uu.timestr()}")
+    analysis_years = analysis_year_coord   # CHANGED: same as ds_selected_analysis_vars_aligned.year when LULUCF or vegetation layers are selected
+
+    # IPCC contextual layers aligned to LULUCF flux years, 2016-2024
+    ipcc_class = lu_ds[cn.IPCC_class_pattern].isel(year=slice(1, 10)).assign_coords(year=analysis_years)
+    ipcc_node = lu_ds[cn.IPCC_node_pattern].isel(year=slice(1, 10)).assign_coords(year=analysis_years)
+    ipcc_change = lu_ds[cn.IPCC_change_pattern].isel(year=slice(1, 10)).assign_coords(year=analysis_years)
+    ipcc_summary = (lu_ds[cn.IPCC_summary_pattern].isel(year=0, drop=True).expand_dims(year=analysis_years).assign_coords(year=analysis_years))
+
+    # NEW: optional contextual layers (WDPA, landmark, KBA, watersheds, forest age, BRA biomes, managed land), opened only if selected
+    # with -cl. Prepared the same way as the static layers above (round, crop).
+    # The layers opened above for every run are skipped here.
+    layers_opened_above = ["adm0", "land_state", "cont_eco", "primary_forest", "drivers",
+                           "IPCC_class", "IPCC_node", "IPCC_change", "IPCC_summary"]
+    extra_context = {}
+    for key in selected_contextual_layers:
+        cfg = contextual_layer_config[key]
+        if key in layers_opened_above:
+            continue
+        if cfg["source"] == "static":
+            ctx_xr = xr.open_zarr(cfg["zarr_path"], consolidated=False)
+            if cfg["rename"]:
+                ctx_xr = ctx_xr.rename_vars(band_data=cfg["pattern"])
+            extra_context[key] = zsu.safe_crop(zsu.round_coords(ctx_xr), reference)[cfg["pattern"]]
+        elif cfg["source"] == "forest_age":
+            age_var = find_var_name(veg_ds, [cn.forest_age_output_pattern])
+            if age_var is None:
+                raise KeyError(f"{cn.forest_age_output_pattern} not in the vegetation zarr. Variables in it: {sorted(veg_ds.data_vars)}")
+            forest_age_aligned = zsu.safe_crop(zsu.round_coords(veg_ds[age_var]), reference)
+            extra_context[key] = zsu.categorize_age(forest_age_aligned).astype(np.uint8).rename(cfg["pattern"])
+        else:
+            raise ValueError(f"Unknown contextual layer source {cfg['source']} for {key}")
 
 
     # Part 3: Do zonal stats tile by tile
 
     main_logger.info(f"Starting zonal stats: {uu.timestr()}")
     tiles_processed = 0  # The number of tiles actually processed (since some are skipped)
+    tiles_skipped = []   # NEW
 
     for i, tile_id in enumerate(tile_ids_to_process):
         main_logger.info(f"Processing {tile_id} ({i + 1}/{len(tile_ids_to_process)}): {uu.timestr()}")
         tile_start_time = time.time()
 
         # Skips if an output for this tile_id and zonal stats description already exists (to not repeat that tile if restarting the zonal stats).
-        # Matches on the description so that runs with different layer selections don't skip each other's tiles.
+        # CHANGED: only files from this -zd description count (the old script skipped a tile if any file in the folder had its tile_id).
+        # NEW: logged as a warning, because the skipped tile's numbers come from the earlier run's file, whatever script version wrote it.
         existing = set(os.listdir(local_zonal_stats_folder))
-        if any(tile_id in fname and is_run_output(fname, zonal_stats_description) for fname in existing):
-            main_logger.info(f"  Skipping {tile_id}; output already exists")
+        existing_for_tile = sorted(f for f in existing if tile_id in f and is_run_output(f, zonal_stats_description))
+        if existing_for_tile:
+            main_logger.warning(f"  Skipping {tile_id}; output already exists from an earlier run with -zd {zonal_stats_description}: "
+                                f"{existing_for_tile}. Its values are NOT recalculated. Delete those files or use a new -zd to recalculate.")
+            tiles_skipped.append(tile_id)
             continue
 
         if model_chunk_stats_table_name:
@@ -737,74 +837,142 @@ def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, soc_inp
             y=slice(north, south)  # Note: y typically decreases from top to bottom
         )
 
-        pixel_area_ha_2d_subset = pixel_area_ha_2d.sel(x=slice(west, east), y=slice(north, south))
+        adm0_aligned_subset = adm0_aligned.sel(x=slice(west, east), y=slice(north, south))
+        pixel_area_expanded_subset = pixel_area_expanded.sel(x=slice(west, east), y=slice(north, south))
+        cont_eco_aligned_subset = cont_eco_aligned.sel(x=slice(west, east), y=slice(north, south))
+        composite_primary_aligned_subset = composite_primary_aligned.sel(x=slice(west, east), y=slice(north, south))
+        drivers_aligned_subset = drivers_aligned.sel(x=slice(west, east), y=slice(north, south))
+        land_state_node_aligned_subset = land_state_node_aligned.sel(x=slice(west, east), y=slice(north, south))
+        ipcc_class_subset = ipcc_class.sel(x=slice(west, east), y=slice(north, south))
+        ipcc_node_subset = ipcc_node.sel(x=slice(west, east), y=slice(north, south))
+        ipcc_change_subset = ipcc_change.sel(x=slice(west, east), y=slice(north, south))
+        ipcc_summary_subset = ipcc_summary.sel(x=slice(west, east), y=slice(north, south))
 
-        # Contextual layers for this tile. Layers that don't extend to the tile become all 0s.
-        zero_template = flux_cube_subset.isel(analysis_layer=0, drop=True).reset_coords(drop=True)
-        adm0_da = subset_context_layer(adm0_aligned, cn.adm0_pattern, west, south, east, north, zero_template, tile_id, main_logger)
-        context_tile_das = [
-            subset_context_layer(context_das[key], contextual_layer_config[key]["pattern"],
-                                 west, south, east, north, zero_template, tile_id, main_logger)
-            for key in selected_contextual_layers
-        ]
+        # Creates xarrays of 0s if contextual layer doesn't extend to the current tile.
+        # Don't need to do with land_state_nodes and pixel_area because those should exist everywhere there are model outputs.
+        if adm0_aligned_subset[cn.adm0_pattern].sizes.get("x", 0) == 0 or adm0_aligned_subset[cn.adm0_pattern].sizes.get("y", 0) == 0:
+            adm0_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(cn.adm0_pattern)
+            main_logger.info(f"  {cn.adm0_pattern} not in {tile_id}. Creating xarray of all 0s.")
+        else:
+            adm0_da = adm0_aligned_subset[cn.adm0_pattern]
+
+        if cont_eco_aligned_subset[cn.cont_eco_zstats_pattern].sizes.get("x", 0) == 0 or cont_eco_aligned_subset[
+            cn.cont_eco_zstats_pattern].sizes.get("y", 0) == 0:
+            cont_eco_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(
+                cn.cont_eco_zstats_pattern)
+            main_logger.info(f"  {cn.cont_eco_zstats_pattern} not in {tile_id}. Creating xarray of all 0s.")
+        else:
+            cont_eco_da = cont_eco_aligned_subset[cn.cont_eco_zstats_pattern]
+
+        if drivers_aligned_subset[cn.drivers_of_loss_pattern].sizes.get("x", 0) == 0 or drivers_aligned_subset[
+            cn.drivers_of_loss_pattern].sizes.get("y", 0) == 0:
+            drivers_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(
+                cn.drivers_of_loss_pattern)
+            main_logger.info(f"  {cn.drivers_of_loss_pattern} not in {tile_id}. Creating xarray of all 0s.")
+        else:
+            drivers_da = drivers_aligned_subset[cn.drivers_of_loss_pattern]
+
+        if (composite_primary_aligned_subset[cn.starting_composite_primary_forest_pattern].sizes.get("x", 0) == 0 or
+                composite_primary_aligned_subset[cn.starting_composite_primary_forest_pattern].sizes.get("y", 0) == 0):
+            composite_primary_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(
+                cn.starting_composite_primary_forest_pattern)
+            main_logger.info(
+                f"  {cn.starting_composite_primary_forest_pattern} not in {tile_id}. Creating xarray of all 0s.")
+        else:
+            composite_primary_da = composite_primary_aligned_subset[cn.starting_composite_primary_forest_pattern]
+
+        if ipcc_class_subset.sizes.get("x", 0) == 0 or ipcc_class_subset.sizes.get("y", 0) == 0:
+            ipcc_class_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(
+                cn.IPCC_class_pattern)
+        else:
+            ipcc_class_da = ipcc_class_subset.rename(cn.IPCC_class_pattern)
+
+        if ipcc_node_subset.sizes.get("x", 0) == 0 or ipcc_node_subset.sizes.get("y", 0) == 0:
+            ipcc_node_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(
+                cn.IPCC_node_pattern)
+        else:
+            ipcc_node_da = ipcc_node_subset.rename(cn.IPCC_node_pattern)
+
+        if ipcc_change_subset.sizes.get("x", 0) == 0 or ipcc_change_subset.sizes.get("y", 0) == 0:
+            ipcc_change_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(
+                cn.IPCC_change_pattern)
+        else:
+            ipcc_change_da = ipcc_change_subset.rename(cn.IPCC_change_pattern)
+
+        if ipcc_summary_subset.sizes.get("x", 0) == 0 or ipcc_summary_subset.sizes.get("y", 0) == 0:
+            ipcc_summary_da = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(
+                cn.IPCC_summary_pattern)
+        else:
+            ipcc_summary_da = ipcc_summary_subset.rename(cn.IPCC_summary_pattern)
+
+        # Turns the composite primary forest zarr (which has chunks of 1x4000x4000) into something without a year dimension at all (4000x4000).
+        # That allows it to be used with the other contextual layers, which are also just 4000x4000 (no year dimension).
+        # Note: composite primary forest has chunks of 1x4000x4000 because of how it's made; it uses the same function as the zarr for the LULUCF model,
+        # rather than the script of the other contextual layers.
+        if "year" in composite_primary_da.dims:
+            composite_primary_da = composite_primary_da.isel(year=0, drop=True)
+
+        # CHANGED: land state is renamed to cn.land_state_pattern. The old script didn't need to because the zarr variable had the
+        # same name as the cn pattern then; with DROP_VEG_PREFIX the zarr name differs, and create_df looks for the cn name.
+        land_state_node_aligned_subset = land_state_node_aligned_subset.rename(cn.land_state_pattern)
+
+        # NEW: optional contextual layers (only if selected with -cl). 0s if the layer doesn't reach the tile.
+        extra_context_das = {}
+        for key, da in extra_context.items():
+            pattern = contextual_layer_config[key]["pattern"]
+            subset = da.sel(x=slice(west, east), y=slice(north, south))
+            if subset.sizes.get("x", 0) == 0 or subset.sizes.get("y", 0) == 0:
+                extra_context_das[key] = xr.zeros_like(flux_cube_subset.isel(analysis_layer=0, drop=True)).rename(pattern)
+                main_logger.info(f"  {pattern} not in {tile_id}. Creating xarray of all 0s.")
+            else:
+                extra_context_das[key] = subset.rename(pattern)
+
+        # NEW: the contextual layers to group by, in CONTEXTUAL_LAYER_OPTIONS order. With the default layers this is exactly the
+        # old script's list (adm0, land state, cont_eco, primary forest, drivers, IPCC class, node, change, summary), in its order.
+        tile_context_das = {
+            "adm0": adm0_da,
+            "land_state": land_state_node_aligned_subset,
+            "cont_eco": cont_eco_da,
+            "primary_forest": composite_primary_da,
+            "drivers": drivers_da,
+            "IPCC_class": ipcc_class_da,
+            "IPCC_node": ipcc_node_da,
+            "IPCC_change": ipcc_change_da,
+            "IPCC_summary": ipcc_summary_da,
+            **extra_context_das,
+        }
+        context_by_das = [tile_context_das[key] for key in selected_contextual_layers]
 
         # Final alignment
         main_logger.info(f"  Aligning {tile_id}: {uu.timestr()}")
-        aligned = xr.align(flux_cube_subset, adm0_da, *context_tile_das, join="override")
-        flux_cube_subset, adm0_da, context_tile_das = aligned[0], aligned[1], list(aligned[2:])
-
-        ### Total area by country x primary forest x land state x IPCC class/change/summary/node x year
-        # (all pixels, not just pixels with flux)
-        main_logger.info(f"  Computing IPCC class area for {tile_id}: {uu.timestr()}")
-        area_3d = pixel_area_ha_2d_subset.expand_dims(year=analysis_years.values)
-        area_zero_template = xr.zeros_like(area_3d)
-        class_area_by_das = [
-            subset_context_layer(class_area_das[key], contextual_layer_config[key]["pattern"],
-                                 west, south, east, north, area_zero_template, tile_id, main_logger)
-            for key in CLASS_AREA_CONTEXT_KEYS
-        ]
-
-        aligned_area = xr.align(area_3d, adm0_da.reset_coords(drop=True), *class_area_by_das, join="override")
-        area_3d, adm0_for_area_da, class_area_by_das = aligned_area[0], aligned_area[1], list(aligned_area[2:])
-
-        class_area_results = xarray_reduce(
-            area_3d,
-            adm0_for_area_da,
-            *class_area_by_das,
-            area_3d["year"],
-            func="sum",
-            expected_groups=(cn.gadm_adm0_ids,)
-                            + tuple(contextual_layer_config[key]["codes"] for key in CLASS_AREA_CONTEXT_KEYS)
-                            + (area_3d.year.values,),
-            group_dims=["year"],
-            reindex=ReindexStrategy(blockwise=False, array_type=ReindexArrayType.SPARSE_COO),
-            fill_value=0
-        ).compute()
-
-        class_area_coord_dict = zsu.convert_to_coord_dict(class_area_results, tile_id, main_logger)
-        class_area_df = zsu.create_ipcc_class_area_df(class_area_coord_dict, state_node_df, tile_id, main_logger)
-        class_area_df_name = f"ipcc_class_area_{tile_id}_v{lu_model_version}_{zonal_stats_description}_{time.strftime('%Y%m%d_%H_%M_%S')}"
-        class_area_df.to_parquet(f"{local_class_area_folder}/{class_area_df_name}.parquet")
-        main_logger.info(f"  IPCC class area table for {tile_id} has {len(class_area_df.index)} rows: {uu.timestr()}")
-
-        del class_area_results, class_area_coord_dict, class_area_df, area_3d
-        gc.collect()
+        aligned = xr.align(
+            flux_cube_subset,
+            pixel_area_expanded_subset,
+            *context_by_das,      # CHANGED: the selected contextual layers (the old script's list with the defaults)
+            join="override"
+        )
+        flux_cube_subset, pixel_area_expanded_subset, context_by_das = aligned[0], aligned[1], list(aligned[2:])
 
         main_logger.info(f"  Computing {tile_id}: {uu.timestr()}")
         results = xarray_reduce(
             flux_cube_subset,
-            *context_tile_das,
-            flux_cube_subset["year"],
+            *(
+                *context_by_das,  # CHANGED: the selected contextual layers (the old script's list with the defaults)
+                flux_cube_subset["year"]
+            ),
             func='sum',
-            expected_groups=tuple(contextual_layer_config[key]["codes"] for key in selected_contextual_layers)
-                            + (flux_cube_subset.year.values,),
+            expected_groups=(
+                *[contextual_layer_config[key]["codes"] for key in selected_contextual_layers],  # CHANGED: the old script's codes with the defaults
+                flux_cube_subset.year.values,
+            ),
             group_dims=["year"],
             reindex=ReindexStrategy(blockwise=False, array_type=ReindexArrayType.SPARSE_COO),
             fill_value=0
         ).compute()
 
         # Contextual layers to use to merge pixel_area against other analysis layers (to calculate flux/ha)
-        contextual_layer_names = [contextual_layer_config[key]["pattern"] for key in selected_contextual_layers] + ['year']
+        # CHANGED: the selected contextual layers (the old script's list with the defaults)
+        contextual_layers_names = [contextual_layer_config[key]["pattern"] for key in selected_contextual_layers] + ['year']
 
         main_logger.info(f"  Done computing {tile_id}: {uu.timestr()}")
         coord_dict = zsu.convert_to_coord_dict(results, tile_id, main_logger)
@@ -812,13 +980,10 @@ def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, soc_inp
         del results
         gc.collect()
 
-        df = zsu.create_df(coord_dict, state_node_df, contextual_layer_names, tile_id, 'vegetation', main_logger)
+        df = zsu.create_df(coord_dict, state_node_df, contextual_layers_names, tile_id, 'vegetation', main_logger)
 
         del coord_dict
         gc.collect()
-
-        # Land state nodes -> land_state_broad_class and tall_veg_type; rows that become identical are summed
-        df = zsu.collapse_flux_df(df, tile_id, main_logger)
 
         main_logger.info(f"  Rows in {tile_id} dataframe: {len(df.index)}: {uu.timestr()}")
         main_logger.info(f"  Saving {tile_id} output table: {uu.timestr()}")
@@ -826,7 +991,6 @@ def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, soc_inp
         df.to_parquet(f"{local_zonal_stats_folder}/{tile_df_name}.parquet")
 
         # Clean up at end of tile
-        #del results, coord_dict, df, flux_cube_subset
         del df, flux_cube_subset
         gc.collect()
 
@@ -842,12 +1006,15 @@ def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, soc_inp
         main_logger.info(f"Average time per tile (excluding skipped tiles): {round(average_time)} seconds (for {tiles_processed} tiles)")
     else:
         main_logger.info("No tiles processed")
+    # NEW: reminder that skipped tiles weren't recalculated
+    if tiles_skipped:
+        main_logger.warning(f"{len(tiles_skipped)} tile(s) were skipped and NOT recalculated because outputs with -zd {zonal_stats_description} "
+                            f"already existed: {tiles_skipped}. The combined tables below use those earlier outputs.")
 
     # Matches tile_ids like 00N_110E in file names
     tile_id_regex = r"\d{2}[NS]_\d{3}[EW]"
 
-    # Shuts down the cluster because all further processing is done locally.
-    # Uses the cluster object this run is connected to. terminate_cluster.terminate_cluster() calls coiled.Cluster(name=...),
+    # CHANGED: shuts down the cluster this run is connected to. terminate_cluster.terminate_cluster() calls coiled.Cluster(name=...),
     # which creates a new cluster if the old one has already stopped. A failed shutdown doesn't stop the combining below.
     try:
         if not run_local and cluster is not None:
@@ -857,26 +1024,9 @@ def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, soc_inp
     except Exception as e:
         main_logger.warning(f"Could not shut down cluster {cluster_name} ({e}). Check the Coiled dashboard.")
 
-    ### Combines IPCC class area tables (total area per country per IPCC land use class per year)
-    class_area_files = sorted(
-        str(local_class_area_folder / f)
-        for f in os.listdir(local_class_area_folder)
-        if f.startswith("ipcc_class_area_") and re.search(tile_id_regex, f) and is_run_output(f, zonal_stats_description)
-    )
-    if class_area_files:
-        main_logger.info(f"Combining {len(class_area_files)} IPCC class area tables: {uu.timestr()}")
-        class_area_long, class_area_wide = zsu.combine_ipcc_class_area_tables(
-            [pd.read_parquet(f) for f in class_area_files], main_logger)
-        class_area_name = f'ipcc_class_area_by_country_v{lu_model_version}_{zonal_stats_description}_{time.strftime("%Y%m%d_%H_%M_%S")}'
-        class_area_long.to_parquet(f"{local_zonal_stats_folder}/{class_area_name}.parquet")
-        class_area_long.to_csv(f"{local_zonal_stats_folder}/{class_area_name}.csv", index=False)
-        class_area_wide.to_csv(f"{local_zonal_stats_folder}/{class_area_name}_wide.csv", index=False)
-        main_logger.info(f"IPCC class area tables written to {local_zonal_stats_folder}/{class_area_name}*")
-    else:
-        main_logger.info("No IPCC class area tables found.")
-
-    # Collects all tile parquet files.
-    # Only tile-level files (with a tile_id in the name), so combined outputs from earlier runs aren't counted twice.
+    # Collects all tile parquet files
+    # CHANGED: only tile-level files from this -zd description. The old script combined every parquet file in the folder with
+    # "zonal_stats_" in its name, including combined tables and other runs' tiles, which can count the same tile more than once.
     parquet_files = sorted(
         str(local_zonal_stats_folder / f)
         for f in os.listdir(local_zonal_stats_folder)
@@ -886,6 +1036,13 @@ def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, soc_inp
     if not parquet_files:
         main_logger.info("No tile parquet files found.")
         return
+
+    # NEW: warns if a tile has more than one file for this description (its values would be counted more than once)
+    files_per_tile = pd.Series([re.search(tile_id_regex, os.path.basename(f)).group(0) for f in parquet_files]).value_counts()
+    duplicated_tiles = files_per_tile[files_per_tile > 1]
+    if not duplicated_tiles.empty:
+        main_logger.warning(f"Some tiles have more than one output file for -zd {zonal_stats_description}, so they'd be counted more than "
+                            f"once in the combined tables: {duplicated_tiles.to_dict()}. Delete the extra files and rerun.")
 
     # List of dataframes from each tile, to be combined
     df_list = []
@@ -911,6 +1068,7 @@ def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, soc_inp
             main_logger.info(f"Reading {parquet_output}: {uu.timestr()}")
             df = pd.read_parquet(parquet_output)
             df_list.append(df)
+            # CHANGED: the old script added each table's rows to total_rows again here, so the row-count check below always warned
 
         # Combines all the tile-level dfs in the list into a single df
         main_logger.info(f"Combining dataframes: {uu.timestr()}")
@@ -926,32 +1084,13 @@ def main(cluster_name, lulucf_input_date, veg_input_date, lu_input_date, soc_inp
         if len(combined_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
             combined_df.to_csv(f"{local_zonal_stats_folder}/{combined_df_name}.csv", index=False)
 
-        # Converts combined df from long to wide
-        combined_wide_df = zsu.create_wide_df(combined_df, main_logger)
-
-        combined_wide_df_name = f'ipcc_lulucf_zonal_stats_v{lu_model_version}_{zonal_stats_description}_wide_{time.strftime("%Y%m%d_%H_%M_%S")}'
-        combined_wide_df.to_parquet(f"{local_zonal_stats_folder}/{combined_wide_df_name}.parquet")
-        if len(combined_wide_df.index) < 900_000:  # Only writes combined file to Excel if it's not giant
-            combined_wide_df.to_csv(f"{local_zonal_stats_folder}/{combined_wide_df_name}.csv", index=False)
-
-    # # Converts each parquet to csv
-    # main_logger.info(f"Converting parquet files to csvs: {uu.timestr()}")
-    # for parquet_output in parquet_files:
-    #     main_logger.info(f"Converting {parquet_output} to csv: {uu.timestr()}")
-    #     df = pd.read_parquet(parquet_output)
-    #     csv_output = parquet_output.replace('parquet', 'csv')
-    #     df.to_csv(csv_output, index=False)
-    #
-    # # Uploads outputs to s3 if the run is large enough
-    # zsu.upload_zstats_to_s3(stage, local_zonal_stats_folder, output_path, main_logger,
-    #                     model_path_description, model_type, lulucf_model_version, tiles_processed)
 
     end_time = time.time()
     main_logger.info(f"Finished zonal stats, took {round(end_time - prep_start_time)} seconds: {uu.timestr()}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run Ccombined LULUCF flux zonal stats by IPCC land use zarr context.")
+    parser = argparse.ArgumentParser(description="Run combined LULUCF flux zonal stats by IPCC land use zarr context.")
     parser.add_argument("-cn", "--cluster_name", help="Coiled cluster name")
 
     parser.add_argument("-vid", "--veg_input_date", default=VEG_INPUT_DATE, help=f"Vegetation model run date (default {VEG_INPUT_DATE})")
@@ -985,7 +1124,7 @@ if __name__ == "__main__":
     parser.add_argument("-cl", "--contextual_layers", nargs="+", choices=CONTEXTUAL_LAYER_OPTIONS + ["all"], default=DEFAULT_CONTEXTUAL_LAYERS,
                         help=f"Contextual layer(s) to group by, or 'all'. Options: {', '.join(CONTEXTUAL_LAYER_OPTIONS)}. "
                              f"Default: {', '.join(DEFAULT_CONTEXTUAL_LAYERS)}")
-    parser.add_argument( "--tile_ids_file", required=False, help="Path to txt file containing 10x10 tile IDs to process, one per line.")
+    parser.add_argument("--tile_ids_file", required=False, help="Path to txt file containing 10x10 tile IDs to process, one per line.")
 
     args = parser.parse_args()
 
