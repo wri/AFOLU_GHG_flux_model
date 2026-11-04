@@ -1,35 +1,21 @@
 """
 Run from /mnt/c/GIS/git/AFOLU_GHG_flux_model
 
-Coiled test area without land (i.e. no data):
-python -m src.utilities.create_cluster -cn Hansenize -n 2 -m 4
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p secondary_natural_forest -bb -120 30 -110 40 -cs 10
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p secondary_natural_forest -bb 100 -10 110 10 -cs 10 --no_upload
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p mangroves -bb -120 30 -110 40 -cs 10
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p mangroves -bb 100 -10 110 10 -cs 10 --no_upload
-python -m src.LULUCF.scripts.preprocessing.gmw_smooth_mangrove_extent_timeseries.0_smooth_mangrove_extent_1x1_degree -cn Hansenize -bb 60 -11 61 -10 -cs 1
-python -m src.LULUCF.scripts.preprocessing.gmw_smooth_mangrove_extent_timeseries.0_smooth_mangrove_extent_1x1_degree -cn Hansenize -bb 116 -3 117 -2 -cs 1 --no_upload
-python -m src.LULUCF.scripts.preprocessing.gmw_smooth_mangrove_extent_timeseries.1_aggregate_smoothed_mangrove_extent_1x1_degree -cn Hansenize --first_10x10s_to_process 1 --no_upload
-
-Coiled test area with data:
-Note: use -m 8 for all other datasets other than Ctrees_AGB2015. Scale factor (divide all values by 10) requires more memory.
-python -m src.utilities.create_cluster -cn Ctrees_AGB2015_test -n 1 -m 32
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Ctrees_AGB2015_test -p Ctrees_AGB2015 -bb -80 30 -70 40 -cs 10
-
-Coiled full run (running with 20 workers causes an error of not finding the vrt, perhaps because it's being accessed too quickly-- better to run with fewer workers for now):
-Note: use -m 8 for all other datasets other than Ctrees_AGB2015. Scale factor (divide all values by 10) requires more memory.
+Coiled full run:
 python -m src.utilities.create_cluster -cn Ctrees_AGB2015 -n 10 -t 1 -m 32
 python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Ctrees_AGB2015 -p Ctrees_AGB2015 -bb -180 -60 180 80 -cs 10
+Notes: Running with 20 workers causes an error of not finding the vrt, perhaps because it's being accessed too quickly. Better to run with fewer workers for now.
+       Use -m 8 for all other datasets other than Ctrees_AGB2015. Scale factor (divide all values by 10) requires more memory.
 
-python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize -p AGB2015 AGB2015_stdev -bb -180 -60 180 80 -cs 10
-# Note: Tried this with -n 20 -t 12 -m 16 (for mangrove extent from 1996 to 2016) and then again with -n 20 -t 12 -m 8 (for mangrove extent from 2017 to 2020).
-    # After reducing the memory to 8 and using a smaller vm type, gdal_warp per dataset finshed 2x a fast (10 minutes in stead of 20).
-    # Could be that it is stored closer on memory or that we just got a faster cluster the second time around.
-Note: Try with 1 thread per worker
+python -m src.utilities.create_cluster -cn Hansenize_GMWv4 -n 20 -t 12 -m 8
+python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize_GMWv4 -p mangroves -bb -180 -60 180 80 -cs 10
+Notes: Tried this with -n 20 -t 12 -m 16 (for mangrove extent from 1996 to 2016) and then again with -n 20 -t 12 -m 8 (for mangrove extent from 2017 to 2020).
+       After reducing the memory to 8 and using a smaller vm type, gdal_warp per dataset finshed 2x a fast (10 minutes in stead of 20).
+       Could be that it is stored closer on memory or that we just got a faster cluster the second time around.
 
-Coiled full run for Xu et al. regrowth rates (1 hr 52 min with 15x 8GB workers with 1 thread each)
-python -m src.utilities.create_cluster -cn Hansenize_Xu_regrowth -n 15 -t 1 -m 8  # Didn't try different numbers of threads. Running overnight, so just let it take its time and be safe
+python -m src.utilities.create_cluster -cn Hansenize_Xu_regrowth -n 15 -t 1 -m 8
 python -m src.LULUCF.scripts.preprocessing.hansenize_inputs -cn Hansenize_Xu_regrowth -p Xu_regrowth -bb -180 -40 180 30 -cs 10  # Because latitudinal range only extends from 34S to 28N.
+Notes: Took 1 hr 52 min with 15x 8GB workers with 1 thread each. Didn't try different numbers of threads. Running overnight, so just let it take its time and be safe
 
 
 todo:
@@ -41,6 +27,7 @@ todo:
 - Supress GDAL warning in step 3?
 - Add band1 logic to gdal_warp step for drivers
 - Update path and pattern for drivers and robinson rates
+#TODO: Check that drivers only uses classification band
 """
 import os
 import sys
@@ -150,11 +137,12 @@ def main(cluster_name, process, bounding_box, chunk_size, run_local, no_upload):
     if 'mangroves' in process:
         for year in cn.mangrove_extent_years:
             download_upload_dictionary[f"mangrove_extent_{year}"] = {
-                'raw_dir': f"{cn.mangrove_extent_raw_dir}{year}/",
+                'raw_dir': cn.mangrove_extent_raw_dir,
                 'raw_pattern': cn.mangrove_extent_raw_pattern,
+                'band': year - cn.mangrove_extent_first_band_year + 1,  # 2015 -> 31, 2025 -> 41
                 'vrt': f"/tmp/mangrove_extent_{year}.vrt",
-                'processed_dir': f"{cn.mangrove_extent_hansenized_dir}{year}/",
-                'processed_pattern': f"{cn.mangrove_extent_hansenized_pattern}_{year}"
+                'processed_dir': f"{cn.mangrove_extent_processed_dir}{year}/",
+                'processed_pattern': f"{cn.mangrove_extent_processed_pattern}_{year}"
             }
 
     if 'grasslands' in process:
@@ -265,11 +253,11 @@ def main(cluster_name, process, bounding_box, chunk_size, run_local, no_upload):
         main_logger.info(f"There are {len(input_raster_list_s3)} rasters in the raw data folder to include in the vrt")
         if input_raster_list_s3:
             download_upload_dictionary[key]['raw_raster_list'] = input_raster_list_s3
-            main_logger.info(f"Input raster list: {items['raw_raster_list']}")
+            #main_logger.info(f"Input raster list: {items['raw_raster_list']}")
 
         # Create a vrt from all raw input rasters
         main_logger.info(f"Submitting VRT build for {key}: {uu.timestr('time')}\n")
-        vrt_future = client.submit(uu.build_vrt_gdal_coiled, input_raster_list_s3, output_vrt_s3, items['vrt'], main_logger)
+        vrt_future = client.submit(uu.build_vrt_gdal_coiled, input_raster_list_s3, output_vrt_s3, items['vrt'], band=items.get('band'))
         vrt_futures.append((key, vrt_future))
 
     # Wait for all VRTs to finish before moving on to step 3
@@ -327,7 +315,7 @@ def main(cluster_name, process, bounding_box, chunk_size, run_local, no_upload):
 
         # Separate tile_futures list for each dataset being processed
         tile_start_time = uu.timestr()
-        batch_size = max(1, n_workers * 2)
+        batch_size = max(1, n_workers * 6)
 
         for batch_start in range(0, len(chunk_list), batch_size):
             batch_chunks = chunk_list[batch_start:batch_start + batch_size]

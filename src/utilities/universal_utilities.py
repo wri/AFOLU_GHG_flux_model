@@ -2706,7 +2706,8 @@ def build_vrt_gdal_local(raw_raster_paths_list_s3, output_vrt_s3):
 # Function to build a VRT using GDAL using tmp dir as intermediate step to download input files and build VRT
 # raw_raster_paths_list_s3 = list of s3 paths (with "s3://" prefix) to all raw raster used as input for the build VRT step
 # output_vrt_s3 = s3 path (with "s3://" prefix) where vrt is saved to
-def build_vrt_gdal_coiled(raw_raster_paths_list_s3, output_vrt_s3, local_vrt):
+# band = optional band number to extract from multiband inputs. None = all bands.
+def build_vrt_gdal_coiled(raw_raster_paths_list_s3, output_vrt_s3, local_vrt, band=None):
     os.environ["GDAL_DISABLE_READDIR_ON_OPEN"] = "TRUE"
 
     logger_worker = lu.setup_logging_worker()
@@ -2720,9 +2721,14 @@ def build_vrt_gdal_coiled(raw_raster_paths_list_s3, output_vrt_s3, local_vrt):
         vsis3_path = s3_path.replace("s3://", "/vsis3/")
         vsis3_paths.append(vsis3_path)
 
-    # Use GDAL to build the VRT
-    gdal.BuildVRT(local_vrt, vsis3_paths)
-    lu.print_and_log(f"Built {local_vrt}: {timestr('time')}", True, logger_worker)
+    # Use GDAL to build the VRT. If a band is specified, the VRT is single-band and points to that source band.
+    if band is not None:
+        vrt_options = gdal.BuildVRTOptions(bandList=[band])
+        gdal.BuildVRT(local_vrt, vsis3_paths, options=vrt_options)
+        lu.print_and_log(f"Built {local_vrt} from source band {band}: {timestr('time')}", True, logger_worker)
+    else:
+        gdal.BuildVRT(local_vrt, vsis3_paths)
+        lu.print_and_log(f"Built {local_vrt}: {timestr('time')}", True, logger_worker)
 
     # Various checks that vrt was created and has data in it
     try:

@@ -666,19 +666,15 @@ burned_area_final_dir = "fires/MODIS_burned_area/MCD64A1.061/2_final_outputs__Ha
 burned_area_final_pattern = "burned_area_final"
 
 # GMW mangrove extent
-GMW_version = "v3"
-mangrove_extent_years = [1996, 2007, 2008, 2009, 2010, 2015, 2016, 2017, 2018, 2019, 2020]
+GMW_version = "v4"
+mangrove_extent_first_band_year = 1985              # Year represented b1 of the raw tiles
+mangrove_extent_years = list(range(2015, 2025))     # Years to keep (2015-2024) -> bands 31-41
 
-mangrove_extent_raw_dir = f"{full_bucket_prefix}/global-mangrove-extent/version3/raw/raster/"
-mangrove_extent_raw_pattern = r"GMW_[NS][0-9]{2}[EW][0-9]{3}_[0-9]{4}_v3.tif"       # e.g "GMW_N00E008_1996_v3.tif" in regex form
+mangrove_extent_raw_dir = f"{full_bucket_prefix}/global-mangrove-extent/version4/raw/"
+mangrove_extent_raw_pattern = r"GMW_[NS][0-9]{2}[EW][0-9]{3}_v4112_mng_ext\.tif"        # GMW_N00E008_v4112_mng_ext.tif
 
-mangrove_extent_hansenized_dir = f"{full_bucket_prefix}/global-mangrove-extent/version3/hansenized/raster/"
-mangrove_extent_hansenized_pattern = f"GMW{GMW_version}_mangrove_extent"
-
-mangrove_1x1deg_smoothed_dir = f"{full_bucket_prefix}/global-mangrove-extent/version3/smoothed_1x1deg/raster/"
-
-mangrove_extent_processed_dir = f"{full_bucket_prefix}/global-mangrove-extent/version3/smoothed/raster/"
-mangrove_extent_processed_pattern = f"GMW{GMW_version}_smoothed_mangrove_extent"
+mangrove_extent_processed_dir = f"{full_bucket_prefix}/global-mangrove-extent/version4/processed/"
+mangrove_extent_processed_pattern = f"GMW{GMW_version}_mangrove_extent"                 # {tile_id}_GMWv4_mangrove_extent_{year}.tif
 
 # Global pasture watch grasslands extent (1 = cultivated grassland, 2 = natural/semi-natural grassland)
 GPW_version = "v1.1"
