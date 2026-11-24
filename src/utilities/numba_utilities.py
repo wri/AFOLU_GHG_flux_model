@@ -149,7 +149,8 @@ def create_typed_dicts(layers):
     return typed_dict_uint8, typed_dict_uint16, typed_dict_int16, typed_dict_int32, typed_dict_float32
 
 
-# Classifies GLCLU composite as bare ground, short vegetation (<5 m), or tall vegetation (>= 5 m)
+# Classifies GLCLU composite as bare ground, short vegetation (<5 m), tall vegetation (>= 5 m), water (including ocean),
+# annual cropland, or builtup. Bare ground and vegetation include both the dry and wet (wetland) codes.
 @jit(nopython=True)
 def classify_GLAD_composite(LC):
     bare_ground = (((LC >= cn.bare_ground_dry_min_code) and (LC <= cn.bare_ground_dry_max_code)) or
@@ -158,8 +159,11 @@ def classify_GLAD_composite(LC):
                    ((LC >= cn.short_veg_wet_min_code) and (LC <= cn.short_veg_wet_max_code)))
     tall_veg =    (((LC >= cn.tall_veg_dry_min_code) and (LC <= cn.tall_veg_dry_max_code)) or
                    ((LC >= cn.tall_veg_wet_min_code) and (LC <= cn.tall_veg_wet_max_code)))
+    water = (LC >= cn.water_min_code) and (LC <= cn.water_max_code) or (LC == cn.GLAD_ocean)
+    cropland = (LC == cn.cropland)
+    builtup = (LC == cn.builtup)
 
-    return bare_ground, short_veg, tall_veg
+    return bare_ground, short_veg, tall_veg, water, cropland, builtup
 
 
 # Checks if pixel does not have tall vegetation. If so, updates the value to the most recent year without tall vegetation.
@@ -839,65 +843,13 @@ def calc_NT_T(agc_rf, bgc_rf, c_dens_in, deadwood_c_ratio, litter_c_ratio):
     return c_gross_removals_out, c_dens_out, gain_year_count, forest_age
 
 
-# Gross fluxes and ending carbon stocks for mangrove gain or mangrove remaining mangrove without loss in interval.
-# Carbon pool fluxes and densities are input and output as Mg C/ha(/interval) rather than Mg CO2 for arithmetic simplicity.
-# Applies to mangrove gain and maintenance. Differences are handled by these input arguments: forest_age_start and c_dens_in.
-@jit(nopython=True)
-def calc_mang(forest_age_start, first_mang_gain_year, first_mang_loss_year, interval_end_year,
-              gain_year_count, agc_rf, bgc_rf, c_dens_in, deadwood_c_ratio, litter_c_ratio):
-
-    # Retrieves the starting densities for each carbon pool from the input array (Mg C/ha)
-    agc_dens_in, bgc_dens_in, deadwood_c_dens_in, litter_c_dens_in = unpack_starting_carbon_densities(c_dens_in)
-
-    # Step 1: Assigns deadwood C and litter C ratios for removal factors
-    # Deadwood and litter C removals only occur in pixels that are not considered to be in "equilibrium".
-    # Thus, we need to check that there is no regrowth occuring.
-    # Checking that it is not mangrove gain (i.e. no mangrove extent in 1996 but mangrove gain in subsequent year)
-    # Checking that there is mangrove loss through this interval.
-    # If conditions are met, the deadwood and litter ratios are set to 0 (no removals while in "equilibrium").
-    if (first_mang_gain_year == 0) and ((first_mang_loss_year == 0) or (first_mang_loss_year > interval_end_year)):
-        deadwood_c_ratio = 0.0
-        litter_c_ratio = 0.0
-
-    # Step 2: Calculates gross removals by carbon pools (Mg C/ha/interval). Gross removals are negative.
-    agc_gross_removals_out = float((agc_rf * gain_year_count) * -1)  #float() necessary for Numba typing
-    bgc_gross_removals_out = float((bgc_rf * gain_year_count) * -1)  #float() necessary for Numba typing
-    deadwood_c_gross_removals_out = agc_gross_removals_out * deadwood_c_ratio
-    litter_c_gross_removals_out = agc_gross_removals_out * litter_c_ratio
-
-    # Step 3: Calculates gross emissions by carbon pools (Mg C/ha/interval). Gross emissions are positive.
-    # There are no gross emissions in mangrove pixels with no loss, so C pool emissions set to 0.
-    agc_gross_emis_out = 0
-    bgc_gross_emis_out = 0
-    deadwood_c_gross_emis_out = 0
-    litter_c_gross_emis_out = 0
-
-    # Step 4: Calculates ending carbon densities by carbon pool (Mg C/ha)
-    agc_dens_out = agc_dens_in - agc_gross_removals_out
-    bgc_dens_out = bgc_dens_in - bgc_gross_removals_out
-    deadwood_c_dens_out = deadwood_c_dens_in - deadwood_c_gross_removals_out
-    litter_c_dens_out = litter_c_dens_in - litter_c_gross_removals_out
-
-    # Step 5: Prepares outputs
-    # Consolidates all gross fluxes from all carbon pools into arrays to reduce the number of arguments returned to the decision tree
-    c_gross_removals_out = np.array([agc_gross_removals_out, bgc_gross_removals_out, deadwood_c_gross_removals_out, litter_c_gross_removals_out]).astype('float32')  # Mg C/ha/interval
-    c_gross_emissions_out = np.array([agc_gross_emis_out, bgc_gross_emis_out, deadwood_c_gross_emis_out, litter_c_gross_emis_out]).astype('float32')  # Mg C/ha/interval
-    c_dens_out = np.array([agc_dens_out, bgc_dens_out, deadwood_c_dens_out, litter_c_dens_out]).astype('float32')  # Mg C/ha
-
-    # Step 6: Increments the forest age (years).
-    # Forest age starts at 0 years for mangrove gain
-    forest_age = forest_age_start + gain_year_count
-
-    return c_gross_emissions_out, c_gross_removals_out, c_dens_out, gain_year_count, forest_age
-
-
 # Gross fluxes and ending carbon stocks for intervals with temporary or permanent mangrove loss.
-# Carbon pool fluxes and densities are input and output as Mg C/ha(/interval) rather than Mg CO2 for arithmetic simplicity.
+# Carbon pool fluxes and densities are input and output as Mg C/ha/yr rather than Mg CO2 for arithmetic simplicity.
 # Model has no gain in the year of mangrove loss.
     # gain_year_count_pre_loss = 0 when there is mangrove loss
     # gain_year_count_post_loss = 1 when there is no mangrove loss
 @jit(nopython=True)
-def calc_mang_loss(interval_length, first_mang_gain_year, first_mang_loss_year, interval_start_year,
+def calc_mang_loss(first_mang_gain_year, first_mang_loss_year, interval_start_year,
                     c_pools_no_fire, loss_year, gain_year_count_pre_loss, gain_year_count_post_loss,
                     RF_AGC, RF_BGC, c_dens_in, deadwood_c_ratio, litter_c_ratio):
 

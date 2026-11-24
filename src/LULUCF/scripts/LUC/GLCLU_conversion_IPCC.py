@@ -35,7 +35,7 @@ Notes:
     - Took 19.5 hours to run globally (1x1 chunk step) + 3.5 hours to make 10 x 10 outputs (4480 credits, $375)
 
 TODO:
-Potentially switch from regex to numba for faster performance
+Update GPWv1.1 input tiles
 Remove skip existing 1x1 logic? Or change to 10x10 deg tile creation only?
 Low resource usage during 10x10 tile creation step. Resize cluster or run separately than with 1x1 chunk run.
 Add IFL/primary rule: If Built, Crop, or TCL + antrhopgenic driver then conversion, else Forest remaining Forest.

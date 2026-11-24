@@ -668,7 +668,7 @@ burned_area_final_pattern = "burned_area_final"
 # GMW mangrove extent
 GMW_version = "v4"
 mangrove_extent_first_band_year = 1985              # Year represented b1 of the raw tiles
-mangrove_extent_years = list(range(2015, 2025))     # Years to keep (2015-2024) -> bands 31-41
+mangrove_extent_years = list(range(2015, 2026))     # Years to keep (2015-2025) -> bands 31-41
 
 mangrove_extent_raw_dir = f"{full_bucket_prefix}/global-mangrove-extent/version4/raw/"
 mangrove_extent_raw_pattern = r"GMW_[NS][0-9]{2}[EW][0-9]{3}_v4112_mng_ext\.tif"        # GMW_N00E008_v4112_mng_ext.tif

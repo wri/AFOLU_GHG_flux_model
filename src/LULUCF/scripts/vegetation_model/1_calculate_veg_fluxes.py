@@ -623,9 +623,11 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                 GPW_short_veg_prev = (GPW_height_prev >= cn.GPW_short_veg_threshold)
                 GPW_short_veg_curr = (GPW_height_curr >= cn.GPW_short_veg_threshold)
 
-                # Booleans of vegetation height classes for start (prev) and end (curr) of current interval based on LC composites
-                GLAD_bare_ground_LC_prev, GLAD_short_veg_LC_prev, GLAD_tall_veg_LC_prev = nu.classify_GLAD_composite(LC_prev)
-                GLAD_bare_ground_LC_curr, GLAD_short_veg_LC_curr, GLAD_tall_veg_LC_curr = nu.classify_GLAD_composite(LC_curr)
+                # Booleans of land cover classes for start (prev) and end (curr) of current interval based on LC composites.
+                (GLAD_bare_ground_LC_prev, GLAD_short_veg_LC_prev, GLAD_tall_veg_LC_prev,
+                 GLAD_water_LC_prev, GLAD_cropland_LC_prev, GLAD_builtup_LC_prev) = nu.classify_GLAD_composite(LC_prev)
+                (GLAD_bare_ground_LC_curr, GLAD_short_veg_LC_curr, GLAD_tall_veg_LC_curr,
+                 GLAD_water_LC_curr, GLAD_cropland_LC_curr, GLAD_builtup_LC_curr) = nu.classify_GLAD_composite(LC_curr)
 
                 water_LC_curr = (LC_curr >= cn.water_min_code) and (LC_curr <= cn.water_max_code)
 
@@ -762,92 +764,76 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                 EF_AGC_out_cell = 0  # AGC emission factor is reported as 0 unless specified otherwise
 
 
-                ### Mangrove gain
-                # Starting age set to 0.
+                ### Mangrove gain: non-vegetated GLCLU class -> GLCLU vegetation in the mangrove union (11)
+                # Starting age set to 0. Allow removals into deadwood and litter.
                 if mang_gain:
                     node = nu.accrete_node(node, 1) # General mangrove code (1)
                     node = nu.accrete_node(node, 1) # Gain of mangroves (11)
+                    if GLAD_water_LC_prev:  # Mangrove gain from open water (111)
+                        state_out = nu.accrete_node(node, 1)
+                    elif GLAD_bare_ground_LC_prev:  # Mangrove gain from bare ground (112)
+                        state_out = nu.accrete_node(node, 2)
+                    elif GLAD_cropland_LC_prev:  # Mangrove gain from annual crops (113) #TODO: Discuss with David, allow?
+                        state_out = nu.accrete_node(node, 3)
+                    elif GLAD_builtup_LC_prev:  # Mangrove gain from builtup (114)      #TODO: Discuss with David, allow?
+                        state_out = nu.accrete_node(node, 4)
+                    else:  # Mangrove gain from any other non-vegetated class (115)
+                        state_out = nu.accrete_node(node, 5)
+
                     RF_AGC_final_cell = mangrove_AGC_RF
                     RF_BGC_final = RF_AGC_final_cell * r_s_ratio_mang
 
-                    if mang_loss_in_interval:
-                        state_out = nu.accrete_node(node, 1)  # Gain of mangroves + temp loss in interval (111)
-                        # Only AGC and BGC pools are used to calculate emissions for temp mangrove loss
-                        mang_c_pools_EF_no_fire = cn.biomass_emissions_only
-
-                        (c_gross_emis_out, c_gross_removals_out, c_dens_out, EF_AGC_out_cell, gain_year_count, forest_age_end_of_interval) = (
-                            nu.calc_mang_loss(interval_length, first_mang_gain_year, first_mang_loss_year, interval_start_year,
-                                mang_c_pools_EF_no_fire, mang_loss_year_in_interval, mang_gain_year_count_pre_loss, mang_gain_year_count_post_loss,
-                                RF_AGC_final_cell, RF_BGC_final, c_dens_in, deadwood_c_ratio_mang, litter_c_ratio_mang))
-                        # print(f"Node code is {state_out}, gain of mangroves with temporary disturbance of mangroves that emits biomass C pools only (111)")
-
-                    else:
-                        state_out = nu.accrete_node(node, 2)  # Gain of mangroves, no loss in interval (112)
-                        (c_gross_emis_out, c_gross_removals_out, c_dens_out, gain_year_count, forest_age_end_of_interval) = (
-                            nu.calc_mang(0, first_mang_gain_year, first_mang_loss_year, interval_end_year,
-                                mang_gain_year_count_pre_loss, RF_AGC_final_cell, RF_BGC_final, c_dens_in, deadwood_c_ratio_mang, litter_c_ratio_mang))
-                        # print(f"Node code is {state_out}, gain of mangroves, no loss in interval (112)")
-
-                    # print(f"c_dens_out: {c_dens_out}")
-                    # print(f"c_gross_removals_out: {c_gross_removals_out}")
-                    # print(f"c_gross_emis_out: {c_gross_emis_out}")
-                    # print(f"forest_age_end_of_interval: {forest_age_end_of_interval}")
+                    # NoData assignment and calculations for branch
+                    # Note: This now follows exactly the tree_gain logic. Combine nodes?
+                    EF_AGC_out_cell = np.nan  # Emissions not possible for mangrove gain, so emission factor given NoData
+                    c_gross_emis_out = np.array([np.nan, np.nan, np.nan, np.nan]).astype('float32')
+                    non_co2_flux_out = np.array([np.nan, np.nan]).astype('float32')  # Emissions from fire not possible for mangrove gain
+                    composite_primary_forest_cell = 0  # Mangrove gain sets composite primary forest value to 0
+                    (c_gross_removals_out, c_dens_out, gain_year_count, forest_age_end_of_interval) = (
+                                nu.calc_NT_T(RF_AGC_final_cell, RF_BGC_final, c_dens_in,
+                                deadwood_c_ratio=deadwood_c_ratio_mang, litter_c_ratio=litter_c_ratio_mang))
 
 
-                ### Mangrove loss
+                ### Mangrove loss: GLCLU vegetation -> non-vegetated GLCLU class in the mangrove union (12)
+                ### TODO: Discuss with David, pools emitted: all pools for permanent conversion (built or crop),  biomass only for unused (water or bare)
                 elif mang_loss:
-                    node = nu.accrete_node(node, 1)    # General mangrove code (1)
-                    node = nu.accrete_node(node, 2)    # Loss of mangroves (12)
-                    RF_AGC_final_cell = mangrove_AGC_RF  #TODO replace RF_AGC_final_cell with 0 for 1-year intervals in calc_mang_loss. RF_AGC_final_cell is currently being output even when there's loss.
-                    RF_BGC_final = RF_AGC_final_cell * r_s_ratio_mang
+                    node = nu.accrete_node(node, 1)  # General mangrove code (1)
+                    node = nu.accrete_node(node, 2)  # Mangrove loss (12)
+                    if GLAD_water_LC_curr:  # Mangrove loss to open water (121)
+                        node = nu.accrete_node(node, 1)
+                        c_pools_EF_no_fire = cn.biomass_emissions_only  # Residual deadwood and litter C carried forward
+                        rf_post_dist = cn.no_post_dist_removals
+                    elif GLAD_bare_ground_LC_curr:  # Mangrove loss to bare ground (122)
+                        node = nu.accrete_node(node, 2)
+                        c_pools_EF_no_fire = cn.biomass_emissions_only  # Residual deadwood and litter C carried forward
+                        rf_post_dist = cn.no_post_dist_removals
+                    elif GLAD_cropland_LC_curr:  # Mangrove loss to annual crops (123)
+                        node = nu.accrete_node(node, 3)
+                        c_pools_EF_no_fire = cn.all_non_soil_pools
+                        rf_post_dist = cropland_RF
+                    elif GLAD_builtup_LC_curr:  # Mangrove loss to builtup (124)
+                        node = nu.accrete_node(node, 4)
+                        c_pools_EF_no_fire = cn.all_non_soil_pools
+                        rf_post_dist = cn.no_post_dist_removals
+                    else:  # Mangrove loss to any other non-vegetated class (125)
+                        node = nu.accrete_node(node, 5)
+                        c_pools_EF_no_fire = cn.biomass_emissions_only  # Residual deadwood and litter C carried forward
+                        rf_post_dist = cn.no_post_dist_removals
 
-                    # If this interval is permanent mangrove loss, then AGC, BGC, deadwood, and litter are used to calculate emissions
-                    # Otherwise, only AGC and BGC are used to calculate emissions for temp mangrove loss
-                    if (interval_start_year < last_mang_loss_year) and (last_mang_loss_year <= interval_end_year):
-                        mang_c_pools_EF_no_fire = cn.all_non_soil_pools
-                    else:
-                        mang_c_pools_EF_no_fire = cn.biomass_emissions_only
+                    # No fire emissions in mangroves: forces the no-fire calculation and no fire C pools for all loss nodes
+                    burned_in_curr_interval = 0
+                    c_pools_EF_fire_CO2 = cn.no_carbon_pools
+                    c_pools_EF_fire_non_CO2 = cn.no_carbon_pools
 
-                    (c_gross_emis_out, c_gross_removals_out, c_dens_out, EF_AGC_out_cell, gain_year_count, forest_age_end_of_interval) = (
-                        nu.calc_mang_loss(interval_length, first_mang_gain_year, first_mang_loss_year, interval_start_year,
-                            mang_c_pools_EF_no_fire, mang_loss_year_in_interval, mang_gain_year_count_pre_loss, mang_gain_year_count_post_loss,
-                            RF_AGC_final_cell, RF_BGC_final, c_dens_in, deadwood_c_ratio_mang, litter_c_ratio_mang))
-
-                    if (interval_start_year < last_mang_loss_year) and (last_mang_loss_year <= interval_end_year):
-                        if water_LC_curr:
-                            state_out = nu.accrete_node(node, 2)    # Permanent loss of mangroves to water (122)
-                            # print(f"Node code is {state_out}, permanent loss of mangroves to water (122)")
-
-                        elif LC_curr == cn.cropland:
-                            state_out = nu.accrete_node(node, 3)    # Permanent loss of mangroves to annual crops (123)
-                            # print(f"Node code is {state_out}, permanent loss of mangroves to annual crops (123)")
-
-                        elif LC_curr == cn.builtup:
-                            state_out = nu.accrete_node(node, 4)    # Permanent loss of mangroves to builtup (124)
-                            # print(f"Node code is {state_out}, permanent loss of mangroves to builtup (124)")
-
-                        elif GLAD_short_veg_LC_curr:
-                            state_out = nu.accrete_node(node, 5)    # Permanent loss of mangroves to short vegetation (125)
-                            # print(f"Node code is {state_out}, permanent loss of mangroves to short vegetation (125)")
-
-                        elif GLAD_tall_veg_LC_curr:
-                            state_out = nu.accrete_node(node, 6)    # Permanent loss of mangroves to tall vegetation (126)
-                            # print(f"Node code is {state_out}, permanent loss of mangroves to tall vegetation (126)")
-
-                        else:
-                            state_out = nu.accrete_node(node, 7)    # Permanent loss of mangroves to anything else (127)
-                            # print(f"Node code is {state_out}, permanent loss of mangroves to anything else (127)")
-                    else:
-                        state_out = nu.accrete_node(node, 1)  # Temporary loss of mangroves (121)
-                        # print(f"Node code is {state_out}, temporary loss of mangroves that emits biomass C pools only (121)")
-
-
-                    # print(f"c_dens_in: {c_dens_in}")
-                    # print(f"c_dens_out: {c_dens_out}")
-                    # print(f"c_gross_removals_out: {c_gross_removals_out}")
-                    # print(f"c_gross_emis_out: {c_gross_emis_out}")
-                    # print(f"mang_c_pools_EF_no_fire: {mang_c_pools_EF_no_fire}")
-                    # print(f"forest_age_end_of_interval: {forest_age_end_of_interval}")
+                    # NoData assignments and calculation for branch
+                    # Note: This now follows exactly the tree_loss logic. Combine nodes?
+                    composite_primary_forest_cell = 0   # Mangrove loss sets composite primary forest value to 0
+                    forest_age_end_of_interval = 0      # Resets the age to 0 because there was full loss
+                    gain_year_count = 0                 # No gain in loss years, so set to 0
+                    (state_out, c_gross_emis_out, c_gross_removals_out, non_co2_flux_out, c_dens_out,
+                     RF_AGC_final_cell, EF_AGC_out_cell) = nu.calc_T_NT(
+                        node, burned_in_curr_interval, c_pools_EF_fire_CO2, c_pools_EF_fire_non_CO2,
+                        c_pools_EF_no_fire, c_dens_in, rf_post_dist, Cf_forest, Gef_ch4_forest, Gef_n2o_forest)
 
 
                 ### Mangrove that is mangrove at end of the interval (includes loss with later gain and mangrove remaining mangrove)
@@ -862,7 +848,7 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
                         mang_c_pools_EF_no_fire = cn.biomass_emissions_only
 
                         (c_gross_emis_out, c_gross_removals_out, c_dens_out, EF_AGC_out_cell, gain_year_count, forest_age_end_of_interval) = (
-                            nu.calc_mang_loss(interval_length, first_mang_gain_year, first_mang_loss_year, interval_start_year,
+                            nu.calc_mang_loss(first_mang_gain_year, first_mang_loss_year, interval_start_year,
                                 mang_c_pools_EF_no_fire, mang_loss_year_in_interval, mang_gain_year_count_pre_loss, mang_gain_year_count_post_loss,
                                 RF_AGC_final_cell, RF_BGC_final, c_dens_in, deadwood_c_ratio_mang, litter_c_ratio_mang))
                         # print(f"Node code is {state_out}, mangrove remaining mangrove with temporary disturbance of mangroves that emits biomass C pools only (131)")
@@ -904,7 +890,10 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
 
 
                 ### Tree gain
-                elif tree_gain:  # Terrestrial non-trees converted to trees (2)
+                # Note: Adding NOT mangrove contextual layer here because the tree parts of the decision tree use tree height >5m not GLCLU.
+                #       We want to allow non-vegetated mangroves to fall lower in the decision tree (eg water->water, crop->crop or builtup->builtup).
+                # TODO: Discuss with David, place mangroves within these nodes (i.e. tree remaining tree, tree loss, etc)
+                elif tree_gain and (not is_ever_mang):  # Terrestrial non-trees converted to trees (2)
                     node = nu.accrete_node(node, 2)
                     if all_planted_trees:  # Gain of planted trees (21)
                         node = nu.accrete_node(node, 1)
@@ -949,7 +938,10 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
 
 
                 ### Tree loss
-                elif tree_loss:  # Trees converted to non-trees (3)
+                # Note: Adding NOT mangrove contextual layer here because the tree parts of the decision tree use tree height >5m not GLCLU.
+                #       We want to allow non-vegetated mangroves to fall lower in the decision tree (eg water->water, crop->crop or builtup->builtup).
+                # TODO: Discuss with David, place mangroves within these nodes (i.e. tree remaining tree, tree loss, etc)
+                elif tree_loss and (not is_ever_mang):  # Trees converted to non-trees (3)
                     node = nu.accrete_node(node, 3)
                     if all_planted_trees:  # Full loss of planted trees (31)
                         node = nu.accrete_node(node, 1)
@@ -1109,7 +1101,10 @@ def vegetation_fluxes(in_dict_uint8, in_dict_uint16, in_dict_int16, in_dict_int3
 
 
                 ### Trees remaining trees
-                elif (tree_prev) and (tree_curr):  # Trees remaining trees (4)
+                # Note: Adding NOT mangrove contextual layer here because the tree parts of the decision tree use tree height >5m not GLCLU.
+                #       We want to allow non-vegetated mangroves to fall lower in the decision tree (eg water->water, crop->crop or builtup->builtup).
+                # TODO: Discuss with David, place mangroves within these nodes (i.e. tree remaining tree, tree loss, etc)
+                elif (tree_prev) and (tree_curr) and (not is_ever_mang):  # Trees remaining trees (4)
                     node = nu.accrete_node(node, 4)
                     if interval_before_converted_to_oil_palm and (not oil_palm_pre_2000): # Non-planted trees with oil palm planted in the next interval (41->419/412)
                         node = nu.accrete_node(node, 1)
@@ -2047,7 +2042,7 @@ def main(cluster_name, model_type, run_local=False, no_stats=False, no_log=False
         download_dict[f"{cn.vegetation_height_pattern}_{year}"] = f"{cn.vegetation_height_annual_path}{year}/{sample_tile_id}.tif"
         download_dict[f"{cn.burned_area_final_pattern}_{year}"] = f"{cn.full_bucket_prefix}/{cn.burned_area_final_dir}{year}/{sample_tile_id}_{cn.burned_area_final_pattern}_{year}.tif"
 
-    # GMW mangrove extent timeseries depend on start year (not end year since GMW data ends in 2020)
+    # GMWv4 mangrove extent timeseries (2015-2025)
     for year in cn.mangrove_extent_years:
         download_dict[f"{cn.mangrove_extent_processed_pattern}_{year}"] = f"{cn.mangrove_extent_processed_dir}{year}/{sample_tile_id}__{cn.mangrove_extent_processed_pattern}_{year}.tif"
 
