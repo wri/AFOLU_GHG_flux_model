@@ -15,16 +15,16 @@ For global:
 gcloud auth application-default login
 
 python -m src.utilities.create_cluster -cn 2016_emissions_cog -t 1 -n 1 -m 64 -d 100 --cog --on_demand --gcp
-python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_emissions_cog -d vegetation -f emissions -g all_gases -y 2016
+python -m src.LULUCF.scripts.postprocessing.GEE.1_create_cogs_download_tiles -cn 2016_emissions_cog -d vegetation -f emissions -g all_gases -y 2016
 
 python -m src.utilities.create_cluster -cn 2016_removals_cog -t 1 -n 1 -m 64 -d 500 --cog --on_demand --gcp
-python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_removals_cog -d vegetation -f removals -g all_gases -y 2016
+python -m src.LULUCF.scripts.postprocessing.GEE.1_create_cogs_download_tiles -cn 2016_removals_cog -d vegetation -f removals -g all_gases -y 2016
 
 python -m src.utilities.create_cluster -cn 2016_2020_mineral_soil_net_cog -t 1 -n 1 -m 64 -d 1000 --cog --on_demand --gcp
-python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_2020_mineral_soil_net_cog -d mineral_soil -g all_gases -f netflux -y 2016
+python -m src.LULUCF.scripts.postprocessing.GEE.1_create_cogs_download_tiles -cn 2016_2020_mineral_soil_net_cog -d mineral_soil -g all_gases -f netflux -y 2016
 
 python -m src.utilities.create_cluster -cn 2016_2020_organic_soil -t 1 -n 2 -m 64 -d 50 --cog --on_demand --gcp
-python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_2020_organic_soil -d organic_soil -f emissions -g all_gases -y 2016
+python -m src.LULUCF.scripts.postprocessing.GEE.1_create_cogs_download_tiles -cn 2016_2020_organic_soil -d organic_soil -f emissions -g all_gases -y 2016
 
 Cautions:
 - Currently all int datasets are set to use mode (categorical) resampling algorithm and all float are set to use mean.
@@ -36,12 +36,11 @@ Notes:
     - For removals, could try 300 GB of disk. Keep or increase CPU.
     - Using 32 GB workers was WAAAAAY slower. Use 64 instead.
 
-TODO:
+TODO: Change ZSTD back to 22?
 - The COG translation step takes a very long time. How to make this faster?
 - Ask Chris about attaching S3 directory so tiles don't have to be downloaded to save time. Then get rid of download_workers input argument.
 - Get rid of --tile_ids input argument (option to filter VRT/ COG to only certain tiles)?
 - Upload to GCP is not working
-- Change ZSTD back to 22?
 """
 
 import argparse
