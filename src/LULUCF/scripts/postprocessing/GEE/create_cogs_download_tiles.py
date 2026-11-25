@@ -15,16 +15,16 @@ For global:
 gcloud auth application-default login
 
 python -m src.utilities.create_cluster -cn 2016_emissions_cog -t 1 -n 1 -m 64 -d 100 --cog --on_demand --gcp
-python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_emissions_cog -d vegetation -f emissions -y 2016
+python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_emissions_cog -d vegetation -f emissions -g all_gases -y 2016
 
 python -m src.utilities.create_cluster -cn 2016_removals_cog -t 1 -n 1 -m 64 -d 500 --cog --on_demand --gcp
-python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_removals_cog -d vegetation -f removals -y 2016
+python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_removals_cog -d vegetation -f removals -g all_gases -y 2016
 
 python -m src.utilities.create_cluster -cn 2016_2020_mineral_soil_net_cog -t 1 -n 1 -m 64 -d 1000 --cog --on_demand --gcp
-python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_2020_mineral_soil_net_cog -d mineral_soil -f netflux -y 2016
+python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_2020_mineral_soil_net_cog -d mineral_soil -g all_gases -f netflux -y 2016
 
 python -m src.utilities.create_cluster -cn 2016_2020_organic_soil -t 1 -n 2 -m 64 -d 50 --cog --on_demand --gcp
-python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_2020_organic_soil -d organic_soil -f emissions -y 2016
+python -m src.LULUCF.scripts.postprocessing.GEE.create_cogs_download_tiles -cn 2016_2020_organic_soil -d organic_soil -f emissions -g all_gases -y 2016
 
 Cautions:
 - Currently all int datasets are set to use mode (categorical) resampling algorithm and all float are set to use mean.
@@ -41,6 +41,7 @@ TODO:
 - Ask Chris about attaching S3 directory so tiles don't have to be downloaded to save time. Then get rid of download_workers input argument.
 - Get rid of --tile_ids input argument (option to filter VRT/ COG to only certain tiles)?
 - Upload to GCP is not working
+- Change ZSTD back to 22?
 """
 
 import argparse
@@ -204,7 +205,7 @@ def gdal_translate_cog(vrt, cog, nodata, resample=None, build_overviews=True):
     # Creation options
     co = [
             "COMPRESS=ZSTD",
-            "LEVEL=22",
+            "LEVEL=12",
             "INTERLEAVE=BAND",
             "TILED=YES",
             "BLOCKSIZE=2048",
@@ -254,7 +255,6 @@ def gdal_translate_cog(vrt, cog, nodata, resample=None, build_overviews=True):
     with gdal.config_options({
         "GDAL_CACHEMAX": "12288",        # 12 GB
         "GDAL_NUM_THREADS": "ALL_CPUS"
-      #"ZSTD_LEVEL_OVERVIEW": "22"
       }):
         ds = gdal.Translate(cog, vrt, options=opts)
         if ds is None:
@@ -394,7 +394,7 @@ def stage_build_upload_cog(job, download_workers=8):
         lu.print_and_log(f"Removed local staging directory: {tmp_root}", False, logger_worker)
 
 
-def main(cluster_name, datasets, fluxes, years, tile_ids, overwrite_existing_cog, download_workers):
+def main(cluster_name, datasets, fluxes, gases, years, tile_ids, overwrite_existing_cog, download_workers):
 
     # Connects to Coiled cluster if the named cluster exists
     if cluster_name:
@@ -409,9 +409,8 @@ def main(cluster_name, datasets, fluxes, years, tile_ids, overwrite_existing_cog
     main_logger, main_log_local_path, n_workers= lu.populate_main_log_header(client, cluster, "Global COG creation", run_local, 'standard', 'Global COG creation')
 
     #TODO: This script is behind the current model version (1.0.6) Change to cn paths after merging to updated model branch.
-    #TODO: Add in other variations (by gas, land state node, land use, SOC gain, SOC loss, organic soil state, combined LULUCF, etc)
-    #TODO: Require which gas to run from command line argument, if none supplied default to all_gases. Update in both s3 and gcs dirs.
-    #TODO: Add in flag for per hectare or per pixel versions? 1x1 vs 10x10 tiles?
+    #TODO: Add in other datasets to config (land state node, land use, organic soil state, combined LULUCF, etc)
+    #TODO: Add in flag for per hectare or per pixel versions?
     veg_model_version_underscore = "1_0_5"
 
     veg_output_dir = f"{cn.LULUCF_dir}outputs_vegetation/version_{veg_model_version_underscore}__standard__global/"
@@ -422,40 +421,55 @@ def main(cluster_name, datasets, fluxes, years, tile_ids, overwrite_existing_cog
     min_soil_rundate = "20260611"
     org_soil_rundate = "20260525"
 
-    emissions_pattern = "gross_emissions__all_C_pools__all_gases__MgCO2e"
-    removals_pattern  = "gross_removals__all_C_pools__MgCO2"
-    netflux_pattern  = "net_flux__all_C_pools__all_gases__MgCO2e"
+    # Vegetation patterns
     # Note: the patterns include veg_ at the beginning starting with v1.0.6
+    veg_emissions_all_gases_pattern =    "gross_emissions__all_C_pools__all_gases__MgCO2e"
+    veg_emissions_CO2_only_pattern =     "gross_emissions__all_C_pools__CO2_only__MgCO2"
+    veg_emissions_non_CO2_only_pattern = "gross_emissions__all_C_pools__non_CO2_only__MgCO2e"
 
-    # Input tile s3 directories
-    emissions_path = f"{veg_output_dir}{emissions_pattern}/annual_intervals/YYYY/_ha_yr/40000_pixels/{veg_rundate}/"
-    removals_path  = f"{veg_output_dir}{removals_pattern}/annual_intervals/YYYY/_ha_yr/40000_pixels/{veg_rundate}/"
-    netflux_path   = f"{veg_output_dir}{netflux_pattern}/annual_intervals/YYYY/_ha_yr/40000_pixels/{veg_rundate}/"
+    veg_netflux_all_gases_pattern =    "net_flux__all_C_pools__all_gases__MgCO2e"
+    veg_netflux_CO2_only_pattern =     "net_flux__all_C_pools__CO2_only__MgCO2"
+    veg_netflux_non_CO2_only_pattern = "net_flux__all_C_pools__non_CO2_only__MgCO2e"
 
-    min_soil_loss_path = f"{min_soil_output_dir}{cn.SOC_loss_min_soil_extent_pattern}/YYYY/_ha_yr/40000_pixels/{min_soil_rundate}/"
-    min_soil_gain_path = f"{min_soil_output_dir}{cn.SOC_gain_min_soil_extent_pattern}/YYYY/_ha_yr/40000_pixels/{min_soil_rundate}/"
-    min_soil_net_path  = f"{min_soil_output_dir}{cn.SOC_net_min_soil_extent_pattern}/YYYY/_ha_yr/40000_pixels/{min_soil_rundate}/"
+    veg_removals_pattern = "gross_removals__all_C_pools__MgCO2"  # CO2 only
 
-    org_soil_burned_path  = f"{org_soil_output_dir}{cn.burned_organic_soils_total_pattern}/ogh_mixed_f1_f15_f2_20260513/five_year_intervals/YYYY/40000_pixels/{org_soil_rundate}/"
-    org_soil_drained_path = f"{org_soil_output_dir}{cn.drained_organic_soils_total_pattern}/ogh_mixed_f1_f15_f2_20260513/five_year_intervals/YYYY/40000_pixels/{org_soil_rundate}/"
+    # Organic soil patterns
+    org_soil_burned_all_gases_pattern = cn.burned_organic_soils_total_pattern
+    org_soil_burned_CO2_only_pattern = "burned_co2_Mg_CO2_ha_yr"
+    # org_soil_burned_non_CO2_only_pattern = # TODO: burned organic soils, non-CO2 only
 
+    org_soil_drained_all_gases_pattern = cn.drained_organic_soils_total_pattern
+    org_soil_drained_CO2_only_pattern = "drained_co2_Mg_CO2_ha_yr"
+    # org_soil_drained_non_CO2_only_pattern = # TODO: drained organic soils, non-CO2 only
+
+    # Vegetation input tile s3 directories
+    veg_emissions_all_gases_path =    f"{veg_output_dir}{veg_emissions_all_gases_pattern}/annual_intervals/YYYY/_ha_yr/40000_pixels/{veg_rundate}/"
+    veg_emissions_CO2_only_path =     f"{veg_output_dir}{veg_emissions_CO2_only_pattern}/annual_intervals/YYYY/_ha_yr/40000_pixels/{veg_rundate}/"
+    veg_emissions_non_CO2_only_path = f"{veg_output_dir}{veg_emissions_non_CO2_only_pattern}/annual_intervals/YYYY/_ha_yr/40000_pixels/{veg_rundate}/"
+
+    veg_netflux_all_gases_path =    f"{veg_output_dir}{veg_netflux_all_gases_pattern}/annual_intervals/YYYY/_ha_yr/40000_pixels/{veg_rundate}/"
+    veg_netflux_CO2_only_path =     f"{veg_output_dir}{veg_netflux_CO2_only_pattern}/annual_intervals/YYYY/_ha_yr/40000_pixels/{veg_rundate}/"
+    veg_netflux_non_CO2_only_path = f"{veg_output_dir}{veg_netflux_non_CO2_only_pattern}/annual_intervals/YYYY/_ha_yr/40000_pixels/{veg_rundate}/"
+
+    veg_removals_path = f"{veg_output_dir}{veg_removals_pattern}/annual_intervals/YYYY/_ha_yr/40000_pixels/{veg_rundate}/"
+
+    # Mineral soil input tile s3 directories (CO2 only)
+    min_soil_net_path = f"{min_soil_output_dir}{cn.SOC_net_min_soil_extent_pattern}/YYYY/_ha_yr/40000_pixels/{min_soil_rundate}/"
+
+    # Organic soil input tile s3 directories
+    org_soil_burned_all_gases_path = f"{org_soil_output_dir}{org_soil_burned_all_gases_pattern}/ogh_mixed_f1_f15_f2_20260513/five_year_intervals/YYYY/40000_pixels/{org_soil_rundate}/"
+    org_soil_burned_CO2_only_path =  f"{org_soil_output_dir}{org_soil_burned_CO2_only_pattern}/ogh_mixed_f1_f15_f2_20260513/five_year_intervals/YYYY/40000_pixels/{org_soil_rundate}/"
+    # org_soil_burned_non_CO2_only_path = # TODO: burned organic soils, non-CO2 only
+
+    org_soil_drained_all_gases_path = f"{org_soil_output_dir}{org_soil_drained_all_gases_pattern}/ogh_mixed_f1_f15_f2_20260513/five_year_intervals/YYYY/40000_pixels/{org_soil_rundate}/"
+    org_soil_drained_CO2_only_path =  f"{org_soil_output_dir}{org_soil_drained_CO2_only_pattern}/ogh_mixed_f1_f15_f2_20260513/five_year_intervals/YYYY/40000_pixels/{org_soil_rundate}/"
+    # org_soil_drained_non_CO2_only_path = # TODO: drained organic soils, non-CO2 only
 
     # GCS output directories
     gcs_bucket = "wri-lcl-lgms"
     veg_asset_folder = f"vegetation/v{veg_model_version_underscore}"
     min_soil_asset_folder = f"soil/mineral/v{cn.SOC_model_version_underscore}"
     org_soil_asset_folder = f"soil/organic/v{cn.organic_soil_model_version_underscore}"
-
-    emissions_gcs_dir = f"gs://{gcs_bucket}/{veg_asset_folder}/emissions/{emissions_pattern}/"
-    removals_gcs_dir  = f"gs://{gcs_bucket}/{veg_asset_folder}/removals/{removals_pattern}/"
-    netflux_gcs_dir   = f"gs://{gcs_bucket}/{veg_asset_folder}/net_flux/{netflux_pattern}/"
-
-    min_soil_loss_gcs_dir = f"gs://{gcs_bucket}/{min_soil_asset_folder}/{cn.SOC_loss_min_soil_extent_pattern}/"
-    min_soil_gain_gcs_dir = f"gs://{gcs_bucket}/{min_soil_asset_folder}/{cn.SOC_gain_min_soil_extent_pattern}/"
-    min_soil_net_gcs_dir  = f"gs://{gcs_bucket}/{min_soil_asset_folder}/{cn.SOC_net_min_soil_extent_pattern}/"
-
-    org_soil_burned_gcs_dir  = f"gs://{gcs_bucket}/{org_soil_asset_folder}/{cn.burned_organic_soils_total_pattern}/"
-    org_soil_drained_gcs_dir = f"gs://{gcs_bucket}/{org_soil_asset_folder}/{cn.drained_organic_soils_total_pattern}/"
 
 
     # ------------------------------------------------------------------------------------------------------------------
@@ -480,49 +494,109 @@ def main(cluster_name, datasets, fluxes, years, tile_ids, overwrite_existing_cog
     # Define available dataset / flux combinations
 
     dataset_config = {
-        "vegetation": {
-            "emissions": {"s3_path": emissions_path,
-                          "pattern": f"{emissions_pattern}_ha_yr",
-                          "gcs_dir": emissions_gcs_dir,
-                          "years":   years},
-            "removals":  {"s3_path": removals_path,
-                          "pattern": f"{removals_pattern}_ha_yr",
-                          "gcs_dir": removals_gcs_dir,
-                          "years":   years},
-            "netflux":   {"s3_path": netflux_path,
-                          "pattern": f"{netflux_pattern}_ha_yr",
-                          "gcs_dir": netflux_gcs_dir,
-                          "years":   years},
-        },
-        "mineral_soil": {
-            "emissions": {"s3_path": min_soil_loss_path,
-                          "pattern": f"{cn.SOC_loss_min_soil_extent_pattern}_ha_yr",
-                          "gcs_dir": min_soil_loss_gcs_dir,
-                          "years":   mineral_soil_years},
-            "removals":  {"s3_path": min_soil_gain_path,
-                          "pattern": f"{cn.SOC_gain_min_soil_extent_pattern}_ha_yr",
-                          "gcs_dir": min_soil_gain_gcs_dir,
-                          "years":   mineral_soil_years},
-            "netflux":   {"s3_path": min_soil_net_path,
-                          "pattern": f"{cn.SOC_net_min_soil_extent_pattern}_ha_yr",
-                          "gcs_dir": min_soil_net_gcs_dir,
-                          "years":   mineral_soil_years},
-        },
-        "organic_soil": {
-            "emissions": [
-                {"component": "burned",
-                 "s3_path": org_soil_burned_path,
-                 "pattern": cn.burned_organic_soils_total_pattern,
-                 "gcs_dir": org_soil_burned_gcs_dir,
-                 "years": organic_soil_years},
-                {"component": "drained",
-                 "s3_path": org_soil_drained_path,
-                 "pattern": cn.drained_organic_soils_total_pattern,
-                 "gcs_dir": org_soil_drained_gcs_dir,
-                 "years": organic_soil_years},
-            ],
-        },
+        "vegetation":   {"emissions": [], "removals": [], "netflux": []},
+        "mineral_soil": {"netflux": []},
+        "organic_soil": {"emissions": []},
     }
+
+    if "all_gases" in gases:
+        dataset_config["vegetation"]["emissions"].append(
+            {"gas": "all_gases",
+             "s3_path": veg_emissions_all_gases_path,
+             "pattern": f"{veg_emissions_all_gases_pattern}_ha_yr",
+             "gcs_dir": f"gs://{gcs_bucket}/{veg_asset_folder}/emissions/{veg_emissions_all_gases_pattern}/",
+             "years": years})
+        dataset_config["vegetation"]["netflux"].append(
+            {"gas": "all_gases",
+             "s3_path": veg_netflux_all_gases_path,
+             "pattern": f"{veg_netflux_all_gases_pattern}_ha_yr",
+             "gcs_dir": f"gs://{gcs_bucket}/{veg_asset_folder}/net_flux/{veg_netflux_all_gases_pattern}/",
+             "years": years})
+        dataset_config["organic_soil"]["emissions"].extend([
+            {"gas": "all_gases",
+             "component": "burned",
+             "s3_path": org_soil_burned_all_gases_path,
+             "pattern": org_soil_burned_all_gases_pattern,
+             "gcs_dir": f"gs://{gcs_bucket}/{org_soil_asset_folder}/{org_soil_burned_all_gases_pattern}/",
+             "years": organic_soil_years},
+            {"gas": "all_gases",
+             "component": "drained",
+             "s3_path": org_soil_drained_all_gases_path,
+             "pattern": org_soil_drained_all_gases_pattern,
+             "gcs_dir": f"gs://{gcs_bucket}/{org_soil_asset_folder}/{org_soil_drained_all_gases_pattern}/",
+             "years": organic_soil_years},
+        ])
+
+    if "CO2_only" in gases:
+        dataset_config["vegetation"]["emissions"].append(
+            {"gas": "CO2_only",
+             "s3_path": veg_emissions_CO2_only_path,
+             "pattern": f"{veg_emissions_CO2_only_pattern}_ha_yr",
+             "gcs_dir": f"gs://{gcs_bucket}/{veg_asset_folder}/emissions/{veg_emissions_CO2_only_pattern}/",
+             "years": years})
+        dataset_config["vegetation"]["netflux"].append(
+            {"gas": "CO2_only",
+             "s3_path": veg_netflux_CO2_only_path,
+             "pattern": f"{veg_netflux_CO2_only_pattern}_ha_yr",
+             "gcs_dir": f"gs://{gcs_bucket}/{veg_asset_folder}/net_flux/{veg_netflux_CO2_only_pattern}/",
+             "years": years})
+        dataset_config["organic_soil"]["emissions"].extend([
+            {"gas": "CO2_only",
+             "component": "burned",
+             "s3_path": org_soil_burned_CO2_only_path,
+             "pattern": org_soil_burned_CO2_only_pattern,
+             "gcs_dir": f"gs://{gcs_bucket}/{org_soil_asset_folder}/{org_soil_burned_CO2_only_pattern}/",
+             "years": organic_soil_years},
+            {"gas": "CO2_only",
+             "component": "drained",
+             "s3_path": org_soil_drained_CO2_only_path,
+             "pattern": org_soil_drained_CO2_only_pattern,
+             "gcs_dir": f"gs://{gcs_bucket}/{org_soil_asset_folder}/{org_soil_drained_CO2_only_pattern}/",
+             "years": organic_soil_years},
+        ])
+
+    if "non_CO2_only" in gases:
+        dataset_config["vegetation"]["emissions"].append(
+            {"gas": "non_CO2_only",
+             "s3_path": veg_emissions_non_CO2_only_path,
+             "pattern": f"{veg_emissions_non_CO2_only_pattern}_ha_yr",
+             "gcs_dir": f"gs://{gcs_bucket}/{veg_asset_folder}/emissions/{veg_emissions_non_CO2_only_pattern}/",
+             "years": years})
+        dataset_config["vegetation"]["netflux"].append(
+            {"gas": "non_CO2_only",
+             "s3_path": veg_netflux_non_CO2_only_path,
+             "pattern": f"{veg_netflux_non_CO2_only_pattern}_ha_yr",
+             "gcs_dir": f"gs://{gcs_bucket}/{veg_asset_folder}/net_flux/{veg_netflux_non_CO2_only_pattern}/",
+             "years": years})
+        # dataset_config["organic_soil"]["emissions"].extend([
+        #     {"gas": "non_CO2_only",
+        #      "component": "burned",
+        #      "s3_path": org_soil_burned_non_CO2_only_path,
+        #      "pattern": org_soil_burned_non_CO2_only_pattern,
+        #      "gcs_dir": f"gs://{gcs_bucket}/{org_soil_asset_folder}/{org_soil_burned_non_CO2_only_pattern}/",
+        #      "years": organic_soil_years},
+        #     {"gas": "non_CO2_only",
+        #      "component": "drained",
+        #      "s3_path": org_soil_drained_non_CO2_only_path,
+        #      "pattern": org_soil_drained_non_CO2_only_pattern,
+        #      "gcs_dir": f"gs://{gcs_bucket}/{org_soil_asset_folder}/{org_soil_drained_non_CO2_only_pattern}/",
+        #      "years": organic_soil_years},
+        # ])
+
+    # Mineral soil and vegetation removals are CO2 only, so include them for all_gases or CO2_only (added once)
+    if "all_gases" in gases or "CO2_only" in gases:
+        dataset_config["vegetation"]["removals"].append(
+            {"gas": "CO2_only",
+             "s3_path": veg_removals_path,
+             "pattern": f"{veg_removals_pattern}_ha_yr",
+             "gcs_dir": f"gs://{gcs_bucket}/{veg_asset_folder}/removals/{veg_removals_pattern}/",
+             "years": years})
+        dataset_config["mineral_soil"]["netflux"].append(
+            {"gas": "CO2_only",
+             "s3_path": min_soil_net_path,
+             "pattern": f"{cn.SOC_net_min_soil_extent_pattern}_ha_yr",
+             "gcs_dir": f"gs://{gcs_bucket}/{min_soil_asset_folder}/{cn.SOC_net_min_soil_extent_pattern}/",
+             "years": mineral_soil_years})
 
     # ------------------------------------------------------------------------------------------------------------------
     # Build jobs dictionary
@@ -537,8 +611,9 @@ def main(cluster_name, datasets, fluxes, years, tile_ids, overwrite_existing_cog
                 continue
 
             configs = dataset_config[dataset][flux]
-            if not isinstance(configs, list):
-                configs = [configs]
+            if not configs:
+                main_logger.warning(f"{dataset} has no {flux} output for gas(es) {gases}. Skipping.")
+                continue
 
             for config in configs:
                 for year in config["years"]:
@@ -547,10 +622,11 @@ def main(cluster_name, datasets, fluxes, years, tile_ids, overwrite_existing_cog
                     pattern = config["pattern"]
                     gcs_dir = config["gcs_dir"]
                     component = config.get("component")
+                    gas = config["gas"]
 
                     output_year = cn.organic_soil_year_map[year] if dataset == "mineral_soil" else year
 
-                    key = f"{dataset}_{flux}_{component}_{output_year}" if component else f"{dataset}_{flux}_{output_year}"
+                    key = f"{dataset}_{flux}_{gas}_{component}_{output_year}" if component else f"{dataset}_{flux}_{gas}_{output_year}"
                     output_dir = s3_dir.replace("40000_pixels", "global").rstrip("/") + "/"
                     output_cog_s3_path = f"{output_dir}{pattern}_{output_year}.tif"
                     output_cog_gcs_path = f"{gcs_dir.rstrip('/')}/{pattern}_{output_year}.tif"
@@ -610,6 +686,7 @@ if __name__ == "__main__":
     parser.add_argument('-cn', '--cluster_name', help='Coiled cluster name')
     parser.add_argument('-d', '--datasets', required=True, nargs='+', choices=["vegetation", "mineral_soil", "organic_soil"], help=("Dataset(s) to process. Options: vegetation, mineral_soil, organic_soil"))
     parser.add_argument('-f', '--flux', required=True, nargs='+', choices=["emissions", "removals", "netflux"], help=("Flux type(s) to process. Options: emissions, removals, netflux"))
+    parser.add_argument('-g', '--gas', required=True, nargs='+', choices=["all_gases", "CO2_only", "non_CO2_only"], help=("GHG(s) to process. Options: all_gases, CO2_only, non_CO2_only"))
     parser.add_argument('-y', '--years', nargs='+', type=int, choices=range(2016, 2025), help="Which year(s) to run? Defaults to use all available years if not specified.")
     parser.add_argument('-t', "--tile_ids", help="Optional text file with tile ids to filter to (one per line)")
     parser.add_argument("--overwrite_existing_cog", action="store_true", default=False, help="Option to overwrite existing COGs in s3. Default: False")
@@ -619,9 +696,10 @@ if __name__ == "__main__":
     cluster_name = args.cluster_name
     datasets = args.datasets
     fluxes = args.flux
+    gases = args.gas
     years = args.years
     tile_ids = args.tile_ids
     overwrite_existing_cog = args.overwrite_existing_cog
     download_workers = args.download_workers
 
-    main(cluster_name, datasets, fluxes, years, tile_ids, overwrite_existing_cog, download_workers)
+    main(cluster_name, datasets, fluxes, gases, years, tile_ids, overwrite_existing_cog, download_workers)
